@@ -693,7 +693,7 @@
       full_at: pallet.fullAt||null, wrapped_at: pallet.wrappedAt||null,
       updated_at: nowISO(), app_source: "pallets"
     };
-    await sbFetch("POST", `/rest/v1/pallets`, rec);
+    await sbFetch("POST", `/rest/v1/pallets?on_conflict=pallet_id`, rec);
   }
 
   async function getPalletFromDB(palletId){
@@ -721,7 +721,7 @@
   async function get(store, key){ if(store==="pallets") return await getPalletFromDB(key); return null; }
   async function add(store, obj){
     if(store==="tracking_to_pallet")
-      await sbFetch("POST", `/rest/v1/pallet_packages`, {tracking:obj.tracking, pallet_id:obj.palletId, notes:""});
+      await sbFetch("POST", `/rest/v1/pallet_packages?on_conflict=tracking`, {tracking:obj.tracking, pallet_id:obj.palletId, notes:""});
   }
   async function del(store, key){
     if(store==="tracking_to_pallet")
