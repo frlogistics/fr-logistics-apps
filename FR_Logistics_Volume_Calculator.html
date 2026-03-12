@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FR-Logistics | Volume Calculator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root{--bg:#f1f5f9;--surface:#fff;--panel:#f8fafc;--border:#e2e8f0;--text:#0f172a;--muted:#64748b;--g1:#0ea55f;--g2:#16a34a;--g3:#15803d;--gdk:#065f46;--glt:#ecfdf5;--gmd:#d1fae5;--gbr:#bbf7d0;--shadow:0 1px 3px rgba(0,0,0,.07),0 4px 14px rgba(0,0,0,.05)}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+    .hdr{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;padding:16px 28px;background:#fff;border-bottom:1px solid var(--border);border-top:4px solid var(--g1);box-shadow:var(--shadow);margin-bottom:28px}
+    .brand{display:flex;align-items:center;gap:14px}
+    .logo{width:48px;height:48px;background:linear-gradient(135deg,#0ea55f,#22c55e);border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:18px;color:#fff;box-shadow:0 4px 12px rgba(14,165,95,.3);flex-shrink:0}
+    .brand h1{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;color:#0f172a}
+    .brand p{font-size:11px;color:var(--muted);margin-top:1px}
+    .hdr-badge{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:.6px;padding:5px 14px;border:1px solid var(--gbr);border-radius:999px;color:var(--g3);background:var(--glt)}
+    .wrap{max-width:1200px;margin:0 auto;padding:0 24px 40px}
+    .page-title{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:#0f172a;margin-bottom:6px}
+    .page-sub{font-size:13px;color:var(--muted);margin-bottom:28px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+    @media(max-width:860px){.grid{grid-template-columns:1fr}}
+    .card{background:#fff;border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column}
+    .card-head{padding:18px 22px;background:var(--panel);border-bottom:1px solid var(--border)}
+    .card-type{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--g2);margin-bottom:4px}
+    .card-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:10px}
+    .card-icon{width:34px;height:34px;border-radius:9px;background:var(--gmd);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+    .card-desc{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5}
+    .cpill{display:inline-flex;align-items:center;gap:6px;background:var(--glt);border:1px solid var(--gbr);border-radius:8px;padding:6px 12px;margin-top:10px;font-size:11.5px;font-weight:600;color:var(--gdk)}
+    .cpill span{font-weight:400;color:var(--g3)}
+    .card-body{padding:22px;display:flex;flex-direction:column;gap:16px;flex:1}
+    .usel{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--panel);border:1px solid var(--border);border-radius:10px}
+    .usel label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+    .usel select{font-family:'DM Sans',sans-serif;border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:500;outline:none;cursor:pointer;flex:1;transition:border-color .15s,box-shadow .15s}
+    .usel select:focus{border-color:var(--g2);box-shadow:0 0 0 3px rgba(22,163,74,.1)}
+    .dg{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+    .sec-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:#475569;margin-bottom:8px}
+    .fld{display:grid;gap:5px}
+    .fld label{font-size:10.5px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:#475569}
+    .fld input{font-family:'DM Sans',sans-serif;width:100%;background:#fff;border:1px solid #cbd5e1;color:#0f172a;border-radius:8px;padding:10px 12px;font-size:14px;font-weight:500;outline:none;transition:border-color .15s,box-shadow .15s;-moz-appearance:textfield}
+    .fld input::-webkit-outer-spin-button,.fld input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+    .fld input:focus{border-color:var(--g2);box-shadow:0 0 0 3px rgba(22,163,74,.1)}
+    .fld input::placeholder{color:#94a3b8}
+    .hint{font-size:10px;color:var(--muted);text-align:right;margin-top:2px;font-style:italic}
+    .btn{font-family:'DM Sans',sans-serif;border:0;cursor:pointer;border-radius:10px;padding:13px 24px;font-size:14px;font-weight:700;background:linear-gradient(135deg,#0ea55f,#16a34a);color:#fff;box-shadow:0 4px 14px rgba(14,165,95,.35);transition:all .13s ease;width:100%;display:flex;align-items:center;justify-content:center;gap:8px}
+    .btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(14,165,95,.4)}
+    .btn:active{transform:scale(.98)}
+    .err{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 16px;font-size:13px;color:#dc2626;display:none}
+    .err.on{display:block}
+    .res{background:var(--glt);border:1.5px solid var(--gbr);border-radius:12px;padding:18px;display:none;flex-direction:column;gap:14px}
+    .res.on{display:flex;animation:fi .25s ease}
+    @keyframes fi{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+    .res-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--g2)}
+    .res-main{display:flex;align-items:flex-end;gap:6px}
+    .res-num{font-family:'Syne',sans-serif;font-size:52px;font-weight:800;color:var(--gdk);line-height:1}
+    .res-unit{font-size:14px;font-weight:600;color:var(--g3);padding-bottom:8px}
+    .bkdn{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+    .bc{background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;text-align:center}
+    .bc-v{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;color:#0f172a}
+    .bc-l{font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-top:2px}
+    .viz-wrap{display:flex;align-items:center;justify-content:center;padding:8px 0}
+    .res-det{font-size:12px;color:var(--g3);background:rgba(255,255,255,.7);border-radius:8px;padding:10px 13px;line-height:1.6}
+    .res-warn{font-size:11.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:9px 12px;line-height:1.5;display:none}
+    .res-warn.on{display:block}
+    .pg-foot{text-align:center;padding:24px 0 10px;font-size:11px;color:#94a3b8}
+    .pg-foot small{color:#cbd5e1;margin-top:4px;display:block;font-size:10px}
+  </style>
+</head>
+<body>
+<header class="hdr">
+  <div class="brand">
+    <div class="logo">FR</div>
+    <div>
+      <h1>FR-Logistics</h1>
+      <p>Miami, FL &middot; 3PL Fulfillment &middot; Amazon FBA Prep &middot; E-Commerce Logistics</p>
+    </div>
+  </div>
+  <div class="hdr-badge">Volume Calculator</div>
+</header>
+<div class="wrap">
+  <div class="page-title">Warehouse Volume Calculator</div>
+  <div class="page-sub">Determine how many units fit in a Bin or a Rack Position. Boxes are placed upright &mdash; only L/W rotation on the surface is applied, height always stacks vertically.</div>
+  <div class="grid">
+
+    <!-- BIN -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-type">Fulfillment Area</div>
+        <div class="card-title">
+          <div class="card-icon">&#x1F4C2;</div>
+          Bin Capacity Calculator
+        </div>
+        <div class="card-desc">How many product units fit inside one standard fulfillment bin?</div>
+        <div class="cpill">Bin size: <span id="bDL">24&quot; L &times; 12&quot; W &times; 4.5&quot; H</span></div>
+      </div>
+      <div class="card-body">
+        <div class="usel">
+          <label>Unit system</label>
+          <select id="bUnit" onchange="bUnitCh()">
+            <option value="in">Inches (in)</option>
+            <option value="cm">Centimeters (cm)</option>
+          </select>
+        </div>
+        <div>
+          <div class="sec-label">Product Dimensions</div>
+          <div class="dg">
+            <div class="fld">
+              <label>Length <span id="bUL">(in)</span></label>
+              <input id="bL" type="number" min="0.01" step="0.01" placeholder="e.g. 8" oninput="clrB()">
+            </div>
+            <div class="fld">
+              <label>Width <span id="bUW">(in)</span></label>
+              <input id="bW" type="number" min="0.01" step="0.01" placeholder="e.g. 6" oninput="clrB()">
+            </div>
+            <div class="fld">
+              <label>Height <span id="bUH">(in)</span></label>
+              <input id="bH" type="number" min="0.01" step="0.01" placeholder="e.g. 3" oninput="clrB()">
+            </div>
+          </div>
+          <div class="hint" id="bHint"></div>
+        </div>
+        <button class="btn" onclick="doCalcBin()">Calculate Bin Capacity</button>
+        <div class="err" id="bErr">Please enter valid product dimensions greater than zero.</div>
+        <div class="res" id="bRes">
+          <div class="res-lbl">Units that fit per bin</div>
+          <div class="res-main">
+            <div class="res-num" id="bN">0</div>
+            <div class="res-unit">units</div>
+          </div>
+          <div class="bkdn">
+            <div class="bc"><div class="bc-v" id="bFL">0</div><div class="bc-l">Along Length</div></div>
+            <div class="bc"><div class="bc-v" id="bFW">0</div><div class="bc-l">Along Width</div></div>
+            <div class="bc"><div class="bc-v" id="bFH">0</div><div class="bc-l">Layers High</div></div>
+          </div>
+          <div class="viz-wrap"><canvas id="bCv" width="280" height="130" style="border-radius:8px"></canvas></div>
+          <div class="res-det" id="bDet"></div>
+          <div class="res-warn" id="bWrn"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RACK -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-type">Bulk Storage Area</div>
+        <div class="card-title">
+          <div class="card-icon">&#x1F3D7;</div>
+          Rack Position Calculator
+        </div>
+        <div class="card-desc">How many cartons/boxes fit on a standard pallet rack position?</div>
+        <div class="cpill">Rack position (pallet): <span id="rDL">40&quot; L &times; 48&quot; W &times; 60&quot; H</span></div>
+      </div>
+      <div class="card-body">
+        <div class="usel">
+          <label>Unit system</label>
+          <select id="rUnit" onchange="rUnitCh()">
+            <option value="in">Inches (in)</option>
+            <option value="cm">Centimeters (cm)</option>
+          </select>
+        </div>
+        <div class="usel">
+          <label>Rack height</label>
+          <select id="rHgt" onchange="rUnitCh();clrR()">
+            <option value="50">50 inches (floor to top)</option>
+            <option value="60" selected>60 inches (floor to top)</option>
+            <option value="70">70 inches (floor to top)</option>
+          </select>
+        </div>
+        <div>
+          <div class="sec-label">Carton / Box Dimensions</div>
+          <div class="dg">
+            <div class="fld">
+              <label>Length <span id="rUL">(in)</span></label>
+              <input id="rL" type="number" min="0.01" step="0.01" placeholder="e.g. 20" oninput="clrR()">
+            </div>
+            <div class="fld">
+              <label>Width <span id="rUW">(in)</span></label>
+              <input id="rW" type="number" min="0.01" step="0.01" placeholder="e.g. 20" oninput="clrR()">
+            </div>
+            <div class="fld">
+              <label>Height <span id="rUH">(in)</span></label>
+              <input id="rH" type="number" min="0.01" step="0.01" placeholder="e.g. 12" oninput="clrR()">
+            </div>
+          </div>
+          <div class="hint" id="rHint"></div>
+        </div>
+        <button class="btn" onclick="doCalcRack()">Calculate Rack Capacity</button>
+        <div class="err" id="rErr">Please enter valid carton dimensions greater than zero.</div>
+        <div class="res" id="rRes">
+          <div class="res-lbl">Cartons that fit per rack position</div>
+          <div class="res-main">
+            <div class="res-num" id="rN">0</div>
+            <div class="res-unit">cartons</div>
+          </div>
+          <div class="bkdn">
+            <div class="bc"><div class="bc-v" id="rFL">0</div><div class="bc-l">Along Length</div></div>
+            <div class="bc"><div class="bc-v" id="rFW">0</div><div class="bc-l">Along Width</div></div>
+            <div class="bc"><div class="bc-v" id="rFH">0</div><div class="bc-l">Layers High</div></div>
+          </div>
+          <div class="viz-wrap"><canvas id="rCv" width="280" height="160" style="border-radius:8px"></canvas></div>
+          <div class="res-det" id="rDet"></div>
+          <div class="res-warn" id="rWrn"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <div class="pg-foot">
+    FR-Logistics &middot; 10893 NW 17th Street, Unit 121, Miami, FL 33172 &middot; (786) 300-1443 &middot; <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="375e5951587751451a5b58505e44435e544419595243">[email&#160;protected]</a> &middot; www.fr-logistics.net
+    <small>Boxes placed upright. Only L/W rotation on surface applied. Height always stacks vertically. Actual capacity may vary due to packaging constraints.</small>
+  </div>
+</div>
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+var BIN_L=24, BIN_W=12, BIN_H=4.5;
+var RCK_L=40, RCK_W=48, RCK_H=60;
+var CM=2.54;
+
+function g(id){return document.getElementById(id)}
+function ti(v,u){return u==='cm'?v/CM:v}
+function tc(v){return (v*CM).toFixed(1)}
+function fr(v){return Math.round(v*100)/100}
+function clrB(){g('bRes').classList.remove('on');g('bErr').classList.remove('on')}
+function clrR(){g('rRes').classList.remove('on');g('rErr').classList.remove('on')}
+
+function fit(pL,pW,pH,cL,cW,cH){
+  var best={total:0,fL:0,fW:0,fH:0,oL:pL,oW:pW};
+  var fH=Math.floor(cH/pH);
+  if(fH<1){return best}
+  var o1L=Math.floor(cL/pL), o1W=Math.floor(cW/pW);
+  if(o1L>0&&o1W>0&&o1L*o1W*fH>best.total){best={total:o1L*o1W*fH,fL:o1L,fW:o1W,fH:fH,oL:pL,oW:pW}}
+  var o2L=Math.floor(cL/pW), o2W=Math.floor(cW/pL);
+  if(o2L>0&&o2W>0&&o2L*o2W*fH>best.total){best={total:o2L*o2W*fH,fL:o2L,fW:o2W,fH:fH,oL:pW,oW:pL}}
+  return best;
+}
+
+function bUnitCh(){
+  var u=g('bUnit').value, s=u==='cm'?'(cm)':'(in)';
+  g('bUL').textContent=s; g('bUW').textContent=s; g('bUH').textContent=s;
+  g('bDL').textContent=u==='cm'?tc(BIN_L)+'cm L x '+tc(BIN_W)+'cm W x '+tc(BIN_H)+'cm H':'24" L x 12" W x 4.5" H';
+  g('bHint').textContent=u==='cm'?'Bin: '+tc(BIN_L)+' x '+tc(BIN_W)+' x '+tc(BIN_H)+' cm':'';
+  clrB();
+}
+
+function rUnitCh(){
+  var u=g('rUnit').value, s=u==='cm'?'(cm)':'(in)';
+  var rh=parseInt(g('rHgt').value)||60;
+  g('rUL').textContent=s; g('rUW').textContent=s; g('rUH').textContent=s;
+  if(u==='cm'){
+    g('rDL').textContent=tc(RCK_L)+' cm L x '+tc(RCK_W)+' cm W x '+tc(rh)+' cm H';
+    g('rHint').textContent='Rack: '+tc(RCK_L)+' x '+tc(RCK_W)+' x '+tc(rh)+' cm';
+  } else {
+    g('rDL').textContent='40" L x 48" W x '+rh+'" H';
+    g('rHint').textContent='';
+  }
+  clrR();
+}
+
+function doCalcBin(){
+  clrB();
+  var u=g('bUnit').value;
+  var pL=parseFloat(g('bL').value);
+  var pW=parseFloat(g('bW').value);
+  var pH=parseFloat(g('bH').value);
+  if(!pL||!pW||!pH||pL<=0||pW<=0||pH<=0){g('bErr').classList.add('on');return}
+  var pLi=ti(pL,u), pWi=ti(pW,u), pHi=ti(pH,u);
+  var f=fit(pLi,pWi,pHi,BIN_L,BIN_W,BIN_H);
+  g('bN').textContent=f.total;
+  g('bFL').textContent=f.fL;
+  g('bFW').textContent=f.fW;
+  g('bFH').textContent=f.fH;
+  var vol=f.total>0?((f.total*pLi*pWi*pHi)/(BIN_L*BIN_W*BIN_H)*100).toFixed(1):0;
+  var oLd=u==='cm'?tc(f.oL)+' cm':fr(f.oL)+'"';
+  var oWd=u==='cm'?tc(f.oW)+' cm':fr(f.oW)+'"';
+  var oHd=u==='cm'?tc(pHi)+' cm':fr(pHi)+'"';
+  if(f.total>0){
+    g('bDet').textContent='Footprint on bin: '+oLd+' L x '+oWd+' W x '+oHd+' H. Volume utilization: '+vol+'%.';
+    var w=g('bWrn');
+    if(f.total===1){w.textContent='Only 1 unit fits. Consider a different bin size.';w.classList.add('on')}
+    else{w.classList.remove('on')}
+  } else {
+    g('bDet').textContent='Product does not fit in the bin in any orientation.';
+    g('bWrn').textContent='Product exceeds bin dimensions. Consider pallet storage.';
+    g('bWrn').classList.add('on');
+  }
+  drawBin(f,pLi,pWi,pHi);
+  g('bRes').classList.add('on');
+}
+
+function doCalcRack(){
+  clrR();
+  var u=g('rUnit').value;
+  var pL=parseFloat(g('rL').value);
+  var pW=parseFloat(g('rW').value);
+  var pH=parseFloat(g('rH').value);
+  if(!pL||!pW||!pH||pL<=0||pW<=0||pH<=0){g('rErr').classList.add('on');return}
+  var pLi=ti(pL,u), pWi=ti(pW,u), pHi=ti(pH,u);
+  var rckH=parseInt(g('rHgt').value)||60;
+  var f=fit(pLi,pWi,pHi,RCK_L,RCK_W,rckH);
+  g('rN').textContent=f.total;
+  g('rFL').textContent=f.fL;
+  g('rFW').textContent=f.fW;
+  g('rFH').textContent=f.fH;
+  var vol=f.total>0?((f.total*pLi*pWi*pHi)/(RCK_L*RCK_W*rckH)*100).toFixed(1):0;
+  var oLd=u==='cm'?tc(f.oL)+' cm':fr(f.oL)+'"';
+  var oWd=u==='cm'?tc(f.oW)+' cm':fr(f.oW)+'"';
+  var oHd=u==='cm'?tc(pHi)+' cm':fr(pHi)+'"';
+  if(f.total>0){
+    g('rDet').textContent='Footprint: '+oLd+' L x '+oWd+' W x '+oHd+' H. Volume utilization: '+vol+'%. Arrangement: '+f.fL+' x '+f.fW+' x '+f.fH+' layers.';
+    var w=g('rWrn');
+    if(f.total===1){w.textContent='Only 1 carton fits. Verify dimensions.';w.classList.add('on')}
+    else{w.classList.remove('on')}
+  } else {
+    g('rDet').textContent='Carton does not fit in the rack position.';
+    g('rWrn').textContent='Carton exceeds rack position dimensions. Please verify measurements.';
+    g('rWrn').classList.add('on');
+  }
+  drawRack(f,pLi,pWi,pHi,rckH);
+  g('rRes').classList.add('on');
+}
+
+function drawBin(f,pL,pW,pH){
+  var cv=g('bCv'), ctx=cv.getContext('2d');
+  var W=cv.width, H=cv.height;
+  ctx.clearRect(0,0,W,H);
+  var M=14;
+  var sx=(W-M*2)/BIN_L, sy=(H-M*2-16)/BIN_W;
+  ctx.fillStyle='#f0fdf4'; ctx.strokeStyle='#0ea55f'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.roundRect(M,M,BIN_L*sx,BIN_W*sy,5); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#065f46'; ctx.font='bold 8px sans-serif';
+  ctx.fillText('BIN (top view)',M+3,M-3);
+  if(f.total>0&&f.fL>0&&f.fW>0){
+    var iW=f.oL*sx, iH=f.oW*sy;
+    var max=Math.min(f.fL*f.fW,100), drawn=0;
+    for(var r=0;r<f.fW&&drawn<max;r++){
+      for(var c=0;c<f.fL&&drawn<max;c++){
+        ctx.fillStyle=(r+c)%2===0?'#22c55e':'#4ade80';
+        ctx.strokeStyle='#fff'; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.roundRect(M+c*iW+1,M+r*iH+1,iW-2,iH-2,2);
+        ctx.fill(); ctx.stroke(); drawn++;
+      }
+    }
+  }
+  ctx.fillStyle='#065f46'; ctx.font='bold 9px sans-serif';
+  ctx.fillText('x '+f.fH+' layer'+(f.fH!==1?'s':'')+' high',W-80,H-2);
+}
+
+function drawRack(f,pL,pW,pH,rckH){
+  if(!rckH) rckH=RCK_H;
+  var cv=g('rCv'), ctx=cv.getContext('2d');
+  var W=cv.width, H=cv.height;
+  ctx.clearRect(0,0,W,H);
+  var M=14;
+  var sx=(W-M*2)/RCK_L, sy=(H-M*2-20)/rckH;
+  ctx.fillStyle='#f0fdf4'; ctx.strokeStyle='#0ea55f'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.roundRect(M,M,RCK_L*sx,rckH*sy,5); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#065f46'; ctx.font='bold 8px sans-serif';
+  ctx.fillText('RACK POSITION (front view)',M+3,M-3);
+  if(f.total>0&&f.fL>0&&f.fH>0){
+    var iW=f.oL*sx, iH=pH*sy;
+    var max=Math.min(f.fL*f.fH,120), drawn=0;
+    var cl=['#16a34a','#22c55e','#4ade80'];
+    for(var l=0;l<f.fH&&drawn<max;l++){
+      for(var c=0;c<f.fL&&drawn<max;c++){
+        ctx.fillStyle=cl[(l+c)%3]; ctx.strokeStyle='#fff'; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.roundRect(M+c*iW+1,M+(f.fH-1-l)*iH+1,iW-2,iH-2,2);
+        ctx.fill(); ctx.stroke(); drawn++;
+      }
+    }
+  }
+  ctx.fillStyle='#d97706';
+  ctx.fillRect(M,M+rckH*sy-4,RCK_L*sx,5,RCK_L*sx,5);
+  ctx.fillStyle='#92400e'; ctx.font='7px sans-serif';
+  ctx.fillText('PALLET',M+3,M+rckH*sy+10);
+  ctx.fillStyle='#065f46'; ctx.font='bold 9px sans-serif';
+  ctx.fillText('x '+f.fW+' deep',W-58,H-2);
+}
+</script>
+</body>
+</html>

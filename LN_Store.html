@@ -1,0 +1,1127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FR-LOGISTICS • LN-Store • Inbound & Outbound </title>
+
+  <style>
+    :root{
+      /* ✅ Light gray background (LN-Store) */
+      --bg:#f1f5f9;              /* slate-100 */
+      --card:#ffffff;
+      --line: rgba(15,23,42,.12);
+      --text:#0f172a;
+      --muted:#475569;
+
+      --accent:#0ea5e9;          /* blue accent */
+      --accent2:#22c55e;         /* green */
+      --bad:#ef4444;
+      --ok:#16a34a;
+
+      --radius:14px;
+      --shadow: 0 14px 40px rgba(2,6,23,.10);
+    }
+
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      background: var(--bg);
+      color: var(--text);
+      min-height:100vh;
+      display:flex;
+      flex-direction:column;
+    }
+
+    header{
+      padding:14px 18px;
+      border-bottom:1px solid var(--line);
+      background: rgba(255,255,255,.92);
+      position:sticky; top:0;
+      backdrop-filter: blur(10px);
+      z-index: 5;
+    }
+    .headRow{
+      max-width:1200px;
+      margin:0 auto;
+      display:flex;
+      gap:12px;
+      align-items:center;
+      justify-content:space-between;
+    }
+    .brand{
+      display:flex; align-items:center; gap:12px;
+    }
+    .brand img{
+      height:34px; width:auto; display:block;
+      border-radius:10px;
+      border:1px solid var(--line);
+      background:#fff;
+      padding:6px;
+    }
+    header h1{margin:0; font-size:15px; font-weight:950; letter-spacing:.2px}
+    header .sub{margin-top:4px; color:var(--muted); font-size:12px}
+
+    .wrap{
+      max-width:1200px;
+      width:100%;
+      margin:0 auto;
+      padding:16px;
+      flex:1;
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1.05fr .95fr;
+      gap:14px;
+      align-items:start;
+    }
+
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      padding:14px;
+      box-shadow:var(--shadow);
+    }
+    .card h2{margin:0 0 10px; font-size:14px}
+    .card h3{margin:12px 0 8px; font-size:13px; color:#334155}
+
+    label{
+      display:block;
+      font-size:12px;
+      color:var(--muted);
+      margin:10px 0 6px;
+    }
+
+    input, select, textarea{
+      width:100%;
+      background:#fff;
+      color:var(--text);
+      border:1px solid rgba(15,23,42,.18);
+      border-radius:12px;
+      padding:10px 10px;
+      outline:none;
+    }
+    input:focus, select:focus, textarea:focus{
+      border-color: rgba(14,165,233,.75);
+      box-shadow: 0 0 0 3px rgba(14,165,233,.16);
+    }
+
+    textarea{min-height:70px; resize:vertical}
+
+    .row{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+    .row3{display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px;}
+    .btns{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;}
+
+    button{
+      border:1px solid rgba(15,23,42,.16);
+      border-radius:12px;
+      padding:10px 12px;
+      background:rgba(2,6,23,.04);
+      color:var(--text);
+      cursor:pointer;
+      font-weight:950;
+    }
+    button.primary{
+      background: linear-gradient(135deg, rgba(14,165,233,.18), rgba(34,197,94,.12));
+      border-color: rgba(14,165,233,.50);
+    }
+    button.danger{
+      background:rgba(239,68,68,.08);
+      border-color:rgba(239,68,68,.40);
+    }
+    button:hover{filter:brightness(1.03)}
+
+    .hint{margin-top:8px; font-size:12px; color:var(--muted)}
+
+    .status{
+      margin-top:10px;
+      font-size:12px;
+      padding:9px 10px;
+      border-radius:12px;
+      border:1px solid rgba(15,23,42,.14);
+      background: rgba(2,6,23,.03);
+    }
+    .status.ok{
+      border-color:rgba(22,163,74,.40);
+      background:rgba(22,163,74,.07);
+      color:#14532d;
+      font-weight:900;
+    }
+    .status.bad{
+      border-color:rgba(239,68,68,.55);
+      background:rgba(239,68,68,.08);
+      color:#7f1d1d;
+      font-weight:950;
+    }
+
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    table{width:100%; border-collapse:collapse; margin-top:10px; font-size:12px;}
+    th, td{padding:8px 8px; border-bottom:1px solid rgba(15,23,42,.10); text-align:left; vertical-align:top}
+    th{
+      color:#0f172a; font-weight:950;
+      background:rgba(2,6,23,.03);
+      position:sticky; top:0;
+    }
+    .tableWrap{
+      max-height:420px;
+      overflow:auto;
+      border:1px solid rgba(15,23,42,.12);
+      border-radius:12px;
+    }
+
+    .pill{
+      display:inline-block;
+      padding:3px 8px;
+      border-radius:999px;
+      border:1px solid rgba(14,165,233,.35);
+      background:rgba(14,165,233,.10);
+      color:#0c4a6e;
+      font-weight:950;
+      white-space:nowrap;
+    }
+    .pill.green{
+      border-color: rgba(34,197,94,.35);
+      background: rgba(34,197,94,.10);
+      color:#14532d;
+    }
+
+    .split{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:14px;
+    }
+
+    /* Query results box */
+    .qBox{
+      border:1px solid rgba(15,23,42,.12);
+      background:rgba(2,6,23,.02);
+      border-radius:12px;
+      padding:10px;
+      margin-top:10px;
+    }
+    .qGrid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+      font-size:12px;
+    }
+    .qItem b{
+      display:block;
+      font-size:11px;
+      color:var(--muted);
+      margin-bottom:3px;
+      text-transform:uppercase;
+      letter-spacing:.35px;
+      font-weight:950;
+    }
+    .qVal{font-weight:950}
+    .qNotFound{
+      font-weight:950;
+      color:#7f1d1d;
+      border:1px solid rgba(239,68,68,.55);
+      background:rgba(239,68,68,.08);
+      padding:10px;
+      border-radius:12px;
+      margin-top:10px;
+      text-align:center;
+    }
+
+    /* Modal */
+    dialog{border:none; border-radius:16px; padding:0; background:transparent;}
+    .modal{
+      width:min(920px, 96vw);
+      background:#fff;
+      border:1px solid rgba(15,23,42,.12);
+      border-radius:16px; overflow:hidden;
+      box-shadow:var(--shadow);
+    }
+    .modalHead{
+      display:flex; justify-content:space-between; align-items:center;
+      padding:12px 14px; border-bottom:1px solid rgba(15,23,42,.10);
+      background:rgba(2,6,23,.02);
+    }
+    .modalHead b{font-size:13px}
+    .modalBody{padding:14px}
+    .modalBtns{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;}
+
+    /* Label 4x6 */
+    .label{
+      width:4in; height:6in;
+      background:#fff; color:#000;
+      border:1px solid #ddd;
+      padding:0.15in;
+      box-sizing:border-box;
+      border-radius:10px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      overflow:hidden;
+    }
+    .label .track{
+      font-size:30px;
+      font-weight:950;
+      letter-spacing:.2px;
+      word-break:break-all;
+    }
+    .label .meta{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:6px 12px;
+      font-size:14px
+    }
+    .label .meta div b{
+      display:block;
+      font-size:11px;
+      color:#444;
+      margin-bottom:2px;
+      font-weight:950;
+      text-transform:uppercase;
+      letter-spacing:.4px
+    }
+    .label .client{font-size:20px; font-weight:950}
+    .label .type{font-size:18px; font-weight:950}
+    .label .qrWrap{
+      margin-top:auto;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      padding-top:6px;
+    }
+    .label .qrHint{
+      font-size:10px;
+      color:#666;
+      text-align:center;
+      margin-top:6px
+    }
+
+    /* ✅ PRINT FIXES (Rollo 4x6) */
+    @page{ size: 4in 6in; margin: 0; }
+    @media print{
+      html, body{
+        margin:0 !important;
+        padding:0 !important;
+        height:auto !important;
+        overflow:visible !important;
+        background:#fff !important;
+      }
+      header, .wrap, .modalHead, .modalBtns, .modalBody .hint, .modalBody .tools, footer{
+        display:none !important;
+      }
+      dialog{
+        display:block !important;
+        position:static !important;
+        margin:0 !important;
+        padding:0 !important;
+        overflow:visible !important;
+      }
+      .modal{
+        border:none !important;
+        border-radius:0 !important;
+        box-shadow:none !important;
+        background:transparent !important;
+        width:auto !important;
+      }
+      .modalBody{padding:0 !important;}
+      .label{
+        width:4in !important;
+        height:6in !important;
+        padding:0.10in !important;
+        border:none !important;
+        border-radius:0 !important;
+        overflow:hidden !important;
+      }
+      .label .track{ font-size:28px !important; }
+      .label .meta{ font-size:13px !important; }
+      .label .client{ font-size:18px !important; }
+      .label .type{ font-size:16px !important; }
+      .label .qrWrap{ padding-top:4px !important; }
+      .label .qrHint{ display:none !important; }
+    }
+
+    footer{
+      border-top:1px solid var(--line);
+      background: rgba(255,255,255,.70);
+      padding:12px 18px;
+    }
+    .footRow{
+      max-width:1200px;
+      margin:0 auto;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .welcome{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      color:var(--muted);
+      font-size:12px;
+      font-weight:900;
+    }
+    .welcome b{color:var(--text); font-weight:950;}
+    .liam{
+      height:44px;
+      width:auto;
+      display:block;
+      border-radius:12px;
+      border:1px solid rgba(15,23,42,.10);
+      background:#fff;
+      padding:6px;
+    }
+  </style>
+</head>
+
+<body>
+<header>
+  <div class="headRow">
+    <div class="brand">
+      <!-- Optional: place LN-Store logo in same folder as ln_logo.png -->
+      <img src="fr_logo.png" alt="fr Logo" onerror="this.style.display='none'">
+      <div>
+        <h1>FR-LOGISTICS • Inbound & Outbound • Drop-Shipment</h1>
+        <div class="sub">Client: <b>LN-Store</b> • Outbound Carrier: <b>Mail de las Americas</b> </div>
+      </div>
+    </div>
+    <div style="font-size:12px; color:var(--muted); font-weight:900;">
+      Save → Print 4x6 → Export
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="grid">
+
+    <!-- LEFT: INBOUND + OUTBOUND REGISTRATION -->
+    <div class="card">
+      <h2>Register shipments (LN-Store)</h2>
+
+      <div class="split">
+        <!-- INBOUND -->
+        <div>
+          <h3>Inbound Registration</h3>
+
+          <label>Inbound Tracking Number (USB scanner)</label>
+          <input id="inTracking" class="mono" placeholder="Scan inbound tracking and press Enter" autocomplete="off" />
+
+          <div class="row">
+            <div>
+              <label>Inbound Carrier</label>
+              <select id="inCarrier"></select>
+              <div class="hint">Auto-suggested by tracking pattern. You can override.</div>
+            </div>
+            <div>
+              <label>Inbound Type</label>
+              <select id="inType"></select>
+            </div>
+          </div>
+
+          <label>Client (FIXED)</label>
+          <input id="clientFixed" value="LN-Store" readonly />
+
+          <label>Inbound Notes (optional)</label>
+          <textarea id="inNotes" placeholder="Example: boxes received, damages, missing docs, etc."></textarea>
+
+          <div class="btns">
+            <button class="primary" id="saveInboundBtn">Save Inbound</button>
+            <button id="goLabelInboundBtn">Label / Print (Inbound)</button>
+          </div>
+
+          <div id="inStatus" class="status">Ready.</div>
+        </div>
+
+        <!-- OUTBOUND -->
+        <div>
+          <h3>Outbound Registration</h3>
+
+          <label>Outbound Tracking Number (USB scanner)</label>
+          <input id="outTracking" class="mono" placeholder="Scan outbound tracking and press Enter" autocomplete="off" />
+
+          <div class="row">
+            <div>
+              <label>Outbound Carrier (FIXED)</label>
+              <input id="outCarrierFixed" value="Mail de las Americas" readonly />
+            </div>
+            <div>
+              <label>Outbound Type</label>
+              <select id="outType"></select>
+            </div>
+          </div>
+
+          <label>Client (FIXED)</label>
+          <input value="LN-Store" readonly />
+
+          <label>Outbound Notes (optional)</label>
+          <textarea id="outNotes" placeholder="Example: destination, service level, customs docs, etc."></textarea>
+
+          <div class="btns">
+            <button class="primary" id="saveOutboundBtn">Save Outbound</button>
+            <button id="goLabelOutboundBtn">Label / Print (Outbound)</button>
+            <button class="danger" id="wipeBtn" title="Deletes all local data for LN-Store app">Wipe local data</button>
+          </div>
+
+          <div id="outStatus" class="status">Ready.</div>
+        </div>
+      </div>
+
+      <div class="hint tools">
+        Data is stored locally on this PC (IndexedDB). For multi-user access, we can connect to SharePoint/DB.
+      </div>
+    </div>
+
+    <!-- RIGHT: QUERY + TABLES + EXPORT -->
+    <div class="card">
+      <h2>Lookup + Export</h2>
+
+      <h3>Lookup by Tracking</h3>
+      <div class="row">
+        <div>
+          <label>Scan / Enter tracking</label>
+          <input id="qTracking" class="mono" placeholder="Scan and press Enter" autocomplete="off" />
+        </div>
+        <div style="display:flex; align-items:end; gap:10px;">
+          <button class="primary" id="qFindBtn" style="width:100%;">Find</button>
+        </div>
+      </div>
+
+      <div id="qResult"></div>
+
+      <h3 style="margin-top:16px;">Filters</h3>
+      <div class="row">
+        <div>
+          <label>Search (tracking / notes)</label>
+          <input id="search" class="mono" placeholder="Type and press Enter" />
+        </div>
+        <div>
+          <label>Month filter</label>
+          <input id="monthFilter" type="month" />
+        </div>
+      </div>
+
+      <div class="btns">
+        <button id="exportCsvBtn">Export CSV</button>
+        <button id="exportXlsxBtn">Export Excel (.xlsx)</button>
+        <button id="refreshBtn">Refresh tables</button>
+      </div>
+
+      <div class="hint tools">Excel export uses SheetJS (CDN). If you need an offline-only version, I can adjust it.</div>
+
+      <h3 style="margin-top:14px;">Inbound Log</h3>
+      <div class="tableWrap">
+        <table id="inTbl">
+          <thead>
+            <tr>
+              <th>Date/Time</th>
+              <th>Direction</th>
+              <th>Tracking</th>
+              <th>Type</th>
+              <th>Carrier</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-top:14px;">Outbound Log</h3>
+      <div class="tableWrap">
+        <table id="outTbl">
+          <thead>
+            <tr>
+              <th>Date/Time</th>
+              <th>Direction</th>
+              <th>Tracking</th>
+              <th>Type</th>
+              <th>Carrier</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="hint" id="summary"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Label modal -->
+<dialog id="labelDlg">
+  <div class="modal">
+    <div class="modalHead">
+      <b>4x6 Label (White) + QR</b>
+      <button id="closeDlg">Close</button>
+    </div>
+    <div class="modalBody">
+      <div class="row tools">
+        <div>
+          <label>Tracking to print</label>
+          <input id="labelTracking" class="mono" placeholder="Paste tracking and press Enter" />
+          <div class="hint">Tip: use Print button in any table or lookup result.</div>
+        </div>
+        <div>
+          <label>Last saved</label>
+          <input id="lastSaved" class="mono" readonly />
+          <div class="hint">You can copy/paste this tracking.</div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px; display:flex; justify-content:center;">
+        <div class="label">
+          <div class="track mono" id="L_tracking">—</div>
+
+          <div class="meta">
+            <div><b>Date</b><span id="L_date">—</span></div>
+            <div><b>Time</b><span id="L_time">—</span></div>
+
+            <div style="grid-column:1 / span 2;">
+              <b>Client</b><div class="client" id="L_client">LN-Store</div>
+            </div>
+
+            <div style="grid-column:1 / span 2;">
+              <b>Direction</b><div class="type" id="L_direction">—</div>
+            </div>
+
+            <div style="grid-column:1 / span 2;">
+              <b>Type</b><div class="type" id="L_type">—</div>
+            </div>
+
+            <div style="grid-column:1 / span 2;">
+              <b>Carrier</b><span id="L_carrier">—</span>
+            </div>
+          </div>
+
+          <div class="qrWrap">
+            <div>
+              <div id="qr"></div>
+              <div class="qrHint">Scan QR to capture tracking</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modalBtns tools">
+        <button class="primary" id="printBtn">Print 4x6</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<footer>
+  <div class="footRow">
+    <div class="welcome">
+      <span>✅</span>
+      <div><b>Welcome to FR-Logistics</b><div style="color:var(--muted); font-weight:900;">LN-Store Inbound & Outbound</div></div>
+    </div>
+
+    <!-- Optional: put Liam image in same folder as liam.png -->
+    <img class="liam" src="liam.png" alt="Liam" onerror="this.style.display='none'">
+  </div>
+</footer>
+
+<!-- QR library (CDN) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- SheetJS (CDN) for XLSX export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.20.3/xlsx.full.min.js"></script>
+
+<script>
+  /***********************
+   * Config
+   ***********************/
+  const FIXED_CLIENT = "LN-Store";
+  const OUTBOUND_FIXED_CARRIER = "Mail de las Americas";
+
+  const IN_CARRIERS = ["Amazon","USPS","UPS","FedEx","Other"];
+  const IN_TYPES = ["Inbound (Drop-Shipment)","Other"];
+
+  const OUT_TYPES = ["Outbound (Drop-Shipment)","Return to Sender","Replacement","Other"];
+
+  /***********************
+   * IndexedDB (LN-Store app)
+   ***********************/
+  const DB_NAME = "lnstore_inout_db";
+  const STORE = "shipments";
+  let db;
+
+  function openDB(){
+    return new Promise((resolve,reject)=>{
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = (e)=>{
+        const db = e.target.result;
+        const store = db.createObjectStore(STORE, { keyPath: "tracking" }); // tracking unique across inbound+outbound
+        store.createIndex("createdAt", "createdAt");
+        store.createIndex("direction", "direction");
+      };
+      req.onsuccess = ()=>{ db = req.result; resolve(db); };
+      req.onerror = ()=>reject(req.error);
+    });
+  }
+  function tx(mode){ return db.transaction(STORE, mode).objectStore(STORE); }
+
+  function addShipment(item){
+    return new Promise((resolve,reject)=>{
+      const req = tx("readwrite").add(item);
+      req.onsuccess = ()=>resolve(true);
+      req.onerror = ()=>reject(req.error);
+    });
+  }
+
+  function getShipment(tracking){
+    return new Promise((resolve,reject)=>{
+      const req = tx("readonly").get(tracking);
+      req.onsuccess = ()=>resolve(req.result || null);
+      req.onerror = ()=>reject(req.error);
+    });
+  }
+
+  function getAllShipments(){
+    return new Promise((resolve,reject)=>{
+      const req = tx("readonly").getAll();
+      req.onsuccess = ()=>resolve(req.result || []);
+      req.onerror = ()=>reject(req.error);
+    });
+  }
+
+  function clearAll(){
+    return new Promise((resolve,reject)=>{
+      const req = tx("readwrite").clear();
+      req.onsuccess = ()=>resolve(true);
+      req.onerror = ()=>reject(req.error);
+    });
+  }
+
+  /***********************
+   * Helpers
+   ***********************/
+  const $ = (id)=>document.getElementById(id);
+
+  function setBoxStatus(elId, msg, kind=""){
+    const el = $(elId);
+    el.textContent = msg;
+    el.className = "status" + (kind ? " " + kind : "");
+  }
+
+  function suggestInboundCarrier(trk){
+    const t = (trk||"").trim();
+    if(!t) return "Other";
+    if(t.startsWith("TBA")) return "Amazon";
+    if(t.startsWith("1Z")) return "UPS";
+    if(t.length===22 && t[0]==="9" && /^\d+$/.test(t)) return "USPS";
+    if((t.length===12 || t.length===15) && /^\d+$/.test(t)) return "FedEx";
+    return "Other";
+  }
+
+  function fmtDate(d){
+    const dt = new Date(d);
+    const mm = String(dt.getMonth()+1).padStart(2,"0");
+    const dd = String(dt.getDate()).padStart(2,"0");
+    const yy = dt.getFullYear();
+    return `${mm}/${dd}/${yy}`;
+  }
+
+  function fmtTime(d){
+    const dt = new Date(d);
+    let h = dt.getHours();
+    const m = String(dt.getMinutes()).padStart(2,"0");
+    const ampm = h>=12 ? "PM":"AM";
+    h = h%12; if(h===0) h=12;
+    return `${h}:${m} ${ampm}`;
+  }
+
+  function monthKey(d){
+    const dt = new Date(d);
+    return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}`;
+  }
+
+  function fillSelect(sel, arr){
+    sel.innerHTML = "";
+    for(const v of arr){
+      const opt = document.createElement("option");
+      opt.value = v; opt.textContent = v;
+      sel.appendChild(opt);
+    }
+  }
+
+  function setLastSaved(trk){
+    localStorage.setItem("lnstore_last_tracking", trk || "");
+    $("lastSaved").value = trk || "";
+  }
+  function getLastSaved(){
+    return localStorage.getItem("lnstore_last_tracking") || "";
+  }
+
+  /***********************
+   * Lookup (NO FOUND)
+   ***********************/
+  function renderLookup(item){
+    const box = $("qResult");
+    if(!item){
+      box.innerHTML = `<div class="qNotFound">NO FOUND</div>`;
+      return;
+    }
+
+    box.innerHTML = `
+      <div class="qBox">
+        <div class="qGrid">
+          <div class="qItem"><b>Tracking</b><div class="qVal mono">${item.tracking}</div></div>
+          <div class="qItem"><b>Direction</b><div class="qVal">${item.direction}</div></div>
+          <div class="qItem"><b>Date</b><div class="qVal">${fmtDate(item.createdAt)}</div></div>
+          <div class="qItem"><b>Time</b><div class="qVal">${fmtTime(item.createdAt)}</div></div>
+          <div class="qItem" style="grid-column:1 / span 2;"><b>Client</b><div class="qVal">${item.client}</div></div>
+          <div class="qItem" style="grid-column:1 / span 2;"><b>Type</b><div class="qVal">${item.type}</div></div>
+          <div class="qItem" style="grid-column:1 / span 2;"><b>Carrier</b><div class="qVal">${item.carrier}</div></div>
+        </div>
+        <div class="btns" style="margin-top:10px;">
+          <button class="primary" id="qPrintBtn">Print label</button>
+        </div>
+      </div>
+    `;
+
+    $("qPrintBtn").addEventListener("click", async ()=>{
+      await openLabel(item.tracking);
+    });
+  }
+
+  async function doLookup(){
+    const trk = $("qTracking").value.trim();
+    if(!trk){ renderLookup(null); return; }
+    const item = await getShipment(trk);
+    renderLookup(item);
+  }
+
+  /***********************
+   * Tables
+   ***********************/
+  async function renderTables(){
+    const inTbody = $("inTbl").querySelector("tbody");
+    const outTbody = $("outTbl").querySelector("tbody");
+    inTbody.innerHTML = "";
+    outTbody.innerHTML = "";
+
+    let data = await getAllShipments();
+    data.sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
+
+    const search = $("search").value.trim().toLowerCase();
+    const mf = $("monthFilter").value;
+
+    if(search){
+      data = data.filter(x =>
+        (x.tracking||"").toLowerCase().includes(search) ||
+        (x.notes||"").toLowerCase().includes(search)
+      );
+    }
+    if(mf){
+      data = data.filter(x => monthKey(x.createdAt) === mf);
+    }
+
+    const inbound = data.filter(x => x.direction === "Inbound");
+    const outbound = data.filter(x => x.direction === "Outbound");
+
+    for(const item of inbound){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${fmtDate(item.createdAt)} ${fmtTime(item.createdAt)}</td>
+        <td><span class="pill green">Inbound</span></td>
+        <td class="mono">${item.tracking}</td>
+        <td><span class="pill">${item.type}</span></td>
+        <td>${item.carrier}</td>
+        <td><button data-print="${item.tracking}">Print</button></td>
+      `;
+      inTbody.appendChild(tr);
+    }
+
+    for(const item of outbound){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${fmtDate(item.createdAt)} ${fmtTime(item.createdAt)}</td>
+        <td><span class="pill">Outbound</span></td>
+        <td class="mono">${item.tracking}</td>
+        <td><span class="pill">${item.type}</span></td>
+        <td>${item.carrier}</td>
+        <td><button data-print="${item.tracking}">Print</button></td>
+      `;
+      outTbody.appendChild(tr);
+    }
+
+    // Bind print buttons
+    [...inTbody.querySelectorAll("button[data-print]"), ...outTbody.querySelectorAll("button[data-print]")].forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const trk = btn.getAttribute("data-print");
+        await openLabel(trk);
+      });
+    });
+
+    $("summary").textContent = `Inbound rows: ${inbound.length} • Outbound rows: ${outbound.length} • Total: ${data.length}`;
+  }
+
+  /***********************
+   * Label + QR (180x180)
+   ***********************/
+  let qr;
+  function resetQR(){
+    const qrel = $("qr");
+    qrel.innerHTML = "";
+    qr = new QRCode(qrel, { text:"", width:180, height:180, correctLevel: QRCode.CorrectLevel.M });
+  }
+
+  async function loadLabel(trk){
+    const item = await getShipment(trk);
+    if(!item){
+      alert("Tracking not found.");
+      return null;
+    }
+    $("L_tracking").textContent = item.tracking;
+    $("L_date").textContent = fmtDate(item.createdAt);
+    $("L_time").textContent = fmtTime(item.createdAt);
+    $("L_client").textContent = FIXED_CLIENT;
+    $("L_direction").textContent = item.direction;
+    $("L_type").textContent = item.type;
+    $("L_carrier").textContent = item.carrier;
+
+    resetQR();
+    qr.makeCode(item.tracking);
+    return item;
+  }
+
+  async function openLabel(trk){
+    $("labelTracking").value = trk || "";
+    $("labelDlg").showModal();
+    if(trk) await loadLabel(trk);
+  }
+
+  /***********************
+   * Exports
+   ***********************/
+  async function exportCSV(){
+    const data = await getAllShipments();
+    data.sort((a,b)=> new Date(a.createdAt) - new Date(b.createdAt));
+
+    const rows = [["Date","Time","Direction","Tracking","Carrier","Type","Client","Notes"]];
+    for(const x of data){
+      rows.push([fmtDate(x.createdAt), fmtTime(x.createdAt), x.direction, x.tracking, x.carrier, x.type, x.client, (x.notes||"")]);
+    }
+    const csv = rows.map(r => r.map(v => `"${String(v??"").replaceAll('"','""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `LNStore_InOut_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+  }
+
+  async function exportXLSX(){
+    const data = await getAllShipments();
+    data.sort((a,b)=> new Date(a.createdAt) - new Date(b.createdAt));
+
+    const inbound = data.filter(x=>x.direction==="Inbound");
+    const outbound = data.filter(x=>x.direction==="Outbound");
+
+    const makeSheet = (rows)=>XLSX.utils.aoa_to_sheet(rows);
+
+    const wb = XLSX.utils.book_new();
+
+    const inRows = [["Date","Time","Direction","Tracking","Carrier","Type","Client","Notes"]];
+    for(const x of inbound){
+      inRows.push([fmtDate(x.createdAt), fmtTime(x.createdAt), x.direction, x.tracking, x.carrier, x.type, x.client, (x.notes||"")]);
+    }
+    XLSX.utils.book_append_sheet(wb, makeSheet(inRows), "Inbound_Log");
+
+    const outRows = [["Date","Time","Direction","Tracking","Carrier","Type","Client","Notes"]];
+    for(const x of outbound){
+      outRows.push([fmtDate(x.createdAt), fmtTime(x.createdAt), x.direction, x.tracking, x.carrier, x.type, x.client, (x.notes||"")]);
+    }
+    XLSX.utils.book_append_sheet(wb, makeSheet(outRows), "Outbound_Log");
+
+    XLSX.writeFile(wb, `LNStore_InOut_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  /***********************
+   * Boot
+   ***********************/
+  (async function init(){
+    await openDB();
+
+    // Fill selects
+    fillSelect($("inCarrier"), IN_CARRIERS);
+    fillSelect($("inType"), IN_TYPES);
+    fillSelect($("outType"), OUT_TYPES);
+
+    // Defaults
+    $("clientFixed").value = FIXED_CLIENT;
+    $("inCarrier").value = "Other";
+    $("inType").value = "Inbound (Prep Service)";
+    $("outType").value = "Outbound (Shipment)";
+
+    const last = getLastSaved();
+    setLastSaved(last);
+
+    // Auto-suggest inbound carrier
+    $("inTracking").addEventListener("input", ()=>{
+      $("inCarrier").value = suggestInboundCarrier($("inTracking").value);
+    });
+
+    // Enter to save inbound
+    $("inTracking").addEventListener("keydown", async (e)=>{
+      if(e.key==="Enter"){
+        e.preventDefault();
+        $("saveInboundBtn").click();
+      }
+    });
+
+    // Enter to save outbound
+    $("outTracking").addEventListener("keydown", async (e)=>{
+      if(e.key==="Enter"){
+        e.preventDefault();
+        $("saveOutboundBtn").click();
+      }
+    });
+
+    // Save inbound with duplicate check
+    $("saveInboundBtn").addEventListener("click", async ()=>{
+      const tracking = $("inTracking").value.trim();
+      if(!tracking){
+        setBoxStatus("inStatus","Scan an inbound tracking number.","bad");
+        return;
+      }
+
+      const existing = await getShipment(tracking);
+      if(existing){
+        setBoxStatus("inStatus","Tracking number already registered","bad");
+        return;
+      }
+
+      const item = {
+        tracking,
+        direction: "Inbound",
+        createdAt: new Date().toISOString(),
+        carrier: $("inCarrier").value,
+        type: $("inType").value,
+        client: FIXED_CLIENT,
+        notes: $("inNotes").value.trim()
+      };
+
+      try{
+        await addShipment(item);
+        setLastSaved(tracking);
+        setBoxStatus("inStatus","Inbound saved successfully.","ok");
+
+        $("inTracking").value = "";
+        $("inNotes").value = "";
+        $("inCarrier").value = "Other";
+        $("inType").value = "Inbound (Prep Service)";
+
+        await renderTables();
+        $("inTracking").focus();
+      }catch(err){
+        setBoxStatus("inStatus","Tracking number already registered","bad");
+      }
+    });
+
+    // Save outbound with duplicate check; carrier fixed
+    $("saveOutboundBtn").addEventListener("click", async ()=>{
+      const tracking = $("outTracking").value.trim();
+      if(!tracking){
+        setBoxStatus("outStatus","Scan an outbound tracking number.","bad");
+        return;
+      }
+
+      const existing = await getShipment(tracking);
+      if(existing){
+        setBoxStatus("outStatus","Tracking number already registered","bad");
+        return;
+      }
+
+      const item = {
+        tracking,
+        direction: "Outbound",
+        createdAt: new Date().toISOString(),
+        carrier: OUTBOUND_FIXED_CARRIER,
+        type: $("outType").value,
+        client: FIXED_CLIENT,
+        notes: $("outNotes").value.trim()
+      };
+
+      try{
+        await addShipment(item);
+        setLastSaved(tracking);
+        setBoxStatus("outStatus","Outbound saved successfully.","ok");
+
+        $("outTracking").value = "";
+        $("outNotes").value = "";
+        $("outType").value = "Outbound (Shipment)";
+
+        await renderTables();
+        $("outTracking").focus();
+      }catch(err){
+        setBoxStatus("outStatus","Tracking number already registered","bad");
+      }
+    });
+
+    // Label buttons
+    $("goLabelInboundBtn").addEventListener("click", async ()=>{
+      const last = getLastSaved();
+      await openLabel(last || "");
+      $("labelTracking").focus();
+    });
+    $("goLabelOutboundBtn").addEventListener("click", async ()=>{
+      const last = getLastSaved();
+      await openLabel(last || "");
+      $("labelTracking").focus();
+    });
+
+    // Wipe local
+    $("wipeBtn").addEventListener("click", async ()=>{
+      if(confirm("This will delete ALL local inbound/outbound records for LN-Store on this PC. Continue?")){
+        await clearAll();
+        setLastSaved("");
+        setBoxStatus("inStatus","Local data wiped.","ok");
+        setBoxStatus("outStatus","Local data wiped.","ok");
+        $("qResult").innerHTML = "";
+        await renderTables();
+      }
+    });
+
+    // Lookup
+    $("qTracking").addEventListener("keydown", async (e)=>{
+      if(e.key==="Enter"){
+        e.preventDefault();
+        await doLookup();
+      }
+    });
+    $("qFindBtn").addEventListener("click", doLookup);
+
+    // Filters
+    $("search").addEventListener("keydown", (e)=>{
+      if(e.key==="Enter") renderTables();
+    });
+    $("monthFilter").addEventListener("change", renderTables);
+    $("refreshBtn").addEventListener("click", renderTables);
+
+    // Exports
+    $("exportCsvBtn").addEventListener("click", exportCSV);
+    $("exportXlsxBtn").addEventListener("click", exportXLSX);
+
+    // Label modal
+    $("closeDlg").addEventListener("click", ()=> $("labelDlg").close());
+    $("labelTracking").addEventListener("keydown", async (e)=>{
+      if(e.key==="Enter"){
+        e.preventDefault();
+        const trk = $("labelTracking").value.trim();
+        if(trk) await loadLabel(trk);
+      }
+    });
+    $("printBtn").addEventListener("click", ()=> window.print());
+    $("labelDlg").addEventListener("close", ()=>{ $("labelTracking").value = ""; });
+
+    // Initial render
+    await renderTables();
+    $("inTracking").focus();
+  })();
+</script>
+</body>
+</html>

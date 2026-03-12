@@ -1,0 +1,1242 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FR-Logistics • Returns Pallet Builder (No WMS)</title>
+
+  <style>
+    :root{
+      --bg:#f6f7fb;
+      --card:#ffffff;
+      --line: rgba(15,23,42,.12);
+      --text:#0f172a;
+      --muted:#475569;
+
+      --fr-green:#1fa463;
+      --fr-teal:#16a3b5;
+
+      --ok:#16a34a;
+      --bad:#ef4444;
+      --warn:#f59e0b;
+
+      --radius:16px;
+      --shadow: 0 18px 40px rgba(2,6,23,.10);
+    }
+
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      background:
+        radial-gradient(900px 520px at 18% 6%, rgba(31,164,99,.12), transparent 60%),
+        radial-gradient(900px 520px at 82% 6%, rgba(22,163,181,.10), transparent 60%),
+        var(--bg);
+      color:var(--text);
+      min-height:100vh;
+      display:flex;
+      flex-direction:column;
+    }
+
+    header{
+      padding:14px 18px;
+      border-bottom:1px solid var(--line);
+      background:rgba(255,255,255,.82);
+      position:sticky; top:0;
+      backdrop-filter: blur(10px);
+      z-index: 5;
+    }
+    .headRow{
+      max-width:1500px;
+      margin:0 auto;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .brand{display:flex; align-items:center; gap:12px;}
+    .brand img{
+      height:34px; width:auto;
+      border-radius:12px;
+      border:1px solid var(--line);
+      background:#fff;
+      padding:6px;
+    }
+    header h1{margin:0; font-size:15px; font-weight:950; letter-spacing:.2px}
+    header .sub{margin-top:4px; color:var(--muted); font-size:12px}
+
+    .wrap{
+      max-width:1500px;
+      width:100%;
+      margin:0 auto;
+      padding:16px;
+      flex:1;
+    }
+
+    /* 3 columns: Builder | Contents/Lookup | Open Pallets list */
+    .grid{
+      display:grid;
+      grid-template-columns: 1.05fr .95fr .75fr;
+      gap:14px;
+      align-items:start;
+    }
+
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      padding:14px;
+      box-shadow:var(--shadow);
+    }
+    .card h2{margin:0 0 10px; font-size:14px}
+    .card h3{margin:12px 0 8px; font-size:13px; color:#334155}
+
+    label{
+      display:block;
+      font-size:12px;
+      color:var(--muted);
+      margin:10px 0 6px;
+    }
+    input, select, textarea{
+      width:100%;
+      background:#fff;
+      color:var(--text);
+      border:1px solid rgba(15,23,42,.18);
+      border-radius:12px;
+      padding:10px 10px;
+      outline:none;
+    }
+    input:focus, select:focus, textarea:focus{
+      border-color: rgba(31,164,99,.55);
+      box-shadow: 0 0 0 3px rgba(31,164,99,.14);
+    }
+    textarea{min-height:70px; resize:vertical}
+
+    .row{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+    .row3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;}
+
+    .btns{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;}
+    button{
+      border:1px solid rgba(15,23,42,.14);
+      border-radius:12px;
+      padding:10px 12px;
+      background:rgba(2,6,23,.04);
+      color:var(--text);
+      cursor:pointer;
+      font-weight:950;
+    }
+    button.primary{
+      background: linear-gradient(135deg, rgba(31,164,99,.16), rgba(22,163,181,.10));
+      border-color: rgba(31,164,99,.40);
+    }
+    button.danger{
+      background:rgba(239,68,68,.08);
+      border-color:rgba(239,68,68,.40);
+      color:#7f1d1d;
+    }
+    button.warn{
+      background:rgba(245,158,11,.12);
+      border-color:rgba(245,158,11,.45);
+      color:#7a4b00;
+    }
+    button.small{
+      padding:7px 10px;
+      border-radius:10px;
+      font-size:12px;
+      font-weight:950;
+    }
+
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    .status{
+      margin-top:10px;
+      font-size:12px;
+      padding:9px 10px;
+      border-radius:12px;
+      border:1px solid rgba(15,23,42,.12);
+      background: rgba(2,6,23,.02);
+    }
+    .status.ok{border-color:rgba(22,163,74,.40); background:rgba(22,163,74,.07); color:#14532d; font-weight:900}
+    .status.bad{border-color:rgba(239,68,68,.55); background:rgba(239,68,68,.08); color:#7f1d1d; font-weight:950}
+    .status.warn{border-color:rgba(245,158,11,.55); background:rgba(245,158,11,.10); color:#7a4b00; font-weight:950}
+
+    .pill{
+      display:inline-block;
+      padding:3px 8px;
+      border-radius:999px;
+      font-weight:950;
+      white-space:nowrap;
+      border:1px solid rgba(31,164,99,.35);
+      background:rgba(31,164,99,.10);
+      color:#0f5132;
+    }
+    .pill.gray{
+      border-color:rgba(15,23,42,.18);
+      background:rgba(2,6,23,.03);
+      color:#334155;
+    }
+    .pill.warn{
+      border-color:rgba(245,158,11,.45);
+      background:rgba(245,158,11,.12);
+      color:#7a4b00;
+    }
+
+    table{width:100%; border-collapse:collapse; margin-top:10px; font-size:12px;}
+    th, td{padding:8px 8px; border-bottom:1px solid rgba(15,23,42,.10); text-align:left; vertical-align:top}
+    th{
+      color:#0f172a; font-weight:950;
+      background:rgba(2,6,23,.03);
+      position:sticky; top:0;
+      z-index:1;
+    }
+    .tableWrap{
+      max-height:320px;
+      overflow:auto;
+      border:1px solid rgba(15,23,42,.12);
+      border-radius:12px;
+    }
+
+    .small{font-size:12px; color:var(--muted)}
+    .kpiRow{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px}
+    .kpi{
+      border:1px solid rgba(15,23,42,.12);
+      background:rgba(2,6,23,.02);
+      border-radius:14px;
+      padding:10px 12px;
+      min-width:160px;
+    }
+    .kpi b{display:block; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.35px}
+    .kpi span{display:block; font-size:18px; font-weight:950; margin-top:4px}
+
+    /* Open pallets list */
+    .list{
+      border:1px solid rgba(15,23,42,.12);
+      border-radius:12px;
+      overflow:hidden;
+    }
+    .listHead{
+      background:rgba(2,6,23,.03);
+      padding:10px 10px;
+      font-weight:950;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+    }
+    .listBody{
+      max-height:520px;
+      overflow:auto;
+      background:#fff;
+    }
+    .palletItem{
+      border-top:1px solid rgba(15,23,42,.08);
+      padding:10px 10px;
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:6px;
+    }
+    .palletTop{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+    }
+    .palletId{
+      font-weight:950;
+      font-size:12px;
+    }
+    .palletMeta{
+      color:var(--muted);
+      font-size:12px;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .palletActions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-top:4px;
+    }
+
+    /* Modal */
+    dialog{border:none; border-radius:16px; padding:0; background:transparent;}
+    .modal{
+      width:min(980px, 96vw);
+      background:#fff;
+      border:1px solid rgba(15,23,42,.12);
+      border-radius:16px; overflow:hidden;
+      box-shadow:var(--shadow);
+    }
+    .modalHead{
+      display:flex; justify-content:space-between; align-items:center;
+      padding:12px 14px; border-bottom:1px solid rgba(15,23,42,.10);
+      background:rgba(2,6,23,.02);
+    }
+    .modalHead b{font-size:13px}
+    .modalBody{padding:14px}
+    .modalBtns{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;}
+
+    /* Label 4x6 */
+    .label{
+      width:4in; height:6in;
+      background:#fff; color:#000;
+      border:1px solid #ddd;
+      padding:0.15in;
+      box-sizing:border-box;
+      border-radius:10px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      overflow:hidden;
+    }
+    .label .title{
+      font-size:16px; font-weight:950;
+      display:flex; justify-content:space-between; align-items:center;
+      gap:10px;
+    }
+    .label .pallet{
+      font-size:24px;
+      font-weight:950;
+      letter-spacing:.2px;
+      word-break:break-all;
+    }
+    .label .meta{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:6px 12px;
+      font-size:14px
+    }
+    .label .meta div b{
+      display:block;
+      font-size:11px;
+      color:#444;
+      margin-bottom:2px;
+      font-weight:950;
+      text-transform:uppercase;
+      letter-spacing:.4px
+    }
+    .label .client{font-size:18px; font-weight:950}
+    .label .stat{font-size:16px; font-weight:950}
+    .label .qrWrap{
+      margin-top:auto;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      padding-top:6px;
+    }
+    /* Make QR BIG + high contrast to scan reliably */
+    .qrBox{
+      width: 260px;
+      height: 260px;
+      padding: 10px;
+      background:#fff;
+      border: 2px solid #000;
+      border-radius: 12px;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+    }
+    .label .qrHint{font-size:10px; color:#666; text-align:center; margin-top:6px}
+
+    /* ✅ PRINT FIXES (Rollo 4x6) */
+    @page{ size: 4in 6in; margin: 0; }
+    @media print{
+      html, body{
+        margin:0 !important; padding:0 !important;
+        height:auto !important; overflow:visible !important;
+        background:#fff !important;
+      }
+      header, .wrap, .modalHead, .modalBtns, .modalBody .tools, footer{
+        display:none !important;
+      }
+      dialog{
+        display:block !important;
+        position:static !important;
+        margin:0 !important;
+        padding:0 !important;
+        overflow:visible !important;
+      }
+      .modal{
+        border:none !important;
+        border-radius:0 !important;
+        box-shadow:none !important;
+        background:transparent !important;
+        width:auto !important;
+      }
+      .modalBody{padding:0 !important;}
+      .label{
+        width:4in !important;
+        height:6in !important;
+        padding:0.10in !important;
+        border:none !important;
+        border-radius:0 !important;
+        overflow:hidden !important;
+      }
+      .label .qrHint{ display:none !important; }
+      .qrBox{ border:2px solid #000 !important; }
+    }
+
+    footer{
+      border-top:1px solid var(--line);
+      background:rgba(255,255,255,.72);
+      padding:12px 18px;
+    }
+    .footRow{
+      max-width:1500px;
+      margin:0 auto;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .liam{
+      height:46px; width:auto;
+      display:block;
+      border-radius:12px;
+      border:1px solid rgba(15,23,42,.10);
+      background:#fff;
+      padding:6px;
+    }
+  </style>
+</head>
+
+<body>
+<header>
+  <div class="headRow">
+    <div class="brand">
+      <img src="fr_logo.png" alt="FR-Logistics Logo" onerror="this.style.display='none'">
+      <div>
+        <h1>Returns Pallet Builder (No WMS)</h1>
+        <div class="sub">Scan packages → Add to pallet → Mark FULL/WRAPPED → Print 4x6 Pallet ID QR label</div>
+      </div>
+    </div>
+    <div class="small"><b>CLIENTS WITHOUT WMS</b> PALLET ID • <b>QR:</b> REGISTER </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="grid">
+
+    <!-- COLUMN 1: PALLET BUILDER -->
+    <div class="card">
+      <h2>Create / Work on a Pallet</h2>
+
+      <div class="row3">
+        <div>
+          <label>Client (fixed per pallet)</label>
+          <input id="client" placeholder="Type client name (example: Customer ABC)" />
+          <div class="small">Tip: Keep client fixed for that pallet.</div>
+        </div>
+        <div>
+          <label>Pallet Size</label>
+          <select id="palletSize">
+            <option value='40x48x60'>40x48x60 inches</option>
+            <option value='40x48x70'>40x48x70 inches</option>
+            <option value='Other'>Other</option>
+          </select>
+        </div>
+        <div>
+          <label>Pallet ID</label>
+          <input id="palletId" class="mono" placeholder="Click Generate" readonly />
+          <div class="btns" style="margin-top:8px">
+            <button class="primary" id="genPalletBtn">Generate</button>
+            <button id="saveMetaBtn">Save client/size</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="kpiRow">
+        <div class="kpi"><b>Status</b><span id="kStatus">OPEN</span></div>
+        <div class="kpi"><b>Packages on pallet</b><span id="kCount">0</span></div>
+        <div class="kpi"><b>Created</b><span id="kCreated">—</span></div>
+        <div class="kpi"><b>Last scan</b><span id="kLastScan">—</span></div>
+      </div>
+
+      <h3>Scan / Add package to this pallet</h3>
+      <label>Package Tracking (USB scanner)</label>
+      <input id="pkgTracking" class="mono" placeholder="Scan tracking and press Enter" autocomplete="off" />
+
+      <label>Notes (optional)</label>
+      <textarea id="pkgNotes" placeholder="Example: damaged box, missing item, etc. (optional)"></textarea>
+
+      <div class="btns">
+        <button class="primary" id="addPkgBtn">Add to pallet</button>
+        <button class="warn" id="markFullBtn">Mark pallet FULL</button>
+        <button class="primary" id="wrapReadyBtn">Mark WRAPPED / READY</button>
+        <button id="printLabelBtn">Label / Print</button>
+      </div>
+
+      <div id="leftStatus" class="status">Generate a pallet ID to start scanning.</div>
+
+      <div class="small" style="margin-top:10px;">
+        Rules:
+        <span class="pill gray">No duplicates</span>
+        <span class="pill gray">Tracking can belong to only one pallet</span>
+        <span class="pill warn">If already registered → alert</span>
+      </div>
+    </div>
+
+    <!-- COLUMN 2: CONTENTS + LOOKUP -->
+    <div class="card">
+      <h2>Pallet Contents + Lookup</h2>
+
+      <div class="row">
+        <div>
+          <label>Load pallet by Pallet ID</label>
+          <input id="lookupPalletId" class="mono" placeholder="Paste Pallet ID and Enter" />
+        </div>
+        <div style="display:flex; align-items:end;">
+          <button class="primary" id="lookupPalletBtn" style="width:100%;">Load Pallet</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Find pallet by Package Tracking</label>
+          <input id="lookupTracking" class="mono" placeholder="Scan tracking and Enter" />
+        </div>
+        <div style="display:flex; align-items:end;">
+          <button class="primary" id="lookupTrackingBtn" style="width:100%;">Find</button>
+        </div>
+      </div>
+
+      <div id="lookupResult"></div>
+
+      <h3>Packages on current pallet</h3>
+      <div class="tableWrap">
+        <table id="pkgTbl">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Tracking</th>
+              <th>Added</th>
+              <th>Notes</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="btns">
+        <button class="primary" id="exportPalletCsvBtn">Export Pallet CSV</button>
+        <button class="primary" id="exportAllCsvBtn">Export ALL Pallets CSV</button>
+        <button class="danger" id="wipeAllBtn" title="Deletes ALL pallets and mappings on this PC">Wipe ALL local data</button>
+      </div>
+
+      <div class="small" id="rightSummary"></div>
+    </div>
+
+    <!-- COLUMN 3: OPEN PALLETS LIST (NOT FULL) -->
+    <div class="card">
+      <h2>Open Pallets (Not FULL)</h2>
+
+      <div class="row">
+        <div>
+          <label>Search (Client or Pallet ID)</label>
+          <input id="openSearch" placeholder="Type to filter..." />
+        </div>
+        <div style="display:flex; align-items:end;">
+          <button id="refreshOpenBtn" class="primary" style="width:100%;">Refresh</button>
+        </div>
+      </div>
+
+      <div class="list">
+        <div class="listHead">
+          <span>Available pallets</span>
+          <span class="pill gray" id="openCount">0</span>
+        </div>
+        <div class="listBody" id="openList"></div>
+      </div>
+
+      <div class="small" style="margin-top:10px;">
+        These are pallets with status <b>OPEN</b> or <b>WRAPPED / READY</b>. Pallets marked <b>FULL</b> are hidden.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Label modal -->
+<dialog id="labelDlg">
+  <div class="modal">
+    <div class="modalHead">
+      <b>4x6 Pallet Label (QR = Pallet ID)</b>
+      <button id="closeDlg">Close</button>
+    </div>
+    <div class="modalBody">
+      <div class="row tools">
+        <div>
+          <label>Pallet ID to print</label>
+          <input id="labelPalletId" class="mono" placeholder="Paste pallet ID and press Enter" />
+          <div class="small">QR is short (Pallet ID only) to guarantee scan reliability.</div>
+        </div>
+        <div>
+          <label>QR Text (what scanners read)</label>
+          <textarea id="qrPayloadPreview" class="mono" readonly></textarea>
+        </div>
+      </div>
+
+      <div style="margin-top:12px; display:flex; justify-content:center;">
+        <div class="label">
+          <div class="title">
+            <span style="font-weight:950;">FR-Logistics • RETURNS PALLET</span>
+            <span class="pill">QR</span>
+          </div>
+
+          <div class="pallet mono" id="L_pallet">—</div>
+
+          <div class="meta">
+            <div><b>Client</b><div class="client" id="L_client">—</div></div>
+            <div><b>Status</b><div class="stat" id="L_status">—</div></div>
+            <div><b>Created</b><div id="L_created">—</div></div>
+            <div><b>Packages</b><div id="L_count">—</div></div>
+            <div style="grid-column:1 / span 2;"><b>Pallet Size</b><div id="L_size">—</div></div>
+          </div>
+
+          <div class="qrWrap">
+            <div>
+              <div class="qrBox"><div id="qr"></div></div>
+              <div class="qrHint">Scan QR to capture Pallet ID</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modalBtns tools">
+        <button class="primary" id="printBtn">Print 4x6</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<footer>
+  <div class="footRow">
+    <div class="small"><b>Welcome to FR-Logistics</b> • Returns pallets (no WMS) • Local PC storage</div>
+    <img class="liam" src="liam.png" alt="Liam" onerror="this.style.display='none'">
+  </div>
+</footer>
+
+<!-- QR library (CDN) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+<script>
+  /************************
+   * IndexedDB schema
+   * pallets: key = palletId
+   * mapTracking: key = tracking, value = palletId
+   ************************/
+  const DB_NAME = "fr_returns_pallets_db";
+  const STORE_PALLETS = "pallets";
+  const STORE_MAP = "tracking_to_pallet";
+  let db;
+
+  const $ = (id)=>document.getElementById(id);
+
+  function openDB(){
+    return new Promise((resolve,reject)=>{
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = (e)=>{
+        const db = e.target.result;
+        db.createObjectStore(STORE_PALLETS, { keyPath:"palletId" });
+        db.createObjectStore(STORE_MAP, { keyPath:"tracking" });
+      };
+      req.onsuccess = ()=>{ db=req.result; resolve(db); };
+      req.onerror = ()=>reject(req.error);
+    });
+  }
+  function os(store, mode){ return db.transaction(store, mode).objectStore(store); }
+
+  function put(store, obj){
+    return new Promise((resolve,reject)=>{
+      const req = os(store,"readwrite").put(obj);
+      req.onsuccess = ()=>resolve(true);
+      req.onerror = ()=>reject(req.error);
+    });
+  }
+  function add(store, obj){
+    return new Promise((resolve,reject)=>{
+      const req = os(store,"readwrite").add(obj);
+      req.onsuccess = ()=>resolve(true);
+      req.onerror = ()=>reject(req.error);
+    });
+  }
+  function get(store, key){
+    return new Promise((resolve,reject)=>{
+      const req = os(store,"readonly").get(key);
+      req.onsuccess = ()=>resolve(req.result || null);
+      req.onerror = ()=>reject(req.error);
+    });
+  }
+  function del(store, key){
+    return new Promise((resolve,reject)=>{
+      const req = os(store,"readwrite").delete(key);
+      req.onsuccess = ()=>resolve(true);
+      req.onerror = ()=>reject(req.error);
+    });
+  }
+  function getAll(store){
+    return new Promise((resolve,reject)=>{
+      const req = os(store,"readonly").getAll();
+      req.onsuccess = ()=>resolve(req.result || []);
+      req.onerror = ()=>reject(req.error);
+    });
+  }
+  function clear(store){
+    return new Promise((resolve,reject)=>{
+      const req = os(store,"readwrite").clear();
+      req.onsuccess = ()=>resolve(true);
+      req.onerror = ()=>reject(req.error);
+    });
+  }
+
+  function nowISO(){ return new Date().toISOString(); }
+  function fmtDateTime(iso){
+    const d = new Date(iso);
+    const mm = String(d.getMonth()+1).padStart(2,"0");
+    const dd = String(d.getDate()).padStart(2,"0");
+    const yy = d.getFullYear();
+    let h = d.getHours();
+    const m = String(d.getMinutes()).padStart(2,"0");
+    const ampm = h>=12 ? "PM":"AM";
+    h = h%12; if(h===0) h=12;
+    return `${mm}/${dd}/${yy} ${h}:${m} ${ampm}`;
+  }
+
+  function setStatus(el, msg, kind=""){
+    const box = $(el);
+    box.textContent = msg;
+    box.className = "status" + (kind ? " " + kind : "");
+  }
+
+  function genPalletId(){
+    const d = new Date();
+    const y = d.getFullYear();
+    const mo = String(d.getMonth()+1).padStart(2,"0");
+    const da = String(d.getDate()).padStart(2,"0");
+    const hh = String(d.getHours()).padStart(2,"0");
+    const mi = String(d.getMinutes()).padStart(2,"0");
+    const ss = String(d.getSeconds()).padStart(2,"0");
+    const rnd = Math.random().toString(16).slice(2,6).toUpperCase();
+    return `FRP-${y}${mo}${da}-${hh}${mi}${ss}-${rnd}`;
+  }
+
+  let currentPallet = null;
+
+  function updateKPIs(){
+    if(!currentPallet){
+      $("kStatus").textContent = "—";
+      $("kCount").textContent = "0";
+      $("kCreated").textContent = "—";
+      $("kLastScan").textContent = "—";
+      $("rightSummary").textContent = "";
+      $("pkgTbl").querySelector("tbody").innerHTML = "";
+      return;
+    }
+    $("kStatus").textContent = currentPallet.status || "OPEN";
+    $("kCount").textContent = String(currentPallet.packages?.length || 0);
+    $("kCreated").textContent = currentPallet.createdAt ? fmtDateTime(currentPallet.createdAt) : "—";
+    $("kLastScan").textContent = currentPallet.lastScanAt ? fmtDateTime(currentPallet.lastScanAt) : "—";
+    $("rightSummary").textContent = `Loaded pallet: ${currentPallet.palletId} • Client: ${currentPallet.client || "—"}`;
+  }
+
+  function renderPackageTable(){
+    const tb = $("pkgTbl").querySelector("tbody");
+    tb.innerHTML = "";
+    if(!currentPallet?.packages?.length) return;
+
+    currentPallet.packages.forEach((p, idx)=>{
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${idx+1}</td>
+        <td class="mono">${p.tracking}</td>
+        <td>${p.addedAt ? fmtDateTime(p.addedAt) : ""}</td>
+        <td>${(p.notes||"")}</td>
+        <td><button data-del="${p.tracking}" class="danger small">Remove</button></td>
+      `;
+      tb.appendChild(tr);
+    });
+
+    tb.querySelectorAll("button[data-del]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const trk = btn.getAttribute("data-del");
+        await removeTrackingFromCurrent(trk);
+      });
+    });
+  }
+
+  async function saveCurrentPallet(){
+    if(!currentPallet) return;
+    await put(STORE_PALLETS, currentPallet);
+    await refreshOpenPallets();
+  }
+
+  async function loadPallet(palletId){
+    const p = await get(STORE_PALLETS, palletId);
+    if(!p){
+      $("lookupResult").innerHTML = `<div class="status bad">NO PALLET FOUND</div>`;
+      return null;
+    }
+    currentPallet = p;
+    $("palletId").value = currentPallet.palletId;
+    $("client").value = currentPallet.client || "";
+    $("palletSize").value = currentPallet.palletSize || "40x48x60";
+    setStatus("leftStatus", `Pallet loaded. Ready to scan packages.`, "ok");
+    $("lookupResult").innerHTML = `<div class="status ok">Loaded pallet: <span class="mono">${currentPallet.palletId}</span></div>`;
+    updateKPIs();
+    renderPackageTable();
+    return p;
+  }
+
+  async function ensureCurrentPallet(){
+    if(!currentPallet){
+      setStatus("leftStatus","Generate or load a pallet first.","bad");
+      return false;
+    }
+    const client = $("client").value.trim();
+    if(!client){
+      setStatus("leftStatus","Client is required for this pallet.","bad");
+      return false;
+    }
+    currentPallet.client = client;
+    currentPallet.palletSize = $("palletSize").value;
+    return true;
+  }
+
+  async function addTrackingToCurrent(){
+    const ok = await ensureCurrentPallet();
+    if(!ok) return;
+
+    const trk = $("pkgTracking").value.trim();
+    if(!trk){
+      setStatus("leftStatus","Scan a package tracking number.","bad");
+      return;
+    }
+
+    const mapped = await get(STORE_MAP, trk);
+    if(mapped){
+      setStatus("leftStatus", `Tracking already registered on pallet ${mapped.palletId}`, "bad");
+      return;
+    }
+    if((currentPallet.packages||[]).some(x=>x.tracking===trk)){
+      setStatus("leftStatus","Tracking already exists in this pallet.", "bad");
+      return;
+    }
+
+    const pkg = { tracking: trk, addedAt: nowISO(), notes: $("pkgNotes").value.trim() };
+
+    currentPallet.packages = currentPallet.packages || [];
+    currentPallet.packages.push(pkg);
+    currentPallet.lastScanAt = nowISO();
+
+    try{
+      await saveCurrentPallet();
+      await add(STORE_MAP, { tracking: trk, palletId: currentPallet.palletId, createdAt: nowISO() });
+
+      setStatus("leftStatus","Package added to pallet.", "ok");
+      $("pkgTracking").value = "";
+      $("pkgNotes").value = "";
+      $("pkgTracking").focus();
+
+      updateKPIs();
+      renderPackageTable();
+    }catch(e){
+      setStatus("leftStatus","Error saving package (maybe duplicate).", "bad");
+    }
+  }
+
+  async function removeTrackingFromCurrent(trk){
+    if(!currentPallet) return;
+
+    currentPallet.packages = (currentPallet.packages||[]).filter(x=>x.tracking!==trk);
+    currentPallet.lastScanAt = nowISO();
+    await saveCurrentPallet();
+    await del(STORE_MAP, trk);
+
+    setStatus("leftStatus","Package removed from pallet.", "warn");
+    updateKPIs();
+    renderPackageTable();
+  }
+
+  async function markStatus(newStatus){
+    const ok = await ensureCurrentPallet();
+    if(!ok) return;
+
+    currentPallet.status = newStatus;
+    if(newStatus === "FULL") currentPallet.fullAt = nowISO();
+    if(newStatus === "WRAPPED / READY FOR PICKUP") currentPallet.wrappedAt = nowISO();
+
+    await saveCurrentPallet();
+    setStatus("leftStatus", `Pallet status updated: ${newStatus}`, "ok");
+    updateKPIs();
+  }
+
+  /************************
+   * QR: Pallet ID only
+   ************************/
+  function qrTextForPalletId(palletId){
+    return `FRPALLET:${palletId}`;
+  }
+
+  let qr;
+  function resetQR(){
+    const qrel = $("qr");
+    qrel.innerHTML = "";
+    qr = new QRCode(qrel, { text:"", width:240, height:240, correctLevel: QRCode.CorrectLevel.H });
+  }
+
+  async function openLabel(palletId){
+    const p = await get(STORE_PALLETS, palletId);
+    if(!p){
+      alert("Pallet not found.");
+      return;
+    }
+
+    const payload = qrTextForPalletId(p.palletId);
+    $("qrPayloadPreview").value = payload;
+
+    $("L_pallet").textContent = p.palletId;
+    $("L_client").textContent = p.client || "—";
+    $("L_status").textContent = p.status || "OPEN";
+    $("L_created").textContent = p.createdAt ? fmtDateTime(p.createdAt) : "—";
+    $("L_count").textContent = String((p.packages||[]).length);
+    $("L_size").textContent = p.palletSize || "40x48x60";
+
+    resetQR();
+    qr.makeCode(payload);
+
+    $("labelPalletId").value = palletId;
+    $("labelDlg").showModal();
+  }
+
+  async function lookupTracking(){
+    const trk = $("lookupTracking").value.trim();
+    if(!trk){
+      $("lookupResult").innerHTML = `<div class="status bad">Enter a tracking number.</div>`;
+      return;
+    }
+    const map = await get(STORE_MAP, trk);
+    if(!map){
+      $("lookupResult").innerHTML = `<div class="status bad">NO FOUND</div>`;
+      return;
+    }
+    $("lookupResult").innerHTML = `
+      <div class="status ok">
+        Tracking <span class="mono">${trk}</span> is on pallet
+        <span class="mono">${map.palletId}</span>
+        <div class="btns" style="margin-top:10px">
+          <button class="primary" id="loadMappedPalletBtn">Load pallet</button>
+          <button id="printMappedLabelBtn">Print label</button>
+        </div>
+      </div>
+    `;
+    $("loadMappedPalletBtn").addEventListener("click", ()=>loadPallet(map.palletId));
+    $("printMappedLabelBtn").addEventListener("click", ()=>openLabel(map.palletId));
+  }
+
+  async function wipeAll(){
+    if(!confirm("This will delete ALL pallets and tracking mappings on this PC. Continue?")) return;
+    await clear(STORE_PALLETS);
+    await clear(STORE_MAP);
+    currentPallet = null;
+
+    $("palletId").value = "";
+    $("client").value = "";
+    $("pkgTracking").value = "";
+    $("pkgNotes").value = "";
+    $("lookupPalletId").value = "";
+    $("lookupTracking").value = "";
+    $("lookupResult").innerHTML = "";
+    $("openList").innerHTML = "";
+    $("openCount").textContent = "0";
+
+    setStatus("leftStatus","All local data wiped.", "warn");
+    updateKPIs();
+    renderPackageTable();
+  }
+
+  /************************
+   * Open pallets list (NOT FULL)
+   ************************/
+  function isNotFull(status){
+    return status !== "FULL";
+  }
+
+  async function refreshOpenPallets(){
+    const all = await getAll(STORE_PALLETS);
+    const q = ($("openSearch").value || "").trim().toLowerCase();
+
+    let open = all.filter(p => isNotFull(p.status || "OPEN"));
+    open.sort((a,b)=> new Date(b.createdAt||0) - new Date(a.createdAt||0));
+
+    if(q){
+      open = open.filter(p =>
+        (p.palletId||"").toLowerCase().includes(q) ||
+        (p.client||"").toLowerCase().includes(q)
+      );
+    }
+
+    $("openCount").textContent = String(open.length);
+
+    const root = $("openList");
+    root.innerHTML = "";
+
+    if(open.length === 0){
+      root.innerHTML = `<div class="palletItem"><div class="small">No open pallets.</div></div>`;
+      return;
+    }
+
+    for(const p of open){
+      const div = document.createElement("div");
+      div.className = "palletItem";
+
+      const count = (p.packages||[]).length;
+      const created = p.createdAt ? fmtDateTime(p.createdAt) : "—";
+      const stat = p.status || "OPEN";
+
+      div.innerHTML = `
+        <div class="palletTop">
+          <div class="palletId mono">${p.palletId}</div>
+          <span class="pill gray">${stat}</span>
+        </div>
+        <div class="palletMeta">
+          <span><b>Client:</b> ${p.client || "—"}</span>
+          <span><b>Pkgs:</b> ${count}</span>
+        </div>
+        <div class="palletMeta">
+          <span><b>Created:</b> ${created}</span>
+        </div>
+        <div class="palletActions">
+          <button class="primary small" data-load="${p.palletId}">Load</button>
+          <button class="small" data-label="${p.palletId}">Label</button>
+          <button class="warn small" data-csv="${p.palletId}">CSV</button>
+          <button class="warn small" data-full="${p.palletId}">Mark FULL</button>
+        </div>
+      `;
+      root.appendChild(div);
+    }
+
+    root.querySelectorAll("button[data-load]").forEach(b=>{
+      b.addEventListener("click", async ()=>{
+        const id = b.getAttribute("data-load");
+        await loadPallet(id);
+        $("pkgTracking").focus();
+      });
+    });
+
+    root.querySelectorAll("button[data-label]").forEach(b=>{
+      b.addEventListener("click", async ()=>{
+        const id = b.getAttribute("data-label");
+        await openLabel(id);
+      });
+    });
+
+    root.querySelectorAll("button[data-csv]").forEach(b=>{
+      b.addEventListener("click", async ()=>{
+        const id = b.getAttribute("data-csv");
+        await exportPalletCSVById(id);
+      });
+    });
+
+    root.querySelectorAll("button[data-full]").forEach(b=>{
+      b.addEventListener("click", async ()=>{
+        const id = b.getAttribute("data-full");
+        const p = await get(STORE_PALLETS, id);
+        if(!p) return;
+        p.status = "FULL";
+        p.fullAt = nowISO();
+        await put(STORE_PALLETS, p);
+
+        if(currentPallet && currentPallet.palletId === id){
+          currentPallet.status = "FULL";
+          currentPallet.fullAt = p.fullAt;
+          updateKPIs();
+        }
+        await refreshOpenPallets();
+      });
+    });
+  }
+
+  /************************
+   * ✅ CSV EXPORT
+   * - Export current pallet
+   * - Export all pallets (each package = one row)
+   ************************/
+  function csvEscape(v){
+    const s = String(v ?? "");
+    return `"${s.replaceAll('"','""')}"`;
+  }
+
+  function buildPalletRows(p){
+    const rows = [];
+    const base = {
+      palletId: p.palletId,
+      client: p.client || "",
+      palletSize: p.palletSize || "",
+      status: p.status || "",
+      createdAt: p.createdAt || "",
+      fullAt: p.fullAt || "",
+      wrappedAt: p.wrappedAt || "",
+    };
+
+    const pkgs = p.packages || [];
+    if(pkgs.length === 0){
+      rows.push({
+        ...base,
+        packageTracking: "",
+        packageAddedAt: "",
+        packageNotes: ""
+      });
+      return rows;
+    }
+
+    for(const x of pkgs){
+      rows.push({
+        ...base,
+        packageTracking: x.tracking,
+        packageAddedAt: x.addedAt || "",
+        packageNotes: x.notes || ""
+      });
+    }
+    return rows;
+  }
+
+  function downloadCSV(filename, header, rowObjs){
+    const cols = header;
+    const lines = [];
+    lines.push(cols.map(csvEscape).join(","));
+    for(const r of rowObjs){
+      lines.push(cols.map(c => csvEscape(r[c])).join(","));
+    }
+    const csv = lines.join("\n");
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+  }
+
+  async function exportPalletCSV(){
+    if(!currentPallet){
+      alert("No pallet loaded.");
+      return;
+    }
+    await exportPalletCSVById(currentPallet.palletId);
+  }
+
+  async function exportPalletCSVById(palletId){
+    const p = await get(STORE_PALLETS, palletId);
+    if(!p){
+      alert("Pallet not found.");
+      return;
+    }
+    const header = [
+      "palletId","client","palletSize","status","createdAt","fullAt","wrappedAt",
+      "packageTracking","packageAddedAt","packageNotes"
+    ];
+    const rows = buildPalletRows(p);
+    const safeId = palletId.replaceAll(":", "-");
+    downloadCSV(`Pallet_${safeId}.csv`, header, rows);
+  }
+
+  async function exportAllPalletsCSV(){
+    const all = await getAll(STORE_PALLETS);
+    all.sort((a,b)=> new Date(a.createdAt||0) - new Date(b.createdAt||0));
+    const header = [
+      "palletId","client","palletSize","status","createdAt","fullAt","wrappedAt",
+      "packageTracking","packageAddedAt","packageNotes"
+    ];
+    const rows = [];
+    for(const p of all){
+      rows.push(...buildPalletRows(p));
+    }
+    const name = `All_Pallets_${new Date().toISOString().slice(0,10)}.csv`;
+    downloadCSV(name, header, rows);
+  }
+
+  (async function init(){
+    await openDB();
+
+    $("genPalletBtn").addEventListener("click", async ()=>{
+      const id = genPalletId();
+      const pallet = {
+        palletId: id,
+        client: $("client").value.trim(),
+        palletSize: $("palletSize").value,
+        createdAt: nowISO(),
+        status: "OPEN",
+        packages: []
+      };
+      currentPallet = pallet;
+      $("palletId").value = id;
+      await put(STORE_PALLETS, pallet);
+      setStatus("leftStatus","Pallet created. Ready to scan packages.", "ok");
+      updateKPIs();
+      renderPackageTable();
+      await refreshOpenPallets();
+      $("pkgTracking").focus();
+    });
+
+    $("saveMetaBtn").addEventListener("click", async ()=>{
+      const ok = await ensureCurrentPallet();
+      if(!ok) return;
+      await saveCurrentPallet();
+      setStatus("leftStatus","Client/size saved.", "ok");
+    });
+
+    $("addPkgBtn").addEventListener("click", addTrackingToCurrent);
+    $("pkgTracking").addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); addTrackingToCurrent(); }});
+
+    $("markFullBtn").addEventListener("click", ()=>markStatus("FULL"));
+    $("wrapReadyBtn").addEventListener("click", ()=>markStatus("WRAPPED / READY FOR PICKUP"));
+
+    $("printLabelBtn").addEventListener("click", async ()=>{
+      if(!currentPallet){
+        setStatus("leftStatus","No pallet loaded.", "bad");
+        return;
+      }
+      await openLabel(currentPallet.palletId);
+    });
+
+    $("lookupPalletBtn").addEventListener("click", async ()=>{
+      const id = $("lookupPalletId").value.trim();
+      await loadPallet(id);
+      await refreshOpenPallets();
+    });
+    $("lookupPalletId").addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); $("lookupPalletBtn").click(); }});
+
+    $("lookupTrackingBtn").addEventListener("click", lookupTracking);
+    $("lookupTracking").addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); lookupTracking(); }});
+
+    $("exportPalletCsvBtn").addEventListener("click", exportPalletCSV);
+    $("exportAllCsvBtn").addEventListener("click", exportAllPalletsCSV);
+
+    $("wipeAllBtn").addEventListener("click", wipeAll);
+
+    // Open pallet list controls
+    $("refreshOpenBtn").addEventListener("click", refreshOpenPallets);
+    $("openSearch").addEventListener("input", refreshOpenPallets);
+
+    // Label modal
+    $("closeDlg").addEventListener("click", ()=> $("labelDlg").close());
+    $("labelPalletId").addEventListener("keydown", async (e)=>{
+      if(e.key==="Enter"){
+        e.preventDefault();
+        const pid = $("labelPalletId").value.trim();
+        if(pid) await openLabel(pid);
+      }
+    });
+    $("printBtn").addEventListener("click", ()=> window.print());
+    $("labelDlg").addEventListener("close", ()=>{ $("labelPalletId").value=""; });
+
+    // Initial state
+    setStatus("leftStatus","Generate a pallet ID to start scanning.", "");
+    updateKPIs();
+    await refreshOpenPallets();
+  })();
+</script>
+</body>
+</html>
