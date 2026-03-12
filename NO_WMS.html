@@ -75,7 +75,7 @@
 
     .grid{
       display:grid;
-      grid-template-columns: 1.05fr .95fr;
+      grid-template-columns: 1.05fr .95fr .75fr;
       gap:14px;
       align-items:start;
     }
@@ -245,7 +245,7 @@
     }
     .label .meta{
       display:grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1.05fr .95fr .75fr;
       gap:6px 12px;
       font-size:14px
     }
@@ -327,6 +327,195 @@
       background:#fff;
       padding:6px;
     }
+  .list{
+      border:1px solid rgba(15,23,42,.12);
+      border-radius:12px;
+      overflow:hidden;
+    }
+    .listHead{
+      background:rgba(2,6,23,.03);
+      padding:10px 10px;
+      font-weight:950;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+    }
+    .listBody{
+      max-height:520px;
+      overflow:auto;
+      background:#fff;
+    }
+    .palletItem{
+      border-top:1px solid rgba(15,23,42,.08);
+      padding:10px 10px;
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:6px;
+    }
+    .palletTop{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+    }
+    .palletId{
+      font-weight:950;
+      font-size:12px;
+    }
+    .palletMeta{
+      color:var(--muted);
+      font-size:12px;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .palletActions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-top:4px;
+    }
+
+    /* Modal */
+    dialog{border:none; border-radius:16px; padding:0; background:transparent;}
+    .modal{
+      width:min(980px, 96vw);
+      background:#fff;
+      border:1px solid rgba(15,23,42,.12);
+      border-radius:16px; overflow:hidden;
+      box-shadow:var(--shadow);
+    }
+    .modalHead{
+      display:flex; justify-content:space-between; align-items:center;
+      padding:12px 14px; border-bottom:1px solid rgba(15,23,42,.10);
+      background:rgba(2,6,23,.02);
+    }
+    .modalHead b{font-size:13px}
+    .modalBody{padding:14px}
+    .modalBtns{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;}
+
+    /* Label 4x6 */
+    .label{
+      width:4in; height:6in;
+      background:#fff; color:#000;
+      border:1px solid #ddd;
+      padding:0.15in;
+      box-sizing:border-box;
+      border-radius:10px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      overflow:hidden;
+    }
+    .label .title{
+      font-size:16px; font-weight:950;
+      display:flex; justify-content:space-between; align-items:center;
+      gap:10px;
+    }
+    .label .pallet{
+      font-size:24px;
+      font-weight:950;
+      letter-spacing:.2px;
+      word-break:break-all;
+    }
+    .label .meta{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:6px 12px;
+      font-size:14px
+    }
+    .label .meta div b{
+      display:block;
+      font-size:11px;
+      color:#444;
+      margin-bottom:2px;
+      font-weight:950;
+      text-transform:uppercase;
+      letter-spacing:.4px
+    }
+    .label .client{font-size:18px; font-weight:950}
+    .label .stat{font-size:16px; font-weight:950}
+    .label .qrWrap{
+      margin-top:auto;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      padding-top:6px;
+    }
+    /* Make QR BIG + high contrast to scan reliably */
+    .qrBox{
+      width: 260px;
+      height: 260px;
+      padding: 10px;
+      background:#fff;
+      border: 2px solid #000;
+      border-radius: 12px;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+    }
+    .label .qrHint{font-size:10px; color:#666; text-align:center; margin-top:6px}
+
+    /* ✅ PRINT FIXES (Rollo 4x6) */
+    @page{ size: 4in 6in; margin: 0; }
+    @media print{
+      html, body{
+        margin:0 !important; padding:0 !important;
+        height:auto !important; overflow:visible !important;
+        background:#fff !important;
+      }
+      header, .wrap, .modalHead, .modalBtns, .modalBody .tools, footer{
+        display:none !important;
+      }
+      dialog{
+        display:block !important;
+        position:static !important;
+        margin:0 !important;
+        padding:0 !important;
+        overflow:visible !important;
+      }
+      .modal{
+        border:none !important;
+        border-radius:0 !important;
+        box-shadow:none !important;
+        background:transparent !important;
+        width:auto !important;
+      }
+      .modalBody{padding:0 !important;}
+      .label{
+        width:4in !important;
+        height:6in !important;
+        padding:0.10in !important;
+        border:none !important;
+        border-radius:0 !important;
+        overflow:hidden !important;
+      }
+      .label .qrHint{ display:none !important; }
+      .qrBox{ border:2px solid #000 !important; }
+    }
+
+    footer{
+      border-top:1px solid var(--line);
+      background:rgba(255,255,255,.72);
+      padding:12px 18px;
+    }
+    .footRow{
+      max-width:1500px;
+      margin:0 auto;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .liam{
+      height:46px; width:auto;
+      display:block;
+      border-radius:12px;
+      border:1px solid rgba(15,23,42,.10);
+      background:#fff;
+      padding:6px;
+    }
   </style>
 </head>
 
@@ -341,7 +530,7 @@
       </div>
     </div>
     <div class="small">
-      Local mode (this PC) • IndexedDB
+      CLIENTS WITHOUT WMS PALLET ID • QR: REGISTER
     </div>
   </div>
 </header>
@@ -455,6 +644,30 @@
       </div>
 
       <div class="small" id="rightSummary"></div>
+    </div>
+
+    <!-- COLUMN 3: OPEN PALLETS LIST -->
+    <div class="card">
+      <h2>Open Pallets (Not FULL)</h2>
+      <div class="row">
+        <div>
+          <label>Search (Client or Pallet ID)</label>
+          <input id="openSearch" placeholder="Type to filter..." />
+        </div>
+        <div style="display:flex; align-items:end;">
+          <button id="refreshOpenBtn" class="primary" style="width:100%;">Refresh</button>
+        </div>
+      </div>
+      <div class="list">
+        <div class="listHead">
+          <span>Available pallets</span>
+          <span class="pill gray" id="openCount">0</span>
+        </div>
+        <div class="listBody" id="openList"></div>
+      </div>
+      <div class="small" style="margin-top:10px;">
+        These are pallets with status <b>OPEN</b> or <b>WRAPPED / READY</b>. Pallets marked <b>FULL</b> are hidden.
+      </div>
     </div>
 
   </div>
@@ -849,6 +1062,160 @@
     renderPackageTable();
   }
 
+    async function refreshOpenPallets(){
+    const all = await getAll(STORE_PALLETS);
+    const q = ($("openSearch").value || "").trim().toLowerCase();
+
+    let open = all.filter(p => isNotFull(p.status || "OPEN"));
+    open.sort((a,b)=> new Date(b.createdAt||0) - new Date(a.createdAt||0));
+
+    if(q){
+      open = open.filter(p =>
+        (p.palletId||"").toLowerCase().includes(q) ||
+        (p.client||"").toLowerCase().includes(q)
+      );
+    }
+
+    $("openCount").textContent = String(open.length);
+
+    const root = $("openList");
+    root.innerHTML = "";
+
+    if(open.length === 0){
+      root.innerHTML = `<div class="palletItem"><div class="small">No open pallets.</div></div>`;
+      return;
+    }
+
+    for(const p of open){
+      const div = document.createElement("div");
+      div.className = "palletItem";
+
+      const count = (p.packages||[]).length;
+      const created = p.createdAt ? fmtDateTime(p.createdAt) : "—";
+      const stat = p.status || "OPEN";
+
+      div.innerHTML = `
+        <div class="palletTop">
+          <div class="palletId mono">${p.palletId}</div>
+          <span class="pill gray">${stat}</span>
+        </div>
+        <div class="palletMeta">
+          <span><b>Client:</b> ${p.client || "—"}</span>
+          <span><b>Pkgs:</b> ${count}</span>
+        </div>
+        <div class="palletMeta">
+          <span><b>Created:</b> ${created}</span>
+        </div>
+        <div class="palletActions">
+          <button class="primary small" data-load="${p.palletId}">Load</button>
+          <button class="small" data-label="${p.palletId}">Label</button>
+          <button class="warn small" data-csv="${p.palletId}">CSV</button>
+          <button class="warn small" data-full="${p.palletId}">Mark FULL</button>
+        </div>
+      `;
+      root.appendChild(div);
+    }
+
+    root.querySelectorAll("button[data-load]").forEach(b=>{
+      b.addEventListener("click", async ()=>{
+        const id = b.getAttribute("data-load");
+        await loadPallet(id);
+        $("pkgTracking").focus();
+      });
+    });
+
+    root.querySelectorAll("button[data-label]").forEach(b=>{
+      b.addEventListener("click", async ()=>{
+        const id = b.getAttribute("data-label");
+        await openLabel(id);
+      });
+    });
+
+    root.querySelectorAll("button[data-csv]").forEach(b=>{
+      b.addEventListener("click", async ()=>{
+        const id = b.getAttribute("data-csv");
+        await exportPalletCSVById(id);
+      });
+    });
+
+    root.querySelectorAll("button[data-full]").forEach(b=>{
+      b.addEventListener("click", async ()=>{
+        const id = b.getAttribute("data-full");
+        const p = await get(STORE_PALLETS, id);
+        if(!p) return;
+        p.status = "FULL";
+        p.fullAt = nowISO();
+        await put(STORE_PALLETS, p);
+
+        if(currentPallet && currentPallet.palletId === id){
+          currentPallet.status = "FULL";
+          currentPallet.fullAt = p.fullAt;
+          updateKPIs();
+        }
+        await refreshOpenPallets();
+      });
+    });
+  }
+
+  /************************
+   * ✅ CSV EXPORT
+   * - Export current pallet
+   * - Export all pallets (each package = one row)
+   ************************/
+  function csvEscape(v){
+    const s = String(v ?? "");
+    return `"${s.replaceAll('"','""')}"`;
+  }
+
+  function buildPalletRows(p){
+    const rows = [];
+    const base = {
+      palletId: p.palletId,
+      client: p.client || "",
+      palletSize: p.palletSize || "",
+      status: p.status || "",
+      createdAt: p.createdAt || "",
+      fullAt: p.fullAt || "",
+      wrappedAt: p.wrappedAt || "",
+    };
+
+    const pkgs = p.packages || [];
+    if(pkgs.length === 0){
+      rows.push({
+        ...base,
+        packageTracking: "",
+        packageAddedAt: "",
+        packageNotes: ""
+      });
+      return rows;
+    }
+
+    for(const x of pkgs){
+      rows.push({
+        ...base,
+        packageTracking: x.tracking,
+        packageAddedAt: x.addedAt || "",
+        packageNotes: x.notes || ""
+      });
+    }
+    return rows;
+  }
+
+  function downloadCSV(filename, header, rowObjs){
+    const cols = header;
+    const lines = [];
+    lines.push(cols.map(csvEscape).join(","));
+    for(const r of rowObjs){
+      lines.push(cols.map(c => csvEscape(r[c])).join(","));
+    }
+    const csv = lines.join("\n");
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+  }
+
   (async function init(){
     await openDB();
 
@@ -909,6 +1276,14 @@
     // Initial state
     setStatus("leftStatus","Generate a pallet ID to start scanning.", "");
     updateKPIs();
+
+    $("refreshOpenBtn").addEventListener("click", refreshOpenPallets);
+    $("openSearch").addEventListener("input", refreshOpenPallets);
+
+    $("openSearch").value || "").trim().toLowerCase();
+
+    await refreshOpenPallets();
+
   })();
 </script>
 </body>
