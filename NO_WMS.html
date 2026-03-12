@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>FR-Logistics • Returns Pallet Builder (No WMS)</title>
+  <title>FR-Logistics • Returns Pallet Builder</title>
 
   <style>
     :root{
@@ -47,7 +47,7 @@
       z-index: 5;
     }
     .headRow{
-      max-width:1500px;
+      max-width:1400px;
       margin:0 auto;
       display:flex;
       align-items:center;
@@ -66,17 +66,16 @@
     header .sub{margin-top:4px; color:var(--muted); font-size:12px}
 
     .wrap{
-      max-width:1500px;
+      max-width:1400px;
       width:100%;
       margin:0 auto;
       padding:16px;
       flex:1;
     }
 
-    /* 3 columns: Builder | Contents/Lookup | Open Pallets list */
     .grid{
       display:grid;
-      grid-template-columns: 1.05fr .95fr .75fr;
+      grid-template-columns: 1.05fr .95fr;
       gap:14px;
       align-items:start;
     }
@@ -139,12 +138,6 @@
       border-color:rgba(245,158,11,.45);
       color:#7a4b00;
     }
-    button.small{
-      padding:7px 10px;
-      border-radius:10px;
-      font-size:12px;
-      font-weight:950;
-    }
 
     .mono{
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -197,7 +190,6 @@
       border:1px solid rgba(15,23,42,.12);
       border-radius:12px;
     }
-
     .small{font-size:12px; color:var(--muted)}
     .kpiRow{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px}
     .kpi{
@@ -209,57 +201,6 @@
     }
     .kpi b{display:block; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.35px}
     .kpi span{display:block; font-size:18px; font-weight:950; margin-top:4px}
-
-    /* Open pallets list */
-    .list{
-      border:1px solid rgba(15,23,42,.12);
-      border-radius:12px;
-      overflow:hidden;
-    }
-    .listHead{
-      background:rgba(2,6,23,.03);
-      padding:10px 10px;
-      font-weight:950;
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:10px;
-    }
-    .listBody{
-      max-height:520px;
-      overflow:auto;
-      background:#fff;
-    }
-    .palletItem{
-      border-top:1px solid rgba(15,23,42,.08);
-      padding:10px 10px;
-      display:grid;
-      grid-template-columns: 1fr;
-      gap:6px;
-    }
-    .palletTop{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:10px;
-    }
-    .palletId{
-      font-weight:950;
-      font-size:12px;
-    }
-    .palletMeta{
-      color:var(--muted);
-      font-size:12px;
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-    }
-    .palletActions{
-      display:flex;
-      gap:8px;
-      flex-wrap:wrap;
-      margin-top:4px;
-    }
 
     /* Modal */
     dialog{border:none; border-radius:16px; padding:0; background:transparent;}
@@ -295,10 +236,9 @@
     .label .title{
       font-size:16px; font-weight:950;
       display:flex; justify-content:space-between; align-items:center;
-      gap:10px;
     }
     .label .pallet{
-      font-size:24px;
+      font-size:26px;
       font-weight:950;
       letter-spacing:.2px;
       word-break:break-all;
@@ -326,18 +266,6 @@
       justify-content:center;
       align-items:center;
       padding-top:6px;
-    }
-    /* Make QR BIG + high contrast to scan reliably */
-    .qrBox{
-      width: 260px;
-      height: 260px;
-      padding: 10px;
-      background:#fff;
-      border: 2px solid #000;
-      border-radius: 12px;
-      display:flex;
-      justify-content:center;
-      align-items:center;
     }
     .label .qrHint{font-size:10px; color:#666; text-align:center; margin-top:6px}
 
@@ -376,7 +304,6 @@
         overflow:hidden !important;
       }
       .label .qrHint{ display:none !important; }
-      .qrBox{ border:2px solid #000 !important; }
     }
 
     footer{
@@ -385,7 +312,7 @@
       padding:12px 18px;
     }
     .footRow{
-      max-width:1500px;
+      max-width:1400px;
       margin:0 auto;
       display:flex;
       align-items:center;
@@ -410,17 +337,19 @@
       <img src="fr_logo.png" alt="FR-Logistics Logo" onerror="this.style.display='none'">
       <div>
         <h1>Returns Pallet Builder (No WMS)</h1>
-        <div class="sub">Scan packages → Add to pallet → Mark FULL/WRAPPED → Print 4x6 Pallet ID QR label</div>
+        <div class="sub">Scan packages → Add to pallet → Mark FULL/WRAPPED → Print 4x6 QR label</div>
       </div>
     </div>
-    <div class="small"><b>CLIENTS WITHOUT WMS</b> PALLET ID • <b>QR:</b> REGISTER </div>
+    <div class="small">
+      Local mode (this PC) • IndexedDB
+    </div>
   </div>
 </header>
 
 <div class="wrap">
   <div class="grid">
 
-    <!-- COLUMN 1: PALLET BUILDER -->
+    <!-- LEFT: PALLET BUILDER -->
     <div class="card">
       <h2>Create / Work on a Pallet</h2>
 
@@ -443,7 +372,6 @@
           <input id="palletId" class="mono" placeholder="Click Generate" readonly />
           <div class="btns" style="margin-top:8px">
             <button class="primary" id="genPalletBtn">Generate</button>
-            <button id="saveMetaBtn">Save client/size</button>
           </div>
         </div>
       </div>
@@ -479,13 +407,13 @@
       </div>
     </div>
 
-    <!-- COLUMN 2: CONTENTS + LOOKUP -->
+    <!-- RIGHT: PALLET CONTENTS + LOOKUP -->
     <div class="card">
       <h2>Pallet Contents + Lookup</h2>
 
       <div class="row">
         <div>
-          <label>Load pallet by Pallet ID</label>
+          <label>Lookup Pallet by Pallet ID</label>
           <input id="lookupPalletId" class="mono" placeholder="Paste Pallet ID and Enter" />
         </div>
         <div style="display:flex; align-items:end;">
@@ -495,7 +423,7 @@
 
       <div class="row">
         <div>
-          <label>Find pallet by Package Tracking</label>
+          <label>Lookup Package Tracking (find pallet)</label>
           <input id="lookupTracking" class="mono" placeholder="Scan tracking and Enter" />
         </div>
         <div style="display:flex; align-items:end;">
@@ -522,39 +450,11 @@
       </div>
 
       <div class="btns">
-        <button class="primary" id="exportPalletCsvBtn">Export Pallet CSV</button>
-        <button class="primary" id="exportAllCsvBtn">Export ALL Pallets CSV</button>
+        <button id="exportPalletJsonBtn">Export Pallet JSON</button>
         <button class="danger" id="wipeAllBtn" title="Deletes ALL pallets and mappings on this PC">Wipe ALL local data</button>
       </div>
 
       <div class="small" id="rightSummary"></div>
-    </div>
-
-    <!-- COLUMN 3: OPEN PALLETS LIST (NOT FULL) -->
-    <div class="card">
-      <h2>Open Pallets (Not FULL)</h2>
-
-      <div class="row">
-        <div>
-          <label>Search (Client or Pallet ID)</label>
-          <input id="openSearch" placeholder="Type to filter..." />
-        </div>
-        <div style="display:flex; align-items:end;">
-          <button id="refreshOpenBtn" class="primary" style="width:100%;">Refresh</button>
-        </div>
-      </div>
-
-      <div class="list">
-        <div class="listHead">
-          <span>Available pallets</span>
-          <span class="pill gray" id="openCount">0</span>
-        </div>
-        <div class="listBody" id="openList"></div>
-      </div>
-
-      <div class="small" style="margin-top:10px;">
-        These are pallets with status <b>OPEN</b> or <b>WRAPPED / READY</b>. Pallets marked <b>FULL</b> are hidden.
-      </div>
     </div>
 
   </div>
@@ -564,7 +464,7 @@
 <dialog id="labelDlg">
   <div class="modal">
     <div class="modalHead">
-      <b>4x6 Pallet Label (QR = Pallet ID)</b>
+      <b>4x6 Pallet Label (QR contains pallet manifest)</b>
       <button id="closeDlg">Close</button>
     </div>
     <div class="modalBody">
@@ -572,10 +472,10 @@
         <div>
           <label>Pallet ID to print</label>
           <input id="labelPalletId" class="mono" placeholder="Paste pallet ID and press Enter" />
-          <div class="small">QR is short (Pallet ID only) to guarantee scan reliability.</div>
+          <div class="small">QR will encode the pallet manifest (client, status, package list).</div>
         </div>
         <div>
-          <label>QR Text (what scanners read)</label>
+          <label>What the QR contains</label>
           <textarea id="qrPayloadPreview" class="mono" readonly></textarea>
         </div>
       </div>
@@ -599,8 +499,8 @@
 
           <div class="qrWrap">
             <div>
-              <div class="qrBox"><div id="qr"></div></div>
-              <div class="qrHint">Scan QR to capture Pallet ID</div>
+              <div id="qr"></div>
+              <div class="qrHint">Scan QR to view pallet manifest</div>
             </div>
           </div>
         </div>
@@ -691,7 +591,7 @@
       pallet_id: pallet.palletId, client: pallet.client||"", pallet_size: pallet.palletSize||"",
       status: pallet.status||"OPEN", packages: pallet.packages||[],
       full_at: pallet.fullAt||null, wrapped_at: pallet.wrappedAt||null,
-      updated_at: nowISO(), app_source: "pallets"
+      updated_at: nowISO(), app_source: "no_wms"
     };
     await sbFetch("POST", `/rest/v1/pallets`, rec);
   }
@@ -706,7 +606,7 @@
   }
 
   async function getAllPalletsFromDB(){
-    const data = await sbFetch("GET", `/rest/v1/pallets?app_source=eq.pallets&order=created_at.desc&limit=500`);
+    const data = await sbFetch("GET", `/rest/v1/pallets?app_source=eq.no_wms&order=created_at.desc&limit=500`);
     return (data||[]).map(r=>{ return { palletId:r.pallet_id, client:r.client, palletSize:r.pallet_size,
       status:r.status, packages:r.packages||[], createdAt:r.created_at, fullAt:r.full_at,
       wrappedAt:r.wrapped_at, lastScanAt:(r.packages||[]).length?r.packages[r.packages.length-1].addedAt:null }; });
@@ -730,7 +630,7 @@
   async function getAll(store){ if(store==="pallets") return await getAllPalletsFromDB(); return []; }
   async function clear(store){
     if(!confirm("DELETE ALL pallet data from cloud? Cannot be undone.")) return;
-    await sbFetch("DELETE", `/rest/v1/pallets?app_source=eq.pallets&id=neq.00000000-0000-0000-0000-000000000000`);
+    await sbFetch("DELETE", `/rest/v1/pallets?app_source=eq.no_wms&id=neq.00000000-0000-0000-0000-000000000000`);
     await sbFetch("DELETE", `/rest/v1/pallet_packages?id=neq.00000000-0000-0000-0000-000000000000`);
   }
 
@@ -823,196 +723,130 @@
     updateKPIs();
   }
 
-    async function refreshOpenPallets(){
-    const all = await getAll(STORE_PALLETS);
-    const q = ($("openSearch").value || "").trim().toLowerCase();
-
-    let open = all.filter(p => isNotFull(p.status || "OPEN"));
-    open.sort((a,b)=> new Date(b.createdAt||0) - new Date(a.createdAt||0));
-
-    if(q){
-      open = open.filter(p =>
-        (p.palletId||"").toLowerCase().includes(q) ||
-        (p.client||"").toLowerCase().includes(q)
-      );
-    }
-
-    $("openCount").textContent = String(open.length);
-
-    const root = $("openList");
-    root.innerHTML = "";
-
-    if(open.length === 0){
-      root.innerHTML = `<div class="palletItem"><div class="small">No open pallets.</div></div>`;
-      return;
-    }
-
-    for(const p of open){
-      const div = document.createElement("div");
-      div.className = "palletItem";
-
-      const count = (p.packages||[]).length;
-      const created = p.createdAt ? fmtDateTime(p.createdAt) : "—";
-      const stat = p.status || "OPEN";
-
-      div.innerHTML = `
-        <div class="palletTop">
-          <div class="palletId mono">${p.palletId}</div>
-          <span class="pill gray">${stat}</span>
-        </div>
-        <div class="palletMeta">
-          <span><b>Client:</b> ${p.client || "—"}</span>
-          <span><b>Pkgs:</b> ${count}</span>
-        </div>
-        <div class="palletMeta">
-          <span><b>Created:</b> ${created}</span>
-        </div>
-        <div class="palletActions">
-          <button class="primary small" data-load="${p.palletId}">Load</button>
-          <button class="small" data-label="${p.palletId}">Label</button>
-          <button class="warn small" data-csv="${p.palletId}">CSV</button>
-          <button class="warn small" data-full="${p.palletId}">Mark FULL</button>
-        </div>
-      `;
-      root.appendChild(div);
-    }
-
-    root.querySelectorAll("button[data-load]").forEach(b=>{
-      b.addEventListener("click", async ()=>{
-        const id = b.getAttribute("data-load");
-        await loadPallet(id);
-        $("pkgTracking").focus();
-      });
-    });
-
-    root.querySelectorAll("button[data-label]").forEach(b=>{
-      b.addEventListener("click", async ()=>{
-        const id = b.getAttribute("data-label");
-        await openLabel(id);
-      });
-    });
-
-    root.querySelectorAll("button[data-csv]").forEach(b=>{
-      b.addEventListener("click", async ()=>{
-        const id = b.getAttribute("data-csv");
-        await exportPalletCSVById(id);
-      });
-    });
-
-    root.querySelectorAll("button[data-full]").forEach(b=>{
-      b.addEventListener("click", async ()=>{
-        const id = b.getAttribute("data-full");
-        const p = await get(STORE_PALLETS, id);
-        if(!p) return;
-        p.status = "FULL";
-        p.fullAt = nowISO();
-        await put(STORE_PALLETS, p);
-
-        if(currentPallet && currentPallet.palletId === id){
-          currentPallet.status = "FULL";
-          currentPallet.fullAt = p.fullAt;
-          updateKPIs();
-        }
-        await refreshOpenPallets();
-      });
-    });
-  }
-
-  /************************
-   * ✅ CSV EXPORT
-   * - Export current pallet
-   * - Export all pallets (each package = one row)
+    /************************
+   * QR payload strategy
+   * Encode pallet manifest into base64 (URI-safe)
+   * NOTE: Very large pallets could exceed QR capacity.
+   * If that happens, switch QR to "Pallet ID only" (and lookup on this app).
    ************************/
-  function csvEscape(v){
-    const s = String(v ?? "");
-    return `"${s.replaceAll('"','""')}"`;
-  }
-
-  function buildPalletRows(p){
-    const rows = [];
-    const base = {
-      palletId: p.palletId,
-      client: p.client || "",
-      palletSize: p.palletSize || "",
-      status: p.status || "",
-      createdAt: p.createdAt || "",
-      fullAt: p.fullAt || "",
-      wrappedAt: p.wrappedAt || "",
+  function makeQrPayload(pallet){
+    const payloadObj = {
+      palletId: pallet.palletId,
+      client: pallet.client,
+      palletSize: pallet.palletSize,
+      status: pallet.status,
+      createdAt: pallet.createdAt,
+      fullAt: pallet.fullAt || null,
+      wrappedAt: pallet.wrappedAt || null,
+      count: (pallet.packages||[]).length,
+      packages: (pallet.packages||[]).map(x=>({
+        tracking:x.tracking,
+        addedAt:x.addedAt,
+        notes:x.notes || ""
+      }))
     };
-
-    const pkgs = p.packages || [];
-    if(pkgs.length === 0){
-      rows.push({
-        ...base,
-        packageTracking: "",
-        packageAddedAt: "",
-        packageNotes: ""
-      });
-      return rows;
-    }
-
-    for(const x of pkgs){
-      rows.push({
-        ...base,
-        packageTracking: x.tracking,
-        packageAddedAt: x.addedAt || "",
-        packageNotes: x.notes || ""
-      });
-    }
-    return rows;
+    const json = JSON.stringify(payloadObj);
+    const b64 = btoa(unescape(encodeURIComponent(json))); // base64 UTF-8
+    return "FRPALLET:" + b64;
   }
 
-  function downloadCSV(filename, header, rowObjs){
-    const cols = header;
-    const lines = [];
-    lines.push(cols.map(csvEscape).join(","));
-    for(const r of rowObjs){
-      lines.push(cols.map(c => csvEscape(r[c])).join(","));
-    }
-    const csv = lines.join("\n");
-    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    a.click();
+  function decodeQrPayload(str){
+    if(!str.startsWith("FRPALLET:")) return null;
+    const b64 = str.slice("FRPALLET:".length);
+    const json = decodeURIComponent(escape(atob(b64)));
+    return JSON.parse(json);
   }
 
-  async function exportPalletCSV(){
-    if(!currentPallet){
-      alert("No pallet loaded.");
-      return;
-    }
-    await exportPalletCSVById(currentPallet.palletId);
+  let qr;
+  function resetQR(){
+    const qrel = $("qr");
+    qrel.innerHTML = "";
+    qr = new QRCode(qrel, { text:"", width:180, height:180, correctLevel: QRCode.CorrectLevel.M });
   }
 
-  async function exportPalletCSVById(palletId){
+  async function openLabel(palletId){
     const p = await get(STORE_PALLETS, palletId);
     if(!p){
       alert("Pallet not found.");
       return;
     }
-    const header = [
-      "palletId","client","palletSize","status","createdAt","fullAt","wrappedAt",
-      "packageTracking","packageAddedAt","packageNotes"
-    ];
-    const rows = buildPalletRows(p);
-    const safeId = palletId.replaceAll(":", "-");
-    downloadCSV(`Pallet_${safeId}.csv`, header, rows);
+
+    // Build QR payload
+    const payload = makeQrPayload(p);
+
+    // Preview (shortened if huge)
+    $("qrPayloadPreview").value = payload.length > 1400
+      ? payload.slice(0, 1400) + "\n\n…(payload truncated in preview; QR still encodes full text)"
+      : payload;
+
+    // Fill label fields
+    $("L_pallet").textContent = p.palletId;
+    $("L_client").textContent = p.client || "—";
+    $("L_status").textContent = p.status || "OPEN";
+    $("L_created").textContent = p.createdAt ? fmtDateTime(p.createdAt) : "—";
+    $("L_count").textContent = String((p.packages||[]).length);
+    $("L_size").textContent = p.palletSize || "40x48x60";
+
+    // QR
+    resetQR();
+    qr.makeCode(payload);
+
+    $("labelPalletId").value = palletId;
+    $("labelDlg").showModal();
   }
 
-  async function exportAllPalletsCSV(){
-    const all = await getAll(STORE_PALLETS);
-    all.sort((a,b)=> new Date(a.createdAt||0) - new Date(b.createdAt||0));
-    const header = [
-      "palletId","client","palletSize","status","createdAt","fullAt","wrappedAt",
-      "packageTracking","packageAddedAt","packageNotes"
-    ];
-    const rows = [];
-    for(const p of all){
-      rows.push(...buildPalletRows(p));
+  async function lookupTracking(){
+    const trk = $("lookupTracking").value.trim();
+    if(!trk){
+      $("lookupResult").innerHTML = `<div class="status bad">Enter a tracking number.</div>`;
+      return;
     }
-    const name = `All_Pallets_${new Date().toISOString().slice(0,10)}.csv`;
-    downloadCSV(name, header, rows);
+    const map = await get(STORE_MAP, trk);
+    if(!map){
+      $("lookupResult").innerHTML = `<div class="status bad">NO FOUND</div>`;
+      return;
+    }
+    $("lookupResult").innerHTML = `
+      <div class="status ok">
+        Tracking <span class="mono">${trk}</span> is on pallet
+        <span class="mono">${map.palletId}</span>
+        <div class="btns" style="margin-top:10px">
+          <button class="primary" id="loadMappedPalletBtn">Load pallet</button>
+          <button id="printMappedLabelBtn">Print label</button>
+        </div>
+      </div>
+    `;
+    $("loadMappedPalletBtn").addEventListener("click", ()=>loadPallet(map.palletId));
+    $("printMappedLabelBtn").addEventListener("click", ()=>openLabel(map.palletId));
+  }
+
+  async function exportCurrentPalletJSON(){
+    if(!currentPallet){
+      alert("No pallet loaded.");
+      return;
+    }
+    const blob = new Blob([JSON.stringify(currentPallet, null, 2)], {type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${currentPallet.palletId}.json`;
+    a.click();
+  }
+
+  async function wipeAll(){
+    if(!confirm("This will delete ALL pallets and tracking mappings on this PC. Continue?")) return;
+    await clear(STORE_PALLETS);
+    await clear(STORE_MAP);
+    currentPallet = null;
+    $("palletId").value = "";
+    $("client").value = "";
+    $("pkgTracking").value = "";
+    $("pkgNotes").value = "";
+    $("lookupPalletId").value = "";
+    $("lookupTracking").value = "";
+    $("lookupResult").innerHTML = "";
+    setStatus("leftStatus","All local data wiped.", "warn");
+    updateKPIs();
+    renderPackageTable();
   }
 
   (async function init(){
@@ -1034,15 +868,7 @@
       setStatus("leftStatus","Pallet created. Ready to scan packages.", "ok");
       updateKPIs();
       renderPackageTable();
-      await refreshOpenPallets();
       $("pkgTracking").focus();
-    });
-
-    $("saveMetaBtn").addEventListener("click", async ()=>{
-      const ok = await ensureCurrentPallet();
-      if(!ok) return;
-      await saveCurrentPallet();
-      setStatus("leftStatus","Client/size saved.", "ok");
     });
 
     $("addPkgBtn").addEventListener("click", addTrackingToCurrent);
@@ -1059,24 +885,14 @@
       await openLabel(currentPallet.palletId);
     });
 
-    $("lookupPalletBtn").addEventListener("click", async ()=>{
-      const id = $("lookupPalletId").value.trim();
-      await loadPallet(id);
-      await refreshOpenPallets();
-    });
+    $("lookupPalletBtn").addEventListener("click", ()=>loadPallet($("lookupPalletId").value.trim()));
     $("lookupPalletId").addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); $("lookupPalletBtn").click(); }});
 
     $("lookupTrackingBtn").addEventListener("click", lookupTracking);
     $("lookupTracking").addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); lookupTracking(); }});
 
-    $("exportPalletCsvBtn").addEventListener("click", exportPalletCSV);
-    $("exportAllCsvBtn").addEventListener("click", exportAllPalletsCSV);
-
+    $("exportPalletJsonBtn").addEventListener("click", exportCurrentPalletJSON);
     $("wipeAllBtn").addEventListener("click", wipeAll);
-
-    // Open pallet list controls
-    $("refreshOpenBtn").addEventListener("click", refreshOpenPallets);
-    $("openSearch").addEventListener("input", refreshOpenPallets);
 
     // Label modal
     $("closeDlg").addEventListener("click", ()=> $("labelDlg").close());
@@ -1093,7 +909,6 @@
     // Initial state
     setStatus("leftStatus","Generate a pallet ID to start scanning.", "");
     updateKPIs();
-    await refreshOpenPallets();
   })();
 </script>
 </body>
