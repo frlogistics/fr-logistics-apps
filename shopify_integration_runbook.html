@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FR-Logistics · Shopify Integration Runbook</title>
+<style>
+  :root {
+    --teal: #1D6B52;
+    --teal-light: #E1F5EE;
+    --teal-mid: #5DCAA5;
+    --teal-dark: #085041;
+    --shopify: #96BF48;
+    --shopify-bg: #EBF5DA;
+    --shopify-text: #27500A;
+    --shipst: #185FA5;
+    --shipst-bg: #E6F1FB;
+    --shipst-text: #0C447C;
+    --skuv: #854F0B;
+    --skuv-bg: #FDF3E7;
+    --skuv-text: #633806;
+    --both: #534AB7;
+    --both-bg: #EEEDFE;
+    --both-text: #3C3489;
+    --frl: #1D6B52;
+    --frl-bg: #E1F5EE;
+    --frl-text: #085041;
+    --gray: #6B7280;
+    --gray-light: #F3F4F6;
+    --gray-mid: #E5E7EB;
+    --dark: #111827;
+    --warn-bg: #FFF7ED;
+    --warn-border: #FDBA74;
+    --warn-text: #92400E;
+    --ok-bg: #F0FDF4;
+    --ok-border: #86EFAC;
+    --ok-text: #166534;
+    --info-bg: #EFF6FF;
+    --info-border: #93C5FD;
+    --info-text: #1E40AF;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #F9FAFB;
+    color: var(--dark);
+    min-height: 100vh;
+  }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  header {
+    background: var(--teal);
+    padding: 0 1.5rem;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-circle {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 13px; color: #fff;
+  }
+  .logo-text { color: #fff; font-size: 14px; font-weight: 600; }
+  .logo-sub { color: rgba(255,255,255,0.6); font-size: 11px; }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .live-badge {
+    background: rgba(255,255,255,0.15);
+    border-radius: 20px; padding: 3px 10px;
+    color: var(--teal-mid); font-size: 11px; font-weight: 600;
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+  .back-btn {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #fff; border-radius: 6px;
+    padding: 5px 12px; font-size: 12px; cursor: pointer;
+    text-decoration: none; display: inline-block;
+  }
+  .back-btn:hover { background: rgba(255,255,255,0.2); }
+
+  /* ── Layout ─────────────────────────────────────────────── */
+  .container { max-width: 980px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+
+  /* ── Page title ─────────────────────────────────────────── */
+  .page-title {
+    display: flex; align-items: flex-start; gap: 14px;
+    margin-bottom: 1.5rem;
+    background: #fff; border: 0.5px solid var(--gray-mid);
+    border-radius: 12px; padding: 1.1rem 1.25rem;
+  }
+  .page-title-icon {
+    width: 44px; height: 44px; border-radius: 10px;
+    background: var(--teal-light); display: flex; align-items: center;
+    justify-content: center; flex-shrink: 0; font-size: 22px;
+  }
+  .page-title h1 { font-size: 17px; font-weight: 600; color: var(--dark); margin-bottom: 3px; }
+  .page-title p { font-size: 12px; color: var(--gray); line-height: 1.5; }
+  .client-tag {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--frl-bg); color: var(--frl-text);
+    border-radius: 6px; padding: 2px 8px;
+    font-size: 11px; font-weight: 600; margin-top: 5px;
+  }
+
+  /* ── Progress strip ─────────────────────────────────────── */
+  .phase-nav {
+    display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 1.2rem;
+  }
+  .phase-btn {
+    padding: 6px 14px; border-radius: 20px; border: none;
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    background: #fff; color: var(--gray);
+    border: 0.5px solid var(--gray-mid);
+    transition: all 0.15s;
+  }
+  .phase-btn:hover { border-color: var(--teal); color: var(--teal); }
+  .phase-btn.active { background: var(--teal); color: #fff; border-color: var(--teal); }
+  .phase-btn.completed { background: var(--ok-bg); color: var(--ok-text); border-color: var(--ok-border); }
+
+  .progress-bar {
+    height: 4px; background: var(--gray-mid); border-radius: 2px;
+    margin-bottom: 1.3rem;
+  }
+  .progress-fill {
+    height: 100%; background: var(--teal); border-radius: 2px;
+    transition: width 0.4s ease;
+  }
+
+  /* ── Phase panel ─────────────────────────────────────────── */
+  .phase-panel {
+    background: #fff; border: 0.5px solid var(--gray-mid);
+    border-radius: 12px; overflow: hidden;
+  }
+  .phase-header {
+    padding: 1rem 1.25rem;
+    border-bottom: 0.5px solid var(--gray-mid);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .phase-header-left { display: flex; align-items: center; gap: 12px; }
+  .phase-num {
+    font-size: 32px; font-weight: 700; color: var(--gray-mid);
+    line-height: 1; min-width: 42px;
+  }
+  .phase-title { font-size: 15px; font-weight: 600; color: var(--dark); margin-bottom: 2px; }
+  .phase-sub { font-size: 12px; color: var(--gray); }
+  .sys-badge {
+    font-size: 10px; font-weight: 600; padding: 4px 10px;
+    border-radius: 6px; white-space: nowrap; flex-shrink: 0;
+  }
+
+  /* ── Steps ───────────────────────────────────────────────── */
+  .steps { padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 10px; }
+  .step {
+    display: flex; gap: 12px;
+    background: var(--gray-light); border-radius: 8px;
+    padding: 11px 13px; border: 0.5px solid var(--gray-mid);
+  }
+  .step-circle {
+    width: 24px; height: 24px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; flex-shrink: 0; margin-top: 1px;
+  }
+  .step-body { flex: 1; min-width: 0; }
+  .step-action { font-size: 13px; font-weight: 600; color: var(--dark); margin-bottom: 5px; }
+  .step-detail { font-size: 12px; color: var(--gray); line-height: 1.55; }
+  .step-detail code {
+    font-family: 'SFMono-Regular', 'Fira Code', monospace;
+    font-size: 11px; background: rgba(0,0,0,0.05);
+    padding: 1px 5px; border-radius: 3px; color: var(--dark);
+    word-break: break-all;
+  }
+  .step-detail ul { padding-left: 16px; margin-top: 5px; }
+  .step-detail li { margin-bottom: 4px; }
+  .step-detail strong { color: var(--dark); font-weight: 600; }
+  .alert {
+    margin-top: 8px; padding: 7px 10px;
+    border-radius: 6px; font-size: 11px; line-height: 1.5;
+  }
+  .alert-warn { background: var(--warn-bg); border: 0.5px solid var(--warn-border); color: var(--warn-text); }
+  .alert-ok { background: var(--ok-bg); border: 0.5px solid var(--ok-border); color: var(--ok-text); }
+  .alert-info { background: var(--info-bg); border: 0.5px solid var(--info-border); color: var(--info-text); }
+
+  /* ── Checklist ───────────────────────────────────────────── */
+  .checklist-section {
+    padding: 0.85rem 1.25rem 1rem;
+    border-top: 0.5px solid var(--gray-mid);
+    background: var(--gray-light);
+  }
+  .checklist-label {
+    font-size: 11px; font-weight: 600; color: var(--gray);
+    text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;
+  }
+  .check-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 0; cursor: pointer; user-select: none;
+    font-size: 12px; color: var(--dark);
+    border-bottom: 0.5px solid var(--gray-mid);
+  }
+  .check-item:last-child { border-bottom: none; }
+  .check-item.done { color: var(--gray); text-decoration: line-through; }
+  .checkbox {
+    width: 15px; height: 15px; border-radius: 3px;
+    border: 1.5px solid var(--gray-mid); background: #fff;
+    flex-shrink: 0; display: flex; align-items: center;
+    justify-content: center; transition: all 0.1s;
+  }
+  .checkbox.checked { background: var(--teal); border-color: var(--teal); }
+  .checkbox.checked::after {
+    content: '';
+    width: 8px; height: 5px;
+    border-left: 2px solid #fff; border-bottom: 2px solid #fff;
+    transform: rotate(-45deg) translateY(-1px);
+    display: block;
+  }
+
+  /* ── Nav row ─────────────────────────────────────────────── */
+  .nav-row {
+    padding: 0.85rem 1.25rem;
+    border-top: 0.5px solid var(--gray-mid);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .nav-label { font-size: 11px; color: var(--gray); }
+  .btn {
+    padding: 7px 16px; border-radius: 7px; font-size: 12px;
+    font-weight: 500; cursor: pointer; border: 0.5px solid var(--gray-mid);
+    background: #fff; color: var(--dark); transition: all 0.15s;
+  }
+  .btn:hover { background: var(--gray-light); }
+  .btn:disabled { opacity: 0.3; cursor: default; }
+  .btn-primary { background: var(--teal); color: #fff; border-color: var(--teal); }
+  .btn-primary:hover { background: var(--teal-dark); }
+
+  /* ── Cred cards ──────────────────────────────────────────── */
+  .cred-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 8px; }
+  .cred-card {
+    background: #fff; border: 0.5px solid var(--gray-mid);
+    border-radius: 6px; padding: 7px 9px;
+  }
+  .cred-card .lbl { font-size: 10px; color: var(--gray); font-weight: 600; margin-bottom: 2px; }
+  .cred-card .val { font-size: 11px; color: var(--dark); font-family: monospace; }
+
+  /* ── Footer ──────────────────────────────────────────────── */
+  footer {
+    text-align: center; padding: 1.5rem;
+    font-size: 11px; color: var(--gray);
+  }
+
+  @media (max-width: 640px) {
+    .cred-grid { grid-template-columns: 1fr; }
+    .phase-num { font-size: 22px; min-width: 28px; }
+    .phase-title { font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-circle">FR</div>
+    <div>
+      <div class="logo-text">FR-Logistics · Operations</div>
+      <div class="logo-sub">apps.fr-logistics.net</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="live-badge">&#9679; INTERNAL</span>
+    <a class="back-btn" href="portal.html">&#8592; Back to Portal</a>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="page-title">
+    <div class="page-title-icon">&#128279;</div>
+    <div>
+      <h1>Shopify Integration Runbook</h1>
+      <p>Step-by-step technical guide for connecting a client's Shopify store to FR-Logistics systems (ShipStation + SKUVault/Linnworks). Internal use only — FR-Logistics operations team.</p>
+      <div class="client-tag">&#128203; Client: [Client Name]</div>
+    </div>
+  </div>
+
+  <div class="progress-bar">
+    <div class="progress-fill" id="prog" style="width: 0%"></div>
+  </div>
+
+  <div class="phase-nav" id="phaseNav"></div>
+
+  <div class="phase-panel" id="phasePanel"></div>
+
+</div>
+
+<footer>FR-Logistics Miami, Inc. &nbsp;·&nbsp; 10893 NW 17th St, Unit 121, Miami FL 33172 &nbsp;·&nbsp; Internal operations tool — for FR-Logistics team use only</footer>
+
+<script>
+const PHASES = [
+  {
+    id: 0,
+    label: 'Pre-Setup',
+    sys: 'frl',
+    sysLabel: 'FR-Logistics',
+    title: 'Data collection & client file',
+    sub: 'Complete before touching any system',
+    steps: [
+      {
+        action: 'Collect and log client data',
+        detail: `<ul>
+          <li><strong>Shopify store URL:</strong> <code>_____.myshopify.com</code> (request from client)</li>
+          <li><strong>Shopify owner email:</strong> [client owner email] (confirm with client)</li>
+          <li><strong>Shopify plan:</strong> Basic / Shopify / Advanced (ask for screenshot)</li>
+          <li><strong>Client carrier accounts:</strong> yes / no — if client has own UPS/USPS account, coordinate billing</li>
+          <li><strong>Payment platform:</strong> Shopify Payments / Stripe / other</li>
+          <li><strong>EIN / Legal name:</strong> required before formalizing Operations Agreement</li>
+        </ul>`,
+        type: 'frl'
+      },
+      {
+        action: 'Verify collaborator access has been granted',
+        detail: `Client must go to: <code>Shopify Admin → Settings → Users &amp; Permissions → Collaborators</code><br><br>
+        Invite: <code>ops@fr-logistics.net</code><br>
+        Required minimum permissions: <strong>Orders, Products, Inventory, Locations</strong><br><br>
+        When the invitation arrives at <code>ops@fr-logistics.net</code>, accept it from that inbox.`,
+        type: 'frl',
+        warn: 'On Shopify Basic plan, collaborator permissions are limited. If this is the case, request temporary Staff Member (full) access for the initial setup only. Downgrade after go-live.'
+      },
+      {
+        action: 'Confirm SKU list and color variants',
+        detail: `Request an Excel or CSV from client with:<ul>
+          <li>Base SKU: <code>[CLIENT-SKU]</code></li>
+          <li>Variants: <code>[CLIENT-SKU-VAR1]</code>, <code>[CLIENT-SKU-VAR2]</code>, <code>[CLIENT-SKU-VAR3]</code>… (confirm full variant list with client)</li>
+          <li>Weight per variant: 85–110 g (confirm exact; use for ShipStation automation rules)</li>
+          <li>UPC/Barcode per variant (if available)</li>
+          <li>Product photos per color (needed for SKUVault)</li>
+        </ul>`,
+        type: 'frl'
+      },
+      {
+        action: 'Create client file in internal folder',
+        detail: `Create folder: <code>FR-Logistics / Clients / [Client Name]</code><br><br>
+        Save the following:<ul>
+          <li>Contact: _______________ — _______________ — _______________</li>
+          <li>Shopify URL, plan, access email</li>
+          <li>Payment method: ACH / wire</li>
+          <li>MMB: $3,250 / month &nbsp;|&nbsp; Pick &amp; Pack: $0.90 flat</li>
+          <li>Carrier: 100% USPS &nbsp;|&nbsp; Cut-off: 2:00 PM ET</li>
+          <li>Signed Operations Agreement copy (once executed)</li>
+        </ul>`,
+        type: 'frl',
+        ok: 'Client file must be complete before moving to Phase 2. This is the source of truth for the account.'
+      }
+    ],
+    checks: [
+      'Shopify store URL received',
+      'Collaborator invitation accepted at ops@fr-logistics.net',
+      'SKU list with variants and weights received',
+      'Client file created with all account terms'
+    ]
+  },
+  {
+    id: 1,
+    label: 'ShipStation',
+    sys: 'shipst',
+    sysLabel: 'ShipStation',
+    title: 'Connect Shopify to ShipStation',
+    sub: 'Login: shipstation.com — FR-Logistics account',
+    steps: [
+      {
+        action: 'Create a new store connection in ShipStation',
+        detail: `Navigate to: <code>ShipStation → Account Settings → Selling Channels → Connect a Store</code><br><br>
+        Select: <strong>Shopify</strong><br>
+        Enter the client's store URL: <code>_____.myshopify.com</code><br>
+        Click <strong>Connect</strong> → ShipStation opens a Shopify OAuth authorization window`,
+        type: 'shipst'
+      },
+      {
+        action: 'Authorize the OAuth connection in Shopify',
+        detail: `ShipStation redirects to Shopify for authorization. Using collaborator access:<ul>
+          <li>Log into <code>admin.shopify.com</code></li>
+          <li>Review the permissions requested by ShipStation</li>
+          <li>Click <strong>Install App</strong></li>
+        </ul>
+        Shopify returns to ShipStation and the store is connected.<br><br>
+        Verify: the store appears in <code>Selling Channels</code> with status <strong>Active</strong>`,
+        type: 'shipst',
+        ok: 'Client orders should begin appearing in ShipStation within 5–10 minutes. If they do not, check order status filters (should be: Paid + Unfulfilled).'
+      },
+      {
+        action: 'Configure USPS carrier account',
+        detail: `Navigate to: <code>Account Settings → Shipping → Carriers &amp; Fulfillment</code><br><br>
+        Active carrier: <strong>USPS (via ShipStation / Stamps.com)</strong><br>
+        Services to enable:<ul>
+          <li><code>USPS First Class Package</code> — for orders ≤ 15.99 oz</li>
+          <li><code>USPS Ground Advantage</code> — backup and heavier weights</li>
+          <li><code>USPS Priority Mail</code> — for expedited requests</li>
+        </ul>
+        Rate reference, lane <code>33172 → 90001</code>, 12 oz: <strong>$6.43 USPS First Class</strong>`,
+        type: 'shipst'
+      },
+      {
+        action: 'Create packaging preset',
+        detail: `Navigate to: <code>Account Settings → Shipping → Package Types → Add Package</code><br><br>
+        <strong>Name:</strong> <code>[CLIENT]-Standard-Box</code><br>
+        <strong>Type:</strong> Box<br>
+        <strong>Dimensions:</strong> <code>8 × 8 × 6 inches</code><br>
+        <strong>Base weight:</strong> <code>12 oz</code><br>
+        Mark as <strong>default package for this client</strong>`,
+        type: 'shipst'
+      },
+      {
+        action: 'Configure shipping automation rules',
+        detail: `Navigate to: <code>Account Settings → Automation → Automation Rules → Add Rule</code><br><br>
+        <strong>Rule 1:</strong> Weight ≤ 16 oz → USPS First Class Package<br>
+        <strong>Rule 2:</strong> Weight &gt; 16 oz → USPS Ground Advantage<br>
+        <strong>Rule 3:</strong> Tag = "expedited" → USPS Priority Mail<br>
+        <strong>Rule 4:</strong> Store = [Client Name] → Package = [CLIENT]-Standard-Box<br><br>
+        Rule execution order: 1 → 2 → 3 → 4 (verify priority order in the UI)`,
+        type: 'shipst'
+      },
+      {
+        action: 'Set up white-label packing slip',
+        detail: `Navigate to: <code>Account Settings → Printing → Packing Slips</code><br><br>
+        Create a template for this client:<ul>
+          <li>Logo: upload client logo (request PNG, min 300px wide)</li>
+          <li>Company name on slip: <strong>[Client Brand Name]</strong></li>
+          <li>Custom message: <em>"Thank you for your order!"</em> (or per client preference)</li>
+          <li>Include: order number, SKU, color variant, shipping address</li>
+          <li>Do NOT include: product cost, warehouse address, FR-Logistics name</li>
+        </ul>`,
+        type: 'shipst',
+        warn: 'This is a white-label fulfillment operation. The packing slip must NOT mention FR-Logistics or the warehouse address. The client\'s brand only.'
+      },
+      {
+        action: 'Enable tracking notification to end customer',
+        detail: `Navigate to: <code>Account Settings → Notifications</code><br><br>
+        Enable: <strong>Shipment Notification Email</strong><br>
+        Sender: use client's email (configure client SMTP if requested, otherwise use ShipStation default)<br><br>
+        Tracking link format (USPS): <code>tools.usps.com/go/TrackConfirmAction?tLabels={tracking_number}</code><br><br>
+        Tracking is pushed automatically to Shopify when a label is generated — Shopify then marks the order as Fulfilled.`,
+        type: 'shipst'
+      }
+    ],
+    checks: [
+      'Shopify store connected in ShipStation (status: Active)',
+      'USPS enabled with commercial rates',
+      'ROH-Standard-Box packaging preset created (8×8×6", 12 oz)',
+      'All 4 automation rules configured and in correct priority order',
+      'White-label packing slip created (client brand only)',
+      'Tracking notification email active'
+    ]
+  },
+  {
+    id: 2,
+    label: 'SKUVault',
+    sys: 'skuvault',
+    sysLabel: 'SKUVault / Linnworks',
+    title: 'Create products and connect channel',
+    sub: 'Login: skuvault.com or linnworks.com — FR-Logistics account',
+    steps: [
+      {
+        action: 'Create the base product in SKUVault',
+        detail: `Navigate to: <code>Products → Add Product</code><br><br>
+        <strong>Base SKU:</strong> <code>[CLIENT-SKU]</code><br>
+        <strong>Title:</strong> [Client product name]<br>
+        <strong>Category:</strong> Headwear / Hats<br>
+        <strong>Weight:</strong> 3.5 oz (use as average; adjust to client's confirmed weight)<br>
+        <strong>COGS:</strong> request from client for internal reporting`,
+        type: 'skuvault'
+      },
+      {
+        action: 'Create the 10 color variants',
+        detail: `Create a child SKU for each color using this naming convention:<br><br>
+        <code>[SKU-VAR1]</code> — [Color/Size 1] &nbsp;&nbsp; <code>[SKU-VAR2]</code> — [Color/Size 2]<br>
+        <code>[SKU-VAR3]</code> — [Color/Size 3] &nbsp;&nbsp; <code>[SKU-VAR4]</code> — [Color/Size 4]<br>
+        <em>(complete list to be confirmed with client before setup)</em><br><br>
+        Confirm the exact 10 colors with the client before creating.`,
+        type: 'skuvault',
+        info: 'If the client provides official color names that differ from the above, use their exact naming to avoid picking confusion.'
+      },
+      {
+        action: 'Assign bin locations per color variant',
+        detail: `Navigate to: <code>Inventory → Locations → Add Location</code><br><br>
+        Zone: <code>[CLIENT-ZONE]</code> (client name abbreviation)<br>
+        Bin structure: <code>[ZONE]-A01</code> (Variant 1), <code>[ZONE]-A02</code> (Variant 2), <code>[ZONE]-A03</code> (Variant 3)… etc.<br><br>
+        One bin per color. For high-volume variants, consider double bins ([ZONE]-A01-L / [ZONE]-A01-R) for FIFO rotation.<br><br>
+        Set reorder point per SKU:<ul>
+          <li>Conservative scenario: reorder at 500 units</li>
+          <li>Base scenario: reorder at 1,000 units</li>
+          <li>Adjust monthly based on client's volume forecast</li>
+        </ul>`,
+        type: 'skuvault'
+      },
+      {
+        action: 'Connect Shopify channel in Linnworks',
+        detail: `Navigate to: <code>Linnworks → Settings → Channel Integration → Add Channel → Shopify</code><br><br>
+        Enter:<ul>
+          <li>Store URL: <code>_____.myshopify.com</code></li>
+          <li>API credentials: generate in <code>Shopify Admin → Apps → Private Apps</code><br>
+          (or use OAuth flow if on a plan without Private Apps)</li>
+          <li>Required API scopes: <code>read_orders</code>, <code>write_orders</code>, <code>read_products</code>, <code>write_products</code>, <code>read_inventory</code>, <code>write_inventory</code>, <code>read_locations</code></li>
+        </ul>
+        Authorize → Linnworks confirms successful connection`,
+        type: 'skuvault',
+        warn: 'On Shopify Basic plan, Private Apps are disabled. In that case, use Linnworks\'s direct OAuth method (client authorizes from their admin panel).'
+      },
+      {
+        action: 'Map Shopify SKUs to SKUVault SKUs',
+        detail: `Navigate to: <code>Linnworks → Channel Listings → Shopify → Map SKUs</code><br><br>
+        Shopify creates its own internal variant IDs. Linnworks imports them automatically.<br><br>
+        Verify the mapping:<ul>
+          <li>Shopify variant ID ↔ SKUVault SKU (1:1 per color)</li>
+          <li>If there are naming discrepancies, map manually</li>
+          <li>Confirm the <code>SKU</code> field in Shopify matches exactly with SKUVault</li>
+        </ul>
+        <strong>Critical rule:</strong> the SKU in Shopify MUST be identical to the SKU in SKUVault to prevent sync errors.`,
+        type: 'skuvault'
+      },
+      {
+        action: 'Configure sync rules',
+        detail: `Navigate to: <code>Linnworks → Settings → Channel Rules → Shopify</code><br><br>
+        <strong>Inventory push (SKUVault → Shopify):</strong><ul>
+          <li>Frequency: every 15 minutes (or real-time if plan allows)</li>
+          <li>Method: update <code>inventory_quantity</code> in Shopify per location</li>
+          <li>Location in Shopify: must be <code>FR-Logistics Miami</code> (set up in Phase 4)</li>
+        </ul>
+        <strong>Order pull (Shopify → Linnworks):</strong><ul>
+          <li>Trigger: order marked as <code>Paid</code> in Shopify</li>
+          <li>Action: SKUVault immediately reserves the units from the assigned bin</li>
+        </ul>
+        <strong>Tracking push (ShipStation → Shopify):</strong><ul>
+          <li>Automatic when a label is generated in ShipStation</li>
+          <li>ShipStation updates the <code>fulfillment</code> in Shopify with the tracking number</li>
+          <li>Shopify sends the tracking email to the end customer</li>
+        </ul>`,
+        type: 'skuvault'
+      }
+    ],
+    checks: [
+      'Base product (base SKU) created in SKUVault',
+      'All variant SKUs created with correct naming convention',
+      'Bin locations assigned per variant (zone: [CLIENT-ZONE])',
+      'Shopify channel connected in Linnworks',
+      'SKUs mapped 1:1 between Shopify and SKUVault',
+      'Sync rules active: inventory push, order pull, tracking push'
+    ]
+  },
+  {
+    id: 3,
+    label: 'Shopify Config',
+    sys: 'shopify',
+    sysLabel: 'Shopify',
+    title: 'Configure Shopify for external fulfillment',
+    sub: 'Access via collaborator account: ops@fr-logistics.net',
+    steps: [
+      {
+        action: 'Create FR-Logistics Miami as a fulfillment location',
+        detail: `Navigate to: <code>Shopify Admin → Settings → Locations → Add Location</code><br><br>
+        <strong>Name:</strong> FR-Logistics Miami<br>
+        <strong>Address:</strong> 10893 NW 17th St, Unit 121, Miami, FL 33172<br>
+        <strong>Type:</strong> Fulfillment service (not a retail location)<br><br>
+        Assign all SKUs to this location as the primary fulfillment source.<br>
+        If the client has inventory at another location (e.g. home or office), coordinate a transfer to FR-Logistics Miami before go-live.`,
+        type: 'shopify'
+      },
+      {
+        action: 'Verify shipping settings',
+        detail: `Navigate to: <code>Shopify Admin → Settings → Shipping and Delivery</code><br><br>
+        Confirm:<ul>
+          <li><strong>Ship from:</strong> FR-Logistics Miami (ZIP: 33172)</li>
+          <li>Shipping zones configured for US domestic delivery</li>
+          <li>Carrier rates: use <strong>calculated rates</strong> (ShipStation handles this) or flat rate per client preference</li>
+          <li>Free shipping threshold: confirm with client (e.g. free shipping over $50)</li>
+        </ul>`,
+        type: 'shopify'
+      },
+      {
+        action: 'Verify all products have weight and dimensions',
+        detail: `Navigate to: <code>Shopify Admin → Products → [each variant] → Shipping</code><br><br>
+        Each variant must have:<ul>
+          <li><strong>Weight:</strong> at least 3.5 oz (adjust to confirmed client data)</li>
+          <li><strong>Requires shipping:</strong> YES (must be checked)</li>
+          <li><strong>SKU field:</strong> must match SKUVault exactly</li>
+        </ul>
+        Without weight, ShipStation cannot calculate rates automatically — this will break automation rules.`,
+        type: 'shopify',
+        warn: 'Check ALL variants individually. It is common for variants created after the base product to be missing weight. Do not skip this step.'
+      },
+      {
+        action: 'Coordinate tracking notification settings',
+        detail: `Navigate to: <code>Shopify Admin → Settings → Notifications</code><br><br>
+        Tracking is handled by ShipStation. To avoid duplicate emails to the end customer:<ul>
+          <li><strong>Option A:</strong> Disable <strong>"Shipping confirmation"</strong> email in Shopify (ShipStation handles it)</li>
+          <li><strong>Option B:</strong> Keep both if the client wants two notifications</li>
+        </ul>
+        Confirm preference with client before go-live and document the decision in the client file.`,
+        type: 'shopify'
+      }
+    ],
+    checks: [
+      'FR-Logistics Miami created as fulfillment location',
+      'Ship from ZIP: 33172 confirmed in shipping settings',
+      'All product variants have weight assigned',
+      'Tracking notification preference confirmed with client (single or double)'
+    ]
+  },
+  {
+    id: 4,
+    label: 'Testing',
+    sys: 'both',
+    sysLabel: 'FR-Logistics + Client',
+    title: 'Testing — 5 mandatory checks',
+    sub: 'Do not go live without completing all 5',
+    steps: [
+      {
+        action: 'Test 1: Normal order — 1 unit',
+        detail: `<strong>Setup:</strong> Create 10 test units in SKUVault (fictitious inventory for testing).<br><br>
+        <strong>Execute:</strong><ul>
+          <li>Place a test order in Shopify (use <code>Draft Order</code> or Shopify test payment card)</li>
+          <li>Verify the order appears in ShipStation within 5 minutes</li>
+          <li>Verify inventory is reserved in SKUVault</li>
+          <li>Generate a USPS First Class label (do not physically ship for test)</li>
+          <li>Verify tracking number is pushed to Shopify → order marked as Fulfilled</li>
+          <li>Verify tracking notification email is sent to the test email address</li>
+        </ul>`,
+        type: 'both',
+        ok: 'The full flow (order → reservation → label → tracking → Shopify update) should complete in under 3 minutes.'
+      },
+      {
+        action: 'Test 2: Multi-unit order (3 different color variants)',
+        detail: `Place an order with 3 different SKUs (e.g. BLK + WHT + NVY).<br><br>
+        Verify:<ul>
+          <li>All 3 items appear in the same order in ShipStation</li>
+          <li>SKUVault reserves all 3 units from their respective bins</li>
+          <li>Total weight is calculated correctly (3 × ~3.5 oz ≈ 10.5 oz → still qualifies for First Class)</li>
+          <li>Packing slip lists all 3 items correctly</li>
+        </ul>`,
+        type: 'both'
+      },
+      {
+        action: 'Test 3: Order with special note / instruction',
+        detail: `Place an order with a Shopify note: <em>"Gift wrap — include a handwritten card"</em><br><br>
+        Verify:<ul>
+          <li>The note is clearly visible in ShipStation when processing the order</li>
+          <li>The warehouse team can see the note at the packing station</li>
+          <li>Confirm with client if this type of order qualifies for an exception surcharge ($0.50–$1.50 per order)</li>
+          <li>Document the protocol for special-instruction orders in the client SOP</li>
+        </ul>`,
+        type: 'both'
+      },
+      {
+        action: 'Test 4: Cancellation and inventory release',
+        detail: `Cancel the test order from Shopify Admin before a label is generated.<br><br>
+        Verify:<ul>
+          <li>The order disappears from ShipStation (or is marked Cancelled)</li>
+          <li>Reserved inventory is released in SKUVault automatically</li>
+          <li>Stock count in Shopify updates correctly</li>
+        </ul>
+        If cancellation arrives <em>after</em> a label is generated: void the label in ShipStation first. If already dispatched, contact USPS — different process applies.`,
+        type: 'both',
+        warn: 'Define cancellation SLA with client: orders cancelled before 12:00 PM ET are guaranteed not to ship same day. Document this in the Operations Agreement and client file.'
+      },
+      {
+        action: 'Test 5: Return / RMA',
+        detail: `Simulate a return:<ul>
+          <li>Create a return label from ShipStation (<code>Create Return Label</code>)</li>
+          <li>Verify the return label generates correctly (USPS return service)</li>
+          <li>Simulate receipt at warehouse: receive in SKUVault → inspect → restock (if sellable)</li>
+          <li>Verify Shopify inventory updates when the unit is re-entered</li>
+          <li>Confirm return report is generated in SKUVault</li>
+        </ul>
+        Return fee: <strong>$2.50 / unit</strong> — apply on next client invoice.`,
+        type: 'both',
+        ok: 'After completing all 5 tests without errors, the integration is ready for go-live. Save test results in the client file before proceeding.'
+      }
+    ],
+    checks: [
+      'Test 1 passed — single-unit order, full flow end-to-end',
+      'Test 2 passed — multi-variant, weight calculation correct',
+      'Test 3 passed — special notes visible in ShipStation',
+      'Test 4 passed — cancellation releases inventory correctly',
+      'Test 5 passed — RMA received, inspected and restocked'
+    ]
+  },
+  {
+    id: 5,
+    label: 'Go-Live',
+    sys: 'frl',
+    sysLabel: 'FR-Logistics',
+    title: 'Activation and first days',
+    sub: 'Go-live checklist + active monitoring',
+    steps: [
+      {
+        action: 'Receive and log the first inbound shipment',
+        detail: `Client must send ASN before dispatching from their supplier:<ul>
+          <li><strong>Carrier / tracking number for inbound:</strong> ___________</li>
+          <li><strong>SKUs and quantities by color variant</strong></li>
+          <li><strong>Number of master cartons:</strong> 100 units per box</li>
+          <li><strong>Number of pallets:</strong> 1,200 units per pallet (12 cartons × 100 units)</li>
+          <li><strong>Expected delivery date</strong></li>
+        </ul>
+        On arrival: count, document any discrepancies vs. ASN, log in SKUVault.<br>
+        <strong>SLA:</strong> inventory must be available in Shopify within 2 business days of physical arrival.`,
+        type: 'frl'
+      },
+      {
+        action: 'Verify inventory sync to Shopify',
+        detail: `After logging the inbound in SKUVault:<ul>
+          <li>Check <code>Shopify Admin → Products → Inventory</code> — quantities must be updated per variant</li>
+          <li>Linnworks → Shopify sync runs every 15 minutes — wait for first cycle</li>
+          <li>If not updated: go to <code>Linnworks → Channel Listings → Sync Now</code></li>
+        </ul>
+        Confirm that ALL 10 color variants show available stock (not 0, not "unavailable").`,
+        type: 'frl',
+        ok: 'Once all variants show correct inventory in Shopify, the client can activate sales on their storefront.'
+      },
+      {
+        action: 'Notify client of go-live readiness',
+        detail: `Send confirmation email to the client contact:<br>
+        <em>"Your inventory has been received and is now available in your Shopify store. The integration is fully active. You can begin accepting orders."</em><br><br>
+        Remind the client of:<ul>
+          <li>Same-day dispatch cut-off: <strong>2:00 PM ET, Mon–Fri</strong></li>
+          <li>Support channel: <code>ops@fr-logistics.net</code> + WhatsApp (number per client agreement)</li>
+          <li>First inventory report: first Monday of next month</li>
+          <li>Cancellation SLA: before 12:00 PM ET for guaranteed same-day hold</li>
+        </ul>`,
+        type: 'frl'
+      },
+      {
+        action: 'Active monitoring — first 5 business days',
+        detail: `During the first 5 business days after go-live:<ul>
+          <li>Review order import in ShipStation every morning at 7:30 AM</li>
+          <li>Verify labels are generating with correct USPS rates (reference: $6.43 for 12 oz)</li>
+          <li>Confirm tracking is pushing back to Shopify on every shipment</li>
+          <li>Monitor SKUVault for low-stock alerts — notify client if any variant hits reorder point</li>
+          <li>Document any incident in the client file</li>
+        </ul>`,
+        type: 'frl',
+        warn: 'Any sync errors or incorrect labels in the first days must be escalated immediately. Early errors damage client trust significantly.'
+      },
+      {
+        action: 'First billing cycle',
+        detail: `At month close:<ul>
+          <li>Calculate actual charges: pick&amp;pack + packaging + receiving + storage + returns (if any)</li>
+          <li>Compare against MMB ($3,250): invoice whichever is higher</li>
+          <li>USPS shipping: invoice as exact pass-through for the month</li>
+          <li>Issue invoice by the 5th business day of the following month</li>
+          <li>Include operations report: orders processed, units shipped, closing stock, returns handled</li>
+        </ul>
+        <div class="cred-grid">
+          <div class="cred-card"><div class="lbl">MMB</div><div class="val">$3,250 / month</div></div>
+          <div class="cred-card"><div class="lbl">Pick &amp; Pack</div><div class="val">$0.90 / order (flat)</div></div>
+          <div class="cred-card"><div class="lbl">Packaging</div><div class="val">$1.00 / order</div></div>
+          <div class="cred-card"><div class="lbl">Storage</div><div class="val">$18.00 / pallet / month</div></div>
+          <div class="cred-card"><div class="lbl">Receiving</div><div class="val">$15.00 / pallet</div></div>
+          <div class="cred-card"><div class="lbl">Returns</div><div class="val">$2.50 / unit</div></div>
+        </div>`,
+        type: 'frl'
+      }
+    ],
+    checks: [
+      'First inbound received, counted and logged in SKUVault',
+      'All 10 variants showing correct inventory in Shopify',
+      'Go-live confirmation email sent to client',
+      'First 5 orders processed without errors',
+      'First billing cycle and operations report scheduled'
+    ]
+  }
+];
+
+const SYS_STYLES = {
+  shopify: { bg: '#EBF5DA', color: '#27500A', circle: '#EBF5DA', circleColor: '#3B6D11' },
+  shipst:  { bg: '#E6F1FB', color: '#0C447C', circle: '#E6F1FB', circleColor: '#185FA5' },
+  skuvault:{ bg: '#FDF3E7', color: '#633806', circle: '#FDF3E7', circleColor: '#854F0B' },
+  both:    { bg: '#EEEDFE', color: '#3C3489', circle: '#EEEDFE', circleColor: '#534AB7' },
+  frl:     { bg: '#E1F5EE', color: '#085041', circle: '#E1F5EE', circleColor: '#1D6B52' }
+};
+
+let current = 0;
+const checked = PHASES.map(p => new Array(p.checks.length).fill(false));
+
+function completedPhase(i) { return checked[i].every(Boolean); }
+
+function totalProgress() {
+  const total = checked.flat().length;
+  const done = checked.flat().filter(Boolean).length;
+  return Math.round((done / total) * 100);
+}
+
+function renderNav() {
+  const nav = document.getElementById('phaseNav');
+  nav.innerHTML = PHASES.map((p, i) => {
+    const cls = i === current ? 'phase-btn active' : completedPhase(i) ? 'phase-btn completed' : 'phase-btn';
+    return `<button class="${cls}" onclick="goto(${i})">Phase ${i+1}: ${p.label}</button>`;
+  }).join('');
+}
+
+function renderProgress() {
+  document.getElementById('prog').style.width = totalProgress() + '%';
+}
+
+function renderPanel() {
+  const p = PHASES[current];
+  const st = SYS_STYLES[p.sys] || SYS_STYLES.frl;
+
+  const stepsHtml = p.steps.map((s, si) => {
+    const sc = SYS_STYLES[s.type] || SYS_STYLES.frl;
+    let alerts = '';
+    if (s.warn) alerts += `<div class="alert alert-warn"><strong>⚠ Warning:</strong> ${s.warn}</div>`;
+    if (s.ok)   alerts += `<div class="alert alert-ok"><strong>✓ Note:</strong> ${s.ok}</div>`;
+    if (s.info) alerts += `<div class="alert alert-info"><strong>ℹ Info:</strong> ${s.info}</div>`;
+    return `<div class="step">
+      <div class="step-circle" style="background:${sc.circle};color:${sc.circleColor}">${si+1}</div>
+      <div class="step-body">
+        <div class="step-action">${s.action}</div>
+        <div class="step-detail">${s.detail}${alerts}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const checksHtml = p.checks.map((c, ci) => {
+    const done = checked[current][ci];
+    return `<div class="check-item ${done ? 'done' : ''}" onclick="toggleCheck(${current}, ${ci})">
+      <div class="checkbox ${done ? 'checked' : ''}"></div>
+      <span>${c}</span>
+    </div>`;
+  }).join('');
+
+  document.getElementById('phasePanel').innerHTML = `
+    <div class="phase-header">
+      <div class="phase-header-left">
+        <div class="phase-num">0${current+1}</div>
+        <div>
+          <div class="phase-title">${p.title}</div>
+          <div class="phase-sub">${p.sub}</div>
+        </div>
+      </div>
+      <span class="sys-badge" style="background:${st.bg};color:${st.color}">${p.sysLabel}</span>
+    </div>
+    <div class="steps">${stepsHtml}</div>
+    <div class="checklist-section">
+      <div class="checklist-label">Phase checklist</div>
+      ${checksHtml}
+    </div>
+    <div class="nav-row">
+      <button class="btn" onclick="goto(${current-1})" ${current===0?'disabled':''}>&#8592; Previous</button>
+      <span class="nav-label">Phase ${current+1} of ${PHASES.length} &nbsp;·&nbsp; ${totalProgress()}% complete</span>
+      <button class="btn btn-primary" onclick="goto(${current+1})" ${current===PHASES.length-1?'disabled':''}>Next &#8594;</button>
+    </div>
+  `;
+}
+
+function render() {
+  renderNav();
+  renderProgress();
+  renderPanel();
+}
+
+function goto(i) {
+  if (i < 0 || i >= PHASES.length) return;
+  current = i;
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function toggleCheck(pi, ci) {
+  checked[pi][ci] = !checked[pi][ci];
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
