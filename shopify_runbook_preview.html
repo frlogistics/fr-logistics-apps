@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shopify Integration Runbook</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0d1117;
+    color: #e6edf3;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 18px;
+    overflow: hidden;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .logo-circle {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: #1D6B52;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 11px; color: #fff;
+    flex-shrink: 0;
+  }
+  .logo-text { font-size: 12px; font-weight: 600; color: #e6edf3; }
+  .logo-sub { font-size: 10px; color: #7d8590; }
+  .badge {
+    margin-left: auto;
+    background: #1D6B52;
+    color: #E1F5EE;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .icon {
+    font-size: 22px;
+  }
+  .title { font-size: 15px; font-weight: 700; color: #e6edf3; }
+  .subtitle { font-size: 11px; color: #7d8590; margin-top: 2px; }
+  .phases {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .phase {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 7px 10px;
+  }
+  .phase-num {
+    font-size: 11px;
+    font-weight: 700;
+    color: #1D6B52;
+    min-width: 18px;
+  }
+  .phase-label { font-size: 11px; color: #c9d1d9; }
+  .phase-sys {
+    margin-left: auto;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .sys-frl { background: #E1F5EE; color: #085041; }
+  .sys-ship { background: #E6F1FB; color: #0C447C; }
+  .sys-sku { background: #FDF3E7; color: #633806; }
+  .sys-shop { background: #EBF5DA; color: #27500A; }
+  .sys-both { background: #EEEDFE; color: #3C3489; }
+  .footer {
+    margin-top: auto;
+    font-size: 9px;
+    color: #484f58;
+    border-top: 1px solid #21262d;
+    padding-top: 8px;
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-circle">FR</div>
+    <div>
+      <div class="logo-text">FR-Logistics Â· Operations</div>
+      <div class="logo-sub">apps.fr-logistics.net</div>
+    </div>
+    <span class="badge">Internal</span>
+  </div>
+
+  <div class="title-row">
+    <div class="icon">ð</div>
+    <div>
+      <div class="title">Shopify Integration Runbook</div>
+      <div class="subtitle">Shopify + ShipStation + SKUVault/Linnworks</div>
+    </div>
+  </div>
+
+  <div class="phases">
+    <div class="phase">
+      <span class="phase-num">01</span>
+      <span class="phase-label">Pre-Setup â Data collection & client file</span>
+      <span class="phase-sys sys-frl">FR-Logistics</span>
+    </div>
+    <div class="phase">
+      <span class="phase-num">02</span>
+      <span class="phase-label">ShipStation â Connect Shopify store</span>
+      <span class="phase-sys sys-ship">ShipStation</span>
+    </div>
+    <div class="phase">
+      <span class="phase-num">03</span>
+      <span class="phase-label">SKUVault / Linnworks â Products & sync</span>
+      <span class="phase-sys sys-sku">SKUVault</span>
+    </div>
+    <div class="phase">
+      <span class="phase-num">04</span>
+      <span class="phase-label">Shopify Config â External fulfillment</span>
+      <span class="phase-sys sys-shop">Shopify</span>
+    </div>
+    <div class="phase">
+      <span class="phase-num">05</span>
+      <span class="phase-label">Testing â 5 mandatory checks</span>
+      <span class="phase-sys sys-both">FR-L + Client</span>
+    </div>
+    <div class="phase">
+      <span class="phase-num">06</span>
+      <span clase="phase-label">Go-Live â Activation & first days</span>
+      <span class="phase-sys sys-frl">FR-Logistics</span>
+    </div>
+  </div>
+
+  <div class="footer">Internal operations tool â FR-Logistics team use only</div>
+</body>
+</html>
