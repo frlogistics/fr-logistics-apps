@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventory Dashboard â FR-Logistics Miami</title>
+<style>
+  :root {
+    --green: #1D9E75;
+    --green-light: #E1F5EE;
+    --green-dark: #085041;
+    --amber: #BA7517;
+    --amber-light: #FAEEDA;
+    --red: #E24B4A;
+    --red-light: #FCEBEB;
+    --blue: #378ADD;
+    --blue-light: #E6F1FB;
+    --bg: #0d1117;
+    --bg2: #161b22;
+    --bg3: #21262d;
+    --border: rgba(255,255,255,0.08);
+    --text: #e6edf3;
+    --text2: #8b949e;
+    --text3: #6e7681;
+    --font: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.5; min-height: 100vh; }
+
+  /* Layout */
+  .shell { max-width: 1280px; margin: 0 auto; padding: 0 24px 48px; }
+
+  /* Topbar */
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 18px 0 24px; border-bottom: 1px solid var(--border); margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-pill { background: var(--green-dark); color: #9FE1CB; font-size: 10px; font-weight: 600; padding: 4px 10px; border-radius: 6px; letter-spacing: 0.08em; }
+  .brand h1 { font-size: 15px; font-weight: 500; color: var(--text); }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+  .live-badge { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+  .sync-chip { font-size: 11px; color: var(--text3); background: var(--bg3); border: 1px solid var(--border); padding: 4px 12px; border-radius: 20px; }
+  .refresh-btn { background: transparent; border: 1px solid var(--border); color: var(--text2); font-size: 12px; padding: 5px 14px; border-radius: 6px; cursor: pointer; transition: border-color 0.2s, color 0.2s; font-family: var(--font); }
+  .refresh-btn:hover { border-color: var(--green); color: var(--green); }
+
+  /* KPI grid */
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .kpi { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+  .kpi-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .kpi-value { font-size: 28px; font-weight: 600; color: var(--text); line-height: 1; }
+  .kpi-sub { font-size: 11px; margin-top: 5px; }
+  .up { color: var(--green); }
+  .down { color: var(--red); }
+  .warn { color: var(--amber); }
+  .muted { color: var(--text3); }
+
+  /* Section card */
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .card-title { font-size: 13px; font-weight: 500; color: var(--text); }
+  .card-action { font-size: 11px; color: var(--green); cursor: pointer; text-decoration: none; }
+  .card-action:hover { text-decoration: underline; }
+
+  /* Channels */
+  .channel-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .ch { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+  .ch-name { font-size: 10px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .ch-units { font-size: 22px; font-weight: 600; color: var(--text); }
+  .ch-label { font-size: 11px; color: var(--text3); margin-bottom: 8px; }
+  .bar-track { height: 4px; background: var(--bg); border-radius: 2px; }
+  .bar-fill { height: 100%; border-radius: 2px; background: var(--green); transition: width 0.8s ease; }
+  .bar-fill.amber { background: var(--amber); }
+
+  /* Tab row */
+  .tab-row { display: flex; gap: 6px; }
+  .tab { font-size: 11px; padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border); cursor: pointer; color: var(--text3); background: transparent; font-family: var(--font); transition: all 0.15s; }
+  .tab:hover { border-color: var(--green); color: var(--green); }
+  .tab.active { background: rgba(29,158,117,0.15); color: var(--green); border-color: rgba(29,158,117,0.3); }
+
+  /* SKU table */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; padding: 6px 10px; font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500; border-bottom: 1px solid var(--border); }
+  td { padding: 9px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); color: var(--text); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: var(--text3); }
+  .pill { font-size: 10px; padding: 2px 9px; border-radius: 10px; font-weight: 500; display: inline-block; }
+  .pill-ok { background: rgba(29,158,117,0.15); color: #5DCAA5; }
+  .pill-low { background: rgba(186,117,23,0.15); color: #EF9F27; }
+  .pill-out { background: rgba(226,75,74,0.15); color: #F09595; }
+
+  /* Bottom 2-col */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .prep-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .prep-row:last-child { border-bottom: none; }
+  .prep-name { font-size: 12px; color: var(--text); }
+  .prep-units { font-size: 12px; color: var(--text3); white-space: nowrap; margin-left: 12px; }
+  .prep-bar { flex: 1; height: 3px; background: var(--bg3); border-radius: 2px; margin: 0 12px; }
+  .prep-bar-fill { height: 100%; border-radius: 2px; background: var(--green); }
+  .prep-bar-fill.amber { background: var(--amber); }
+  .prep-bar-fill.red { background: var(--red); }
+
+  /* Alerts */
+  .alert-row { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); align-items: flex-start; }
+  .alert-row:last-child { border-bottom: none; }
+  .adot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+  .adot.red { background: var(--red); }
+  .adot.amber { background: var(--amber); }
+  .adot.blue { background: var(--blue); }
+  .alert-text { font-size: 12px; color: var(--text); line-height: 1.4; }
+  .alert-time { font-size: 10px; color: var(--text3); margin-top: 2px; }
+
+  /* Loading / error */
+  .loading-state { text-align: center; padding: 60px 0; color: var(--text3); font-size: 13px; }
+  .loading-spinner { width: 24px; height: 24px; border: 2px solid var(--border); border-top-color: var(--green); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error-state { text-align: center; padding: 40px 0; }
+  .error-msg { color: var(--red); font-size: 13px; margin-bottom: 12px; }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .channel-grid { grid-template-columns: repeat(2, 1fr); }
+    .two-col { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 480px) {
+    .kpi-grid { grid-template-columns: 1fr 1fr; }
+    .channel-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-pill">FR-LOGISTICS</span>
+      <h1>Inventory Dashboard</h1>
+    </div>
+    <div class="topbar-right">
+      <div class="live-badge"><div class="live-dot"></div> Live</div>
+      <span class="sync-chip" id="syncChip">Connectingâ¦</span>
+      <button class="refresh-btn" onclick="loadData(true)">â» Refresh</button>
+    </div>
+  </div>
+
+  <!-- Loading state (shown while fetching) -->
+  <div id="loadingState" class="loading-state">
+    <div class="loading-spinner"></div>
+    Connecting to SKUVaultâ¦
+  </div>
+
+  <!-- Error state -->
+  <div id="errorState" style="display:none" class="error-state">
+    <div class="error-msg" id="errorMsg">Unable to load inventory data.</div>
+    <button class="refresh-btn" onclick="loadData(true)">Try again</button>
+  </div>
+
+  <!-- Dashboard content (hidden until data loads) -->
+  <div id="dashContent" style="display:none">
+
+    <!-- KPIs -->
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="kpi-label">Total Units</div>
+        <div class="kpi-value" id="kTotalUnits">â</div>
+        <div class="kpi-sub muted" id="kUnitsLabel">Loadingâ¦</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Active SKUs</div>
+        <div class="kpi-value" id="kSKUs">â</div>
+        <div class="kpi-sub muted">across all channels</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Available</div>
+        <div class="kpi-value" id="kAvail">â</div>
+        <div class="kpi-sub muted" id="kAvailLabel">units not allocated</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Reorder Alerts</div>
+        <div class="kpi-value" id="kAlerts">â</div>
+        <div class="kpi-sub" id="kAlertsLabel">â</div>
+      </div>
+    </div>
+
+    <!-- Channels -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Inventory by Channel</span>
+      </div>
+      <div class="channel-grid">
+        <div class="ch">
+          <div class="ch-name">FBA â Amazon</div>
+          <div class="ch-units" id="chFBA">â</div>
+          <div class="ch-label">units in fulfillment</div>
+          <div class="bar-track"><div class="bar-fill" id="chFBABar" style="width:0%"></div></div>
+        </div>
+        <div class="ch">
+          <div class="ch-name">FBM â Amazon</div>
+          <div class="ch-units" id="chFBM">â</div>
+          <div class="ch-label">units in warehouse</div>
+          <div class="bar-track"><div class="bar-fill amber" id="chFBMBar" style="width:0%"></div></div>
+        </div>
+        <div class="ch">
+          <div class="ch-name">Shopify / 3PL</div>
+          <div class="ch-units" id="chShopify">â</div>
+          <div class="ch-label">units allocated</div>
+          <div class="bar-track"><div class="bar-fill" id="chShopifyBar" style="width:0%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SKU Table -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">SKU Inventory Detail</span>
+        <div class="tab-row">
+          <button class="tab active" onclick="filterSKU('all', this)">All</button>
+          <button class="tab" onclick="filterSKU('low', this)">Low Stock</button>
+          <button class="tab" onclick="filterSKU('out', this)">Out of Stock</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Description</th>
+              <th style="text-align:right">On Hand</th>
+              <th style="text-align:right">Allocated</th>
+              <th style="text-align:right">Available</th>
+              <th>Status</th>
+              <th>Locations</th>
+            </tr>
+          </thead>
+          <tbody id="skuBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Bottom 2-col -->
+    <div class="two-col">
+      <!-- FBA Prep Queue (top 5 by onHand) -->
+      <div class="card" style="margin-bottom:0">
+        <div class="card-header">
+          <span class="card-title">Top SKUs â FBA Prep</span>
+        </div>
+        <div id="prepList"></div>
+      </div>
+      <!-- Alerts -->
+      <div class="card" style="margin-bottom:0">
+        <div class="card-header">
+          <span class="card-title">Alerts & Status</span>
+        </div>
+        <div id="alertList"></div>
+      </div>
+    </div>
+
+  </div><!-- /dashContent -->
+</div><!-- /shell -->
+
+<script>
+let allSKUs = [];
+let currentFilter = 'all';
+
+async function loadData(forceRefresh = false) {
+  document.getElementById('loadingState').style.display = 'block';
+  document.getElementById('dashContent').style.display = 'none';
+  document.getElementById('errorState').style.display = 'none';
+
+  try {
+    const url = forceRefresh
+      ? '/.netlify/functions/inventory?_=' + Date.now()
+      : '/.netlify/functions/inventory';
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    renderDashboard(data, res.headers.get('X-Cache'));
+  } catch (err) {
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('errorMsg').textContent = 'Error: ' + err.message;
+    document.getElementById('errorState').style.display = 'block';
+  }
+}
+
+function renderDashboard(data, cacheStatus) {
+  const { kpis, channels, skus, lastSync } = data;
+  allSKUs = skus || [];
+
+  const syncTime = lastSync ? new Date(lastSync).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+  const cacheLabel = cacheStatus === 'HIT' ? ' (cached)' : cacheStatus === 'STALE' ? ' (stale)' : '';
+  document.getElementById('syncChip').textContent = `SKUVault Â· ${syncTime}${cacheLabel}`;
+
+  document.getElementById('kTotalUnits').textContent = (kpis.totalUnits || 0).toLocaleString();
+  document.getElementById('kSKUs').textContent = (kpis.totalSKUs || 0).toLocaleString();
+  const totalAvail = allSKUs.reduce((s, x) => s + (x.available || 0), 0);
+  document.getElementById('kAvail').textContent = totalAvail.toLocaleString();
+  const alerts = kpis.reorderAlerts || 0;
+  document.getElementById('kAlerts').textContent = alerts;
+  document.getElementById('kAlertsLabel').textContent = alerts > 0
+    ? `${kpis.outOfStock || 0} out Â· ${kpis.lowStock || 0} low`
+    : 'All good';
+  document.getElementById('kAlertsLabel').className = 'kpi-sub ' + (alerts > 0 ? 'down' : 'up');
+
+  const total = channels.total || 1;
+  document.getElementById('chFBA').textContent = (channels.fba || 0).toLocaleString();
+  document.getElementById('chFBM').textContent = (channels.fbm || 0).toLocaleString();
+  document.getElementById('chShopify').textContent = (channels.shopify || 0).toLocaleString();
+  setTimeout(() => {
+    document.getElementById('chFBABar').style.width = Math.round(channels.fba / total * 100) + '%';
+    document.getElementById('chFBMBar').style.width = Math.round(channels.fbm / total * 100) + '%';
+    document.getElementById('chShopifyBar').style.width = Math.round(channels.shopify / total * 100) + '%';
+  }, 100);
+
+  renderSKUs(currentFilter);
+
+  const top5 = [...allSKUs].slice(0, 5);
+  const maxUnits = top5[0]?.onHand || 1;
+  document.getElementById('prepList').innerHTML = top5.map(s => {
+    const pct = Math.round(s.onHand / maxUnits * 100);
+    const color = s.status === 'out' ? 'red' : s.status === 'low' ? 'amber' : '';
+    return `<div class="prep-row"><div class="prep-name">${s.sku}</div><div class="prep-bar"><div class="prep-bar-fill ${color}" style="width:${pct}%"></div></div><div class="prep-units">${s.onHand.toLocaleString()} u</div></div>`;
+  }).join('');
+
+  const outSKUs = allSKUs.filter(s => s.status === 'out').slice(0, 2);
+  const lowSKUs = allSKUs.filter(s => s.status === 'low').slice(0, 2);
+  let alertHTML = '';
+  for (const s of outSKUs) alertHTML |= `<div class="alert-row"><div class="adot red"></div><div><div class="alert-text">${s.sku} - OUT OD STOCK</div><div class="alert-time">Reorder required</div></div></div>`;
+  for (const s of lowSKUs) alertHTML += `<div class="alert-row"><div class="adot amber"></div><div><div class="alert-text">${s.sku} - ${s.available} units (low)</div><div class="alert-time">Review reorder point</div></div></div>`;
+  if (!alertHTML) alertHTML = `<div class="alert-row"><div class="adot blue"></div><div><div class="alert-text">All SKUs at healthy stock levels</div><div class="alert-time">Last: ${syncTime}</div></div></div>`;
+  alertHTML += `<div class="alert-row"><div class="adot blue"></div><div><div class="alert-text">SKUVault sync - ${kpis.totalSKUs} SKUs</div><div class="alert-time">${syncTime}</div></div></div>`;
+  document.getElementById('alertList').innerHTML = alertHTML;
+
+  document.getElementById('loadingState').style.display = 'none';
+  document.getElementById('dashContent').style.display = 'block';
+}
+
+function renderSKUs(filter) {
+  const filtered = filter === 'all' ? allSKUs : allSKUs.filter(s => s.status === filter);
+  const pillClass = { ok: 'pill-ok', low: 'pill-low', out: 'pill-out' };
+  const pillLabel = { ok: 'In Stock', low: 'Low Stock', out: 'Out of Stock' };
+  document.getElementById('skuBody').innerHTML = filtered.map(s => `<tr><td class="mono">${s.sku}</td><td>${s.title || '-'}</td><td style="text-align:right">${(s.onHand || 0).toLocaleString()}</td><td style="text-align:right">${(s.allocated || 0).toLocaleString()}</td><td style="text-align:right;font-weight:500">${(s.available || 0).toLocaleString()}</td><td><span class="pill ${pillClass[s.status]}">${pillLabel[s.status]}</span></td><td class="mono" style="font-size:10px">${(s.locations || []).slice(0,3).join(', ') || '-'}</td></tr>`).join('');
+}
+
+function filterSKU(filter, btn) {
+  currentFilter = filter;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  renderSKUs(filter);
+}
+
+setInterval(() => loadData(false), 5 * 60 * 1000);
+loadData();
+</script>
+</body>
+</html>
