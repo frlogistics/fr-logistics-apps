@@ -16,7 +16,7 @@
     { name: "Quote System v3", desc: "Calculadora de cotizaciones para clientes — fulfillment, storage, prep", tag: "Sales", url: "https://apps.fr-logistics.net/FR_Logistics_Quote_System_v3.html" },
     { name: "Volume Calculator", desc: "Calculadora de volumen y dimensiones para carga y tarimas", tag: "Tools", url: "https://apps.fr-logistics.net/FR_Logistics_Volume_Calculator.html" }
   ,
-  { name: "Shopify Integration Runbook", desc: "Step-by-step guide — Shopify + ShipStation + SKUVault/Linnworks", tag: "Internal", url: "shopify_integration_runbook.html" }];
+  { name: "Shopify Integration Runbook", desc: "Step-by-step guide — Shopify + ShipStation + SKUVault/Linnworks", tag: "Internal", url: "shopify_integration_runbook.html", noPreview: true }];
   const SESSION_KEY = "fr_portal_auth";
   function checkSession() { return sessionStorage.getItem(SESSION_KEY) === "true"; }
   function login() {
@@ -49,7 +49,7 @@
       const tagClass = app.tag === "Analytics" ? "appTag analytics" : "appTag";
       card.innerHTML = `
         <div class="previewFrame">
-          <iframe src="${app.url}" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+          ${app.noPreview ? '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:48px;">🔗</div>' : `<iframe src="${app.url}" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
           <div class="previewOverlay"></div>
           <div class="previewClick"><span>Open App →</span></div>
         </div></div>
@@ -57,7 +57,7 @@
           <div class="appName">${app.name}</div>
           <div class="appDesc">${app.desc}</div>
           <span class="${tagClass}">${app.tag}</span>
-        </div>`;
+        </div>`}`;
       card.addEventListener("click", () => openApp(app));
       grid.appendChild(card);
     });
