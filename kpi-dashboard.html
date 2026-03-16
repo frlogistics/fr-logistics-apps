@@ -17,6 +17,8 @@
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* ── Nav ── */
   .topnav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 2rem; height: 56px; display: flex; align-items: center; gap: 16px; position: sticky; top: 0; z-index: 100; }
   .nav-logo { width: 32px; height: 32px; background: var(--green); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
   .nav-logo svg { width: 18px; height: 18px; fill: white; }
@@ -25,18 +27,26 @@
   .nav-badge { margin-left: 8px; background: var(--green-light); color: var(--green); font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 20px; display: flex; align-items: center; gap: 4px; }
   .nav-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-  .nav-sync { margin-left: auto; font-size: 11px; color: var(--text3); font-family: 'DM Mono', monospace; }
-  .nav-refresh { background: transparent; border: 0.5px solid var(--border); border-radius: 8px; padding: 6px 12px; font-size: 12px; color: var(--text2); cursor: pointer; font-family: 'DM Sans', sans-serif; }
+  .nav-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .nav-sync { font-size: 11px; color: var(--text3); font-family: 'DM Mono', monospace; }
+  .nav-refresh { background: transparent; border: 0.5px solid var(--border); border-radius: 8px; padding: 6px 12px; font-size: 12px; color: var(--text2); cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
   .nav-refresh:hover { background: var(--surface2); }
+  .nav-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Loading bar ── */
   .loading-bar { height: 3px; background: linear-gradient(90deg, var(--green) 0%, #9fe1cb 50%, var(--green) 100%); background-size: 400px; animation: shimmer 1.5s infinite; display: none; }
   .loading-bar.active { display: block; }
   @keyframes shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
+
+  /* ── Layout ── */
   .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
   .tabs { display: flex; gap: 2px; margin-bottom: 1.5rem; background: var(--surface2); border-radius: var(--radius); padding: 4px; width: fit-content; }
   .tab { padding: 7px 18px; font-size: 13px; font-weight: 500; border: none; background: transparent; color: var(--text2); border-radius: 7px; cursor: pointer; transition: all 0.15s; }
   .tab.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
   .panel { display: none; }
   .panel.active { display: block; }
+
+  /* ── KPI cards ── */
   .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 1.5rem; }
   .kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 18px; transition: transform 0.15s; }
   .kpi-card:hover { transform: translateY(-1px); }
@@ -45,6 +55,8 @@
   .kpi-sub { font-size: 11px; color: var(--text3); }
   .val-green { color: var(--green); }
   .val-amber { color: var(--amber); }
+
+  /* ── Charts ── */
   .charts-row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 1.5rem; }
   .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 20px; }
   .chart-title { font-size: 13px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
@@ -55,6 +67,8 @@
   .doughnut-label { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
   .doughnut-label .big { font-size: 22px; font-weight: 600; color: var(--green); }
   .doughnut-label .sm { font-size: 10px; color: var(--text3); }
+
+  /* ── Status / performance ── */
   .status-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 1.5rem; }
   .info-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 20px; }
   .info-title { font-size: 13px; font-weight: 500; margin-bottom: 14px; }
@@ -65,6 +79,17 @@
   .pill { padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 500; }
   .pill-green { background: var(--green-light); color: var(--green); }
   .pill-amber { background: var(--amber-light); color: var(--amber); }
+
+  /* ── Pending orders table ── */
+  .pending-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 20px; margin-bottom: 1.5rem; }
+  .pending-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .pending-table th { text-align: left; font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; padding: 0 8px 10px 0; border-bottom: 1px solid var(--border); }
+  .pending-table td { padding: 8px 8px 8px 0; border-bottom: 1px solid var(--border); color: var(--text2); }
+  .pending-table tr:last-child td { border-bottom: none; }
+  .pending-table td:first-child { color: var(--text); font-family: 'DM Mono', monospace; font-size: 11px; }
+  .empty-pending { color: var(--text3); font-size: 12px; text-align: center; padding: 20px 0; }
+
+  /* ── Stores ── */
   .store-section-title { font-size: 12px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 12px; }
   .store-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 1.5rem; }
   .store-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 18px; transition: transform 0.15s; }
@@ -86,30 +111,47 @@
   .store-row:last-child { border-bottom: none; }
   .store-row-k { color: var(--text2); }
   .store-row-v { font-weight: 500; }
+
+  /* ── Footer ── */
   .dash-footer { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
   .footer-left { font-size: 12px; color: var(--text3); }
   .footer-left strong { color: var(--text2); }
+
+  /* ── Error banner ── */
   .error-banner { background: #fceaea; border: 1px solid #f09595; border-radius: var(--radius); padding: 10px 14px; font-size: 12px; color: #a32d2d; margin-bottom: 1rem; display: none; }
   .error-banner.show { display: block; }
-  @media (max-width: 640px) { .charts-row, .status-row { grid-template-columns: 1fr; } .container { padding: 1rem; } .topnav { padding: 0 1rem; } }
+
+  @media (max-width: 640px) {
+    .charts-row, .status-row { grid-template-columns: 1fr; }
+    .container { padding: 1rem; }
+    .topnav { padding: 0 1rem; }
+  }
 </style>
 </head>
 <body>
+
 <div class="loading-bar" id="loadingBar"></div>
+
 <nav class="topnav">
   <div class="nav-logo"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
   <span class="nav-title">FR-Logistics Miami</span>
   <span class="nav-sub">KPI Dashboard</span>
   <span class="nav-badge">Live</span>
-  <span class="nav-sync" id="syncTime">Loading...</span>
-  <button class="nav-refresh" onclick="loadData()">↻ Refresh</button>
+  <div class="nav-right">
+    <span class="nav-sync" id="syncTime">Loading...</span>
+    <button class="nav-refresh" id="refreshBtn" onclick="loadData()">↻ Refresh</button>
+  </div>
 </nav>
+
 <div class="container">
   <div class="error-banner" id="errorBanner"></div>
+
   <div class="tabs">
     <button class="tab active" onclick="showTab('kpis',this)">KPIs</button>
     <button class="tab" onclick="showTab('stores',this)">Por Store</button>
   </div>
+
+  <!-- ── KPIs Panel ── -->
   <div id="panel-kpis" class="panel active">
     <div class="kpi-grid">
       <div class="kpi-card"><div class="kpi-label">Revenue Est.</div><div class="kpi-value val-green" id="kpi-revenue">—</div><div class="kpi-sub">Esta semana</div></div>
@@ -119,10 +161,14 @@
       <div class="kpi-card"><div class="kpi-label">On-Time</div><div class="kpi-value" id="kpi-ontime">—</div><div class="kpi-sub">Shipments</div></div>
       <div class="kpi-card"><div class="kpi-label">Errors</div><div class="kpi-value val-green" id="kpi-errors">—</div><div class="kpi-sub">Esta semana</div></div>
     </div>
+
     <div class="charts-row">
       <div class="chart-card">
         <div class="chart-title">Shipments esta semana</div>
-        <div class="legend"><span><span class="ldot" style="background:#1a7a4a;"></span>On-time</span><span><span class="ldot" style="background:#e2a030;"></span>Pending</span></div>
+        <div class="legend">
+          <span><span class="ldot" style="background:#1a7a4a;"></span>On-time</span>
+          <span><span class="ldot" style="background:#e2a030;"></span>Pending</span>
+        </div>
         <div style="position:relative;width:100%;height:200px;"><canvas id="shipChart"></canvas></div>
       </div>
       <div class="chart-card">
@@ -134,6 +180,7 @@
         </div>
       </div>
     </div>
+
     <div class="status-row">
       <div class="info-card">
         <div class="info-title">Order status</div>
@@ -147,10 +194,23 @@
         <div class="info-row"><span class="info-key">SLA rate</span><span class="pill pill-green" id="perf-sla">—</span></div>
         <div class="info-row"><span class="info-key">Avg / shipment</span><span class="info-val" id="perf-avg">—</span></div>
         <div class="info-row"><span class="info-key">Week range</span><span class="info-val" id="perf-range">—</span></div>
-        <div class="info-row"><span class="info-key">Data source</span><span class="info-val">ShipStation V1</span></div>
+        <div class="info-row"><span class="info-key">Data source</span><span class="info-val">ShipStation API · Live</span></div>
       </div>
     </div>
+
+    <!-- Pending orders detail -->
+    <div class="pending-card" id="pendingSection" style="display:none;">
+      <div class="info-title">⚠ Awaiting Shipment</div>
+      <table class="pending-table">
+        <thead><tr>
+          <th>Order #</th><th>Store</th><th>Items</th><th>Order Date</th>
+        </tr></thead>
+        <tbody id="pendingTableBody"></tbody>
+      </table>
+    </div>
   </div>
+
+  <!-- ── Stores Panel ── -->
   <div id="panel-stores" class="panel">
     <div class="store-section-title">Stores activos en sync</div>
     <div class="store-grid" id="activeStores"></div>
@@ -164,21 +224,39 @@
       <div class="store-card dim"><div class="store-id-lbl">ID · 376028</div><div class="store-name-row"><span class="sdot" style="background:#6a1ab0;"></span><span class="store-name-text">TikTok Shop JDK</span><span class="mp-tag mp-tt">TikTok</span></div><div class="store-row"><span class="store-row-k">Marketplace</span><span class="store-row-v">TikTok</span></div></div>
     </div>
   </div>
+
   <div class="dash-footer">
-    <div class="footer-left"><strong>FR-Logistics Miami, Inc.</strong> · Doral, Miami FL · Auto-sync 6 AM daily via Google Sheets API</div>
+    <div class="footer-left"><strong>FR-Logistics Miami, Inc.</strong> · Doral, Miami FL · Data en tiempo real via ShipStation API</div>
   </div>
 </div>
+
 <script>
-  const SHEET_ID = '1kRDrSUKE0F4FKCwgXZQsK_l7MqdgI35h_n3SLhN_0DA';
-  const API_KEY  = 'AIzaSyBd7-9FEG3Z0AEkQ_EQHexZOzjQLxeLjCQ';
-  const BASE     = 'https://sheets.googleapis.com/v4/spreadsheets';
-  const STORE_MAP = {
-    '3183':   { name: 'A&VProducts-Wal',   mp: 'Walmart',     cls: 'mp-wal', color: '#1878c8' },
-    '3301':   { name: 'A&VProducts-AMZ',   mp: 'Amazon',      cls: 'mp-amz', color: '#e2a030' },
-    '374831': { name: 'FR Logistics Miami', mp: 'ShipStation', cls: 'mp-ss',  color: '#1a7a4a' }
+  // ── Config ───────────────────────────────────────────────────────────────
+  // La función vive en el mismo dominio (Netlify), no se necesita URL absoluta
+  const API_URL = '/.netlify/functions/shipstation';
+
+  const MP_CLASS = {
+    'walmart':    'mp-wal',
+    'amazon':     'mp-amz',
+    'ebay':       'mp-ebay',
+    'etsy':       'mp-etsy',
+    'shopify':    'mp-shp',
+    'tiktok':     'mp-tt',
+    'shipstation':'mp-ss'
   };
+  const STORE_COLORS = {
+    'walmart':    '#1878c8',
+    'amazon':     '#e2a030',
+    'ebay':       '#c0461a',
+    'etsy':       '#c0461a',
+    'shopify':    '#3a7a1a',
+    'tiktok':     '#6a1ab0',
+    'shipstation':'#1a7a4a'
+  };
+
   let shipChartInst = null, slaChartInst = null;
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
   function showTab(name, el) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -186,50 +264,71 @@
     el.classList.add('active');
   }
 
-  async function fetchRange(sheet, range) {
-    const url = `${BASE}/${SHEET_ID}/values/${encodeURIComponent(sheet + '!' + range)}?key=${API_KEY}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Sheets API ${res.status}: make sure the Sheet is shared publicly (Viewer)`);
-    return (await res.json()).values || [];
+  function mpKey(marketplaceName) {
+    return (marketplaceName || '').toLowerCase().replace(/\s+/g, '');
   }
 
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    return iso.slice(0, 10).replace(/-/g, '/').slice(5); // MM/DD
+  }
+
+  // ── Main load ─────────────────────────────────────────────────────────────
   async function loadData() {
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true;
+    btn.textContent = '↻ Loading…';
     document.getElementById('loadingBar').classList.add('active');
     document.getElementById('errorBanner').classList.remove('show');
+
     try {
-      const [kpiRows, storeRows] = await Promise.all([
-        fetchRange('KPIs', 'A2:B11'),
-        fetchRange('Por Store', 'A2:C50')
-      ]);
-      const kpis = {};
-      kpiRows.forEach(r => { if (r[0]) kpis[r[0]] = r[1]; });
-      const revenue   = parseFloat(kpis['revenue_est']) || 0;
-      const shipments = parseInt(kpis['total_shipments']) || 0;
-      const sla       = parseFloat(kpis['sla_pct']) || 0;
-      const pending   = parseInt(kpis['pending_orders']) || 0;
-      const ontime    = parseInt(kpis['on_time_count']) || 0;
-      const errors    = parseInt(kpis['error_count']) || 0;
-      const weekStart = (kpis['week_start'] || '').slice(5);
-      const weekEnd   = (kpis['week_end'] || '').slice(5);
-      document.getElementById('kpi-revenue').textContent   = '$' + revenue.toFixed(0);
-      document.getElementById('kpi-shipments').textContent = shipments;
-      document.getElementById('kpi-sla').textContent       = sla + '%';
-      document.getElementById('kpi-pending').textContent   = pending;
-      document.getElementById('kpi-ontime').textContent    = ontime;
-      document.getElementById('kpi-errors').textContent    = errors;
-      document.getElementById('stat-shipped').textContent  = ontime;
-      document.getElementById('stat-pending').textContent  = pending;
-      document.getElementById('stat-errors').textContent   = errors;
-      document.getElementById('stat-total').textContent    = shipments + pending;
-      document.getElementById('perf-sla').textContent      = sla + '%';
-      document.getElementById('perf-avg').textContent      = shipments > 0 ? '$' + (revenue / shipments).toFixed(2) : '—';
-      document.getElementById('perf-range').textContent    = weekStart && weekEnd ? weekStart + ' – ' + weekEnd : '—';
-      document.getElementById('sla-center').textContent    = sla + '%';
-      const updated = kpis['updated_at'] ? new Date(kpis['updated_at']) : new Date();
-      document.getElementById('syncTime').textContent = 'Updated: ' + updated.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + ' · ' + updated.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
-      renderShipChart(ontime, pending);
-      renderSlaChart(sla);
-      renderStores(storeRows);
+      const res = await fetch(API_URL);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const d = await res.json();
+      const k = d.kpis;
+
+      // ── KPI cards ──
+      document.getElementById('kpi-revenue').textContent   = '$' + (k.revenue_est || 0).toFixed(0);
+      document.getElementById('kpi-shipments').textContent = k.total_shipments;
+      document.getElementById('kpi-sla').textContent       = k.sla_pct + '%';
+      document.getElementById('kpi-pending').textContent   = k.pending_orders;
+      document.getElementById('kpi-ontime').textContent    = k.on_time_count;
+      document.getElementById('kpi-errors').textContent    = k.error_count;
+
+      // ── Order status ──
+      document.getElementById('stat-shipped').textContent  = k.on_time_count;
+      document.getElementById('stat-pending').textContent  = k.pending_orders;
+      document.getElementById('stat-errors').textContent   = k.error_count;
+      document.getElementById('stat-total').textContent    = k.total_shipments + k.pending_orders;
+
+      // ── Performance ──
+      document.getElementById('perf-sla').textContent   = k.sla_pct + '%';
+      document.getElementById('perf-avg').textContent   = k.total_shipments > 0
+        ? '$' + (k.revenue_est / k.total_shipments).toFixed(2) : '—';
+      document.getElementById('perf-range').textContent = k.week_start && k.week_end
+        ? k.week_start.slice(5).replace('-','-') + ' – ' + k.week_end.slice(5).replace('-','-') : '—';
+
+      document.getElementById('sla-center').textContent = k.sla_pct + '%';
+
+      // ── Sync time ──
+      const updated = new Date(k.updated_at);
+      document.getElementById('syncTime').textContent =
+        'Updated: ' + updated.toLocaleDateString('en-US',{month:'short',day:'numeric'}) +
+        ' · ' + updated.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+
+      // ── Charts ──
+      renderShipChart(d.days_data || [], k.pending_orders);
+      renderSlaChart(k.sla_pct);
+
+      // ── Pending orders table ──
+      renderPendingOrders(d.pending_orders || [], d.stores || []);
+
+      // ── Active stores ──
+      renderActiveStores(d.stores || [], d.stores_by_shipments || {});
+
     } catch(e) {
       const b = document.getElementById('errorBanner');
       b.textContent = '⚠ ' + e.message;
@@ -237,58 +336,99 @@
       document.getElementById('syncTime').textContent = 'Error loading data';
     } finally {
       document.getElementById('loadingBar').classList.remove('active');
+      btn.disabled = false;
+      btn.textContent = '↻ Refresh';
     }
   }
 
-  function renderShipChart(ontime, pending) {
+  // ── Bar chart: real shipments per day ──────────────────────────────────────
+  function renderShipChart(daysData, pending) {
     if (shipChartInst) shipChartInst.destroy();
-    const total = ontime + pending || 1;
-    const base = Math.floor(total / 7);
-    const days = Array(7).fill(base);
-    days[6] = total - base * 6;
-    if (pending > 0) days[4] = Math.max(0, days[4] - pending);
+    // daysData = [lun, mar, mie, jue, vie, sab, dom]
+    const days = daysData.length === 7 ? daysData : Array(7).fill(0);
+    // Pending shown on today's day index (0=Mon … 6=Sun)
+    const todayIdx = (new Date().getDay() + 6) % 7; // JS Sunday=0, convert to Mon=0
+    const pendArr  = Array(7).fill(0);
+    if (pending > 0) pendArr[todayIdx] = pending;
+
     shipChartInst = new Chart(document.getElementById('shipChart'), {
       type: 'bar',
       data: {
         labels: ['Lun','Mar','Mie','Jue','Vie','Sab','Dom'],
         datasets: [
           { label: 'On-time', data: days, backgroundColor: '#1a7a4a', borderRadius: 4 },
-          { label: 'Pending', data: [0,0,0,0,pending,0,0], backgroundColor: '#e2a030', borderRadius: 4 }
+          { label: 'Pending', data: pendArr, backgroundColor: '#e2a030', borderRadius: 4 }
         ]
       },
-      options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
-        scales:{ x:{stacked:true,ticks:{font:{size:11}},grid:{display:false},border:{display:false}},
-                 y:{stacked:true,ticks:{font:{size:11},stepSize:1},grid:{color:'rgba(0,0,0,0.05)'},border:{display:false}} } }
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { stacked: true, ticks:{font:{size:11}}, grid:{display:false}, border:{display:false} },
+          y: { stacked: true, ticks:{font:{size:11},stepSize:1}, grid:{color:'rgba(0,0,0,0.05)'}, border:{display:false} }
+        }
+      }
     });
   }
 
+  // ── Doughnut ──────────────────────────────────────────────────────────────
   function renderSlaChart(sla) {
     if (slaChartInst) slaChartInst.destroy();
     slaChartInst = new Chart(document.getElementById('slaChart'), {
       type: 'doughnut',
-      data: { labels:['On-time','Late'], datasets:[{data:[sla||0.01, Math.max(0.01,100-sla)], backgroundColor:['#1a7a4a','#e8e8e5'], borderWidth:0}] },
+      data: {
+        labels: ['On-time','Late'],
+        datasets: [{ data: [sla || 0.01, Math.max(0.01, 100 - sla)], backgroundColor: ['#1a7a4a','#e8e8e5'], borderWidth: 0 }]
+      },
       options: { responsive:true, maintainAspectRatio:false, cutout:'72%', plugins:{legend:{display:false},tooltip:{enabled:false}} }
     });
   }
 
-  function renderStores(rows) {
+  // ── Pending orders detail table ───────────────────────────────────────────
+  function renderPendingOrders(orders, stores) {
+    const section = document.getElementById('pendingSection');
+    const tbody   = document.getElementById('pendingTableBody');
+    if (!orders.length) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+    // Build store name map
+    const storeMap = {};
+    stores.forEach(s => { storeMap[String(s.id)] = s.name; });
+    tbody.innerHTML = orders.map(o => `
+      <tr>
+        <td>${o.orderNumber || '—'}</td>
+        <td>${storeMap[String(o.store)] || o.store || '—'}</td>
+        <td>${o.items}</td>
+        <td>${fmtDate(o.orderDate)}</td>
+      </tr>
+    `).join('');
+  }
+
+  // ── Active stores cards ───────────────────────────────────────────────────
+  function renderActiveStores(stores, byShipments) {
     const c = document.getElementById('activeStores');
     c.innerHTML = '';
-    const valid = rows.filter(r => r[0] && STORE_MAP[r[0]]);
-    const data = valid.length ? valid : Object.keys(STORE_MAP).map(id => [id, '0', '—']);
-    data.forEach(r => {
-      const s = STORE_MAP[r[0]]; if (!s) return;
-      const upd = (r[2] || '—').slice(0,10);
-      c.innerHTML += `<div class="store-card">
-        <div class="store-id-lbl">ID · ${r[0]}</div>
-        <div class="store-name-row"><span class="sdot" style="background:${s.color};"></span><span class="store-name-text">${s.name}</span><span class="mp-tag ${s.cls}">${s.mp}</span></div>
-        <div class="store-row"><span class="store-row-k">Units</span><span class="store-row-v">${r[1]||0}</span></div>
-        <div class="store-row"><span class="store-row-k">Updated</span><span class="store-row-v">${upd}</span></div>
-        <div class="store-row"><span class="store-row-k">Status</span><span class="pill pill-green">Active</span></div>
-      </div>`;
+    const active = stores.filter(s => s.active);
+    if (!active.length) { c.innerHTML = '<div style="color:var(--text3);font-size:12px;">No active stores found</div>'; return; }
+    active.forEach(s => {
+      const mk  = mpKey(s.marketplace);
+      const cls = MP_CLASS[mk] || 'mp-ss';
+      const col = STORE_COLORS[mk] || '#1a7a4a';
+      const units = byShipments[String(s.id)] || 0;
+      c.innerHTML += `
+        <div class="store-card">
+          <div class="store-id-lbl">ID · ${s.id}</div>
+          <div class="store-name-row">
+            <span class="sdot" style="background:${col};"></span>
+            <span class="store-name-text">${s.name}</span>
+            <span class="mp-tag ${cls}">${s.marketplace}</span>
+          </div>
+          <div class="store-row"><span class="store-row-k">Shipments (7d)</span><span class="store-row-v">${units}</span></div>
+          <div class="store-row"><span class="store-row-k">Status</span><span class="pill pill-green">Active</span></div>
+        </div>`;
     });
   }
 
+  // ── Boot ──────────────────────────────────────────────────────────────────
   loadData();
 </script>
 </body>
