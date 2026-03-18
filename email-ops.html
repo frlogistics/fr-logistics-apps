@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FR-Logistics · Email Ops</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #0a0f0d;
+    --card:    #151f1a;
+    --card2:   #111a16;
+    --accent:  #24c97a;
+    --accent2: #1aa362;
+    --border:  rgba(31,164,99,.18);
+    --text:    #e8f0eb;
+    --sub:     #7a9a87;
+    --danger:  #e05555;
+    --warn:    #e09c45;
+    --info:    #4a9eff;
+    --purple:  #a855f7;
+    --mono:    'JetBrains Mono', monospace;
+    --sans:    'DM Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* TOP BAR */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    background: #0d1410;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  .back-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--sub);
+    font-family: var(--sans);
+    font-size: 12px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all .2s;
+  }
+  .back-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .page-title { font-weight: 600; font-size: 14px; letter-spacing: .02em; }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+  .live-pill {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 11px; color: var(--accent);
+    background: rgba(36,201,122,.08);
+    border: 1px solid rgba(36,201,122,.2);
+    padding: 4px 10px; border-radius: 20px;
+  }
+  .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .updated-text { font-family: var(--mono); font-size: 11px; color: var(--sub); }
+
+  /* MAIN */
+  .main { padding: 20px; max-width: 900px; margin: 0 auto; }
+
+  /* AUTH SECTION */
+  .auth-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    text-align: center;
+    gap: 16px;
+  }
+  .auth-icon { font-size: 48px; margin-bottom: 8px; }
+  .auth-title { font-size: 20px; font-weight: 600; }
+  .auth-sub { font-size: 14px; color: var(--sub); max-width: 340px; line-height: 1.6; }
+  .auth-btn {
+    margin-top: 8px;
+    background: var(--accent);
+    color: #0a0f0d;
+    border: none;
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 12px 28px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all .2s;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .auth-btn:hover { background: var(--accent2); transform: translateY(-1px); }
+  .auth-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+  .auth-note { font-size: 12px; color: var(--sub); }
+
+  /* LOADING */
+  .loading-section {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 60px 20px; gap: 16px;
+  }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-family: var(--mono); font-size: 13px; color: var(--sub); }
+
+  /* DASHBOARD */
+  .dashboard { display: none; }
+  .dashboard.visible { display: block; }
+
+  /* SECTION LABEL */
+  .section-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--sub);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* LABEL CARDS GRID */
+  .labels-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+
+  .label-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color .2s, transform .2s;
+    cursor: default;
+  }
+  .label-card:hover { border-color: rgba(36,201,122,.35); transform: translateY(-1px); }
+  .label-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+  .label-card.ops::before    { background: #24c97a; }
+  .label-card.urgent::before { background: #e05555; }
+  .label-card.billing::before { background: #4a9eff; }
+  .label-card.calls::before  { background: #e09c45; }
+  .label-card.information::before { background: #a855f7; }
+
+  .label-icon { font-size: 20px; margin-bottom: 10px; display: block; }
+  .label-name {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--sub);
+    margin-bottom: 4px;
+  }
+  .label-count {
+    font-family: var(--mono);
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .label-card.ops    .label-count { color: #24c97a; }
+  .label-card.urgent .label-count { color: #e05555; }
+  .label-card.billing .label-count { color: #4a9eff; }
+  .label-card.calls  .label-count { color: #e09c45; }
+  .label-card.information .label-count { color: #a855f7; }
+
+  .label-unread {
+    font-size: 11px;
+    color: var(--sub);
+    margin-top: 6px;
+  }
+  .label-unread span { color: var(--text); font-weight: 500; }
+
+  /* URGENT BADGE */
+  .urgent-badge {
+    position: absolute;
+    top: 10px; right: 10px;
+    background: rgba(224,85,85,.15);
+    border: 1px solid rgba(224,85,85,.3);
+    color: #e05555;
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+
+  /* RECENT EMAILS */
+  .recent-section { margin-bottom: 28px; }
+  .email-list { display: flex; flex-direction: column; gap: 6px; }
+  .email-row {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: center;
+    gap: 12px;
+    transition: border-color .15s;
+  }
+  .email-row:hover { border-color: rgba(36,201,122,.3); }
+  .email-row.unread { border-left: 2px solid var(--accent); }
+  .email-badge {
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 3px 7px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    white-space: nowrap;
+  }
+  .badge-ops         { background: rgba(36,201,122,.12); color: #24c97a; border: 1px solid rgba(36,201,122,.2); }
+  .badge-urgent      { background: rgba(224,85,85,.12);  color: #e05555; border: 1px solid rgba(224,85,85,.2); }
+  .badge-billing     { background: rgba(74,158,255,.12); color: #4a9eff; border: 1px solid rgba(74,158,255,.2); }
+  .badge-calls       { background: rgba(224,156,69,.12); color: #e09c45; border: 1px solid rgba(224,156,69,.2); }
+  .badge-information { background: rgba(168,85,247,.12); color: #a855f7; border: 1px solid rgba(168,85,247,.2); }
+
+  .email-subject {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .email-from {
+    font-size: 11px;
+    color: var(--sub);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+  }
+  .email-time {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--sub);
+    white-space: nowrap;
+  }
+
+  /* FOOTER ACTIONS */
+  .footer-row {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    padding-top: 8px;
+  }
+  .action-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--sub);
+    font-family: var(--sans);
+    font-size: 12px;
+    padding: 7px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .action-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .action-btn.primary {
+    background: rgba(36,201,122,.1);
+    border-color: rgba(36,201,122,.3);
+    color: var(--accent);
+  }
+  .action-btn.primary:hover { background: rgba(36,201,122,.2); }
+
+  /* ERROR STATE */
+  .error-box {
+    background: rgba(224,85,85,.08);
+    border: 1px solid rgba(224,85,85,.2);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 13px;
+    color: #e05555;
+    display: none;
+    margin-bottom: 16px;
+  }
+
+  /* SKELETON */
+  .skeleton {
+    background: linear-gradient(90deg, var(--card) 25%, #1a2820 50%, var(--card) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 6px;
+    height: 16px;
+  }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+  .hidden { display: none !important; }
+  .visible { display: flex !important; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <a href="portal.html" class="back-btn">← Back to Portal</a>
+    <span class="page-title">Email Ops</span>
+  </div>
+  <div class="topbar-right">
+    <span class="live-pill"><span class="live-dot"></span>LIVE</span>
+    <span class="updated-text" id="updatedText">—</span>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- ERROR -->
+  <div class="error-box" id="errorBox"></div>
+
+  <!-- AUTH STATE -->
+  <div class="auth-section" id="authSection">
+    <div class="auth-icon">📬</div>
+    <div class="auth-title">Email Ops Dashboard</div>
+    <div class="auth-sub">Conecta tu cuenta de Google para ver en tiempo real los labels de Gmail: OPS, URGENT, BILLING, CALLS e INFORMATION.</div>
+    <button class="auth-btn" id="authBtn" onclick="startAuth()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      Conectar con Google
+    </button>
+    <div class="auth-note">Solo lectura · No modifica ningún correo</div>
+  </div>
+
+  <!-- LOADING STATE -->
+  <div class="loading-section hidden" id="loadingSection" style="flex-direction:column">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loadingText">Conectando con Gmail…</div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="dashboard" id="dashboard">
+
+    <!-- LABEL COUNTS -->
+    <div class="section-label">Labels — Mensajes totales / no leídos</div>
+    <div class="labels-grid" id="labelsGrid">
+      <!-- Populated by JS -->
+    </div>
+
+    <!-- RECENT EMAILS -->
+    <div class="recent-section">
+      <div class="section-label">Emails recientes — últimos 15 mensajes etiquetados</div>
+      <div class="email-list" id="emailList">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+
+    <div class="footer-row">
+      <button class="action-btn" onclick="openGmail()">Abrir Gmail →</button>
+      <button class="action-btn primary" onclick="refreshData()">↻ Actualizar</button>
+      <button class="action-btn" onclick="signOut()">Desconectar</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
+// IMPORTANT: Replace with your actual Google OAuth Client ID
+// Steps: console.cloud.google.com → Create OAuth Client → Web App
+// Authorized JS Origins: https://apps.fr-logistics.net
+// Scopes needed: gmail.readonly
+const CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID_HERE';
+const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly';
+
+// Labels to track — exact names as they appear in Gmail
+const TRACKED_LABELS = [
+  { name: 'OPS',         key: 'ops',         icon: '⚙️',  gmailId: null },
+  { name: 'URGENT',      key: 'urgent',      icon: '🚨',  gmailId: null },
+  { name: 'BILLING',     key: 'billing',     icon: '💰',  gmailId: null },
+  { name: 'CALLS',       key: 'calls',       icon: '📞',  gmailId: null },
+  { name: 'INFORMATION', key: 'information', icon: '📋',  gmailId: null },
+];
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let tokenClient = null;
+let accessToken  = null;
+let refreshTimer  = null;
+
+// ─── AUTH ─────────────────────────────────────────────────────────────────────
+function loadGisScript() {
+  return new Promise(resolve => {
+    if (window.google?.accounts) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.onload = resolve;
+    document.head.appendChild(s);
+  });
+}
+
+async function startAuth() {
+  document.getElementById('authBtn').disabled = true;
+  showLoading('Iniciando autenticación…');
+
+  await loadGisScript();
+
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    callback: async (resp) => {
+      if (resp.error) {
+        showError('Error de autenticación: ' + resp.error);
+        showAuth();
+        return;
+      }
+      accessToken = resp.access_token;
+      sessionStorage.setItem('gmail_token', accessToken);
+      await loadDashboard();
+    }
+  });
+
+  tokenClient.requestAccessToken({ prompt: 'consent' });
+}
+
+function signOut() {
+  if (accessToken) {
+    google.accounts.oauth2.revoke(accessToken);
+  }
+  accessToken = null;
+  sessionStorage.removeItem('gmail_token');
+  clearInterval(refreshTimer);
+  showAuth();
+}
+
+// ─── UI STATES ────────────────────────────────────────────────────────────────
+function showAuth() {
+  document.getElementById('authSection').classList.remove('hidden');
+  document.getElementById('loadingSection').classList.add('hidden');
+  document.getElementById('loadingSection').classList.remove('visible');
+  document.getElementById('dashboard').classList.remove('visible');
+  document.getElementById('authBtn').disabled = false;
+}
+
+function showLoading(msg) {
+  document.getElementById('authSection').classList.add('hidden');
+  document.getElementById('loadingSection').classList.remove('hidden');
+  document.getElementById('loadingSection').classList.add('visible');
+  document.getElementById('dashboard').classList.remove('visible');
+  document.getElementById('loadingText').textContent = msg || 'Cargando…';
+}
+
+function showDashboard() {
+  document.getElementById('authSection').classList.add('hidden');
+  document.getElementById('loadingSection').classList.add('hidden');
+  document.getElementById('loadingSection').classList.remove('visible');
+  document.getElementById('dashboard').classList.add('visible');
+}
+
+function showError(msg) {
+  const box = document.getElementById('errorBox');
+  box.textContent = '⚠ ' + msg;
+  box.style.display = 'block';
+  setTimeout(() => box.style.display = 'none', 6000);
+}
+
+// ─── GMAIL API ────────────────────────────────────────────────────────────────
+async function gmailGet(path) {
+  const res = await fetch('https://gmail.googleapis.com/gmail/v1/' + path, {
+    headers: { Authorization: 'Bearer ' + accessToken }
+  });
+  if (res.status === 401) { signOut(); throw new Error('Token expirado'); }
+  if (!res.ok) throw new Error('Gmail API error ' + res.status);
+  return res.json();
+}
+
+async function loadDashboard() {
+  showLoading('Obteniendo labels de Gmail…');
+
+  try {
+    // 1. Get all labels to find IDs for our tracked ones
+    const labelsData = await gmailGet('users/me/labels');
+    const allLabels = labelsData.labels || [];
+
+    // Match tracked labels by name (case-insensitive)
+    for (const tl of TRACKED_LABELS) {
+      const found = allLabels.find(l => l.name.toUpperCase() === tl.name.toUpperCase());
+      tl.gmailId = found ? found.id : null;
+    }
+
+    showLoading('Contando mensajes…');
+
+    // 2. Get counts for each label
+    const labelDetails = await Promise.all(
+      TRACKED_LABELS.map(async (tl) => {
+        if (!tl.gmailId) return { ...tl, total: 0, unread: 0 };
+        const d = await gmailGet('users/me/labels/' + tl.gmailId);
+        return {
+          ...tl,
+          total:  d.messagesTotal  || 0,
+          unread: d.messagesUnread || 0,
+        };
+      })
+    );
+
+    showLoading('Cargando emails recientes…');
+
+    // 3. Get recent messages across all tracked labels
+    const labelIds = TRACKED_LABELS.filter(tl => tl.gmailId).map(tl => tl.gmailId);
+    const recentEmails = await fetchRecentEmails(labelIds);
+
+    // 4. Render
+    renderLabelCards(labelDetails);
+    renderEmailList(recentEmails, labelDetails);
+    updateTimestamp();
+    showDashboard();
+
+    // Auto-refresh every 3 minutes
+    clearInterval(refreshTimer);
+    refreshTimer = setInterval(refreshData, 3 * 60 * 1000);
+
+  } catch (err) {
+    showError(err.message);
+    showAuth();
+  }
+}
+
+async function fetchRecentEmails(labelIds) {
+  if (!labelIds.length) return [];
+
+  // Build query: any of the tracked labels
+  // Gmail API doesn't support OR for labelIds directly, so fetch per label and merge
+  const allMessages = [];
+  const seen = new Set();
+
+  for (const lid of labelIds) {
+    try {
+      const res = await gmailGet('users/me/messages?labelIds=' + lid + '&maxResults=8');
+      const msgs = res.messages || [];
+      for (const m of msgs) {
+        if (!seen.has(m.id)) {
+          seen.add(m.id);
+          allMessages.push({ id: m.id, labelId: lid });
+        }
+      }
+    } catch(e) { /* skip */ }
+  }
+
+  // Sort by recency — fetch metadata for top 15
+  const top15 = allMessages.slice(0, 15);
+  const details = await Promise.all(top15.map(async ({ id, labelId }) => {
+    try {
+      const d = await gmailGet('users/me/messages/' + id + '?format=metadata&metadataHeaders=Subject,From,Date');
+      const headers = d.payload?.headers || [];
+      const get = (name) => headers.find(h => h.name === name)?.value || '';
+      return {
+        id,
+        labelId,
+        subject:  get('Subject') || '(sin asunto)',
+        from:     get('From').replace(/<.*>/, '').trim() || get('From'),
+        date:     new Date(parseInt(d.internalDate)),
+        unread:   (d.labelIds || []).includes('UNREAD'),
+        labelIds: d.labelIds || [],
+      };
+    } catch(e) {
+      return null;
+    }
+  }));
+
+  return details
+    .filter(Boolean)
+    .sort((a,b) => b.date - a.date);
+}
+
+// ─── RENDER ───────────────────────────────────────────────────────────────────
+function renderLabelCards(labelDetails) {
+  const grid = document.getElementById('labelsGrid');
+  grid.innerHTML = labelDetails.map(ld => `
+    <div class="label-card ${ld.key}">
+      ${ld.key === 'urgent' && ld.unread > 0 ? '<span class="urgent-badge">⚠ Action needed</span>' : ''}
+      <span class="label-icon">${ld.icon}</span>
+      <div class="label-name">${ld.name}</div>
+      <div class="label-count">${ld.total}</div>
+      <div class="label-unread">No leídos: <span>${ld.unread}</span></div>
+    </div>
+  `).join('');
+}
+
+function renderEmailList(emails, labelDetails) {
+  const list = document.getElementById('emailList');
+  if (!emails.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--sub);font-size:13px;">No hay emails recientes en estos labels.</div>';
+    return;
+  }
+
+  list.innerHTML = emails.map(e => {
+    const label = labelDetails.find(ld => ld.gmailId === e.labelId);
+    const labelKey  = label ? label.key : 'ops';
+    const labelName = label ? label.name : '—';
+    const timeStr = formatTime(e.date);
+    const fromShort = e.from.length > 30 ? e.from.substring(0,28)+'…' : e.from;
+    const subjShort = e.subject.length > 60 ? e.subject.substring(0,58)+'…' : e.subject;
+
+    return `
+      <div class="email-row ${e.unread ? 'unread' : ''}">
+        <span class="email-badge badge-${labelKey}">${labelName}</span>
+        <div>
+          <div class="email-subject">${escHtml(subjShort)}</div>
+          <div class="email-from">${escHtml(fromShort)}</div>
+        </div>
+        <span class="email-time">${timeStr}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+// ─── UTILS ────────────────────────────────────────────────────────────────────
+function formatTime(date) {
+  const now  = new Date();
+  const diff = now - date;
+  if (diff < 60000)        return 'ahora';
+  if (diff < 3600000)      return Math.floor(diff/60000) + 'm';
+  if (diff < 86400000)     return Math.floor(diff/3600000) + 'h';
+  return date.toLocaleDateString('es-US', { month:'short', day:'numeric' });
+}
+
+function updateTimestamp() {
+  const now = new Date();
+  document.getElementById('updatedText').textContent =
+    'Updated: ' + now.toLocaleDateString('en-US',{month:'short',day:'numeric'}) +
+    ' · ' + now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function openGmail() {
+  window.open('https://mail.google.com/mail/u/2/', '_blank');
+}
+
+async function refreshData() {
+  if (!accessToken) return;
+  showLoading('Actualizando…');
+  await loadDashboard();
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+// Check if we have a stored token from this session
+window.addEventListener('load', async () => {
+  const stored = sessionStorage.getItem('gmail_token');
+  if (stored) {
+    accessToken = stored;
+    await loadDashboard();
+  } else {
+    showAuth();
+  }
+});
+</script>
+</body>
+</html>
