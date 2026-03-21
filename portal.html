@@ -64,8 +64,8 @@ main{max-width:1400px;margin:0 auto;padding:24px 24px 60px}
 .appGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
 .appCard{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;cursor:pointer;transition:transform .2s,border-color .2s,box-shadow .2s;animation:fadeUp .5s ease both}
 .appCard:hover{transform:translateY(-3px);border-color:rgba(31,164,99,.45);box-shadow:0 16px 48px rgba(0,0,0,.4)}
-.previewFrame{width:100%;height:180px;background:#0e1510;position:relative;overflow:hidden;border-bottom:1px solid var(--border)}
-.previewFrame iframe{width:200%;height:200%;transform:scale(.5);transform-origin:top left;border:none;pointer-events:none;filter:brightness(.9)}
+.previewFrame{width:100%;height:180px;background:#ffffff;position:relative;overflow:hidden;border-bottom:1px solid var(--border)}
+.previewFrame iframe{width:200%;height:200%;transform:scale(.5);transform-origin:top left;border:none;pointer-events:none;}
 .previewOverlay{position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,var(--card) 100%)}
 .previewClick{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .2s;background:rgba(10,15,13,.65)}
 .appCard:hover .previewClick{opacity:1}
@@ -375,16 +375,16 @@ const TEMPLATES = {
 const APPS = [
   { name:"Inventory Dashboard",desc:"Inventario en tiempo real desde SKUVault — 140 SKUs, stock levels, alerts",tag:"Warehouse",url:"https://apps.fr-logistics.net/dashboard-inventory.html"},
   { name:"KPI Dashboard",desc:"Dashboard en tiempo real — shipments, revenue, SLA y stores desde ShipStation",tag:"Analytics",url:"https://apps.fr-logistics.net/kpi-dash.html"},
+  { name:"Inbound / Outbound",desc:"Registro general de entradas y salidas de mercancía",tag:"Operations",url:"https://apps.fr-logistics.net/Inbound_Outbound.html"},
+  { name:"Email Ops",desc:"Labels de Gmail en tiempo real — OPS, URGENT, BILLING, CALLS",tag:"Email",url:"https://apps.fr-logistics.net/email-ops.html"},
+  { name:"Quote System v3",desc:"Calculadora de cotizaciones para clientes — fulfillment, storage, prep",tag:"Sales",url:"https://apps.fr-logistics.net/FR_Logistics_Quote_System_v3.html"},
+  { name:"LN Store",desc:"Gestión de shipments para LN Store — FBA/FBM",tag:"Client App",url:"https://apps.fr-logistics.net/LN_Store.html"},
   { name:"FR Inbounds",desc:"Registro de paquetes entrantes — escanear, registrar, guardar",tag:"Inbound",url:"https://apps.fr-logistics.net/fr-inbounds.html"},
   { name:"MXS Overseas LTD",desc:"Shipments y tracking para cliente MXS Overseas",tag:"Client App",url:"https://apps.fr-logistics.net/MXS_Overseas_LTD.html"},
-  { name:"LN Store",desc:"Gestión de shipments para LN Store — FBA/FBM",tag:"Client App",url:"https://apps.fr-logistics.net/LN_Store.html"},
-  { name:"Inbound / Outbound",desc:"Registro general de entradas y salidas de mercancía",tag:"Operations",url:"https://apps.fr-logistics.net/Inbound_Outbound.html"},
   { name:"Pallets (WMS)",desc:"Pallet builder con WMS ID — escanear, marcar, imprimir QR 4x6",tag:"Warehouse",url:"https://apps.fr-logistics.net/pallets.html"},
   { name:"NO WMS Pallets",desc:"Pallet builder para clientes sin WMS — registro QR y open pallets",tag:"Warehouse",url:"https://apps.fr-logistics.net/NO_WMS.html"},
-  { name:"Quote System v3",desc:"Calculadora de cotizaciones para clientes — fulfillment, storage, prep",tag:"Sales",url:"https://apps.fr-logistics.net/FR_Logistics_Quote_System_v3.html"},
   { name:"Volume Calculator",desc:"Calculadora de volumen y dimensiones para carga y tarimas",tag:"Tools",url:"https://apps.fr-logistics.net/FR_Logistics_Volume_Calculator.html"},
-  { name:"Shopify Runbook",desc:"Step-by-step guide — Shopify + ShipStation + SKUVault/Linnworks",tag:"Internal",url:"shopify_runbook_preview.html",openUrl:"shopify_integration_runbook.html"},
-  { name:"Email Ops",desc:"Labels de Gmail en tiempo real — OPS, URGENT, BILLING, CALLS",tag:"Email",url:"https://apps.fr-logistics.net/email-ops.html"}
+  { name:"Shopify Runbook",desc:"Step-by-step guide — Shopify + ShipStation + SKUVault/Linnworks",tag:"Internal",url:"shopify_runbook_preview.html",openUrl:"shopify_integration_runbook.html"}
 ];
 
 let allMessages = [];
