@@ -580,7 +580,9 @@ function populateClientSelect(){
   const sel=document.getElementById('sendClient');
   sel.innerHTML='<option value="">-- Seleccionar cliente --</option>';
   allClients.filter(c=>c.active&&c.waNumber).forEach(c=>{
-    sel.innerHTML+=`<option value="${c.waNumber}">${c.name} — ${c.waNumber}</option>`;
+    const label = c.storeName || c.company || c.name;
+    const display = c.storeName ? `${c.storeName} (${c.name})` : c.name;
+    sel.innerHTML+=`<option value="${c.waNumber}">${display} — ${c.waNumber}</option>`;
   });
 }
 
@@ -647,7 +649,10 @@ function renderClientsTable(clients){
   tbody.innerHTML=clients.map((c,i)=>`
     <tr id="row_${c.id||i}">
       <td style="color:var(--muted);font-size:11px">${i+1}</td>
-      <td><div style="font-weight:600">${c.name||''}</div><div style="font-size:11px;color:var(--muted)">${c.company||''}</div></td>
+      <td>
+        <div style="font-weight:600">${c.storeName||c.name||''}</div>
+        <div style="font-size:11px;color:var(--muted)">${c.name||''}</div>
+      </td>
       <td style="font-size:12px;color:var(--muted)">${c.email||''}</td>
       <td><span style="font-size:11px;font-family:'DM Mono',monospace">${c.country||''}</span></td>
       <td><input type="text" value="${c.waNumber||''}" placeholder="+52155..." style="font-family:'DM Mono',monospace;font-size:12px" onchange="updateClientField('${c.id}','waNumber',this.value)"></td>
