@@ -284,6 +284,9 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
               <th>Número WA</th>
               <th>Store ID ShipStation</th>
               <th>Tienda</th>
+              <th>Email (no WA)</th>
+              <th>Email (no WA)</th>
+              <th>Email (sin WA)</th>
               <th>Estado</th>
               <th>Acción</th>
             </tr>
@@ -658,6 +661,9 @@ function renderClientsTable(clients){
       <td><input type="text" value="${c.waNumber||''}" placeholder="+52155..." style="font-family:'DM Mono',monospace;font-size:12px" onchange="updateClientField('${c.id}','waNumber',this.value)"></td>
       <td><input type="text" value="${c.storeId||''}" placeholder="Store ID" style="font-size:12px" onchange="updateClientField('${c.id}','storeId',this.value)"></td>
       <td><input type="text" value="${c.storeName||''}" placeholder="Nombre tienda" style="font-size:12px" onchange="updateClientField('${c.id}','storeName',this.value)"></td>
+      <td><input type="text" value="${c.email||''}" placeholder="email@empresa.com" style="font-size:11px;width:140px" onchange="updateClientField('${c.id}','email',this.value)"></td>
+      <td><input type="text" value="${c.email||''}" placeholder="email@empresa.com" style="font-size:11px;width:150px" onchange="updateClientField('${c.id}','email',this.value)"></td>
+      <td><input type="text" value="${c.email||''}" placeholder="email@empresa.com" style="font-size:11px;width:150px" onchange="updateClientField('${c.id}','email',this.value)"></td>
       <td>
         <span class="statusPill ${c.active?'active':'inactive'}" onclick="toggleActive('${c.id}')" style="cursor:pointer">
           ${c.active?'Activo':'Inactivo'}
