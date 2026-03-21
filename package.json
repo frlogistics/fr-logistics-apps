@@ -1,7 +1,0 @@
-{
-  "name": "fr-logistics-apps",
-  "version": "1.0.0",
-  "dependencies": {
-    "@netlify/blobs": "^8.0.0"
-  }
-}
