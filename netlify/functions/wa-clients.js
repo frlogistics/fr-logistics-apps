@@ -1,66 +1,63 @@
-const { getStore } = require("@netlify/blobs");
+const SITE_ID = "9762f903-d555-4532-a78f-9f9784684adc";
 
 exports.handler = async function(event) {
-  const store = getStore({ name: "wa-clients", consistency: "strong" });
+  const token = process.env.NETLIFY_API_TOKEN;
+  const url   = `https://api.netlify.com/api/v1/blobs/${SITE_ID}/wa-clients/clients`;
   const method = event.httpMethod;
+
+  async function get() {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    if (r.status === 404) return [];
+    if (!r.ok) throw new Error(`Blobs GET ${r.status}`);
+    return r.json();
+  }
+
+  async function put(data) {
+    const r = await fetch(url, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    if (!r.ok) throw new Error(`Blobs PUT ${r.status}: ${await r.text()}`);
+  }
+
+  const hdr = { "Content-Type": "application/json" };
 
   try {
     if (method === "GET") {
-      const result = await store.get("clients", { type: "json" });
-      return {
-        statusCode: 200,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(result || [])
-      };
+      return { statusCode: 200, headers: hdr, body: JSON.stringify(await get()) };
     }
 
     if (method === "POST") {
       const body = JSON.parse(event.body || "{}");
-      const clients = await store.get("clients", { type: "json" }) || [];
+      let list = await get();
 
       if (body.action === "save_all") {
-        await store.setJSON("clients", body.clients);
-        return { statusCode: 200, body: JSON.stringify({ ok: true }) };
+        await put(body.clients);
+        return { statusCode: 200, headers: hdr, body: JSON.stringify({ ok: true }) };
       }
-
       if (body.action === "add") {
-        const newClient = {
-          id: Date.now().toString(),
-          name: body.name || "",
-          company: body.company || "",
-          email: body.email || "",
-          phone: body.phone || "",
-          country: body.country || "US",
-          waNumber: body.waNumber || "",
-          storeId: body.storeId || "",
-          storeName: body.storeName || "",
-          active: body.active || false,
-          notes: body.notes || "",
-          createdAt: new Date().toISOString()
-        };
-        clients.push(newClient);
-        await store.setJSON("clients", clients);
-        return { statusCode: 200, body: JSON.stringify({ ok: true, client: newClient }) };
+        const c = { id: Date.now().toString(), ...body };
+        delete c.action;
+        list.push(c);
+        await put(list);
+        return { statusCode: 200, headers: hdr, body: JSON.stringify({ ok: true, client: c }) };
       }
-
       if (body.action === "update") {
-        const idx = clients.findIndex(c => c.id === body.id);
-        if (idx === -1) return { statusCode: 404, body: JSON.stringify({ error: "Not found" }) };
-        clients[idx] = { ...clients[idx], ...body.data, updatedAt: new Date().toISOString() };
-        await store.setJSON("clients", clients);
-        return { statusCode: 200, body: JSON.stringify({ ok: true }) };
+        const i = list.findIndex(c => c.id === body.id);
+        if (i !== -1) list[i] = { ...list[i], ...body.data };
+        await put(list);
+        return { statusCode: 200, headers: hdr, body: JSON.stringify({ ok: true }) };
       }
-
       if (body.action === "delete") {
-        const filtered = clients.filter(c => c.id !== body.id);
-        await store.setJSON("clients", filtered);
-        return { statusCode: 200, body: JSON.stringify({ ok: true }) };
+        await put(list.filter(c => c.id !== body.id));
+        return { statusCode: 200, headers: hdr, body: JSON.stringify({ ok: true }) };
       }
     }
 
     return { statusCode: 405, body: "Method not allowed" };
   } catch (err) {
-    console.error("[wa-clients]", err);
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    console.error("[wa-clients]", err.message);
+    return { statusCode: 500, headers: hdr, body: JSON.stringify({ error: err.message }) };
   }
 };
