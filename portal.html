@@ -640,17 +640,22 @@ async function loadClients(){
     const res = await fetch('/.netlify/functions/wa-clients');
     if(res.ok){
       const data = await res.json();
-      if(Array.isArray(data) && data.length > 0){
-        allClients = data;
+      if(Array.isArray(data)){
+        // Normalize Supabase snake_case to camelCase
+        allClients = data.map(c => ({
+          id: c.id,
+          name: c.name || '',
+          company: c.company || '',
+          email: c.email || '',
+          phone: c.phone || '',
+          country: c.country || 'US',
+          waNumber: c.wa_number || c.waNumber || '',
+          storeId: c.store_id || c.storeId || '',
+          storeName: c.store_name || c.storeName || '',
+          active: c.active || false,
+          notes: c.notes || ''
+        }));
         localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
-      } else {
-        // Blobs empty - try localStorage migration
-        const stored = localStorage.getItem('fr_wa_clients');
-        if(stored){
-          allClients = JSON.parse(stored);
-          // Push local data to Blobs
-          await fetch('/.netlify/functions/wa-clients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_all',clients:allClients})});
-        } else { allClients = []; }
       }
     } else {
       const stored = localStorage.getItem('fr_wa_clients');
