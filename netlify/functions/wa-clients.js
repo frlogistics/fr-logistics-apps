@@ -1,63 +1,64 @@
-const SITE_ID = "9762f903-d555-4532-a78f-9f9784684adc";
+const SUPA_URL = "https://rijbschnchjiuggrhfrx.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpamJzY2huY2hqaXVnZ3JoZnJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMTQwOTQsImV4cCI6MjA4ODg5MDA5NH0.s3T4CStjWqOvz7qDpYtjt0yVJ0iyOMAKKwxkADSEs4s";
+const TABLE = "wa_clients";
+const HDR = { "Content-Type": "application/json" };
+
+async function sb(method, path, body) {
+  const res = await fetch(SUPA_URL + path, {
+    method,
+    headers: {
+      apikey: SUPA_KEY,
+      Authorization: `Bearer ${SUPA_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: method === "POST" ? "return=representation" : ""
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const text = await res.text();
+  return text ? JSON.parse(text) : [];
+}
 
 exports.handler = async function(event) {
-  const token = process.env.NETLIFY_API_TOKEN;
-  const url   = `https://api.netlify.com/api/v1/blobs/${SITE_ID}/wa-clients/clients`;
   const method = event.httpMethod;
-
-  async function get() {
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
-    if (r.status === 404) return [];
-    if (!r.ok) throw new Error(`Blobs GET ${r.status}`);
-    return r.json();
-  }
-
-  async function put(data) {
-    const r = await fetch(url, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(data)
-    });
-    if (!r.ok) throw new Error(`Blobs PUT ${r.status}: ${await r.text()}`);
-  }
-
-  const hdr = { "Content-Type": "application/json" };
 
   try {
     if (method === "GET") {
-      return { statusCode: 200, headers: hdr, body: JSON.stringify(await get()) };
+      // Get all clients ordered by name
+      const data = await sb("GET", `/rest/v1/${TABLE}?order=name.asc&limit=200`);
+      return { statusCode: 200, headers: HDR, body: JSON.stringify(Array.isArray(data) ? data : []) };
     }
 
     if (method === "POST") {
       const body = JSON.parse(event.body || "{}");
-      let list = await get();
 
       if (body.action === "save_all") {
-        await put(body.clients);
-        return { statusCode: 200, headers: hdr, body: JSON.stringify({ ok: true }) };
-      }
-      if (body.action === "add") {
-        const c = { id: Date.now().toString(), ...body };
-        delete c.action;
-        list.push(c);
-        await put(list);
-        return { statusCode: 200, headers: hdr, body: JSON.stringify({ ok: true, client: c }) };
-      }
-      if (body.action === "update") {
-        const i = list.findIndex(c => c.id === body.id);
-        if (i !== -1) list[i] = { ...list[i], ...body.data };
-        await put(list);
-        return { statusCode: 200, headers: hdr, body: JSON.stringify({ ok: true }) };
-      }
-      if (body.action === "delete") {
-        await put(list.filter(c => c.id !== body.id));
-        return { statusCode: 200, headers: hdr, body: JSON.stringify({ ok: true }) };
+        // Upsert all clients
+        const clients = (body.clients || []).map(c => ({
+          id: c.id || Date.now().toString(),
+          name: c.name || "",
+          company: c.company || "",
+          email: c.email || "",
+          phone: c.phone || "",
+          country: c.country || "US",
+          wa_number: c.waNumber || "",
+          store_id: c.storeId || "",
+          store_name: c.storeName || "",
+          active: c.active || false,
+          notes: c.notes || ""
+        }));
+
+        // Delete all and reinsert (simple sync)
+        await sb("DELETE", `/rest/v1/${TABLE}?id=neq.00000000-0000-0000-0000-000000000000`);
+        if (clients.length > 0) {
+          await sb("POST", `/rest/v1/${TABLE}`, clients);
+        }
+        return { statusCode: 200, headers: HDR, body: JSON.stringify({ ok: true }) };
       }
     }
 
     return { statusCode: 405, body: "Method not allowed" };
   } catch (err) {
     console.error("[wa-clients]", err.message);
-    return { statusCode: 500, headers: hdr, body: JSON.stringify({ error: err.message }) };
+    return { statusCode: 500, headers: HDR, body: JSON.stringify({ error: err.message }) };
   }
 };
