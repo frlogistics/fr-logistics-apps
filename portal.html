@@ -637,9 +637,29 @@ async function sendMessage(){
 // CLIENTS
 async function loadClients(){
   try {
+    const res = await fetch('/.netlify/functions/wa-clients');
+    if(res.ok){
+      const data = await res.json();
+      if(Array.isArray(data) && data.length > 0){
+        allClients = data;
+        localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
+      } else {
+        // Blobs empty - try localStorage migration
+        const stored = localStorage.getItem('fr_wa_clients');
+        if(stored){
+          allClients = JSON.parse(stored);
+          // Push local data to Blobs
+          await fetch('/.netlify/functions/wa-clients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_all',clients:allClients})});
+        } else { allClients = []; }
+      }
+    } else {
+      const stored = localStorage.getItem('fr_wa_clients');
+      allClients = stored ? JSON.parse(stored) : [];
+    }
+  } catch(e){
     const stored = localStorage.getItem('fr_wa_clients');
     allClients = stored ? JSON.parse(stored) : [];
-  } catch(e){ allClients=[]; }
+  }
   renderClientsTable(allClients);
   populateClientSelect();
 }
@@ -700,9 +720,20 @@ function deleteClient(id){
 
 async function saveAllClients(){
   try {
+    // Save to Blobs (cloud - all devices)
+    const res = await fetch('/.netlify/functions/wa-clients',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'save_all',clients:allClients})
+    });
+    // Also save locally as backup
     localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
-    alert('Clientes guardados ✓');
-  } catch(e){ alert('Error guardando: ' + e.message); }
+    if(res.ok) alert('Clientes guardados ✓ (sync en todos los dispositivos)');
+    else alert('Guardado local ✓ (cloud sync pendiente)');
+  } catch(e){
+    localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
+    alert('Guardado local ✓');
+  }
 }
 
 // INIT
