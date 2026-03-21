@@ -1,1 +1,732 @@
-<!doctype html> <html lang="en"> <head> <meta charset="utf-8" /> <meta name="viewport" content="width=device-width,initial-scale=1" /> <title>FR-Logistics · Apps Portal</title> <link rel="preconnect" href="https://fonts.googleapis.com"> <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"> <style> :root { --bg: #0a0f0d; --surface: #111814; --card: #151f1a; --border: rgba(31,164,99,.18); --green: #1fa463; --teal: #16a3b5; --text: #e8f0eb; --muted: #6b8a74; --accent: #24c97a; --shadow: 0 24px 64px rgba(0,0,0,.55); } *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; } body::before { content: ''; position: fixed; inset: 0; z-index: 0; background: radial-gradient(ellipse 900px 600px at 10% 20%, rgba(31,164,99,.10) 0%, transparent 65%), radial-gradient(ellipse 700px 500px at 90% 80%, rgba(22,163,181,.08) 0%, transparent 65%); pointer-events: none; } #loginScreen { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: var(--bg); transition: opacity .5s, visibility .5s; } #loginScreen.hidden { opacity: 0; visibility: hidden; pointer-events: none; } .loginBox { width: min(400px, 92vw); background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 40px 36px; box-shadow: var(--shadow); position: relative; overflow: hidden; } .loginBox::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--green), var(--teal)); } .loginLogo { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; } .loginLogo img { height: 36px; border-radius: 8px; } .loginLogo span { font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800; color: var(--text); letter-spacing: .3px; } .loginTitle { font-family: 'Syne', sans-serif; font-size: 26px; font-weight: 800; margin-bottom: 6px; background: linear-gradient(135deg, var(--accent), var(--teal)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; } .loginSub { color: var(--muted); font-size: 13px; margin-bottom: 28px; } .loginField label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin-bottom: 8px; } .loginField input { width: 100%; background: rgba(255,255,255,.04); border: 1px solid rgba(31,164,99,.25); border-radius: 10px; padding: 12px 14px; color: var(--text); font-size: 15px; font-family: 'DM Mono', monospace; outline: none; letter-spacing: 2px; transition: border-color .2s, box-shadow .2s; } .loginField input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(31,164,99,.15); } .loginBtn { width: 100%; margin-top: 20px; background: linear-gradient(135deg, var(--green), var(--teal)); border: none; border-radius: 10px; padding: 13px; color: #fff; font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; cursor: pointer; letter-spacing: .3px; transition: opacity .2s, transform .1s; } .loginBtn:hover { opacity: .9; } .loginBtn:active { transform: scale(.98); } .loginError { margin-top: 12px; font-size: 12px; color: #f87171; text-align: center; min-height: 18px; letter-spacing: .2px; } #portalScreen { position: relative; z-index: 1; opacity: 0; transition: opacity .6s; } #portalScreen.visible { opacity: 1; } header { padding: 16px 24px; border-bottom: 1px solid var(--border); background: rgba(10,15,13,.85); backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 10; } .headerRow { max-width: 1400px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; } .brand { display: flex; align-items: center; gap: 12px; } .brand img { height: 32px; border-radius: 8px; } .brand h1 { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 800; letter-spacing: .2px; } .brand .sub { font-size: 11px; color: var(--muted); margin-top: 2px; } .headerRight { display: flex; align-items: center; gap: 12px; } .pill { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(31,164,99,.35); color: var(--accent); letter-spacing: .3px; } .logoutBtn { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.10); border-radius: 8px; padding: 7px 14px; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .2s, color .2s; } .logoutBtn:hover { background: rgba(255,255,255,.08); color: var(--text); } main { max-width: 1400px; margin: 0 auto; padding: 32px 24px 60px; } .sectionTitle { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 20px; } .appGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; } .appCard { background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; cursor: pointer; transition: transform .2s, border-color .2s, box-shadow .2s; position: relative; } .appCard:hover { transform: translateY(-3px); border-color: rgba(31,164,99,.45); box-shadow: 0 16px 48px rgba(0,0,0,.4), 0 0 0 1px rgba(31,164,99,.15); } .appCard:active { transform: translateY(-1px); } .previewFrame { width: 100%; height: 180px; background: #0e1510; position: relative; overflow: hidden; border-bottom: 1px solid var(--border); } .previewFrame iframe { width: 200%; height: 200%; transform: scale(.5); transform-origin: top left; border: none; pointer-events: none; filter: brightness(.9); } .previewOverlay { position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 40%, var(--card) 100%); } .previewClick { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity .2s; background: rgba(10,15,13,.65); } .appCard:hover .previewClick { opacity: 1; } .previewClick span { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: var(--accent); letter-spacing: .5px; border: 1px solid var(--accent); padding: 8px 18px; border-radius: 8px; background: rgba(36,201,122,.08); } .appInfo { padding: 14px 16px 16px; } .appName { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; margin-bottom: 4px; color: var(--text); } .appDesc { font-size: 12px; color: var(--muted); line-height: 1.5; } .appTag { display: inline-block; margin-top: 10px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; padding: 3px 8px; border-radius: 999px; background: rgba(31,164,99,.10); border: 1px solid rgba(31,164,99,.25); color: var(--accent); } .appTag.analytics { background: rgba(22,163,181,.10); border-color: rgba(22,163,181,.30); color: var(--teal); } .appTag.email { background: rgba(168,85,247,.10); border-color: rgba(168,85,247,.30); color: #a855f7; } #appOverlay { position: fixed; inset: 0; z-index: 200; background: var(--bg); display: flex; flex-direction: column; opacity: 0; visibility: hidden; transition: opacity .3s, visibility .3s; } #appOverlay.open { opacity: 1; visibility: visible; } .overlayBar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; } .closeBtn { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 7px 14px; color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: background .2s; } .closeBtn:hover { background: rgba(255,255,255,.10); } .overlayTitle { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; flex: 1; } .overlayUrl { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); } #appFrame { flex: 1; border: none; width: 100%; } footer { border-top: 1px solid var(--border); padding: 20px 24px; background: rgba(10,15,13,.7); } .footRow { max-width: 1400px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--muted); } .appCard { animation: fadeUp .5s ease both; } .appCard:nth-child(1) { animation-delay: .05s; } .appCard:nth-child(2) { animation-delay: .10s; } .appCard:nth-child(3) { animation-delay: .15s; } .appCard:nth-child(4) { animation-delay: .20s; } .appCard:nth-child(5) { animation-delay: .25s; } .appCard:nth-child(6) { animation-delay: .30s; } .appCard:nth-child(7) { animation-delay: .35s; } .appCard:nth-child(8) { animation-delay: .40s; } .appCard:nth-child(9) { animation-delay: .45s; } .appCard:nth-child(10) { animation-delay: .50s; } .appCard:nth-child(11) { animation-delay: .55s; } @keyframes fadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } } @media (max-width: 600px) { .appGrid { grid-template-columns: 1fr; } .overlayUrl { display: none; } } </style> </head> <body> <div id="loginScreen"> <div class="loginBox"> <div class="loginLogo"> <img src="fr_logo.png" alt="FR" onerror="this.style.display='none'"> <span>FR-Logistics</span> </div> <div class="loginTitle">Apps Portal</div> <div class="loginSub">Enter your password to access the operations dashboard</div> <div class="loginField"> <label>Password</label> <input type="password" id="pwInput" placeholder="••••••••" autocomplete="current-password" /> </div> <button class="loginBtn" id="loginBtn">Access Portal →</button> <div class="loginError" id="loginError"></div> </div> </div> <div id="portalScreen"> <header> <div class="headerRow"> <div class="brand"> <img src="fr_logo.png" alt="FR" onerror="this.style.display='none'"> <div> <h1>FR-Logistics · Operations</h1> <div class="sub">apps.fr-logistics.net</div> </div> </div> <div class="headerRight"> <span class="pill">● LIVE</span> <button class="logoutBtn" id="logoutBtn">Sign out</button> </div> </div> </header> <main> <div class="sectionTitle">Operations Apps — click to open</div> <div class="appGrid" id="appGrid"></div> </main> <footer> <div class="footRow"> <span>FR-Logistics · Miami, FL</span> <span>All apps save directly to Supabase cloud</span> </div> </footer> </div> <div id="appOverlay"> <div class="overlayBar"> <button class="closeBtn" id="closeBtn"> ← Back to Portal </button> <span class="overlayTitle" id="overlayTitle"></span> <span class="overlayUrl" id="overlayUrl"></span> </div> <iframe id="appFrame" allow="camera; microphone"></iframe> </div> <script> const PASSWORD = "frlogistics2024"; const APPS = [ { name: "Inventory Dashboard", desc: "Inventario en tiempo real desde SKUVault — 140 SKUs, stock levels, alerts por warehouse WH001 Doral FL", tag: "Warehouse", url: "https://apps.fr-logistics.net/dashboard-inventory.html" }, { name: "KPI Dashboard", desc: "Dashboard en tiempo real — shipments, revenue, SLA y stores desde ShipStation", tag: "Analytics", url: "https://apps.fr-logistics.net/kpi-dash.html" }, { name: "FR Inbounds", desc: "Registro de paquetes entrantes — escanear, registrar, guardar", tag: "Inbound", url: "https://apps.fr-logistics.net/fr-inbounds.html" }, { name: "MXS Overseas LTD", desc: "Shipments y tracking para cliente MXS Overseas", tag: "Client App", url: "https://apps.fr-logistics.net/MXS_Overseas_LTD.html" }, { name: "LN Store", desc: "Gestión de shipments para LN Store — FBA/FBM", tag: "Client App", url: "https://apps.fr-logistics.net/LN_Store.html" }, { name: "Inbound / Outbound", desc: "Registro general de entradas y salidas de mercancía", tag: "Operations", url: "https://apps.fr-logistics.net/Inbound_Outbound.html" }, { name: "Pallets (WMS)", desc: "Pallet builder con WMS ID — escanear, marcar, imprimir QR 4x6", tag: "Warehouse", url: "https://apps.fr-logistics.net/pallets.html" }, { name: "NO WMS Pallets", desc: "Pallet builder para clientes sin WMS — registro QR y open pallets", tag: "Warehouse", url: "https://apps.fr-logistics.net/NO_WMS.html" }, { name: "Quote System v3", desc: "Calculadora de cotizaciones para clientes — fulfillment, storage, prep", tag: "Sales", url: "https://apps.fr-logistics.net/FR_Logistics_Quote_System_v3.html" }, { name: "Volume Calculator", desc: "Calculadora de volumen y dimensiones para carga y tarimas", tag: "Tools", url: "https://apps.fr-logistics.net/FR_Logistics_Volume_Calculator.html" }, { name: "Shopify Integration Runbook", desc: "Step-by-step guide — Shopify + ShipStation + SKUVault/Linnworks", tag: "Internal", url: "shopify_runbook_preview.html", openUrl: "shopify_integration_runbook.html" }, { name: "Email Ops", desc: "Labels de Gmail en tiempo real — OPS, URGENT, BILLING, CALLS, INFORMATION", tag: "Email", url: "https://apps.fr-logistics.net/email-ops.html" } ]; const SESSION_KEY = "fr_portal_auth"; function checkSession() { return sessionStorage.getItem(SESSION_KEY) === "true"; } function login() { const val = document.getElementById("pwInput").value; if (val === PASSWORD) { sessionStorage.setItem(SESSION_KEY, "true"); document.getElementById("loginScreen").classList.add("hidden"); document.getElementById("portalScreen").classList.add("visible"); renderApps(); } else { const err = document.getElementById("loginError"); err.textContent = "Incorrect password. Try again."; document.getElementById("pwInput").value = ""; document.getElementById("pwInput").focus(); setTimeout(() => err.textContent = "", 3000); } } function logout() { sessionStorage.removeItem(SESSION_KEY); document.getElementById("loginScreen").classList.remove("hidden"); document.getElementById("portalScreen").classList.remove("visible"); document.getElementById("pwInput").value = ""; } function renderApps() { const grid = document.getElementById("appGrid"); grid.innerHTML = ""; APPS.forEach(app => { const card = document.createElement("div"); card.className = "appCard"; let tagClass = "appTag"; if (app.tag === "Analytics") tagClass = "appTag analytics"; if (app.tag === "Email") tagClass = "appTag email"; card.innerHTML = ` <div class="previewFrame"> <iframe src="${app.url}" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms"></iframe> <div class="previewOverlay"></div> <div class="previewClick"><span>Open App →</span></div> </div> <div class="appInfo"> <div class="appName">${app.name}</div> <div class="appDesc">${app.desc}</div> <span class="${tagClass}">${app.tag}</span> </div>`; card.addEventListener("click", () => openApp(app.openUrl ? {...app, url: app.openUrl} : app)); grid.appendChild(card); }); } function openApp(app) { document.getElementById("overlayTitle").textContent = app.name; document.getElementById("overlayUrl").textContent = app.url; document.getElementById("appFrame").src = app.url; document.getElementById("appOverlay").classList.add("open"); document.body.style.overflow = "hidden"; } function closeApp() { document.getElementById("appOverlay").classList.remove("open"); document.getElementById("appFrame").src = ""; document.body.style.overflow = ""; } document.getElementById("loginBtn").addEventListener("click", login); document.getElementById("pwInput").addEventListener("keydown", e => { if (e.key === "Enter") login(); }); document.getElementById("logoutBtn").addEventListener("click", logout); document.getElementById("closeBtn").addEventListener("click", closeApp); if (checkSession()) { document.getElementById("loginScreen").classList.add("hidden"); document.getElementById("portalScreen").classList.add("visible"); renderApps(); } </script> </body> </html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>FR-Logistics · Apps Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0f0d; --surface: #111814; --card: #151f1a; --border: rgba(31,164,99,.18);
+  --green: #1fa463; --teal: #16a3b5; --text: #e8f0eb; --muted: #6b8a74;
+  --accent: #24c97a; --shadow: 0 24px 64px rgba(0,0,0,.55);
+  --wa: #25D366; --wa-dark: #128C7E;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse 900px 600px at 10% 20%,rgba(31,164,99,.10) 0%,transparent 65%),radial-gradient(ellipse 700px 500px at 90% 80%,rgba(22,163,181,.08) 0%,transparent 65%);pointer-events:none}
+
+/* LOGIN */
+#loginScreen{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:var(--bg);transition:opacity .5s,visibility .5s}
+#loginScreen.hidden{opacity:0;visibility:hidden;pointer-events:none}
+.loginBox{width:min(400px,92vw);background:var(--card);border:1px solid var(--border);border-radius:20px;padding:40px 36px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.loginBox::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--green),var(--teal))}
+.loginLogo{display:flex;align-items:center;gap:12px;margin-bottom:28px}
+.loginLogo img{height:36px;border-radius:8px}
+.loginLogo span{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;color:var(--text)}
+.loginTitle{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;margin-bottom:6px;background:linear-gradient(135deg,var(--accent),var(--teal));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.loginSub{color:var(--muted);font-size:13px;margin-bottom:28px}
+.loginField label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px}
+.loginField input{width:100%;background:rgba(255,255,255,.04);border:1px solid rgba(31,164,99,.25);border-radius:10px;padding:12px 14px;color:var(--text);font-size:15px;font-family:'DM Mono',monospace;outline:none;letter-spacing:2px;transition:border-color .2s,box-shadow .2s}
+.loginField input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(31,164,99,.15)}
+.loginBtn{width:100%;margin-top:20px;background:linear-gradient(135deg,var(--green),var(--teal));border:none;border-radius:10px;padding:13px;color:#fff;font-family:'Syne',sans-serif;font-size:15px;font-weight:700;cursor:pointer;transition:opacity .2s,transform .1s}
+.loginBtn:hover{opacity:.9}
+.loginBtn:active{transform:scale(.98)}
+.loginError{margin-top:12px;font-size:12px;color:#f87171;text-align:center;min-height:18px}
+
+/* PORTAL */
+#portalScreen{position:relative;z-index:1;opacity:0;transition:opacity .6s}
+#portalScreen.visible{opacity:1}
+header{padding:16px 24px;border-bottom:1px solid var(--border);background:rgba(10,15,13,.85);backdrop-filter:blur(12px);position:sticky;top:0;z-index:10}
+.headerRow{max-width:1400px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.brand{display:flex;align-items:center;gap:12px}
+.brand img{height:32px;border-radius:8px}
+.brand h1{font-family:'Syne',sans-serif;font-size:16px;font-weight:800}
+.brand .sub{font-size:11px;color:var(--muted);margin-top:2px}
+.headerRight{display:flex;align-items:center;gap:12px}
+.pill{font-size:11px;font-weight:600;padding:4px 10px;border-radius:999px;border:1px solid rgba(31,164,99,.35);color:var(--accent)}
+.logoutBtn{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:7px 14px;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;transition:background .2s,color .2s}
+.logoutBtn:hover{background:rgba(255,255,255,.08);color:var(--text)}
+
+/* NAV TABS */
+.navTabs{max-width:1400px;margin:0 auto;padding:20px 24px 0;display:flex;gap:8px;flex-wrap:wrap}
+.navTab{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:8px 18px;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:6px}
+.navTab:hover{background:rgba(31,164,99,.08);border-color:rgba(31,164,99,.35);color:var(--text)}
+.navTab.active{background:rgba(31,164,99,.12);border-color:rgba(31,164,99,.45);color:var(--accent)}
+.navTab .badge{background:var(--wa);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:999px;min-width:18px;text-align:center}
+
+main{max-width:1400px;margin:0 auto;padding:24px 24px 60px}
+.sectionTitle{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:20px}
+
+/* APP GRID */
+#tabApps{display:block}
+.appGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.appCard{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;cursor:pointer;transition:transform .2s,border-color .2s,box-shadow .2s;animation:fadeUp .5s ease both}
+.appCard:hover{transform:translateY(-3px);border-color:rgba(31,164,99,.45);box-shadow:0 16px 48px rgba(0,0,0,.4)}
+.previewFrame{width:100%;height:180px;background:#0e1510;position:relative;overflow:hidden;border-bottom:1px solid var(--border)}
+.previewFrame iframe{width:200%;height:200%;transform:scale(.5);transform-origin:top left;border:none;pointer-events:none;filter:brightness(.9)}
+.previewOverlay{position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,var(--card) 100%)}
+.previewClick{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .2s;background:rgba(10,15,13,.65)}
+.appCard:hover .previewClick{opacity:1}
+.previewClick span{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--accent);border:1px solid var(--accent);padding:8px 18px;border-radius:8px;background:rgba(36,201,122,.08)}
+.appInfo{padding:14px 16px 16px}
+.appName{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;margin-bottom:4px}
+.appDesc{font-size:12px;color:var(--muted);line-height:1.5}
+.appTag{display:inline-block;margin-top:10px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;padding:3px 8px;border-radius:999px;background:rgba(31,164,99,.10);border:1px solid rgba(31,164,99,.25);color:var(--accent)}
+.appTag.analytics{background:rgba(22,163,181,.10);border-color:rgba(22,163,181,.30);color:var(--teal)}
+.appTag.email{background:rgba(168,85,247,.10);border-color:rgba(168,85,247,.30);color:#a855f7}
+
+/* WHATSAPP TABS */
+#tabWhatsapp,#tabClients{display:none}
+.waHeader{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+.waTitle{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;display:flex;align-items:center;gap:10px}
+.waTitle .waIcon{width:32px;height:32px;background:var(--wa);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px}
+.waBtn{background:rgba(37,211,102,.12);border:1px solid rgba(37,211,102,.35);border-radius:10px;padding:9px 18px;color:var(--wa);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:6px}
+.waBtn:hover{background:rgba(37,211,102,.20)}
+.waBtn.primary{background:var(--wa);color:#000;border-color:var(--wa)}
+.waBtn.primary:hover{background:#20c05e}
+
+/* INBOX */
+.inboxGrid{display:grid;grid-template-columns:300px 1fr;gap:16px;height:600px}
+@media(max-width:800px){.inboxGrid{grid-template-columns:1fr;height:auto}}
+.msgList{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow-y:auto;display:flex;flex-direction:column}
+.msgListHeader{padding:14px 16px;border-bottom:1px solid var(--border);font-family:'Syne',sans-serif;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.msgItem{padding:12px 16px;border-bottom:1px solid rgba(31,164,99,.08);cursor:pointer;transition:background .15s;display:flex;flex-direction:column;gap:4px}
+.msgItem:hover{background:rgba(31,164,99,.06)}
+.msgItem.active{background:rgba(31,164,99,.10);border-left:2px solid var(--green)}
+.msgItem.unread .msgFrom{font-weight:700;color:var(--text)}
+.msgItem .msgFrom{font-size:13px;color:var(--muted);display:flex;align-items:center;justify-content:space-between}
+.msgItem .msgPreview{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.msgItem .msgTime{font-size:10px;color:var(--muted)}
+.unreadDot{width:8px;height:8px;border-radius:50%;background:var(--wa);flex-shrink:0}
+.msgDetail{background:var(--card);border:1px solid var(--border);border-radius:16px;display:flex;flex-direction:column;overflow:hidden}
+.msgDetailHeader{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.msgDetailName{font-family:'Syne',sans-serif;font-size:15px;font-weight:700}
+.msgDetailNum{font-size:12px;color:var(--muted);font-family:'DM Mono',monospace}
+.msgDetailBody{flex:1;padding:20px;overflow-y:auto;display:flex;flex-direction:column;gap:12px}
+.msgBubble{max-width:75%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.5}
+.msgBubble.inbound{background:rgba(255,255,255,.06);border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:4px}
+.msgBubble.outbound{background:rgba(37,211,102,.12);border:1px solid rgba(37,211,102,.25);align-self:flex-end;border-bottom-right-radius:4px;color:var(--accent)}
+.msgBubble .bTime{font-size:10px;color:var(--muted);margin-top:4px;text-align:right}
+.msgReplyBox{padding:14px 16px;border-top:1px solid var(--border);display:flex;gap:10px;flex-shrink:0}
+.msgReplyBox textarea{flex:1;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;resize:none;outline:none;transition:border-color .2s}
+.msgReplyBox textarea:focus{border-color:var(--green)}
+.sendBtn{background:var(--wa);border:none;border-radius:10px;padding:0 18px;color:#000;font-weight:700;font-size:13px;cursor:pointer;transition:background .2s}
+.sendBtn:hover{background:#20c05e}
+.emptyState{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted)}
+.emptyState .emIcon{font-size:40px;opacity:.4}
+.emptyState p{font-size:13px}
+
+/* SEND MESSAGE MODAL */
+.modal{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all .2s}
+.modal.open{opacity:1;visibility:visible}
+.modalBox{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:32px;width:min(520px,92vw);position:relative;box-shadow:var(--shadow)}
+.modalBox::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--wa),var(--wa-dark))}
+.modalTitle{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;margin-bottom:20px}
+.formGroup{margin-bottom:16px}
+.formGroup label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px}
+.formGroup select,.formGroup input,.formGroup textarea{width:100%;background:rgba(255,255,255,.04);border:1px solid rgba(31,164,99,.25);border-radius:10px;padding:10px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .2s}
+.formGroup select:focus,.formGroup input:focus,.formGroup textarea:focus{border-color:var(--green)}
+.formGroup select option{background:var(--card)}
+.modalActions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
+.modalClose{background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:10px;padding:9px 18px;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer}
+.templatePreview{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:8px;font-size:12px;color:var(--muted);line-height:1.6;min-height:60px}
+
+/* CLIENTS TABLE */
+.clientsHeader{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px}
+.clientSearch{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:9px 14px;color:var(--text);font-size:13px;outline:none;width:260px;transition:border-color .2s}
+.clientSearch:focus{border-color:var(--green)}
+.clientTable{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.clientTable table{width:100%;border-collapse:collapse}
+.clientTable th{padding:12px 14px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap}
+.clientTable td{padding:11px 14px;font-size:13px;border-bottom:1px solid rgba(31,164,99,.06);vertical-align:middle}
+.clientTable tr:last-child td{border-bottom:none}
+.clientTable tr:hover td{background:rgba(31,164,99,.04)}
+.clientTable td input{background:transparent;border:none;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;width:100%;padding:2px 0}
+.clientTable td input:focus{border-bottom:1px solid var(--green)}
+.statusPill{font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:.3px}
+.statusPill.active{background:rgba(37,211,102,.12);border:1px solid rgba(37,211,102,.35);color:var(--wa)}
+.statusPill.inactive{background:rgba(255,255,255,.06);border:1px solid var(--border);color:var(--muted)}
+.actionBtn{background:transparent;border:none;cursor:pointer;color:var(--muted);font-size:14px;padding:4px 6px;border-radius:6px;transition:all .2s}
+.actionBtn:hover{background:rgba(255,255,255,.08);color:var(--text)}
+.actionBtn.danger:hover{background:rgba(248,113,113,.12);color:#f87171}
+
+/* STATUS BAR */
+.statusBar{background:rgba(37,211,102,.06);border:1px solid rgba(37,211,102,.20);border-radius:12px;padding:10px 16px;display:flex;align-items:center;gap:12px;margin-bottom:20px;font-size:12px}
+.statusDot{width:8px;height:8px;border-radius:50%;background:var(--wa);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* OVERLAY */
+#appOverlay{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;flex-direction:column;opacity:0;visibility:hidden;transition:opacity .3s,visibility .3s}
+#appOverlay.open{opacity:1;visibility:visible}
+.overlayBar{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+.closeBtn{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:7px 14px;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:background .2s}
+.closeBtn:hover{background:rgba(255,255,255,.10)}
+.overlayTitle{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;flex:1}
+.overlayUrl{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted)}
+#appFrame{flex:1;border:none;width:100%}
+
+footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,15,13,.7)}
+.footRow{max-width:1400px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted)}
+.appCard:nth-child(1){animation-delay:.05s}.appCard:nth-child(2){animation-delay:.10s}.appCard:nth-child(3){animation-delay:.15s}.appCard:nth-child(4){animation-delay:.20s}.appCard:nth-child(5){animation-delay:.25s}.appCard:nth-child(6){animation-delay:.30s}.appCard:nth-child(7){animation-delay:.35s}.appCard:nth-child(8){animation-delay:.40s}.appCard:nth-child(9){animation-delay:.45s}.appCard:nth-child(10){animation-delay:.50s}.appCard:nth-child(11){animation-delay:.55s}
+@keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:600px){.appGrid{grid-template-columns:1fr}.overlayUrl{display:none}}
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <div class="loginBox">
+    <div class="loginLogo">
+      <img src="fr_logo.png" alt="FR" onerror="this.style.display='none'">
+      <span>FR-Logistics</span>
+    </div>
+    <div class="loginTitle">Apps Portal</div>
+    <div class="loginSub">Enter your password to access the operations dashboard</div>
+    <div class="loginField">
+      <label>Password</label>
+      <input type="password" id="pwInput" placeholder="••••••••" autocomplete="current-password" />
+    </div>
+    <button class="loginBtn" id="loginBtn">Access Portal →</button>
+    <div class="loginError" id="loginError"></div>
+  </div>
+</div>
+
+<div id="portalScreen">
+  <header>
+    <div class="headerRow">
+      <div class="brand">
+        <img src="fr_logo.png" alt="FR" onerror="this.style.display='none'">
+        <div>
+          <h1>FR-Logistics · Operations</h1>
+          <div class="sub">apps.fr-logistics.net</div>
+        </div>
+      </div>
+      <div class="headerRight">
+        <span class="pill">● LIVE</span>
+        <button class="logoutBtn" id="logoutBtn">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="navTabs">
+    <button class="navTab active" data-tab="apps" onclick="switchTab('apps',this)">📦 Apps</button>
+    <button class="navTab" data-tab="whatsapp" onclick="switchTab('whatsapp',this)">
+      💬 WhatsApp Inbox <span class="badge" id="unreadBadge" style="display:none">0</span>
+    </button>
+    <button class="navTab" data-tab="clients" onclick="switchTab('clients',this)">👥 Clientes WA</button>
+  </div>
+
+  <main>
+
+    <!-- TAB: APPS -->
+    <div id="tabApps">
+      <div class="sectionTitle">Operations Apps — click to open</div>
+      <div class="appGrid" id="appGrid"></div>
+    </div>
+
+    <!-- TAB: WHATSAPP INBOX -->
+    <div id="tabWhatsapp">
+      <div class="waHeader">
+        <div class="waTitle">
+          <div class="waIcon">💬</div>
+          WhatsApp Inbox · +1 786-300-1443
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="waBtn" onclick="loadMessages()">↻ Actualizar</button>
+          <button class="waBtn primary" onclick="openSendModal()">+ Nuevo mensaje</button>
+        </div>
+      </div>
+
+      <div class="statusBar">
+        <div class="statusDot"></div>
+        <span id="waStatusText">Conectado · FR Logistics Miami · Meta Cloud API</span>
+      </div>
+
+      <div class="inboxGrid">
+        <div class="msgList">
+          <div class="msgListHeader">
+            <span>Conversaciones</span>
+            <span id="msgCount" style="font-size:11px;color:var(--muted)">0</span>
+          </div>
+          <div id="msgListBody"></div>
+        </div>
+        <div class="msgDetail" id="msgDetail">
+          <div class="emptyState">
+            <div class="emIcon">💬</div>
+            <p>Selecciona una conversación</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: CLIENTES WA -->
+    <div id="tabClients">
+      <div class="clientsHeader">
+        <div class="waTitle" style="font-size:16px">👥 Clientes WhatsApp</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <input type="text" class="clientSearch" id="clientSearch" placeholder="Buscar cliente..." oninput="filterClients()">
+          <button class="waBtn" onclick="loadClients()">↻ Recargar</button>
+          <button class="waBtn primary" onclick="addClientRow()">+ Agregar cliente</button>
+          <button class="waBtn" style="background:rgba(31,164,99,.12);border-color:rgba(31,164,99,.35);color:var(--accent)" onclick="saveAllClients()">💾 Guardar cambios</button>
+        </div>
+      </div>
+
+      <div class="clientTable">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Nombre / Empresa</th>
+              <th>Email</th>
+              <th>País</th>
+              <th>Número WA</th>
+              <th>Store ID ShipStation</th>
+              <th>Tienda</th>
+              <th>Estado</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="clientTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+  <footer>
+    <div class="footRow">
+      <span>FR-Logistics · Miami, FL</span>
+      <span>WhatsApp API · Netlify Blobs · ShipStation</span>
+    </div>
+  </footer>
+</div>
+
+<!-- APP OVERLAY -->
+<div id="appOverlay">
+  <div class="overlayBar">
+    <button class="closeBtn" id="closeBtn">← Back to Portal</button>
+    <span class="overlayTitle" id="overlayTitle"></span>
+    <span class="overlayUrl" id="overlayUrl"></span>
+  </div>
+  <iframe id="appFrame" allow="camera; microphone"></iframe>
+</div>
+
+<!-- SEND MESSAGE MODAL -->
+<div class="modal" id="sendModal">
+  <div class="modalBox">
+    <div class="modalTitle">💬 Nuevo mensaje WhatsApp</div>
+    <div class="formGroup">
+      <label>Cliente (seleccionar de la lista)</label>
+      <select id="sendClient" onchange="onClientSelect()">
+        <option value="">-- Seleccionar cliente --</option>
+      </select>
+    </div>
+    <div class="formGroup">
+      <label>Número WA (con código de país)</label>
+      <input type="text" id="sendNumber" placeholder="Ej: 5215512345678">
+    </div>
+    <div class="formGroup">
+      <label>Plantilla</label>
+      <select id="sendTemplate" onchange="updateTemplatePreview()">
+        <option value="orden_recibida">Orden recibida</option>
+        <option value="tracking_update">Tracking update</option>
+        <option value="link_de_pago">Link de pago</option>
+      </select>
+    </div>
+    <div class="formGroup">
+      <label>Variables del mensaje</label>
+      <div id="templateVars"></div>
+    </div>
+    <div class="formGroup">
+      <label>Vista previa</label>
+      <div class="templatePreview" id="templatePreview"></div>
+    </div>
+    <div class="modalActions">
+      <button class="modalClose" onclick="closeSendModal()">Cancelar</button>
+      <button class="waBtn primary" onclick="sendMessage()">Enviar mensaje →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const PASSWORD = "frlogistics2024";
+const SESSION_KEY = "fr_portal_auth";
+const API_BASE = "";
+
+const TEMPLATES = {
+  orden_recibida: {
+    name: "orden_recibida",
+    text: "Hola {1}, recibimos tu envío en FR-Logistics Miami. Orden #{2}. Te mantenemos al tanto de cada paso del proceso.",
+    vars: ["Nombre del cliente", "Número de orden"]
+  },
+  tracking_update: {
+    name: "tracking_update",
+    text: "Hola {1}, tu orden #{2} de FR-Logistics Miami fue procesada exitosamente. Tu número de tracking es {3} con {4}. Puedes rastrear tu envío en el sitio del carrier.",
+    vars: ["Nombre del cliente", "Número de orden", "Número de tracking", "Carrier"]
+  },
+  link_de_pago: {
+    name: "link_de_pago",
+    text: "Hola {1}, tu factura de FR-Logistics Miami por ${2} está lista. Puedes realizar tu pago aquí: {3} Gracias por tu confianza.",
+    vars: ["Nombre del cliente", "Monto", "Link de QuickBooks"]
+  }
+};
+
+const APPS = [
+  { name:"Inventory Dashboard",desc:"Inventario en tiempo real desde SKUVault — 140 SKUs, stock levels, alerts",tag:"Warehouse",url:"https://apps.fr-logistics.net/dashboard-inventory.html"},
+  { name:"KPI Dashboard",desc:"Dashboard en tiempo real — shipments, revenue, SLA y stores desde ShipStation",tag:"Analytics",url:"https://apps.fr-logistics.net/kpi-dash.html"},
+  { name:"FR Inbounds",desc:"Registro de paquetes entrantes — escanear, registrar, guardar",tag:"Inbound",url:"https://apps.fr-logistics.net/fr-inbounds.html"},
+  { name:"MXS Overseas LTD",desc:"Shipments y tracking para cliente MXS Overseas",tag:"Client App",url:"https://apps.fr-logistics.net/MXS_Overseas_LTD.html"},
+  { name:"LN Store",desc:"Gestión de shipments para LN Store — FBA/FBM",tag:"Client App",url:"https://apps.fr-logistics.net/LN_Store.html"},
+  { name:"Inbound / Outbound",desc:"Registro general de entradas y salidas de mercancía",tag:"Operations",url:"https://apps.fr-logistics.net/Inbound_Outbound.html"},
+  { name:"Pallets (WMS)",desc:"Pallet builder con WMS ID — escanear, marcar, imprimir QR 4x6",tag:"Warehouse",url:"https://apps.fr-logistics.net/pallets.html"},
+  { name:"NO WMS Pallets",desc:"Pallet builder para clientes sin WMS — registro QR y open pallets",tag:"Warehouse",url:"https://apps.fr-logistics.net/NO_WMS.html"},
+  { name:"Quote System v3",desc:"Calculadora de cotizaciones para clientes — fulfillment, storage, prep",tag:"Sales",url:"https://apps.fr-logistics.net/FR_Logistics_Quote_System_v3.html"},
+  { name:"Volume Calculator",desc:"Calculadora de volumen y dimensiones para carga y tarimas",tag:"Tools",url:"https://apps.fr-logistics.net/FR_Logistics_Volume_Calculator.html"},
+  { name:"Shopify Runbook",desc:"Step-by-step guide — Shopify + ShipStation + SKUVault/Linnworks",tag:"Internal",url:"shopify_runbook_preview.html",openUrl:"shopify_integration_runbook.html"},
+  { name:"Email Ops",desc:"Labels de Gmail en tiempo real — OPS, URGENT, BILLING, CALLS",tag:"Email",url:"https://apps.fr-logistics.net/email-ops.html"}
+];
+
+let allMessages = [];
+let allClients = [];
+let activeConv = null;
+
+// AUTH
+function checkSession(){return sessionStorage.getItem(SESSION_KEY)==="true"}
+function login(){
+  const val=document.getElementById("pwInput").value;
+  if(val===PASSWORD){
+    sessionStorage.setItem(SESSION_KEY,"true");
+    document.getElementById("loginScreen").classList.add("hidden");
+    document.getElementById("portalScreen").classList.add("visible");
+    renderApps();
+    loadMessages();
+    loadClients();
+  } else {
+    const err=document.getElementById("loginError");
+    err.textContent="Incorrect password. Try again.";
+    document.getElementById("pwInput").value="";
+    document.getElementById("pwInput").focus();
+    setTimeout(()=>err.textContent="",3000);
+  }
+}
+function logout(){
+  sessionStorage.removeItem(SESSION_KEY);
+  document.getElementById("loginScreen").classList.remove("hidden");
+  document.getElementById("portalScreen").classList.remove("visible");
+  document.getElementById("pwInput").value="";
+}
+
+// TABS
+function switchTab(tab, btn){
+  document.querySelectorAll('.navTab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tabApps').style.display = tab==='apps'?'block':'none';
+  document.getElementById('tabWhatsapp').style.display = tab==='whatsapp'?'block':'none';
+  document.getElementById('tabClients').style.display = tab==='clients'?'block':'none';
+  if(tab==='whatsapp') loadMessages();
+  if(tab==='clients') loadClients();
+}
+
+// APPS
+function renderApps(){
+  const grid=document.getElementById("appGrid");
+  grid.innerHTML="";
+  APPS.forEach(app=>{
+    const card=document.createElement("div");
+    card.className="appCard";
+    let tagClass="appTag";
+    if(app.tag==="Analytics")tagClass="appTag analytics";
+    if(app.tag==="Email")tagClass="appTag email";
+    card.innerHTML=`<div class="previewFrame"><iframe src="${app.url}" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms"></iframe><div class="previewOverlay"></div><div class="previewClick"><span>Open App →</span></div></div><div class="appInfo"><div class="appName">${app.name}</div><div class="appDesc">${app.desc}</div><span class="${tagClass}">${app.tag}</span></div>`;
+    card.addEventListener("click",()=>openApp(app.openUrl?{...app,url:app.openUrl}:app));
+    grid.appendChild(card);
+  });
+}
+
+function openApp(app){
+  document.getElementById("overlayTitle").textContent=app.name;
+  document.getElementById("overlayUrl").textContent=app.url;
+  document.getElementById("appFrame").src=app.url;
+  document.getElementById("appOverlay").classList.add("open");
+  document.body.style.overflow="hidden";
+}
+function closeApp(){
+  document.getElementById("appOverlay").classList.remove("open");
+  document.getElementById("appFrame").src="";
+  document.body.style.overflow="";
+}
+
+// MESSAGES
+async function loadMessages(){
+  try {
+    const res = await fetch('/.netlify/functions/wa-messages');
+    allMessages = await res.json();
+    renderMessageList();
+    updateUnreadBadge();
+  } catch(e){
+    console.error('loadMessages error',e);
+  }
+}
+
+function renderMessageList(){
+  const body = document.getElementById('msgListBody');
+  document.getElementById('msgCount').textContent = allMessages.length;
+  if(!allMessages.length){
+    body.innerHTML='<div style="padding:20px;text-align:center;font-size:12px;color:var(--muted)">Sin mensajes aún</div>';
+    return;
+  }
+  // Group by phone number
+  const convMap = {};
+  allMessages.forEach(m=>{
+    const key = m.direction==='inbound'?m.from:m.to;
+    if(!convMap[key]) convMap[key]={phone:key,messages:[],unread:0};
+    convMap[key].messages.push(m);
+    if(!m.read && m.direction==='inbound') convMap[key].unread++;
+  });
+  const convs = Object.values(convMap).sort((a,b)=>{
+    const la=a.messages[a.messages.length-1]?.timestamp||'';
+    const lb=b.messages[b.messages.length-1]?.timestamp||'';
+    return lb.localeCompare(la);
+  });
+  body.innerHTML = convs.map(c=>{
+    const last=c.messages[c.messages.length-1];
+    const client = allClients.find(cl=>cl.waNumber===c.phone||cl.waNumber==='+'+c.phone);
+    const name = client?client.name:c.phone;
+    const preview = last?.text?.slice(0,50)||'...';
+    const time = last?new Date(last.timestamp).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'}):'';
+    return `<div class="msgItem ${c.unread?'unread':''} ${activeConv===c.phone?'active':''}" onclick="openConv('${c.phone}')">
+      <div class="msgFrom"><span>${name}</span>${c.unread?'<span class="unreadDot"></span>':''}</div>
+      <div class="msgPreview">${preview}</div>
+      <div class="msgTime">${time}</div>
+    </div>`;
+  }).join('');
+}
+
+function openConv(phone){
+  activeConv = phone;
+  const client = allClients.find(c=>c.waNumber===phone||c.waNumber==='+'+phone);
+  const name = client?client.name:phone;
+  const msgs = allMessages.filter(m=>(m.from===phone||m.to===phone));
+  // Mark as read
+  msgs.filter(m=>!m.read&&m.direction==='inbound').forEach(m=>{
+    fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'mark_read',id:m.id})});
+    m.read=true;
+  });
+  updateUnreadBadge();
+  renderMessageList();
+  const detail = document.getElementById('msgDetail');
+  detail.innerHTML=`
+    <div class="msgDetailHeader">
+      <div><div class="msgDetailName">${name}</div><div class="msgDetailNum">${phone}</div></div>
+      <button class="waBtn" onclick="openSendModalFor('${phone}','${name}')">Responder</button>
+    </div>
+    <div class="msgDetailBody" id="convBody">
+      ${msgs.sort((a,b)=>a.timestamp.localeCompare(b.timestamp)).map(m=>`
+        <div class="msgBubble ${m.direction}">
+          ${m.text||''}
+          <div class="bTime">${new Date(m.timestamp).toLocaleString('es',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})}</div>
+        </div>`).join('')}
+    </div>
+    <div class="msgReplyBox">
+      <textarea id="replyText" rows="2" placeholder="Escribe un mensaje..."></textarea>
+      <button class="sendBtn" onclick="sendReply('${phone}','${name}')">→</button>
+    </div>`;
+  const body=document.getElementById('convBody');
+  if(body) body.scrollTop=body.scrollHeight;
+}
+
+async function sendReply(phone,name){
+  const text=document.getElementById('replyText')?.value?.trim();
+  if(!text) return;
+  // Send via WhatsApp API
+  try {
+    await fetch('/.netlify/functions/whatsapp-notify',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-fr-secret':'frlogistics_wa_2026'},
+      body:JSON.stringify({to:phone,type:'text',text})
+    });
+    // Log outbound
+    await fetch('/.netlify/functions/wa-messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'add_outbound',to:phone,clientName:name,text})
+    });
+    await loadMessages();
+    openConv(phone);
+  } catch(e){ alert('Error enviando mensaje'); }
+}
+
+function updateUnreadBadge(){
+  const count=allMessages.filter(m=>!m.read&&m.direction==='inbound').length;
+  const badge=document.getElementById('unreadBadge');
+  badge.textContent=count;
+  badge.style.display=count>0?'inline-block':'none';
+}
+
+// SEND MODAL
+function openSendModal(){
+  populateClientSelect();
+  updateTemplatePreview();
+  document.getElementById('sendModal').classList.add('open');
+}
+function openSendModalFor(phone,name){
+  populateClientSelect();
+  document.getElementById('sendNumber').value=phone;
+  updateTemplatePreview();
+  document.getElementById('sendModal').classList.add('open');
+}
+function closeSendModal(){ document.getElementById('sendModal').classList.remove('open'); }
+
+function populateClientSelect(){
+  const sel=document.getElementById('sendClient');
+  sel.innerHTML='<option value="">-- Seleccionar cliente --</option>';
+  allClients.filter(c=>c.active&&c.waNumber).forEach(c=>{
+    sel.innerHTML+=`<option value="${c.waNumber}">${c.name} — ${c.waNumber}</option>`;
+  });
+}
+
+function onClientSelect(){
+  const val=document.getElementById('sendClient').value;
+  if(val) document.getElementById('sendNumber').value=val;
+}
+
+function updateTemplatePreview(){
+  const tKey=document.getElementById('sendTemplate').value;
+  const t=TEMPLATES[tKey];
+  const varsDiv=document.getElementById('templateVars');
+  varsDiv.innerHTML=t.vars.map((v,i)=>`<div style="margin-bottom:8px"><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:4px">${v}</label><input type="text" id="tvar_${i}" style="width:100%;background:rgba(255,255,255,.04);border:1px solid rgba(31,164,99,.25);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none" oninput="renderPreview()" placeholder="${v}"></div>`).join('');
+  renderPreview();
+}
+
+function renderPreview(){
+  const tKey=document.getElementById('sendTemplate').value;
+  const t=TEMPLATES[tKey];
+  let text=t.text;
+  t.vars.forEach((_,i)=>{
+    const val=document.getElementById(`tvar_${i}`)?.value||`{${i+1}}`;
+    text=text.replace(`{${i+1}}`,val);
+  });
+  document.getElementById('templatePreview').textContent=text;
+}
+
+async function sendMessage(){
+  const phone=document.getElementById('sendNumber').value.trim();
+  const tKey=document.getElementById('sendTemplate').value;
+  const t=TEMPLATES[tKey];
+  const clientName=document.getElementById('sendClient').selectedOptions[0]?.text||phone;
+  if(!phone){alert('Ingresa un número de WhatsApp');return;}
+  const params=t.vars.map((_,i)=>document.getElementById(`tvar_${i}`)?.value||'');
+  try {
+    await fetch('/.netlify/functions/whatsapp-notify',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-fr-secret':'frlogistics_wa_2026'},
+      body:JSON.stringify({to:phone,type:'template',templateName:t.name,templateLanguage:'es',templateParams:params})
+    });
+    await fetch('/.netlify/functions/wa-messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'add_outbound',to:phone,clientName,template:tKey,text:document.getElementById('templatePreview').textContent})
+    });
+    closeSendModal();
+    await loadMessages();
+    alert('Mensaje enviado ✓');
+  } catch(e){ alert('Error enviando mensaje'); }
+}
+
+// CLIENTS
+async function loadClients(){
+  try {
+    const res=await fetch('/.netlify/functions/wa-clients');
+    allClients=await res.json();
+    renderClientsTable(allClients);
+    populateClientSelect();
+  } catch(e){ console.error('loadClients error',e); }
+}
+
+function renderClientsTable(clients){
+  const tbody=document.getElementById('clientTableBody');
+  tbody.innerHTML=clients.map((c,i)=>`
+    <tr id="row_${c.id||i}">
+      <td style="color:var(--muted);font-size:11px">${i+1}</td>
+      <td><div style="font-weight:600">${c.name||''}</div><div style="font-size:11px;color:var(--muted)">${c.company||''}</div></td>
+      <td style="font-size:12px;color:var(--muted)">${c.email||''}</td>
+      <td><span style="font-size:11px;font-family:'DM Mono',monospace">${c.country||''}</span></td>
+      <td><input type="text" value="${c.waNumber||''}" placeholder="+52155..." style="font-family:'DM Mono',monospace;font-size:12px" onchange="updateClientField('${c.id}','waNumber',this.value)"></td>
+      <td><input type="text" value="${c.storeId||''}" placeholder="Store ID" style="font-size:12px" onchange="updateClientField('${c.id}','storeId',this.value)"></td>
+      <td><input type="text" value="${c.storeName||''}" placeholder="Nombre tienda" style="font-size:12px" onchange="updateClientField('${c.id}','storeName',this.value)"></td>
+      <td>
+        <span class="statusPill ${c.active?'active':'inactive'}" onclick="toggleActive('${c.id}')" style="cursor:pointer">
+          ${c.active?'Activo':'Inactivo'}
+        </span>
+      </td>
+      <td>
+        <button class="actionBtn" title="Enviar WA" onclick="openSendModalFor('${c.waNumber}','${c.name}')">💬</button>
+        <button class="actionBtn danger" title="Eliminar" onclick="deleteClient('${c.id}')">✕</button>
+      </td>
+    </tr>`).join('');
+}
+
+function filterClients(){
+  const q=document.getElementById('clientSearch').value.toLowerCase();
+  const filtered=allClients.filter(c=>(c.name||'').toLowerCase().includes(q)||(c.company||'').toLowerCase().includes(q)||(c.email||'').toLowerCase().includes(q));
+  renderClientsTable(filtered);
+}
+
+function updateClientField(id,field,value){
+  const c=allClients.find(c=>c.id===id);
+  if(c) c[field]=value;
+}
+
+function toggleActive(id){
+  const c=allClients.find(c=>c.id===id);
+  if(c){ c.active=!c.active; renderClientsTable(allClients); }
+}
+
+function addClientRow(){
+  const newClient={id:Date.now().toString(),name:'Nuevo cliente',company:'',email:'',phone:'',country:'US',waNumber:'',storeId:'',storeName:'',active:false,notes:''};
+  allClients.push(newClient);
+  renderClientsTable(allClients);
+}
+
+function deleteClient(id){
+  if(!confirm('¿Eliminar este cliente?')) return;
+  allClients=allClients.filter(c=>c.id!==id);
+  renderClientsTable(allClients);
+}
+
+async function saveAllClients(){
+  try {
+    await fetch('/.netlify/functions/wa-clients',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'save_all',clients:allClients})
+    });
+    alert('Clientes guardados ✓');
+  } catch(e){ alert('Error guardando clientes'); }
+}
+
+// INIT
+document.getElementById("loginBtn").addEventListener("click",login);
+document.getElementById("pwInput").addEventListener("keydown",e=>{if(e.key==="Enter")login()});
+document.getElementById("logoutBtn").addEventListener("click",logout);
+document.getElementById("closeBtn").addEventListener("click",closeApp);
+document.getElementById("tabApps").style.display="block";
+document.getElementById("tabWhatsapp").style.display="none";
+document.getElementById("tabClients").style.display="none";
+
+if(checkSession()){
+  document.getElementById("loginScreen").classList.add("hidden");
+  document.getElementById("portalScreen").classList.add("visible");
+  renderApps();
+  loadMessages();
+  loadClients();
+}
+
+// Auto-refresh messages every 30s
+setInterval(()=>{
+  if(checkSession()&&document.getElementById('tabWhatsapp').style.display!=='none') loadMessages();
+},30000);
+</script>
+</body>
+</html>
