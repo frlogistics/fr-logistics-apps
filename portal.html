@@ -461,12 +461,10 @@ function closeApp(){
 async function loadMessages(){
   try {
     const res = await fetch('/.netlify/functions/wa-messages');
-    allMessages = await res.json();
-    renderMessageList();
-    updateUnreadBadge();
-  } catch(e){
-    console.error('loadMessages error',e);
-  }
+    if(res.ok) allMessages = await res.json();
+  } catch(e){ console.error('loadMessages error',e); }
+  renderMessageList();
+  updateUnreadBadge();
 }
 
 function renderMessageList(){
@@ -566,7 +564,7 @@ function updateUnreadBadge(){
 
 // SEND MODAL
 function openSendModal(){
-  populateClientSelect();
+  try{ populateClientSelect(); }catch(e){}
   updateTemplatePreview();
   document.getElementById('sendModal').classList.add('open');
 }
@@ -637,11 +635,11 @@ async function sendMessage(){
 // CLIENTS
 async function loadClients(){
   try {
-    const res=await fetch('/.netlify/functions/wa-clients');
-    allClients=await res.json();
-    renderClientsTable(allClients);
-    populateClientSelect();
-  } catch(e){ console.error('loadClients error',e); }
+    const stored = localStorage.getItem('fr_wa_clients');
+    allClients = stored ? JSON.parse(stored) : [];
+  } catch(e){ allClients=[]; }
+  renderClientsTable(allClients);
+  populateClientSelect();
 }
 
 function renderClientsTable(clients){
@@ -697,13 +695,9 @@ function deleteClient(id){
 
 async function saveAllClients(){
   try {
-    await fetch('/.netlify/functions/wa-clients',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({action:'save_all',clients:allClients})
-    });
+    localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
     alert('Clientes guardados ✓');
-  } catch(e){ alert('Error guardando clientes'); }
+  } catch(e){ alert('Error guardando: ' + e.message); }
 }
 
 // INIT
