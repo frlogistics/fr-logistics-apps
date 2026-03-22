@@ -107,7 +107,16 @@ exports.handler = async function(event) {
         try {
           await sendWhatsApp(reg.waNumber, [displayName, dateStr, String(counts.inbound), String(counts.outbound)]);
           console.log(`[daily-summary] WA sent → ${clientName}`);
-        } catch(e){ console.error(`[daily-summary] WA error ${clientName}:`, e.message); }
+        } catch(e){
+          console.error(`[daily-summary] WA error ${clientName}:`, e.message);
+          // Fallback to email if WA fails
+          if (reg?.email) {
+            try {
+              await sendEmail(reg.email, displayName, dateStr, counts.inbound, counts.outbound);
+              console.log(`[daily-summary] Email fallback sent → ${clientName} (${reg.email})`);
+            } catch(e2){ console.error(`[daily-summary] Email fallback error ${clientName}:`, e2.message); }
+          }
+        }
 
       } else if (reg?.email) {
         try {
