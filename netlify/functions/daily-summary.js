@@ -33,8 +33,8 @@ async function getClients() {
 }
 
 async function sendWhatsApp(to, params) {
-  const token   = process.env.WHATSAPP_TOKEN;
-  const phoneId = process.env.WHATSAPP_PHONE_ID;
+  const token   = process.env.WHATSAPP_TOKEN || Netlify.env.get('WHATSAPP_TOKEN');
+  const phoneId = process.env.WHATSAPP_PHONE_ID || Netlify.env.get('WHATSAPP_PHONE_ID');
   const res = await fetch(`https://graph.facebook.com/v19.0/${phoneId}/messages`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -52,7 +52,7 @@ async function sendWhatsApp(to, params) {
 }
 
 async function sendEmail(to, name, dateStr, inbound, outbound) {
-  const apiKey = process.env.RESEND_API_KEY;
+  const apiKey = process.env.RESEND_API_KEY || Netlify.env.get('RESEND_API_KEY');
   if (!apiKey) throw new Error("RESEND_API_KEY not set");
 
   const res = await fetch("https://api.resend.com/emails", {
