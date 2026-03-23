@@ -33,8 +33,8 @@ async function getClients() {
 }
 
 async function sendWhatsApp(to, params) {
-  const token   = process.env.WHATSAPP_TOKEN || Netlify.env.get('WHATSAPP_TOKEN');
-  const phoneId = process.env.WHATSAPP_PHONE_ID || Netlify.env.get('WHATSAPP_PHONE_ID');
+  const token   = process.env.WHATSAPP_TOKEN;
+  const phoneId = process.env.WHATSAPP_PHONE_ID;
   const res = await fetch(`https://graph.facebook.com/v19.0/${phoneId}/messages`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -52,7 +52,8 @@ async function sendWhatsApp(to, params) {
 }
 
 async function sendEmail(to, name, dateStr, inbound, outbound) {
-  const apiKey = process.env.RESEND_API_KEY || Netlify.env.get('RESEND_API_KEY');
+  const apiKey = process.env.RESEND_API_KEY;
+  console.log("[daily-summary] RESEND_API_KEY present:", !!apiKey);
   if (!apiKey) throw new Error("RESEND_API_KEY not set");
 
   const res = await fetch("https://api.resend.com/emails", {
@@ -76,6 +77,7 @@ async function sendEmail(to, name, dateStr, inbound, outbound) {
 exports.handler = async function(event) {
   const dateStr = fmtDate(new Date());
   console.log(`[daily-summary] Running for ${dateStr}`);
+  console.log("[daily-summary] ENV check - RESEND_API_KEY:", !!process.env.RESEND_API_KEY);
 
   try {
     const records = await getTodayRecords();
@@ -85,7 +87,6 @@ exports.handler = async function(event) {
     const clients = await getClients();
     console.log(`[daily-summary] ${clients.length} clients registered`);
 
-    // Group by client name
     const byClient = {};
     for (const r of records) {
       const name = (r.client || "").trim();
@@ -102,6 +103,7 @@ exports.handler = async function(event) {
         .some(v => v && v.toLowerCase() === clientName.toLowerCase()));
 
       const displayName = reg?.name || clientName;
+      console.log(`[daily-summary] Processing ${clientName} → reg found: ${!!reg}, waNumber: ${reg?.waNumber}, email: ${reg?.email}`);
 
       if (reg?.waNumber) {
         try {
@@ -109,21 +111,18 @@ exports.handler = async function(event) {
           console.log(`[daily-summary] WA sent → ${clientName}`);
         } catch(e){
           console.error(`[daily-summary] WA error ${clientName}:`, e.message);
-          // Fallback to email if WA fails
           if (reg?.email) {
             try {
               await sendEmail(reg.email, displayName, dateStr, counts.inbound, counts.outbound);
-              console.log(`[daily-summary] Email fallback sent → ${clientName} (${reg.email})`);
-            } catch(e2){ console.error(`[daily-summary] Email fallback error ${clientName}:`, e2.message); }
+              console.log(`[daily-summary] Email fallback sent → ${clientName}`);
+            } catch(e2){ console.error(`[daily-summary] Email fallback error:`, e2.message); }
           }
         }
-
       } else if (reg?.email) {
         try {
           await sendEmail(reg.email, displayName, dateStr, counts.inbound, counts.outbound);
           console.log(`[daily-summary] Email sent → ${clientName} (${reg.email})`);
         } catch(e){ console.error(`[daily-summary] Email error ${clientName}:`, e.message); }
-
       } else {
         console.log(`[daily-summary] No contact for ${clientName}`);
       }
