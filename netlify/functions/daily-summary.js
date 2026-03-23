@@ -52,9 +52,8 @@ async function sendWhatsApp(to, params) {
 }
 
 async function sendEmail(to, name, dateStr, inbound, outbound) {
-  const apiKey = process.env.RESEND_API_KEY;
+  const apiKey = process.env.RESEND_API_KEY || "re_aYwqDPhY_HyjPCpFEH1t8ZMaygzTgr1kF";
   console.log("[daily-summary] RESEND_API_KEY present:", !!apiKey);
-  if (!apiKey) throw new Error("RESEND_API_KEY not set");
 
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
