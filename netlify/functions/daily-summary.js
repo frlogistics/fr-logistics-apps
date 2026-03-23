@@ -62,10 +62,10 @@ async function sendEmail(to, name, dateStr, inbound, outbound) {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      from: "FR-Logistics Miami <info@fr-logistics.net>",
+      from: "FR-Logistics Miami <warehouse@fr-logistics.net>",
       to: [to],
       subject: `FR-Logistics Daily Summary — ${dateStr}`,
-      text: `Hi ${name},\n\nHere is your daily summary from FR-Logistics Miami — ${dateStr}:\n\nInbound: ${inbound} package(s) received\nOutbound: ${outbound} shipment(s) processed\n\nFor full details contact us at info@fr-logistics.net.\n\nThank you for trusting FR-Logistics.\n\nFR-Logistics Miami Team\nDoral, FL 33172`
+      text: `Hi ${name},\n\nHere is your daily summary from FR-Logistics Miami — ${dateStr}:\n\nInbound: ${inbound} package(s) received\nOutbound: ${outbound} shipment(s) processed\n\nFor full details contact us at warehouse@fr-logistics.net.\n\nThank you for trusting FR-Logistics.\n\nFR-Logistics Miami Team\nDoral, FL 33172`
     })
   });
   const data = await res.json();
