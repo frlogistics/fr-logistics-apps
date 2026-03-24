@@ -1015,7 +1015,70 @@
     downloadCSV(name, header, rows);
   }
 
-  (async function init(){
+  
+const STORE_PALLETS = "pallets";
+const STORE_TRACKING = "tracking_to_pallet";
+
+function isNotFull(status){
+  return status !== "FULL";
+}
+
+async function lookupTracking(){
+  const trk = $("lookupTracking").value.trim();
+  if(!trk) return;
+  try {
+    const data = await sbFetch("GET", `/rest/v1/pallet_packages?tracking=eq.${encodeURIComponent(trk)}&limit=1`);
+    if(!data || data.length === 0){
+      $("lookupResult").innerHTML = `<div class="status bad">Tracking not found in any pallet.</div>`;
+      return;
+    }
+    const palletId = data[0].pallet_id;
+    $("lookupResult").innerHTML = `<div class="status ok">Found on pallet: <span class="mono">${palletId}</span></div>`;
+    await loadPallet(palletId);
+  } catch(e) {
+    $("lookupResult").innerHTML = `<div class="status bad">Error: ${e.message}</div>`;
+  }
+}
+
+async function wipeAll(){
+  await clear(STORE_PALLETS);
+  currentPallet = null;
+  updateKPIs();
+  await refreshOpenPallets();
+  setStatus("leftStatus", "All data wiped.", "warn");
+}
+
+async function openLabel(palletId){
+  const p = await get(STORE_PALLETS, palletId);
+  if(!p){ alert("Pallet not found: " + palletId); return; }
+  
+  // Fill label fields
+  $("labelPalletId").value = p.palletId;
+  $("L_pallet").textContent = p.palletId;
+  $("L_client").textContent = p.client || "—";
+  $("L_status").textContent = p.status || "OPEN";
+  $("L_created").textContent = p.createdAt ? fmtDateTime(p.createdAt) : "—";
+  $("L_count").textContent = String((p.packages||[]).length);
+  $("L_size").textContent = p.palletSize || "—";
+  $("qrPayloadPreview").value = p.palletId;
+
+  // Generate QR code
+  const qrEl = $("qr");
+  qrEl.innerHTML = "";
+  new QRCode(qrEl, {
+    text: p.palletId,
+    width: 240,
+    height: 240,
+    colorDark: "#000000",
+    colorLight: "#ffffff",
+    correctLevel: QRCode.CorrectLevel.H
+  });
+
+  $("labelDlg").showModal();
+}
+
+
+(async function init(){
     await openDB();
 
     $("genPalletBtn").addEventListener("click", async ()=>{
