@@ -21,12 +21,12 @@ exports.handler = async function(event) {
       page++;
     }
 
-    const rows = [["SKU","Description","Current Reorder Point","New Reorder Point","Qty Available"]];
+    // SkuVault Update Product Details format: UPC must be first column
+    const rows = [["UPC","SKU","Reorder Point","Qty Available"]];
     for (const p of allProducts) {
       rows.push([
+        p.Code || p.Sku || "",  // UPC/Code field
         p.Sku || "",
-        (p.Description || "").replace(/"/g,'""'),
-        p.ReorderPoint ?? 0,
         p.ReorderPoint ?? 0,
         p.QuantityAvailable ?? 0
       ]);
