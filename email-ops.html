@@ -7,17 +7,17 @@
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0a0f0d; --card: #151f1a; --accent: #24c97a;
-    --border: rgba(31,164,99,.18); --text: #e8f0eb; --sub: #7a9a87;
-    --danger: #e05555; --warn: #e09c45; --info: #4a9eff; --purple: #a855f7;
-    --mono: 'JetBrains Mono', monospace; --sans: 'DM Sans', sans-serif;
-  }
+  --bg: #f5f7f5; --surface: #ffffff; --card: #ffffff; --border: rgba(31,164,99,.20);
+  --green: #1fa463; --teal: #16a3b5; --text: #0d1f14; --muted: #4a6b55;
+  --accent: #1fa463; --shadow: 0 4px 24px rgba(0,0,0,.10);
+  --wa: #25D366; --wa-dark: #128C7E;
+}
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
 
   .topbar {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 20px; background: #0d1410;
+    padding: 12px 20px; background: #ffffff;
     border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100;
   }
   .topbar-left { display: flex; align-items: center; gap: 12px; }
@@ -105,7 +105,7 @@
     color: var(--sub); line-height: 1.7; margin-bottom: 20px;
   }
   .config-note code {
-    background: rgba(255,255,255,.06); padding: 2px 6px;
+    background: rgba(0,0,0,.05); padding: 2px 6px;
     border-radius: 4px; font-family: var(--mono); color: var(--accent); font-size: 11px;
   }
 </style>
