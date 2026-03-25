@@ -3,3 +3,6 @@
 
 [functions."daily-summary"]
   schedule = "0 23 * * *"
+
+[functions."inventory-alert"]
+  schedule = "0 21 * * *"
