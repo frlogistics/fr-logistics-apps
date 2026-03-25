@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FR-Logistics · Email Ops</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+  --bg: #f5f7f5; --surface: #ffffff; --card: #ffffff; --border: rgba(31,164,99,.20);
+  --green: #1fa463; --teal: #16a3b5; --text: #0d1f14; --muted: #4a6b55;
+  --accent: #1fa463; --shadow: 0 4px 24px rgba(0,0,0,.10);
+  --wa: #25D366; --wa-dark: #128C7E;
+}
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px; background: #ffffff;
+    border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  .back-btn {
+    background: none; border: 1px solid var(--border); color: var(--sub);
+    font-family: var(--sans); font-size: 12px; padding: 5px 12px;
+    border-radius: 6px; cursor: pointer; text-decoration: none; transition: all .2s;
+  }
+  .back-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .page-title { font-weight: 600; font-size: 14px; }
+  .live-pill {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 11px; color: var(--accent);
+    background: rgba(36,201,122,.08); border: 1px solid rgba(36,201,122,.2);
+    padding: 4px 10px; border-radius: 20px;
+  }
+  .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .updated-text { font-family: var(--mono); font-size: 11px; color: var(--sub); }
+
+  .main { padding: 20px; max-width: 860px; margin: 0 auto; }
+
+  .section-label {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--sub);
+    margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+
+  .labels-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px; margin-bottom: 28px;
+  }
+
+  .label-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; position: relative;
+    overflow: hidden; transition: border-color .2s;
+  }
+  .label-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+  .label-card.ops::before    { background: #24c97a; }
+  .label-card.urgent::before { background: #e05555; }
+  .label-card.billing::before{ background: #4a9eff; }
+  .label-card.calls::before  { background: #e09c45; }
+  .label-card.information::before { background: #a855f7; }
+
+  .label-icon { font-size: 18px; margin-bottom: 8px; display: block; }
+  .label-name { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--sub); margin-bottom: 4px; }
+  .label-count { font-family: var(--mono); font-size: 30px; font-weight: 700; line-height: 1; }
+  .label-card.ops .label-count         { color: #24c97a; }
+  .label-card.urgent .label-count      { color: #e05555; }
+  .label-card.billing .label-count     { color: #4a9eff; }
+  .label-card.calls .label-count       { color: #e09c45; }
+  .label-card.information .label-count { color: #a855f7; }
+  .label-unread { font-size: 11px; color: var(--sub); margin-top: 4px; }
+  .label-unread span { color: var(--text); font-weight: 500; }
+
+  .error-box {
+    background: rgba(224,85,85,.08); border: 1px solid rgba(224,85,85,.2);
+    border-radius: 8px; padding: 14px 16px; font-size: 13px; color: #e05555;
+    margin-bottom: 16px; display: none;
+  }
+  .loading-box {
+    display: flex; align-items: center; gap: 12px; padding: 40px;
+    justify-content: center; color: var(--sub); font-size: 13px;
+    font-family: var(--mono);
+  }
+  .spinner {
+    width: 28px; height: 28px; border: 3px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .footer-row { display: flex; gap: 10px; justify-content: flex-end; padding-top: 8px; }
+  .action-btn {
+    background: rgba(36,201,122,.1); border: 1px solid rgba(36,201,122,.3);
+    color: var(--accent); font-family: var(--sans); font-size: 12px;
+    padding: 7px 14px; border-radius: 6px; cursor: pointer; transition: all .2s;
+  }
+  .action-btn:hover { background: rgba(36,201,122,.2); }
+
+  .config-note {
+    background: rgba(36,201,122,.05); border: 1px solid rgba(36,201,122,.15);
+    border-radius: 8px; padding: 14px 16px; font-size: 12px;
+    color: var(--sub); line-height: 1.7; margin-bottom: 20px;
+  }
+  .config-note code {
+    background: rgba(0,0,0,.05); padding: 2px 6px;
+    border-radius: 4px; font-family: var(--mono); color: var(--accent); font-size: 11px;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <a href="portal.html" class="back-btn">← Back to Portal</a>
+    <span class="page-title">Email Ops</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span class="live-pill"><span class="live-dot"></span>LIVE</span>
+    <span class="updated-text" id="updatedText">—</span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="error-box" id="errorBox"></div>
+  <div class="loading-box" id="loadingBox">
+    <div class="spinner"></div> Cargando labels de Gmail…
+  </div>
+
+  <div id="dashboard" style="display:none">
+    <div class="section-label">Labels — Mensajes totales / no leídos</div>
+    <div class="labels-grid" id="labelsGrid"></div>
+    <div class="footer-row">
+      <button class="action-btn" onclick="loadData()">↻ Actualizar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
+// Pega aquí la URL de tu Apps Script Web App deployment
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyx-W3_3tCF4PMQAma_ClxQ8cx4AtgdOOcn31fMQo9tkEWk3-ta6Mkm7wHe43fkK4m-ZQ/exec';
+
+const LABELS = [
+  { name: 'OPS',         key: 'ops',         icon: '⚙️'  },
+  { name: 'URGENT',      key: 'urgent',      icon: '🚨'  },
+  { name: 'BILLING',     key: 'billing',     icon: '💰'  },
+  { name: 'CALLS',       key: 'calls',       icon: '📞'  },
+  { name: 'INFORMATION', key: 'information', icon: '📋'  },
+];
+
+async function loadData() {
+  document.getElementById('errorBox').style.display = 'none';
+
+  try {
+    const res = await fetch(APPS_SCRIPT_URL);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+
+    renderCards(data);
+    document.getElementById('loadingBox').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+
+    const now = new Date();
+    document.getElementById('updatedText').textContent =
+      'Updated: ' + now.toLocaleDateString('en-US',{month:'short',day:'numeric'}) +
+      ' · ' + now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+
+  } catch(e) {
+    document.getElementById('loadingBox').style.display = 'none';
+    const box = document.getElementById('errorBox');
+    box.textContent = '⚠ No se pudo conectar al Apps Script. Verifica la URL. Error: ' + e.message;
+    box.style.display = 'block';
+  }
+}
+
+function renderCards(data) {
+  document.getElementById('labelsGrid').innerHTML = LABELS.map(l => {
+    const d = data[l.name] || { total: 0, unread: 0 };
+    return `
+      <div class="label-card ${l.key}">
+        <span class="label-icon">${l.icon}</span>
+        <div class="label-name">${l.name}</div>
+        <div class="label-count">${d.total}</div>
+        <div class="label-unread">No leídos: <span>${d.unread}</span></div>
+      </div>`;
+  }).join('');
+}
+
+// Auto-refresh cada 5 minutos
+loadData();
+setInterval(loadData, 5 * 60 * 1000);
+</script>
+</body>
+</html>
