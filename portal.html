@@ -1130,6 +1130,8 @@ function deleteClient(id){
 }
 
 async function autoSaveClients(){
+  // Never auto-save an empty list — would wipe the database
+  if(!allClients || allClients.length === 0) return;
   try {
     await fetch('/.netlify/functions/wa-clients',{
       method:'POST',
@@ -1143,6 +1145,10 @@ async function autoSaveClients(){
 }
 
 async function saveAllClients(){
+  if(!allClients || allClients.length === 0){
+    alert('No hay clientes para guardar.');
+    return;
+  }
   try {
     const res = await fetch('/.netlify/functions/wa-clients',{
       method:'POST',
@@ -1150,7 +1156,7 @@ async function saveAllClients(){
       body:JSON.stringify({action:'save_all',clients:allClients})
     });
     localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
-    if(res.ok) alert('Clientes guardados ✓ (sync en todos los dispositivos)');
+    if(res.ok) alert('✅ ' + allClients.length + ' clientes guardados (disponibles en todos los dispositivos)');
     else alert('Guardado local ✓ (cloud sync pendiente)');
   } catch(e){
     localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
