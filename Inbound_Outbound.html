@@ -311,8 +311,9 @@
   async function loadMasterClients(){
     try {
       const res = await fetch("/.netlify/functions/wa-clients");
-      if(!res.ok) throw new Error("not ok");
+      if(!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
+      console.log("wa-clients loaded:", data.length, "clients", data.slice(0,2));
       if(Array.isArray(data) && data.length){
         masterClients = data.map(c => ({
           name:      c.name      || "",
@@ -524,6 +525,7 @@
     $("inType").value="Inbound (Prep Service)"; $("outType").value="Outbound (Shipment)";
     $("inClient").value=clientNames[0]||""; $("outClient").value=clientNames[0]||"";
     setLastSaved(getLastSaved());
+    onInClientChange(); // init badge for currently selected client
 
     $("inTracking").addEventListener("input",()=>{ $("inCarrier").value=suggestCarrier($("inTracking").value); });
     $("inTracking").addEventListener("keydown",e=>{ if(e.key==="Enter"){e.preventDefault();$("saveInboundBtn").click();} });
