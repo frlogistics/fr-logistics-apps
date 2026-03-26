@@ -114,19 +114,22 @@ exports.handler = async function(event) {
 
     // save_all — upsert every client from portal
     if (body.action === "save_all" && Array.isArray(body.clients)) {
+      // SAFETY GUARD: never wipe database with empty array
+      if (body.clients.length === 0) {
+        console.warn("[wa-clients] save_all blocked — empty clients array");
+        return { statusCode: 200, headers: HEADERS_RESP, body: JSON.stringify({ ok: true, saved: 0, skipped: "empty array guard" }) };
+      }
       try {
-        // Delete all existing rows then insert fresh (simplest approach for ≤50 clients)
+        // Delete all existing rows then insert fresh
         await sbFetch("DELETE", `/rest/v1/${TABLE}?id=neq.00000000-0000-0000-0000-000000000000`);
-        if (body.clients.length > 0) {
-          const rows = body.clients.map(c => {
-            const r = clientToRow(c);
-            delete r.id; // let Supabase generate UUIDs
-            return r;
-          });
-          await sbFetch("POST", `/rest/v1/${TABLE}`, rows);
-        }
-        console.log(`[wa-clients] save_all → ${body.clients.length} clients`);
-        return { statusCode: 200, headers: HEADERS_RESP, body: JSON.stringify({ ok: true, saved: body.clients.length }) };
+        const rows = body.clients.map(c => {
+          const r = clientToRow(c);
+          delete r.id;
+          return r;
+        });
+        await sbFetch("POST", `/rest/v1/${TABLE}`, rows);
+        console.log(`[wa-clients] save_all → ${rows.length} clients saved`);
+        return { statusCode: 200, headers: HEADERS_RESP, body: JSON.stringify({ ok: true, saved: rows.length }) };
       } catch (err) {
         console.error("[wa-clients] save_all error:", err.message);
         return { statusCode: 500, headers: HEADERS_RESP, body: JSON.stringify({ error: err.message }) };
