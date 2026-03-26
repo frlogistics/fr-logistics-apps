@@ -1,137 +1,163 @@
-const { getStore } = require("@netlify/blobs");
+// wa-clients.js — FR-Logistics Master Client Table
+// Storage: Supabase (same DB as shipments_general — already proven working)
 
-const STORE_NAME = "fr-clients-master";
+const SUPA_URL = "https://rijbschnchjiuggrhfrx.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpamJzY2huY2hqaXVnZ3JoZnJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMTQwOTQsImV4cCI6MjA4ODg5MDA5NH0.s3T4CStjWqOvz7qDpYtjt0yVJ0iyOMAKKwxkADSEs4s";
+const TABLE   = "fr_clients";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-  "Content-Type": "application/json",
+const HEADERS_SUPA = {
+  "apikey":        SUPA_KEY,
+  "Authorization": "Bearer " + SUPA_KEY,
+  "Content-Type":  "application/json",
+  "Prefer":        "return=representation",
 };
 
-// Normalize client — full schema, backwards compatible with old format
-function normalizeClient(c) {
+const HEADERS_RESP = { "Content-Type": "application/json" };
+
+// Normalize services: always string for Supabase TEXT column, parsed to array for API response
+function toServicesString(services) {
+  if (Array.isArray(services)) return services.join(",");
+  if (typeof services === "string") return services;
+  return "";
+}
+
+function toServicesArray(str) {
+  if (Array.isArray(str)) return str;
+  if (typeof str === "string" && str.length > 0)
+    return str.split(",").map(s => s.trim()).filter(Boolean);
+  return [];
+}
+
+// Map Supabase row → API client object
+function rowToClient(r) {
+  const waNumber  = r.wa_number  || "";
+  const waConsent = r.wa_consent || "Pending";
+  const status    = r.status     || "Active";
   return {
-    id:        c.id        || String(Date.now()) + Math.random().toString(36).slice(2),
-    name:      c.name      || "",
-    company:   c.company   || "",
-    storeName: c.store_name || c.storeName || "",
-    storeId:   c.store_id  || c.storeId   || "",
-    country:   c.country   || "US",
-    lang:      c.lang      || "EN",
-    type:      c.type      || "Business",
-    // keep both key names for compatibility with portal and Inbound/Outbound
-    wa_number: c.wa_number || c.waNumber  || "",
-    waNumber:  c.wa_number || c.waNumber  || "",
-    email:     c.email     || "",
-    phone:     c.phone     || "",
-    // services always stored as array
-    services: Array.isArray(c.services)
-      ? c.services
-      : (typeof c.services === "string"
-          ? c.services.split(",").map(s => s.trim()).filter(Boolean)
-          : []),
+    id:        r.id,
+    name:      r.name      || "",
+    company:   r.company   || "",
+    storeName: r.store_name || "",
+    storeId:   r.store_id   || "",
+    country:   r.country   || "US",
+    lang:      r.lang      || "EN",
+    type:      r.type      || "Business",
+    wa_number: waNumber,
+    waNumber,
+    email:     r.email     || "",
+    phone:     r.phone     || "",
+    services:  toServicesArray(r.services),
+    status,
+    active:    status === "Active",
+    wa_consent: waConsent,
+    waConsent,
+    notes:     r.notes     || "",
+  };
+}
+
+// Map portal client object → Supabase row
+function clientToRow(c) {
+  return {
+    id:         c.id        || undefined,
+    name:       c.name      || "",
+    company:    c.company   || "",
+    store_name: c.store_name || c.storeName || "",
+    store_id:   c.store_id  || c.storeId   || "",
+    country:    c.country   || "US",
+    lang:       c.lang      || "EN",
+    type:       c.type      || "Business",
+    wa_number:  c.wa_number  || c.waNumber  || "",
+    email:      c.email     || "",
+    phone:      c.phone     || "",
+    services:   toServicesString(c.services),
     status:     c.status    || (c.active ? "Active" : "Inactive"),
     active:     c.active    !== undefined ? c.active : (c.status === "Active"),
     wa_consent: c.wa_consent || c.waConsent || "Pending",
-    waConsent:  c.wa_consent || c.waConsent || "Pending",
     notes:      c.notes     || "",
   };
 }
 
-exports.handler = async function(event, context) {
-  // CORS preflight
+async function sbFetch(method, path, body) {
+  const res = await fetch(SUPA_URL + path, {
+    method,
+    headers: HEADERS_SUPA,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Supabase ${method} ${path} → ${res.status}: ${text}`);
+  return text ? JSON.parse(text) : [];
+}
+
+exports.handler = async function(event) {
   if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 204, headers: CORS, body: "" };
+    return { statusCode: 204, headers: HEADERS_RESP, body: "" };
   }
 
-  let store;
-  try {
-    store = getStore(STORE_NAME);
-  } catch (e) {
-    console.error("getStore error:", e);
-    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Store unavailable" }) };
-  }
-
-  // ── GET: return all clients ──────────────────────────────────
+  // ── GET: all clients ──────────────────────────────────────────────────────
   if (event.httpMethod === "GET") {
     try {
-      const data = await store.get("clients", { type: "json" });
-      const clients = Array.isArray(data) ? data.map(normalizeClient) : [];
-      return { statusCode: 200, headers: CORS, body: JSON.stringify(clients) };
+      const rows = await sbFetch("GET", `/rest/v1/${TABLE}?order=name.asc&limit=500`);
+      const clients = (rows || []).map(rowToClient);
+      console.log(`[wa-clients] GET → ${clients.length} clients`);
+      return { statusCode: 200, headers: HEADERS_RESP, body: JSON.stringify(clients) };
     } catch (err) {
-      console.error("wa-clients GET error:", err);
-      return { statusCode: 200, headers: CORS, body: JSON.stringify([]) };
+      console.error("[wa-clients] GET error:", err.message);
+      return { statusCode: 200, headers: HEADERS_RESP, body: JSON.stringify([]) };
     }
   }
 
-  // ── POST: save_all | upsert | delete ─────────────────────────
+  // ── POST ──────────────────────────────────────────────────────────────────
   if (event.httpMethod === "POST") {
-    try {
-      const body = JSON.parse(event.body || "{}");
+    let body;
+    try { body = JSON.parse(event.body || "{}"); }
+    catch { return { statusCode: 400, headers: HEADERS_RESP, body: JSON.stringify({ error: "Invalid JSON" }) }; }
 
-      // save_all — replace entire array (used by portal Save button)
-      if (body.action === "save_all") {
-        const clients = Array.isArray(body.clients)
-          ? body.clients.map(normalizeClient)
-          : [];
-        await store.setJSON("clients", clients);
-        return {
-          statusCode: 200,
-          headers: CORS,
-          body: JSON.stringify({ ok: true, saved: clients.length }),
-        };
-      }
-
-      // upsert — add or update a single client
-      if (body.action === "upsert" && body.client) {
-        const existing = await store.get("clients", { type: "json" }) || [];
-        const client = normalizeClient(body.client);
-        const idx = existing.findIndex(c => c.id === client.id);
-        if (idx >= 0) {
-          existing[idx] = client;
-        } else {
-          existing.push(client);
+    // save_all — upsert every client from portal
+    if (body.action === "save_all" && Array.isArray(body.clients)) {
+      try {
+        // Delete all existing rows then insert fresh (simplest approach for ≤50 clients)
+        await sbFetch("DELETE", `/rest/v1/${TABLE}?id=neq.00000000-0000-0000-0000-000000000000`);
+        if (body.clients.length > 0) {
+          const rows = body.clients.map(c => {
+            const r = clientToRow(c);
+            delete r.id; // let Supabase generate UUIDs
+            return r;
+          });
+          await sbFetch("POST", `/rest/v1/${TABLE}`, rows);
         }
-        await store.setJSON("clients", existing);
-        return {
-          statusCode: 200,
-          headers: CORS,
-          body: JSON.stringify({ ok: true, client }),
-        };
+        console.log(`[wa-clients] save_all → ${body.clients.length} clients`);
+        return { statusCode: 200, headers: HEADERS_RESP, body: JSON.stringify({ ok: true, saved: body.clients.length }) };
+      } catch (err) {
+        console.error("[wa-clients] save_all error:", err.message);
+        return { statusCode: 500, headers: HEADERS_RESP, body: JSON.stringify({ error: err.message }) };
       }
-
-      // delete — remove single client by id
-      if (body.action === "delete" && body.id) {
-        const existing = await store.get("clients", { type: "json" }) || [];
-        const filtered = existing.filter(c => c.id !== body.id);
-        await store.setJSON("clients", filtered);
-        return {
-          statusCode: 200,
-          headers: CORS,
-          body: JSON.stringify({ ok: true, remaining: filtered.length }),
-        };
-      }
-
-      return {
-        statusCode: 400,
-        headers: CORS,
-        body: JSON.stringify({ error: "Unknown action" }),
-      };
-
-    } catch (err) {
-      console.error("wa-clients POST error:", err);
-      return {
-        statusCode: 500,
-        headers: CORS,
-        body: JSON.stringify({ error: "Internal error", detail: String(err) }),
-      };
     }
+
+    // upsert — single client (insert or update by id)
+    if (body.action === "upsert" && body.client) {
+      try {
+        const row = clientToRow(body.client);
+        const result = await sbFetch("POST", `/rest/v1/${TABLE}?on_conflict=id`, row);
+        return { statusCode: 200, headers: HEADERS_RESP, body: JSON.stringify({ ok: true, client: rowToClient(result[0] || row) }) };
+      } catch (err) {
+        console.error("[wa-clients] upsert error:", err.message);
+        return { statusCode: 500, headers: HEADERS_RESP, body: JSON.stringify({ error: err.message }) };
+      }
+    }
+
+    // delete — by id
+    if (body.action === "delete" && body.id) {
+      try {
+        await sbFetch("DELETE", `/rest/v1/${TABLE}?id=eq.${encodeURIComponent(body.id)}`);
+        return { statusCode: 200, headers: HEADERS_RESP, body: JSON.stringify({ ok: true }) };
+      } catch (err) {
+        console.error("[wa-clients] delete error:", err.message);
+        return { statusCode: 500, headers: HEADERS_RESP, body: JSON.stringify({ error: err.message }) };
+      }
+    }
+
+    return { statusCode: 400, headers: HEADERS_RESP, body: JSON.stringify({ error: "Unknown action" }) };
   }
 
-  return {
-    statusCode: 405,
-    headers: CORS,
-    body: JSON.stringify({ error: "Method not allowed" }),
-  };
+  return { statusCode: 405, headers: HEADERS_RESP, body: JSON.stringify({ error: "Method not allowed" }) };
 };
