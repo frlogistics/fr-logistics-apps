@@ -1076,6 +1076,8 @@ async function autoSaveClients(){
     localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
   }
 }
+
+async function saveAllClients(){
   try {
     const res = await fetch('/.netlify/functions/wa-clients',{
       method:'POST',
