@@ -8,14 +8,14 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #f5f7f5; --surface: #ffffff; --card: #ffffff; --border: rgba(31,164,99,.20);
-  --green: #1fa463; --teal: #16a3b5; --text: #0d1f14; --muted: #4a6b55;
-  --accent: #1fa463; --shadow: 0 4px 24px rgba(0,0,0,.10);
+  --bg: #0a0f0d; --surface: #111814; --card: #151f1a; --border: rgba(31,164,99,.18);
+  --green: #1fa463; --teal: #16a3b5; --text: #e8f0eb; --muted: #6b8a74;
+  --accent: #24c97a; --shadow: 0 24px 64px rgba(0,0,0,.55);
   --wa: #25D366; --wa-dark: #128C7E;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
-body::before{display:none}
+body::before{content:'';position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse 900px 600px at 10% 20%,rgba(31,164,99,.10) 0%,transparent 65%),radial-gradient(ellipse 700px 500px at 90% 80%,rgba(22,163,181,.08) 0%,transparent 65%);pointer-events:none}
 
 /* LOGIN */
 #loginScreen{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:var(--bg);transition:opacity .5s,visibility .5s}
@@ -28,7 +28,7 @@ body::before{display:none}
 .loginTitle{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;margin-bottom:6px;background:linear-gradient(135deg,var(--accent),var(--teal));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .loginSub{color:var(--muted);font-size:13px;margin-bottom:28px}
 .loginField label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px}
-.loginField input{width:100%;background:rgba(0,0,0,.04);border:1px solid rgba(31,164,99,.25);border-radius:10px;padding:12px 14px;color:var(--text);font-size:15px;font-family:'DM Mono',monospace;outline:none;letter-spacing:2px;transition:border-color .2s,box-shadow .2s}
+.loginField input{width:100%;background:rgba(255,255,255,.04);border:1px solid rgba(31,164,99,.25);border-radius:10px;padding:12px 14px;color:var(--text);font-size:15px;font-family:'DM Mono',monospace;outline:none;letter-spacing:2px;transition:border-color .2s,box-shadow .2s}
 .loginField input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(31,164,99,.15)}
 .loginBtn{width:100%;margin-top:20px;background:linear-gradient(135deg,var(--green),var(--teal));border:none;border-radius:10px;padding:13px;color:#fff;font-family:'Syne',sans-serif;font-size:15px;font-weight:700;cursor:pointer;transition:opacity .2s,transform .1s}
 .loginBtn:hover{opacity:.9}
@@ -38,7 +38,7 @@ body::before{display:none}
 /* PORTAL */
 #portalScreen{position:relative;z-index:1;opacity:0;transition:opacity .6s}
 #portalScreen.visible{opacity:1}
-header{padding:16px 24px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.95);backdrop-filter:blur(12px);position:sticky;top:0;z-index:10}
+header{padding:16px 24px;border-bottom:1px solid var(--border);background:rgba(10,15,13,.85);backdrop-filter:blur(12px);position:sticky;top:0;z-index:10}
 .headerRow{max-width:1400px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px}
 .brand{display:flex;align-items:center;gap:12px}
 .brand img{height:32px;border-radius:8px}
@@ -46,12 +46,12 @@ header{padding:16px 24px;border-bottom:1px solid var(--border);background:rgba(2
 .brand .sub{font-size:11px;color:var(--muted);margin-top:2px}
 .headerRight{display:flex;align-items:center;gap:12px}
 .pill{font-size:11px;font-weight:600;padding:4px 10px;border-radius:999px;border:1px solid rgba(31,164,99,.35);color:var(--accent)}
-.logoutBtn{background:rgba(0,0,0,.05);border:1px solid rgba(0,0,0,.07);border-radius:8px;padding:7px 14px;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;transition:background .2s,color .2s}
-.logoutBtn:hover{background:rgba(0,0,0,.06);color:var(--text)}
+.logoutBtn{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:7px 14px;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;transition:background .2s,color .2s}
+.logoutBtn:hover{background:rgba(255,255,255,.08);color:var(--text)}
 
 /* NAV TABS */
 .navTabs{max-width:1400px;margin:0 auto;padding:20px 24px 0;display:flex;gap:8px;flex-wrap:wrap}
-.navTab{background:rgba(0,0,0,.04);border:1px solid var(--border);border-radius:10px;padding:8px 18px;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:6px}
+.navTab{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:8px 18px;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:6px}
 .navTab:hover{background:rgba(31,164,99,.08);border-color:rgba(31,164,99,.35);color:var(--text)}
 .navTab.active{background:rgba(31,164,99,.12);border-color:rgba(31,164,99,.45);color:var(--accent)}
 .navTab .badge{background:var(--wa);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:999px;min-width:18px;text-align:center}
@@ -67,11 +67,11 @@ main{max-width:1400px;margin:0 auto;padding:24px 24px 60px}
 .previewFrame{width:100%;height:180px;background:#f8fafc;position:relative;overflow:hidden;border-bottom:1px solid rgba(0,0,0,.08)}
 .previewFrame iframe{width:200%;height:200%;transform:scale(.5);transform-origin:top left;border:none;pointer-events:none;}
 .previewOverlay{position:absolute;inset:0;background:linear-gradient(to bottom,transparent 50%,rgba(255,255,255,1) 100%)}
-.previewClick{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .2s;background:rgba(255,255,255,.95)}
+.previewClick{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .2s;background:rgba(10,15,13,.65)}
 .appCard:hover .previewClick{opacity:1}
 .previewClick span{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--accent);border:1px solid var(--accent);padding:8px 18px;border-radius:8px;background:rgba(36,201,122,.08)}
 .appInfo{padding:14px 16px 16px}
-.appName{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;margin-bottom:4px;color:#ffffff}
+.appName{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;margin-bottom:4px;color:#0f172a}
 .appDesc{font-size:12px;color:#64748b;line-height:1.5}
 .appTag{display:inline-block;margin-top:10px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;padding:3px 8px;border-radius:999px;background:rgba(31,164,99,.10);border:1px solid rgba(31,164,99,.25);color:var(--accent)}
 .appTag.analytics{background:rgba(22,163,181,.10);border-color:rgba(22,163,181,.30);color:var(--teal)}
@@ -106,11 +106,11 @@ main{max-width:1400px;margin:0 auto;padding:24px 24px 60px}
 .msgDetailNum{font-size:12px;color:var(--muted);font-family:'DM Mono',monospace}
 .msgDetailBody{flex:1;padding:20px;overflow-y:auto;display:flex;flex-direction:column;gap:12px}
 .msgBubble{max-width:75%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.5}
-.msgBubble.inbound{background:rgba(0,0,0,.05);border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:4px}
+.msgBubble.inbound{background:rgba(255,255,255,.06);border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:4px}
 .msgBubble.outbound{background:rgba(37,211,102,.12);border:1px solid rgba(37,211,102,.25);align-self:flex-end;border-bottom-right-radius:4px;color:var(--accent)}
 .msgBubble .bTime{font-size:10px;color:var(--muted);margin-top:4px;text-align:right}
 .msgReplyBox{padding:14px 16px;border-top:1px solid var(--border);display:flex;gap:10px;flex-shrink:0}
-.msgReplyBox textarea{flex:1;background:rgba(0,0,0,.04);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;resize:none;outline:none;transition:border-color .2s}
+.msgReplyBox textarea{flex:1;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;resize:none;outline:none;transition:border-color .2s}
 .msgReplyBox textarea:focus{border-color:var(--green)}
 .sendBtn{background:var(--wa);border:none;border-radius:10px;padding:0 18px;color:#000;font-weight:700;font-size:13px;cursor:pointer;transition:background .2s}
 .sendBtn:hover{background:#20c05e}
@@ -119,23 +119,23 @@ main{max-width:1400px;margin:0 auto;padding:24px 24px 60px}
 .emptyState p{font-size:13px}
 
 /* SEND MESSAGE MODAL */
-.modal{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.15);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all .2s}
+.modal{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all .2s}
 .modal.open{opacity:1;visibility:visible}
 .modalBox{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:32px;width:min(520px,92vw);position:relative;box-shadow:var(--shadow)}
 .modalBox::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--wa),var(--wa-dark))}
 .modalTitle{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;margin-bottom:20px}
 .formGroup{margin-bottom:16px}
 .formGroup label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px}
-.formGroup select,.formGroup input,.formGroup textarea{width:100%;background:rgba(0,0,0,.04);border:1px solid rgba(31,164,99,.25);border-radius:10px;padding:10px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .2s}
+.formGroup select,.formGroup input,.formGroup textarea{width:100%;background:rgba(255,255,255,.04);border:1px solid rgba(31,164,99,.25);border-radius:10px;padding:10px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .2s}
 .formGroup select:focus,.formGroup input:focus,.formGroup textarea:focus{border-color:var(--green)}
 .formGroup select option{background:var(--card)}
 .modalActions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
-.modalClose{background:rgba(0,0,0,.05);border:1px solid var(--border);border-radius:10px;padding:9px 18px;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer}
-.templatePreview{background:rgba(0,0,0,.03);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:8px;font-size:12px;color:var(--muted);line-height:1.6;min-height:60px}
+.modalClose{background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:10px;padding:9px 18px;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer}
+.templatePreview{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:8px;font-size:12px;color:var(--muted);line-height:1.6;min-height:60px}
 
 /* CLIENTS TABLE */
 .clientsHeader{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px}
-.clientSearch{background:rgba(0,0,0,.04);border:1px solid var(--border);border-radius:10px;padding:9px 14px;color:var(--text);font-size:13px;outline:none;width:260px;transition:border-color .2s}
+.clientSearch{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:9px 14px;color:var(--text);font-size:13px;outline:none;width:260px;transition:border-color .2s}
 .clientSearch:focus{border-color:var(--green)}
 .clientTable{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden}
 .clientTable table{width:100%;border-collapse:collapse}
@@ -147,10 +147,37 @@ main{max-width:1400px;margin:0 auto;padding:24px 24px 60px}
 .clientTable td input:focus{border-bottom:1px solid var(--green)}
 .statusPill{font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:.3px}
 .statusPill.active{background:rgba(37,211,102,.12);border:1px solid rgba(37,211,102,.35);color:var(--wa)}
-.statusPill.inactive{background:rgba(0,0,0,.05);border:1px solid var(--border);color:var(--muted)}
+.statusPill.inactive{background:rgba(255,255,255,.06);border:1px solid var(--border);color:var(--muted)}
 .actionBtn{background:transparent;border:none;cursor:pointer;color:var(--muted);font-size:14px;padding:4px 6px;border-radius:6px;transition:all .2s}
-.actionBtn:hover{background:rgba(0,0,0,.06);color:var(--text)}
+.actionBtn:hover{background:rgba(255,255,255,.08);color:var(--text)}
 .actionBtn.danger:hover{background:rgba(248,113,113,.12);color:#f87171}
+
+/* SERVICE PILLS */
+.svcPill{display:inline-flex;align-items:center;font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;white-space:nowrap;font-family:'DM Mono',monospace}
+.svcWrap{display:flex;flex-wrap:wrap;gap:4px}
+.langBadge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;font-family:'DM Mono',monospace;background:rgba(22,163,181,.12);border:1px solid rgba(22,163,181,.3);color:var(--teal)}
+.langBadge.es{background:rgba(96,165,250,.12);border-color:rgba(96,165,250,.3);color:#60a5fa}
+.consentPill.in{color:#25D366}.consentPill.out{color:#f87171}.consentPill.pend{color:var(--muted)}
+
+/* CLIENT MODAL */
+.clientModal{position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all .2s;backdrop-filter:blur(4px)}
+.clientModal.open{opacity:1;visibility:visible}
+.clientModalBox{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:30px;width:min(600px,94vw);max-height:90vh;overflow-y:auto;position:relative;box-shadow:0 24px 60px rgba(0,0,0,.6)}
+.clientModalBox::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--green),var(--teal));border-radius:20px 20px 0 0}
+.cmGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cmGrid .full{grid-column:span 2}
+.cmField label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:6px}
+.cmField input,.cmField select,.cmField textarea{width:100%;background:rgba(255,255,255,.04);border:1px solid rgba(31,164,99,.22);border-radius:9px;padding:9px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .2s}
+.cmField input:focus,.cmField select:focus,.cmField textarea:focus{border-color:var(--green)}
+.cmField select option{background:var(--card)}
+.svcCheckGrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:2px}
+.svcCheck{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;border:1px solid var(--border);cursor:pointer;transition:all .15s;font-size:12px}
+.svcCheck:hover{border-color:rgba(31,164,99,.4);background:rgba(31,164,99,.05)}
+.svcCheck.checked{border-color:rgba(31,164,99,.5);background:rgba(31,164,99,.08);color:var(--accent)}
+.svcCheck input{width:14px;height:14px;accent-color:var(--green);cursor:pointer;flex-shrink:0}
+.clientFilterBar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.clientFilterBar select{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:9px;padding:8px 12px;color:var(--text);font-size:12px;outline:none;cursor:pointer}
+.clientFilterBar select:focus{border-color:var(--green)}
 
 /* STATUS BAR */
 .statusBar{background:rgba(37,211,102,.06);border:1px solid rgba(37,211,102,.20);border-radius:12px;padding:10px 16px;display:flex;align-items:center;gap:12px;margin-bottom:20px;font-size:12px}
@@ -161,13 +188,13 @@ main{max-width:1400px;margin:0 auto;padding:24px 24px 60px}
 #appOverlay{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;flex-direction:column;opacity:0;visibility:hidden;transition:opacity .3s,visibility .3s}
 #appOverlay.open{opacity:1;visibility:visible}
 .overlayBar{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
-.closeBtn{background:rgba(0,0,0,.05);border:1px solid rgba(0,0,0,.08);border-radius:8px;padding:7px 14px;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:background .2s}
-.closeBtn:hover{background:rgba(0,0,0,.07)}
+.closeBtn{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:7px 14px;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:background .2s}
+.closeBtn:hover{background:rgba(255,255,255,.10)}
 .overlayTitle{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;flex:1}
 .overlayUrl{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted)}
 #appFrame{flex:1;border:none;width:100%}
 
-footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(255,255,255,.95)}
+footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,15,13,.7)}
 .footRow{max-width:1400px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted)}
 .appCard:nth-child(1){animation-delay:.05s}.appCard:nth-child(2){animation-delay:.10s}.appCard:nth-child(3){animation-delay:.15s}.appCard:nth-child(4){animation-delay:.20s}.appCard:nth-child(5){animation-delay:.25s}.appCard:nth-child(6){animation-delay:.30s}.appCard:nth-child(7){animation-delay:.35s}.appCard:nth-child(8){animation-delay:.40s}.appCard:nth-child(9){animation-delay:.45s}.appCard:nth-child(10){animation-delay:.50s}.appCard:nth-child(11){animation-delay:.55s}
 @keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
@@ -183,7 +210,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(255,
 .dash-badge.tracking{background:rgba(22,163,181,.12);border:1px solid rgba(22,163,181,.3);color:var(--teal)}
 .dash-badge.escalate{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.3);color:#f87171}
 .dash-badge.inventory{background:rgba(168,85,247,.12);border:1px solid rgba(168,85,247,.3);color:#a855f7}
-.dash-badge.unknown{background:rgba(0,0,0,.05);border:1px solid var(--border);color:var(--muted)}
+.dash-badge.unknown{background:rgba(255,255,255,.06);border:1px solid var(--border);color:var(--muted)}
 .dash-badge.outbound{background:rgba(31,164,99,.12);border:1px solid rgba(31,164,99,.3);color:var(--accent)}
 .dash-badge.low{background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);color:#f59e0b}
 @media(max-width:600px){.appGrid{grid-template-columns:1fr}.overlayUrl{display:none}}
@@ -277,34 +304,68 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(255,
       </div>
     </div>
 
-    <!-- TAB: CLIENTES WA -->
+    <!-- TAB: CLIENTES — TABLA MAESTRA -->
     <div id="tabClients">
       <div class="clientsHeader">
-        <div class="waTitle" style="font-size:16px">👥 Clientes WhatsApp</div>
+        <div>
+          <div class="waTitle" style="font-size:16px">👥 Clientes · Tabla Maestra</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">Fuente única de verdad · WA · EcoPack+ · Inbound/Outbound · Daily Summary</div>
+        </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <input type="text" class="clientSearch" id="clientSearch" placeholder="Buscar cliente..." oninput="filterClients()">
           <button class="waBtn" onclick="loadClients()">↻ Recargar</button>
-          <button class="waBtn primary" onclick="addClientRow()">+ Agregar cliente</button>
-          <button class="waBtn" style="background:rgba(31,164,99,.12);border-color:rgba(31,164,99,.35);color:var(--accent)" onclick="saveAllClients()">💾 Guardar cambios</button>
+          <button class="waBtn primary" onclick="openClientModal(null)">+ Nuevo cliente</button>
+          <button class="waBtn" style="background:rgba(31,164,99,.12);border-color:rgba(31,164,99,.35);color:var(--accent)" onclick="saveAllClients()">💾 Guardar</button>
         </div>
       </div>
 
-      <div class="clientTable">
+      <!-- KPI strip -->
+      <div id="clientKpis" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px"></div>
+
+      <!-- Filter bar -->
+      <div class="clientFilterBar">
+        <input type="text" class="clientSearch" id="clientSearch" placeholder="Buscar nombre, empresa, WA, email…" oninput="filterClients()" style="width:240px">
+        <select id="filterSvc" onchange="filterClients()">
+          <option value="">Todos los servicios</option>
+          <option>FBA Prep</option>
+          <option>FBM / DTC Fulfillment</option>
+          <option>Kitting &amp; Bundling</option>
+          <option>Storage</option>
+          <option>Walmart DSV</option>
+          <option>EcoPack+</option>
+          <option>Dropship</option>
+          <option>Cross-Docking</option>
+          <option>Returns / Reverse Logistics</option>
+        </select>
+        <select id="filterStatus" onchange="filterClients()">
+          <option value="">Todos los estados</option>
+          <option>Active</option>
+          <option>Inactive</option>
+          <option>Pending</option>
+          <option>Onboarding</option>
+        </select>
+        <span id="clientCount" style="font-size:11px;color:var(--muted);margin-left:auto;font-family:'DM Mono',monospace"></span>
+      </div>
+
+      <div class="clientTable" style="overflow-x:auto">
         <table>
           <thead>
             <tr>
               <th>#</th>
-              <th>Nombre / Empresa</th>
-              <th>Email / Contacto</th>
+              <th>Cliente / Empresa</th>
               <th>País</th>
+              <th>Lang</th>
               <th>Número WA</th>
-              <th>Store ID ShipStation</th>
+              <th>Servicios contratados</th>
               <th>Estado</th>
-              <th>Acción</th>
+              <th>Consent WA</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody id="clientTableBody"></tbody>
         </table>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:var(--muted);font-family:'DM Mono',monospace">
+        Store: Netlify Blobs · fr-clients-master · +1 305-240-3172
       </div>
     </div>
 
@@ -396,6 +457,57 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(255,
     <span class="overlayUrl" id="overlayUrl"></span>
   </div>
   <iframe id="appFrame" allow="camera; microphone"></iframe>
+</div>
+
+<!-- CLIENT MODAL -->
+<div class="clientModal" id="clientModal">
+  <div class="clientModalBox">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px">
+      <div>
+        <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:800" id="clientModalTitle">Nuevo cliente</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px;font-family:'DM Mono',monospace">FR-Logistics · Master Client Record</div>
+      </div>
+      <button onclick="closeClientModal()" style="background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--muted);cursor:pointer;font-size:13px">✕</button>
+    </div>
+    <div class="cmGrid">
+      <div class="cmField"><label>Nombre contacto *</label><input id="cm_name" placeholder="Nombre completo"></div>
+      <div class="cmField"><label>Empresa / Brand</label><input id="cm_company" placeholder="Nombre empresa"></div>
+      <div class="cmField"><label>ShipStation Store ID</label><input id="cm_storeId" placeholder="SS-XXX" style="font-family:'DM Mono',monospace"></div>
+      <div class="cmField"><label>Nombre tienda SS</label><input id="cm_storeName" placeholder="Nombre de la tienda"></div>
+      <div class="cmField"><label>País</label>
+        <select id="cm_country">
+          <option>MX</option><option>CO</option><option>BR</option><option>PE</option>
+          <option>AR</option><option>CL</option><option>US</option><option>EC</option>
+          <option>VE</option><option>PA</option><option>DO</option><option>GT</option>
+          <option>CR</option><option>OTHER</option>
+        </select>
+      </div>
+      <div class="cmField"><label>Idioma preferido</label>
+        <select id="cm_lang"><option value="ES">ES</option><option value="EN">EN</option><option value="PT">PT</option></select>
+      </div>
+      <div class="cmField"><label>Tipo de cliente</label>
+        <select id="cm_type"><option>Business</option><option>Brand</option><option>Influencer</option><option>Individual</option></select>
+      </div>
+      <div class="cmField"><label>Estado</label>
+        <select id="cm_status"><option>Active</option><option>Inactive</option><option>Pending</option><option>Onboarding</option></select>
+      </div>
+      <div class="cmField"><label>Número WhatsApp</label><input id="cm_waNumber" placeholder="+1 305 XXX XXXX" style="font-family:'DM Mono',monospace"></div>
+      <div class="cmField"><label>Email</label><input id="cm_email" placeholder="email@empresa.com" style="font-family:'DM Mono',monospace"></div>
+      <div class="cmField"><label>Consent WA</label>
+        <select id="cm_consent"><option value="Opted In">Opted In</option><option value="Pending">Pending</option><option value="Opted Out">Opted Out</option></select>
+      </div>
+      <div class="cmField"><label>Teléfono adicional</label><input id="cm_phone" placeholder="+1 XXX XXX XXXX" style="font-family:'DM Mono',monospace"></div>
+      <div class="cmField full">
+        <label>Servicios contratados</label>
+        <div class="svcCheckGrid" id="cm_services"></div>
+      </div>
+      <div class="cmField full"><label>Notas</label><textarea id="cm_notes" rows="2" placeholder="Instrucciones especiales, contexto, handling…"></textarea></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:22px">
+      <button onclick="closeClientModal()" class="modalClose">Cancelar</button>
+      <button onclick="saveClientModal()" class="waBtn primary" style="padding:9px 22px">Guardar cliente →</button>
+    </div>
+  </div>
 </div>
 
 <!-- SEND MESSAGE MODAL -->
@@ -683,7 +795,7 @@ function updateTemplatePreview(){
   const tKey=document.getElementById('sendTemplate').value;
   const t=TEMPLATES[tKey];
   const varsDiv=document.getElementById('templateVars');
-  varsDiv.innerHTML=t.vars.map((v,i)=>`<div style="margin-bottom:8px"><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:4px">${v}</label><input type="text" id="tvar_${i}" style="width:100%;background:rgba(0,0,0,.04);border:1px solid rgba(31,164,99,.25);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none" oninput="renderPreview()" placeholder="${v}"></div>`).join('');
+  varsDiv.innerHTML=t.vars.map((v,i)=>`<div style="margin-bottom:8px"><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:4px">${v}</label><input type="text" id="tvar_${i}" style="width:100%;background:rgba(255,255,255,.04);border:1px solid rgba(31,164,99,.25);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none" oninput="renderPreview()" placeholder="${v}"></div>`).join('');
   renderPreview();
 }
 
@@ -722,14 +834,25 @@ async function sendMessage(){
   } catch(e){ alert('Error enviando mensaje'); }
 }
 
-// CLIENTS
+// CLIENTS — MASTER TABLE
+const SVC_LIST = ['FBA Prep','FBM / DTC Fulfillment','Kitting & Bundling','Storage','Walmart DSV','EcoPack+','Dropship','Cross-Docking','Returns / Reverse Logistics'];
+const SVC_COLORS = {
+  'FBA Prep':'#60a5fa','FBM / DTC Fulfillment':'#a78bfa','Kitting & Bundling':'#fb923c',
+  'Storage':'#fbbf24','Walmart DSV':'#34d399','EcoPack+':'#22c55e',
+  'Dropship':'#f472b6','Cross-Docking':'#38bdf8','Returns / Reverse Logistics':'#f87171'
+};
+const STATUS_COLORS = {
+  'Active':'#22c55e','Inactive':'#6b8a74','Pending':'#fbbf24','Onboarding':'#60a5fa'
+};
+
+let editingClientId = null;
+
 async function loadClients(){
   try {
     const res = await fetch('/.netlify/functions/wa-clients');
     if(res.ok){
       const data = await res.json();
       if(Array.isArray(data)){
-        // Normalize Supabase snake_case to camelCase
         allClients = data.map(c => ({
           id: c.id,
           name: c.name || '',
@@ -737,10 +860,15 @@ async function loadClients(){
           email: c.email || '',
           phone: c.phone || '',
           country: c.country || 'US',
+          lang: c.lang || 'EN',
+          type: c.type || 'Business',
           waNumber: c.wa_number || c.waNumber || '',
           storeId: c.store_id || c.storeId || '',
           storeName: c.store_name || c.storeName || '',
-          active: c.active || false,
+          services: Array.isArray(c.services) ? c.services : (c.services ? c.services.split(',').map(s=>s.trim()).filter(Boolean) : []),
+          status: c.status || (c.active ? 'Active' : 'Inactive'),
+          active: c.active !== undefined ? c.active : (c.status === 'Active'),
+          waConsent: c.wa_consent || c.waConsent || 'Pending',
           notes: c.notes || ''
         }));
         localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
@@ -754,39 +882,148 @@ async function loadClients(){
     allClients = stored ? JSON.parse(stored) : [];
   }
   renderClientsTable(allClients);
+  renderClientKpis();
   populateClientSelect();
 }
 
-function renderClientsTable(clients){
-  const tbody=document.getElementById('clientTableBody');
-  tbody.innerHTML=clients.map((c,i)=>`
-    <tr id="row_${c.id||i}">
-      <td style="color:var(--muted);font-size:11px">${i+1}</td>
-      <td>
-        <input type="text" value="${c.storeName||''}" placeholder="Nombre tienda" style="font-weight:600;font-size:13px;background:transparent;border:none;border-bottom:1px solid transparent;width:100%;outline:none" onchange="updateClientField('${c.id}','storeName',this.value)" onfocus="this.style.borderBottomColor='var(--green)'" onblur="this.style.borderBottomColor='transparent'">
-        <input type="text" value="${c.name||''}" placeholder="Nombre contacto" style="font-size:11px;color:var(--muted);background:transparent;border:none;border-bottom:1px solid transparent;width:100%;outline:none;margin-top:2px" onchange="updateClientField('${c.id}','name',this.value)" onfocus="this.style.borderBottomColor='var(--green)'" onblur="this.style.borderBottomColor='transparent'">
-      </td>
-      <td style="font-size:12px;color:var(--muted)">${c.email||''}</td>
-      <td><span style="font-size:11px;font-family:'DM Mono',monospace">${c.country||''}</span></td>
-      <td><input type="text" value="${c.waNumber||''}" placeholder="+52155..." style="font-family:'DM Mono',monospace;font-size:12px" onchange="updateClientField('${c.id}','waNumber',this.value)"></td>
-      <td><input type="text" value="${c.storeId||''}" placeholder="Store ID" style="font-size:12px" onchange="updateClientField('${c.id}','storeId',this.value)"></td>
+function renderClientKpis(){
+  const total = allClients.length;
+  const active = allClients.filter(c=>c.status==='Active'||c.active).length;
+  const waOpted = allClients.filter(c=>c.waConsent==='Opted In'&&c.waNumber).length;
+  const eco = allClients.filter(c=>c.services&&c.services.includes('EcoPack+')).length;
+  document.getElementById('clientKpis').innerHTML = [
+    {label:'Total',value:total,color:'var(--text)'},
+    {label:'Activos',value:active,color:'#22c55e'},
+    {label:'WA Opted In',value:waOpted,color:'#25D366'},
+    {label:'EcoPack+',value:eco,color:'#22c55e'},
+  ].map(k=>`
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 18px;min-width:90px">
+      <div style="font-family:'Syne',sans-serif;font-size:24px;font-weight:800;color:${k.color}">${k.value}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">${k.label}</div>
+    </div>`).join('');
+}
 
+function renderClientsTable(clients){
+  const tbody = document.getElementById('clientTableBody');
+  document.getElementById('clientCount').textContent = `${clients.length} / ${allClients.length} registros`;
+  if(!clients.length){
+    tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--muted);font-size:13px">No hay clientes que coincidan.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = clients.map((c,i) => {
+    const sc = STATUS_COLORS[c.status] || '#6b8a74';
+    const svcs = Array.isArray(c.services) ? c.services : [];
+    const svcHtml = svcs.length
+      ? `<div class="svcWrap">${svcs.map(s=>`<span class="svcPill" style="background:${SVC_COLORS[s]||'#6b8a74'}18;border:1px solid ${SVC_COLORS[s]||'#6b8a74'}35;color:${SVC_COLORS[s]||'#6b8a74'}">${s}</span>`).join('')}</div>`
+      : `<span style="font-size:11px;color:var(--muted)">—</span>`;
+    const consentColor = c.waConsent==='Opted In'?'#25D366':c.waConsent==='Opted Out'?'#f87171':'var(--muted)';
+    return `<tr id="row_${c.id||i}">
+      <td style="color:var(--muted);font-size:11px;font-family:'DM Mono',monospace">${i+1}</td>
       <td>
-        <span class="statusPill ${c.active?'active':'inactive'}" onclick="toggleActive('${c.id}')" style="cursor:pointer">
-          ${c.active?'Activo':'Inactivo'}
-        </span>
+        <div style="font-weight:600;font-size:13px">${c.storeName||c.name||'—'}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:1px">${c.name||''} ${c.company?'· '+c.company:''}</div>
+        ${c.storeId?`<div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:1px">${c.storeId}</div>`:''}
       </td>
+      <td><span style="font-size:11px;font-family:'DM Mono',monospace;background:rgba(255,255,255,.05);padding:2px 7px;border-radius:999px">${c.country||'—'}</span></td>
+      <td><span class="langBadge ${(c.lang||'EN').toLowerCase()}">${c.lang||'EN'}</span></td>
+      <td style="font-family:'DM Mono',monospace;font-size:11px;color:${c.waNumber?'#25D366':'var(--muted)'}">
+        ${c.waNumber||'—'}
+        ${c.email?`<div style="color:var(--muted);font-size:10px;margin-top:1px">${c.email}</div>`:''}
+      </td>
+      <td>${svcHtml}</td>
+      <td><span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:999px;background:${sc}18;border:1px solid ${sc}35;color:${sc};white-space:nowrap">${c.status||'—'}</span></td>
+      <td style="font-size:11px;font-weight:600;color:${consentColor}">${c.waConsent||'Pending'}</td>
       <td>
-        <button class="actionBtn" title="Enviar WA" onclick="openSendModalFor('${c.waNumber}','${c.name}')">💬</button>
+        <button class="actionBtn" title="Editar" onclick="openClientModal('${c.id}')">✎</button>
+        <button class="actionBtn" title="Enviar WA" onclick="openSendModalFor('${c.waNumber||''}','${(c.storeName||c.name||'').replace(/'/g,"\\'")}')">💬</button>
         <button class="actionBtn danger" title="Eliminar" onclick="deleteClient('${c.id}')">✕</button>
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 
 function filterClients(){
-  const q=document.getElementById('clientSearch').value.toLowerCase();
-  const filtered=allClients.filter(c=>(c.name||'').toLowerCase().includes(q)||(c.company||'').toLowerCase().includes(q)||(c.email||'').toLowerCase().includes(q)||(c.storeName||'').toLowerCase().includes(q)||(c.waNumber||'').includes(q));
+  const q = (document.getElementById('clientSearch').value||'').toLowerCase();
+  const svc = document.getElementById('filterSvc').value;
+  const st = document.getElementById('filterStatus').value;
+  const filtered = allClients.filter(c => {
+    const matchQ = !q || (c.name||'').toLowerCase().includes(q)||(c.company||'').toLowerCase().includes(q)||
+      (c.storeName||'').toLowerCase().includes(q)||(c.email||'').toLowerCase().includes(q)||(c.waNumber||'').includes(q);
+    const matchSvc = !svc || (Array.isArray(c.services)&&c.services.includes(svc));
+    const matchSt = !st || c.status === st;
+    return matchQ && matchSvc && matchSt;
+  });
   renderClientsTable(filtered);
+}
+
+function openClientModal(id){
+  editingClientId = id;
+  const c = id ? allClients.find(x=>x.id===id) : null;
+  document.getElementById('clientModalTitle').textContent = c ? 'Editar cliente' : 'Nuevo cliente';
+  document.getElementById('cm_name').value = c?.name||'';
+  document.getElementById('cm_company').value = c?.company||'';
+  document.getElementById('cm_storeId').value = c?.storeId||'';
+  document.getElementById('cm_storeName').value = c?.storeName||'';
+  document.getElementById('cm_country').value = c?.country||'MX';
+  document.getElementById('cm_lang').value = c?.lang||'ES';
+  document.getElementById('cm_type').value = c?.type||'Business';
+  document.getElementById('cm_status').value = c?.status||'Active';
+  document.getElementById('cm_waNumber').value = c?.waNumber||'';
+  document.getElementById('cm_email').value = c?.email||'';
+  document.getElementById('cm_consent').value = c?.waConsent||'Pending';
+  document.getElementById('cm_phone').value = c?.phone||'';
+  document.getElementById('cm_notes').value = c?.notes||'';
+  const cSvcs = Array.isArray(c?.services) ? c.services : [];
+  document.getElementById('cm_services').innerHTML = SVC_LIST.map(s=>{
+    const col = SVC_COLORS[s]||'#6b8a74';
+    const checked = cSvcs.includes(s);
+    return `<label class="svcCheck ${checked?'checked':''}" id="svcLabel_${s.replace(/[^a-z]/gi,'_')}">
+      <input type="checkbox" value="${s}" ${checked?'checked':''} onchange="toggleSvcCheck(this)"> ${s}
+    </label>`;
+  }).join('');
+  document.getElementById('clientModal').classList.add('open');
+}
+
+function toggleSvcCheck(el){
+  el.closest('.svcCheck').classList.toggle('checked', el.checked);
+}
+
+function closeClientModal(){
+  document.getElementById('clientModal').classList.remove('open');
+  editingClientId = null;
+}
+
+function saveClientModal(){
+  const name = document.getElementById('cm_name').value.trim();
+  if(!name){ alert('El nombre es obligatorio'); return; }
+  const services = [...document.querySelectorAll('#cm_services input:checked')].map(x=>x.value);
+  const status = document.getElementById('cm_status').value;
+  const client = {
+    id: editingClientId || Date.now().toString(),
+    name, company: document.getElementById('cm_company').value.trim(),
+    storeId: document.getElementById('cm_storeId').value.trim(),
+    storeName: document.getElementById('cm_storeName').value.trim(),
+    country: document.getElementById('cm_country').value,
+    lang: document.getElementById('cm_lang').value,
+    type: document.getElementById('cm_type').value,
+    status, active: status === 'Active',
+    waNumber: document.getElementById('cm_waNumber').value.trim(),
+    email: document.getElementById('cm_email').value.trim(),
+    waConsent: document.getElementById('cm_consent').value,
+    phone: document.getElementById('cm_phone').value.trim(),
+    services,
+    notes: document.getElementById('cm_notes').value.trim()
+  };
+  if(editingClientId){
+    const idx = allClients.findIndex(c=>c.id===editingClientId);
+    if(idx>=0) allClients[idx] = client;
+  } else {
+    allClients.push(client);
+  }
+  closeClientModal();
+  renderClientsTable(allClients);
+  renderClientKpis();
+  populateClientSelect();
 }
 
 function updateClientField(id,field,value){
@@ -796,30 +1033,25 @@ function updateClientField(id,field,value){
 
 function toggleActive(id){
   const c=allClients.find(c=>c.id===id);
-  if(c){ c.active=!c.active; renderClientsTable(allClients); }
+  if(c){ c.active=!c.active; c.status=c.active?'Active':'Inactive'; renderClientsTable(allClients); }
 }
 
-function addClientRow(){
-  const newClient={id:Date.now().toString(),name:'',company:'',email:'',phone:'',country:'US',waNumber:'',storeId:'',storeName:'',active:false,notes:''};
-  allClients.push(newClient);
-  renderClientsTable(allClients);
-}
+function addClientRow(){ openClientModal(null); }
 
 function deleteClient(id){
   if(!confirm('¿Eliminar este cliente?')) return;
   allClients=allClients.filter(c=>c.id!==id);
   renderClientsTable(allClients);
+  renderClientKpis();
 }
 
 async function saveAllClients(){
   try {
-    // Save to Blobs (cloud - all devices)
     const res = await fetch('/.netlify/functions/wa-clients',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({action:'save_all',clients:allClients})
     });
-    // Also save locally as backup
     localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
     if(res.ok) alert('Clientes guardados ✓ (sync en todos los dispositivos)');
     else alert('Guardado local ✓ (cloud sync pendiente)');
@@ -941,7 +1173,7 @@ async function loadDashboard() {
       const pct = Math.round((total/maxVal)*100);
       return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         <div style="width:32px;font-size:11px;color:var(--muted);text-align:right">${d.label}</div>
-        <div style="flex:1;background:rgba(0,0,0,.05);border-radius:4px;height:20px;overflow:hidden">
+        <div style="flex:1;background:rgba(255,255,255,.06);border-radius:4px;height:20px;overflow:hidden">
           <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--green),var(--teal));border-radius:4px;transition:width .3s"></div>
         </div>
         <div style="width:24px;font-size:11px;color:var(--muted);text-align:left">${total}</div>
