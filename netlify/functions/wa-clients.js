@@ -1,64 +1,137 @@
-const SUPA_URL = "https://rijbschnchjiuggrhfrx.supabase.co";
-const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpamJzY2huY2hqaXVnZ3JoZnJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMTQwOTQsImV4cCI6MjA4ODg5MDA5NH0.s3T4CStjWqOvz7qDpYtjt0yVJ0iyOMAKKwxkADSEs4s";
-const TABLE = "wa_clients";
-const HDR = { "Content-Type": "application/json" };
+const { getStore } = require("@netlify/blobs");
 
-async function sb(method, path, body) {
-  const res = await fetch(SUPA_URL + path, {
-    method,
-    headers: {
-      apikey: SUPA_KEY,
-      Authorization: `Bearer ${SUPA_KEY}`,
-      "Content-Type": "application/json",
-      Prefer: method === "POST" ? "return=representation" : ""
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const text = await res.text();
-  return text ? JSON.parse(text) : [];
+const STORE_NAME = "fr-clients-master";
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Content-Type": "application/json",
+};
+
+// Normalize client — full schema, backwards compatible with old format
+function normalizeClient(c) {
+  return {
+    id:        c.id        || String(Date.now()) + Math.random().toString(36).slice(2),
+    name:      c.name      || "",
+    company:   c.company   || "",
+    storeName: c.store_name || c.storeName || "",
+    storeId:   c.store_id  || c.storeId   || "",
+    country:   c.country   || "US",
+    lang:      c.lang      || "EN",
+    type:      c.type      || "Business",
+    // keep both key names for compatibility with portal and Inbound/Outbound
+    wa_number: c.wa_number || c.waNumber  || "",
+    waNumber:  c.wa_number || c.waNumber  || "",
+    email:     c.email     || "",
+    phone:     c.phone     || "",
+    // services always stored as array
+    services: Array.isArray(c.services)
+      ? c.services
+      : (typeof c.services === "string"
+          ? c.services.split(",").map(s => s.trim()).filter(Boolean)
+          : []),
+    status:     c.status    || (c.active ? "Active" : "Inactive"),
+    active:     c.active    !== undefined ? c.active : (c.status === "Active"),
+    wa_consent: c.wa_consent || c.waConsent || "Pending",
+    waConsent:  c.wa_consent || c.waConsent || "Pending",
+    notes:      c.notes     || "",
+  };
 }
 
-exports.handler = async function(event) {
-  const method = event.httpMethod;
+exports.handler = async function(event, context) {
+  // CORS preflight
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 204, headers: CORS, body: "" };
+  }
 
+  let store;
   try {
-    if (method === "GET") {
-      // Get all clients ordered by name
-      const data = await sb("GET", `/rest/v1/${TABLE}?order=name.asc&limit=200`);
-      return { statusCode: 200, headers: HDR, body: JSON.stringify(Array.isArray(data) ? data : []) };
-    }
+    store = getStore(STORE_NAME);
+  } catch (e) {
+    console.error("getStore error:", e);
+    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Store unavailable" }) };
+  }
 
-    if (method === "POST") {
+  // ── GET: return all clients ──────────────────────────────────
+  if (event.httpMethod === "GET") {
+    try {
+      const data = await store.get("clients", { type: "json" });
+      const clients = Array.isArray(data) ? data.map(normalizeClient) : [];
+      return { statusCode: 200, headers: CORS, body: JSON.stringify(clients) };
+    } catch (err) {
+      console.error("wa-clients GET error:", err);
+      return { statusCode: 200, headers: CORS, body: JSON.stringify([]) };
+    }
+  }
+
+  // ── POST: save_all | upsert | delete ─────────────────────────
+  if (event.httpMethod === "POST") {
+    try {
       const body = JSON.parse(event.body || "{}");
 
+      // save_all — replace entire array (used by portal Save button)
       if (body.action === "save_all") {
-        // Upsert all clients
-        const clients = (body.clients || []).map(c => ({
-          id: c.id || Date.now().toString(),
-          name: c.name || "",
-          company: c.company || "",
-          email: c.email || "",
-          phone: c.phone || "",
-          country: c.country || "US",
-          wa_number: c.waNumber || "",
-          store_id: c.storeId || "",
-          store_name: c.storeName || "",
-          active: c.active || false,
-          notes: c.notes || ""
-        }));
-
-        // Delete all and reinsert (simple sync)
-        await sb("DELETE", `/rest/v1/${TABLE}?id=neq.00000000-0000-0000-0000-000000000000`);
-        if (clients.length > 0) {
-          await sb("POST", `/rest/v1/${TABLE}`, clients);
-        }
-        return { statusCode: 200, headers: HDR, body: JSON.stringify({ ok: true }) };
+        const clients = Array.isArray(body.clients)
+          ? body.clients.map(normalizeClient)
+          : [];
+        await store.setJSON("clients", clients);
+        return {
+          statusCode: 200,
+          headers: CORS,
+          body: JSON.stringify({ ok: true, saved: clients.length }),
+        };
       }
-    }
 
-    return { statusCode: 405, body: "Method not allowed" };
-  } catch (err) {
-    console.error("[wa-clients]", err.message);
-    return { statusCode: 500, headers: HDR, body: JSON.stringify({ error: err.message }) };
+      // upsert — add or update a single client
+      if (body.action === "upsert" && body.client) {
+        const existing = await store.get("clients", { type: "json" }) || [];
+        const client = normalizeClient(body.client);
+        const idx = existing.findIndex(c => c.id === client.id);
+        if (idx >= 0) {
+          existing[idx] = client;
+        } else {
+          existing.push(client);
+        }
+        await store.setJSON("clients", existing);
+        return {
+          statusCode: 200,
+          headers: CORS,
+          body: JSON.stringify({ ok: true, client }),
+        };
+      }
+
+      // delete — remove single client by id
+      if (body.action === "delete" && body.id) {
+        const existing = await store.get("clients", { type: "json" }) || [];
+        const filtered = existing.filter(c => c.id !== body.id);
+        await store.setJSON("clients", filtered);
+        return {
+          statusCode: 200,
+          headers: CORS,
+          body: JSON.stringify({ ok: true, remaining: filtered.length }),
+        };
+      }
+
+      return {
+        statusCode: 400,
+        headers: CORS,
+        body: JSON.stringify({ error: "Unknown action" }),
+      };
+
+    } catch (err) {
+      console.error("wa-clients POST error:", err);
+      return {
+        statusCode: 500,
+        headers: CORS,
+        body: JSON.stringify({ error: "Internal error", detail: String(err) }),
+      };
+    }
   }
+
+  return {
+    statusCode: 405,
+    headers: CORS,
+    body: JSON.stringify({ error: "Method not allowed" }),
+  };
 };
