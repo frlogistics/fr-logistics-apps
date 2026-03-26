@@ -893,16 +893,23 @@ async function loadClients(){
     const res = await fetch('/.netlify/functions/wa-clients');
     if(res.ok){
       const data = await res.json();
+      const stored = localStorage.getItem('fr_wa_clients');
+      const local = stored ? JSON.parse(stored) : [];
       if(Array.isArray(data) && data.length > 0){
-        // Supabase has data — canonical source of truth
-        allClients = data.map(normalizeClient);
-        localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
+        // Supabase has data
+        if(local.length > data.length){
+          // localStorage has MORE clients — offer migration
+          allClients = local;
+          showMigrationBanner(local.length, data.length);
+        } else {
+          // Supabase is canonical
+          allClients = data.map(normalizeClient);
+          localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
+        }
       } else {
-        // Supabase returned empty — check localStorage for migration
-        const stored = localStorage.getItem('fr_wa_clients');
-        const local = stored ? JSON.parse(stored) : [];
+        // Supabase empty — use localStorage and offer migration
         allClients = local;
-        if(local.length > 0) showMigrationBanner(local.length);
+        if(local.length > 0) showMigrationBanner(local.length, 0);
       }
     } else {
       // Function error — fall back to localStorage
@@ -918,19 +925,22 @@ async function loadClients(){
   populateClientSelect();
 }
 
-function showMigrationBanner(count){
+function showMigrationBanner(localCount, supaCount){
   document.getElementById('migrationBanner')?.remove();
   const banner = document.createElement('div');
   banner.id = 'migrationBanner';
   banner.style.cssText = 'background:rgba(251,191,36,.10);border:1px solid rgba(251,191,36,.45);border-radius:12px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;font-size:13px;color:#1a2e1f;';
+  const msg = supaCount > 0
+    ? `Este dispositivo tiene <strong>${localCount} clientes</strong> vs ${supaCount} en la base central.`
+    : `<strong>${localCount} clientes</strong> encontrados en este dispositivo — no están en la base central.`;
   banner.innerHTML = `
     <span style="font-size:20px">⚠️</span>
     <div style="flex:1">
-      <strong>${count} clientes encontrados en este dispositivo</strong> — no están en la base de datos central.
-      <div style="font-size:11px;color:#4a6b54;margin-top:2px">Haz clic en Migrar para sincronizarlos en todos los dispositivos.</div>
+      ${msg}
+      <div style="font-size:11px;color:#4a6b54;margin-top:2px">Haz clic en Migrar para reemplazar la base central con estos ${localCount} clientes.</div>
     </div>
     <button onclick="migrateLocalClients()" style="background:rgba(251,191,36,.25);border:1px solid rgba(251,191,36,.6);border-radius:8px;padding:8px 16px;font-weight:700;font-size:12px;cursor:pointer;color:#78350f;white-space:nowrap;font-family:'DM Sans',sans-serif">
-      📤 Migrar ahora
+      📤 Migrar ${localCount} clientes
     </button>
   `;
   const kpis = document.getElementById('clientKpis');
