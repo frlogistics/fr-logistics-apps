@@ -293,7 +293,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
           WhatsApp Inbox  +1 305-240-3172
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <button class="waBtn" onclick="loadMessages()">↻ Refresh</button>
+          <button class="waBtn" onclick="loadMessages()"onclick="loadMessages()">↻ Refresh</button>
           <button class="waBtn primary" onclick="openSendModal()">+ New Message</button>
         </div>
       </div>
@@ -328,7 +328,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
           <div style="font-size:11px;color:var(--muted);margin-top:3px">Fuente unica de verdad · WA · EcoPack+ · Inbound/Outbound · Daily Summary</div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <button class="waBtn" onclick="loadClients()">↻ Reload</button>
+          <button class="waBtn" onclick="loadClients()"onclick="loadClients()">↻ Reload</button>
           <button class="waBtn primary" onclick="openClientModal(null)">+ New Client</button>
           <button class="waBtn" style="background:rgba(31,164,99,.12);border-color:rgba(31,164,99,.35);color:var(--accent)" onclick="saveAllClients()">💾 Save</button>
         </div>
@@ -390,7 +390,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     <div id="tabDashboard" style="display:none">
       <div class="waHeader">
         <div class="waTitle"> Operations Dashboard</div>
-        <button class="waBtn" onclick="loadDashboard()">↻ Refresh</button>
+        <button class="waBtn" onclick="loadDashboard()"onclick="loadMessages()">↻ Refresh</button>
       </div>
 
       <!-- KPI Cards -->
@@ -468,7 +468,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
 <!-- APP OVERLAY -->
 <div id="appOverlay">
   <div class="overlayBar">
-    <button class="closeBtn" id="closeBtn">← Back to Portal</button>
+    <button class="closeBtn" id="closeBtn"onclick="document.getElementById('appFrame') ? document.getElementById('appFrame').src='' : null; document.querySelector('.appFrame, #appSection') && switchTab('apps', document.querySelector('[data-tab=apps]'))">← Back to Portal</button>
     <span class="overlayTitle" id="overlayTitle"></span>
     <span class="overlayUrl" id="overlayUrl"></span>
   </div>
@@ -892,13 +892,8 @@ function normalizeClient(raw) {
     fetch('/.netlify/functions/wa-clients')
       .then(r => r.json())
       .then(data => {
-        if (!Array.isArray(data)) {
-          console.error('loadClients error:', data);
-          return;
-        }
-        // Normalize and store
+        if (!Array.isArray(data)) { console.error('loadClients error:', data); return; }
         window.clients = data.map(normalizeClient);
-        // Sync to localStorage as backup
         try { localStorage.setItem('fr_wa_clients', JSON.stringify(window.clients)); } catch(e) {}
         renderClientsTable(window.clients);
         renderClientKpis(window.clients);
@@ -907,8 +902,7 @@ function normalizeClient(raw) {
         if (countEl) countEl.textContent = window.clients.length + ' clients';
       })
       .catch(err => {
-        console.error('loadClients fetch error:', err);
-        // Fallback to localStorage
+        console.error('loadClients error:', err);
         try {
           const local = JSON.parse(localStorage.getItem('fr_wa_clients') || '[]');
           window.clients = local.map(normalizeClient);
@@ -1085,27 +1079,16 @@ function saveClientModal() {
       wa_notifications: document.getElementById('cm_waNotif')?.checked || false,
       notes: document.getElementById('cm_notes')?.value?.trim() || ''
     };
-
     if (!clientData.name) { alert('Contact Name is required'); return; }
-
     const method = isNew ? 'POST' : 'PATCH';
     if (!isNew) clientData.id = window._editingClientId;
-
     fetch('/.netlify/functions/wa-clients', {
-      method,
-      headers: { 'Content-Type': 'application/json' },
+      method, headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(clientData)
     })
     .then(r => r.json())
-    .then(() => {
-      closeClientModal();
-      loadClients();
-    })
-    .catch(err => {
-      console.error('saveClientModal error:', err);
-      closeClientModal();
-      loadClients();
-    });
+    .then(() => { closeClientModal(); loadClients(); })
+    .catch(err => { console.error('saveClientModal error:', err); closeClientModal(); loadClients(); });
   }
   function updateClientField(id,field,value){
   const c=allClients.find(c=>c.id===id);
@@ -1145,40 +1128,29 @@ async function autoSaveClients(){
 async function saveAllClients() {
     const clients = window.clients || [];
     if (!clients.length) return;
-
-    // Save each modified client to Supabase via PATCH
-    const promises = clients.map(c => {
-      const payload = {
-        id: c.id,
-        name: c.name,
-        company: c.company || '',
+    const promises = clients.map(c => fetch('/.netlify/functions/wa-clients', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: c.id, name: c.name, company: c.company || '',
         wa_number: c.wa_number || c.waNumber || '',
         wa_notifications: c.wa_notifications || false,
         daily_inbound: c.daily_inbound || 0,
         daily_outbound: c.daily_outbound || 0,
-        email: c.email || '',
-        phone: c.phone || '',
+        email: c.email || '', phone: c.phone || '',
         status: c.status || 'Active',
         active: c.active !== undefined ? c.active : true,
         notes: c.notes || ''
-      };
-      return fetch('/.netlify/functions/wa-clients', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-    });
-
+      })
+    }));
     Promise.all(promises)
       .then(() => {
-        // Also sync localStorage
         try { localStorage.setItem('fr_wa_clients', JSON.stringify(clients)); } catch(e) {}
         const btn = document.querySelector('[onclick="saveAllClients()"]');
-        if (btn) { btn.textContent = '✓ Saved'; setTimeout(() => btn.textContent = '💾 Save All', 2000); }
+        if (btn) { const orig = btn.textContent; btn.textContent = '✓ Saved!'; setTimeout(() => btn.textContent = orig, 2000); }
       })
       .catch(err => {
         console.error('saveAllClients error:', err);
-        // Fallback: save to localStorage only
         try { localStorage.setItem('fr_wa_clients', JSON.stringify(clients)); } catch(e) {}
       });
   }
