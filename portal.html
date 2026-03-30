@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>FR-Logistics · Apps Portal</title>
+<title>FR-Logistics  Apps Portal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -247,7 +247,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
       <label>Password</label>
       <input type="password" id="pwInput" placeholder="â¢â¢â¢â¢â¢â¢â¢â¢" autocomplete="current-password" />
     </div>
-    <button class="loginBtn" id="loginBtn">Access Portal →</button>
+    <button class="loginBtn" id="loginBtn">Access Portal </button>
     <div class="loginError" id="loginError"></div>
   </div>
 </div>
@@ -258,31 +258,31 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
       <div class="brand">
         <img src="fr_logo.png" alt="FR" onerror="this.style.display='none'">
         <div>
-          <h1>FR-Logistics · Operations</h1>
+          <h1>FR-Logistics  Operations</h1>
           <div class="sub">apps.fr-logistics.net</div>
         </div>
       </div>
       <div class="headerRight">
-        <span class="pill">â LIVE</span>
+        <span class="pill"> LIVE</span>
         <button class="logoutBtn" id="logoutBtn">Sign out</button>
       </div>
     </div>
   </header>
 
   <div class="navTabs">
-    <button class="navTab active" data-tab="apps" onclick="switchTab('apps',this)">📦 Apps</button>
+    <button class="navTab active" data-tab="apps" onclick="switchTab('apps',this)"> Apps</button>
     <button class="navTab" data-tab="whatsapp" onclick="switchTab('whatsapp',this)">
-      💬 WhatsApp Inbox <span class="badge" id="unreadBadge" style="display:none">0</span>
+       WhatsApp Inbox <span class="badge" id="unreadBadge" style="display:none">0</span>
     </button>
-    <button class="navTab" data-tab="clients" onclick="switchTab('clients',this)">👥 Clients</button>
-    <button class="navTab" data-tab="dashboard" onclick="switchTab('dashboard',this)">📊 Dashboard</button>
+    <button class="navTab" data-tab="clients" onclick="switchTab('clients',this)"> Clients</button>
+    <button class="navTab" data-tab="dashboard" onclick="switchTab('dashboard',this)"> Dashboard</button>
   </div>
 
   <main>
 
     <!-- TAB: APPS -->
     <div id="tabApps">
-      <div class="sectionTitle">Operations Apps â click to open</div>
+      <div class="sectionTitle">Operations Apps  click to open</div>
       <div class="appGrid" id="appGrid"></div>
     </div>
 
@@ -290,18 +290,18 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     <div id="tabWhatsapp">
       <div class="waHeader">
         <div class="waTitle">
-          <div class="waIcon">ð¬</div>
-          WhatsApp Inbox · +1 305-240-3172
+          <div class="waIcon"></div>
+          WhatsApp Inbox  +1 305-240-3172
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <button class="waBtn" onclick="loadMessages()">â» Refresh</button>
+          <button class="waBtn" onclick="loadMessages()"> Refresh</button>
           <button class="waBtn primary" onclick="openSendModal()">+ New Message</button>
         </div>
       </div>
 
       <div class="statusBar">
         <div class="statusDot"></div>
-        <span id="waStatusText">Conectado · FR Logistics Miami · Meta Cloud API</span>
+        <span id="waStatusText">Conectado  FR Logistics Miami  Meta Cloud API</span>
       </div>
 
       <div class="inboxGrid">
@@ -314,8 +314,8 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
         </div>
         <div class="msgDetail" id="msgDetail">
           <div class="emptyState">
-            <div class="emIcon">ð¬</div>
-            <p>Selecciona una conversaciÃ³n</p>
+            <div class="emIcon"></div>
+            <p>Selecciona una conversacin</p>
           </div>
         </div>
       </div>
@@ -325,13 +325,13 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     <div id="tabClients">
       <div class="clientsHeader">
         <div>
-          <div class="waTitle" style="font-size:16px">ð¥ Clients · Tabla Maestra</div>
+          <div class="waTitle" style="font-size:16px"> Clients  Tabla Maestra</div>
           <div style="font-size:11px;color:var(--muted);margin-top:3px">Fuente Ãºnica de verdad · WA · EcoPack+ · Inbound/Outbound · Daily Summary</div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <button class="waBtn" onclick="loadClients()">â» Reload</button>
+          <button class="waBtn" onclick="loadClients()"> Reload</button>
           <button class="waBtn primary" onclick="openClientModal(null)">+ New Client</button>
-          <button class="waBtn" style="background:rgba(31,164,99,.12);border-color:rgba(31,164,99,.35);color:var(--accent)" onclick="saveAllClients()">ð¾ Save</button>
+          <button class="waBtn" style="background:rgba(31,164,99,.12);border-color:rgba(31,164,99,.35);color:var(--accent)" onclick="saveAllClients()"> Save</button>
         </div>
       </div>
 
@@ -371,7 +371,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
               <th>Cliente / Empresa</th>
               <th>Country</th>
               <th>Lang</th>
-              <th>NÃºmero WA</th>
+              <th>Nmero WA</th>
               <th>Services</th>
               <th>Status</th>
               <th>Consent WA</th>
@@ -390,30 +390,30 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     <!-- TAB: DASHBOARD -->
     <div id="tabDashboard" style="display:none">
       <div class="waHeader">
-        <div class="waTitle">ð Operations Dashboard</div>
-        <button class="waBtn" onclick="loadDashboard()">â» Refresh</button>
+        <div class="waTitle"> Operations Dashboard</div>
+        <button class="waBtn" onclick="loadDashboard()"> Refresh</button>
       </div>
 
       <!-- KPI Cards -->
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:24px">
         <div class="card-kpi" id="kpi-sent">
-          <div class="kpi-icon">ð¬</div>
-          <div class="kpi-value" id="kpi-sent-val">â</div>
+          <div class="kpi-icon"></div>
+          <div class="kpi-value" id="kpi-sent-val"></div>
           <div class="kpi-label">Messages Sent Today</div>
         </div>
         <div class="card-kpi" id="kpi-received">
-          <div class="kpi-icon">ð¥</div>
-          <div class="kpi-value" id="kpi-received-val">â</div>
+          <div class="kpi-icon"></div>
+          <div class="kpi-value" id="kpi-received-val"></div>
           <div class="kpi-label">Messages Received Today</div>
         </div>
         <div class="card-kpi" id="kpi-open">
-          <div class="kpi-icon">ð«</div>
-          <div class="kpi-value" id="kpi-open-val">â</div>
+          <div class="kpi-icon"></div>
+          <div class="kpi-value" id="kpi-open-val"></div>
           <div class="kpi-label">Open Tickets</div>
         </div>
         <div class="card-kpi" id="kpi-low">
-          <div class="kpi-icon">â ï¸</div>
-          <div class="kpi-value" id="kpi-low-val">â</div>
+          <div class="kpi-icon"></div>
+          <div class="kpi-value" id="kpi-low-val"></div>
           <div class="kpi-label">Low Stock SKUs</div>
         </div>
       </div>
@@ -423,7 +423,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
         <!-- Low Stock Alerts -->
         <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden">
           <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700">â ï¸ Low Stock Alerts</span>
+            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700"> Low Stock Alerts</span>
             <span id="low-stock-count" style="font-size:11px;color:var(--muted)"></span>
           </div>
           <div id="low-stock-list" style="max-height:300px;overflow-y:auto;padding:8px 0"></div>
@@ -432,7 +432,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
         <!-- Incoming Messages -->
         <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden">
           <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700">ð¬ Incoming Messages</span>
+            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700"> Incoming Messages</span>
             <span id="msg-count-dash" style="font-size:11px;color:var(--muted)"></span>
           </div>
           <div id="msg-list-dash" style="max-height:300px;overflow-y:auto;padding:8px 0"></div>
@@ -441,7 +441,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
         <!-- Messages Sent Log -->
         <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden">
           <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
-            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700">ð¤ Messages Sent</span>
+            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700"> Messages Sent</span>
           </div>
           <div id="sent-list-dash" style="max-height:300px;overflow-y:auto;padding:8px 0"></div>
         </div>
@@ -449,7 +449,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
         <!-- Daily Summary -->
         <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden">
           <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
-            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700">ð Activity (Last 7 Days)</span>
+            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700"> Activity (Last 7 Days)</span>
           </div>
           <div id="activity-chart" style="padding:16px"></div>
         </div>
@@ -460,8 +460,8 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
   </main>
   <footer>
     <div class="footRow">
-      <span>FR-Logistics · Miami, FL</span>
-      <span>WhatsApp API · Supabase · ShipStation</span>
+      <span>FR-Logistics  Miami, FL</span>
+      <span>WhatsApp API  Supabase  ShipStation</span>
     </div>
   </footer>
 </div>
@@ -469,7 +469,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
 <!-- APP OVERLAY -->
 <div id="appOverlay">
   <div class="overlayBar">
-    <button class="closeBtn" id="closeBtn">â Back to Portal</button>
+    <button class="closeBtn" id="closeBtn"> Back to Portal</button>
     <span class="overlayTitle" id="overlayTitle"></span>
     <span class="overlayUrl" id="overlayUrl"></span>
   </div>
@@ -482,9 +482,9 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px">
       <div>
         <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:800" id="clientModalTitle">New Client</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:3px;font-family:'DM Mono',monospace">FR-Logistics · Master Client Record</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px;font-family:'DM Mono',monospace">FR-Logistics  Master Client Record</div>
       </div>
-      <button onclick="closeClientModal()" style="background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--muted);cursor:pointer;font-size:13px">â</button>
+      <button onclick="closeClientModal()" style="background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--muted);cursor:pointer;font-size:13px"></button>
     </div>
     <div class="cmGrid">
       <div class="cmField"><label>Contact Name *</label><input id="cm_name" placeholder="Full name"></div>
@@ -522,7 +522,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:22px">
       <button onclick="closeClientModal()" class="modalClose">Cancel</button>
-      <button onclick="saveClientModal()" class="waBtn primary" style="padding:9px 22px">Save Client ✓</button>
+      <button onclick="saveClientModal()" class="waBtn primary" style="padding:9px 22px">Save Client </button>
     </div>
   </div>
 </div>
@@ -530,7 +530,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
 <!-- SEND MESSAGE MODAL -->
 <div class="modal" id="sendModal">
   <div class="modalBox">
-    <div class="modalTitle">ð¬ New Message WhatsApp</div>
+    <div class="modalTitle"> New Message WhatsApp</div>
     <div class="formGroup">
       <label>Client (select from list)</label>
       <select id="sendClient" onchange="onClientSelect()">
@@ -560,7 +560,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     </div>
     <div class="modalActions">
       <button class="modalClose" onclick="closeSendModal()">Cancel</button>
-      <button class="waBtn primary" onclick="sendMessage()">Send Message →</button>
+      <button class="waBtn primary" onclick="sendMessage()">Send Message </button>
     </div>
   </div>
 </div>
@@ -656,7 +656,7 @@ function renderApps(){
     let tagClass="appTag";
     if(app.tag==="Analytics")tagClass="appTag analytics";
     if(app.tag==="Email")tagClass="appTag email";
-    card.innerHTML=`<div class="previewFrame"><iframe src="${app.url}" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms"></iframe><div class="previewOverlay"></div><div class="previewClick"><span>Open App â</span></div></div><div class="appInfo"><div class="appName">${app.name}</div><div class="appDesc">${app.desc}</div><span class="${tagClass}">${app.tag}</span></div>`;
+    card.innerHTML=`<div class="previewFrame"><iframe src="${app.url}" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms"></iframe><div class="previewOverlay"></div><div class="previewClick"><span>Open App </span></div></div><div class="appInfo"><div class="appName">${app.name}</div><div class="appDesc">${app.desc}</div><span class="${tagClass}">${app.tag}</span></div>`;
     card.addEventListener("click",()=>openApp(app.openUrl?{...app,url:app.openUrl}:app));
     grid.appendChild(card);
   });
@@ -689,7 +689,7 @@ function renderMessageList(){
   const body = document.getElementById('msgListBody');
   document.getElementById('msgCount').textContent = allMessages.length;
   if(!allMessages.length){
-    body.innerHTML='<div style="padding:20px;text-align:center;font-size:12px;color:var(--muted)">Sin Messages aÃºn</div>';
+    body.innerHTML='<div style="padding:20px;text-align:center;font-size:12px;color:var(--muted)">Sin Messages an</div>';
     return;
   }
   // Group by phone number
@@ -746,7 +746,7 @@ function openConv(phone){
     </div>
     <div class="msgReplyBox">
       <textarea id="replyText" rows="2" placeholder="Escribe un message..."></textarea>
-      <button class="sendBtn" onclick="sendReply('${phone}','${name}')">â</button>
+      <button class="sendBtn" onclick="sendReply('${phone}','${name}')"></button>
     </div>`;
   const body=document.getElementById('convBody');
   if(body) body.scrollTop=body.scrollHeight;
@@ -800,7 +800,7 @@ function populateClientSelect(){
   allClients.filter(c=>c.active&&c.waNumber).forEach(c=>{
     const label = c.storeName || c.company || c.name;
     const display = c.storeName ? `${c.storeName} (${c.name})` : c.name;
-    sel.innerHTML+=`<option value="${c.waNumber}">${display} â ${c.waNumber}</option>`;
+    sel.innerHTML+=`<option value="${c.waNumber}">${display}  ${c.waNumber}</option>`;
   });
 }
 
@@ -935,13 +935,13 @@ function showMigrationBanner(localCount, supaCount){
     ? `Este dispositivo tiene <strong>${localCount} clients</strong> vs ${supaCount} en la base central.`
     : `<strong>${localCount} clients</strong> encontrados en este dispositivo â no estÃ¡n en la base central.`;
   banner.innerHTML = `
-    <span style="font-size:20px">â ï¸</span>
+    <span style="font-size:20px"></span>
     <div style="flex:1">
       ${msg}
       <div style="font-size:11px;color:#4a6b54;margin-top:2px">Haz clic en Migrar para reemplazar la base central con estos ${localCount} clients.</div>
     </div>
     <button onclick="migrateLocalClients()" style="background:rgba(251,191,36,.25);border:1px solid rgba(251,191,36,.6);border-radius:8px;padding:8px 16px;font-weight:700;font-size:12px;cursor:pointer;color:#78350f;white-space:nowrap;font-family:'DM Sans',sans-serif">
-      ð¤ Migrar ${localCount} clients
+       Migrar ${localCount} clients
     </button>
   `;
   const kpis = document.getElementById('clientKpis');
@@ -950,7 +950,7 @@ function showMigrationBanner(localCount, supaCount){
 
 async function migrateLocalClients(){
   const banner = document.getElementById('migrationBanner');
-  if(banner) banner.innerHTML = '<span>â³</span><div style="margin-left:10px">Migrando...</div>';
+  if(banner) banner.innerHTML = '<span></span><div style="margin-left:10px">Migrando...</div>';
   try{
     const res = await fetch('/.netlify/functions/wa-clients',{
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -962,10 +962,10 @@ async function migrateLocalClients(){
       alert('â '+allClients.length+' clients migrados. Ahora disponibles en todos los dispositivos.');
       await loadClients();
     } else {
-      if(banner) banner.innerHTML = '<span>â Error: '+JSON.stringify(result)+'</span>';
+      if(banner) banner.innerHTML = '<span> Error: '+JSON.stringify(result)+'</span>';
     }
   } catch(e){
-    if(banner) banner.innerHTML = '<span>â '+e.message+'</span>';
+    if(banner) banner.innerHTML = '<span> '+e.message+'</span>';
   }
 }
 
@@ -998,28 +998,28 @@ function renderClientsTable(clients){
     const svcs = Array.isArray(c.services) ? c.services : [];
     const svcHtml = svcs.length
       ? `<div class="svcWrap">${svcs.map(s=>`<span class="svcPill" style="background:${SVC_COLORS[s]||'#6b8a74'}18;border:1px solid ${SVC_COLORS[s]||'#6b8a74'}35;color:${SVC_COLORS[s]||'#6b8a74'}">${s}</span>`).join('')}</div>`
-      : `<span style="font-size:11px;color:var(--muted)">â</span>`;
+      : `<span style="font-size:11px;color:var(--muted)"></span>`;
     const consentColor = c.waConsent==='Opted In'?'#25D366':c.waConsent==='Opted Out'?'#f87171':'var(--muted)';
     return `<tr id="row_${c.id||i}">
       <td style="color:var(--muted);font-size:11px;font-family:'DM Mono',monospace">${i+1}</td>
       <td>
-        <div style="font-weight:600;font-size:13px">${c.storeName||c.name||'â'}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:1px">${c.name||''} ${c.company?'· '+c.company:''}</div>
+        <div style="font-weight:600;font-size:13px">${c.storeName||c.name||''}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:1px">${c.name||''} ${c.company?' '+c.company:''}</div>
         ${c.storeId?`<div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:1px">${c.storeId}</div>`:''}
       </td>
-      <td><span style="font-size:11px;font-family:'DM Mono',monospace;background:rgba(255,255,255,.05);padding:2px 7px;border-radius:999px">${c.country||'â'}</span></td>
+      <td><span style="font-size:11px;font-family:'DM Mono',monospace;background:rgba(255,255,255,.05);padding:2px 7px;border-radius:999px">${c.country||''}</span></td>
       <td><span class="langBadge ${(c.lang||'EN').toLowerCase()}">${c.lang||'EN'}</span></td>
       <td style="font-family:'DM Mono',monospace;font-size:11px;color:${c.waNumber?'#25D366':'var(--muted)'}">
-        ${c.waNumber||'â'}
+        ${c.waNumber||''}
         ${c.email?`<div style="color:var(--muted);font-size:10px;margin-top:1px">${c.email}</div>`:''}
       </td>
       <td>${svcHtml}</td>
-      <td><span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:999px;background:${sc}18;border:1px solid ${sc}35;color:${sc};white-space:nowrap">${c.status||'â'}</span></td>
+      <td><span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:999px;background:${sc}18;border:1px solid ${sc}35;color:${sc};white-space:nowrap">${c.status||''}</span></td>
       <td style="font-size:11px;font-weight:600;color:${consentColor}">${c.waConsent||'Pending'}</td>
       <td>
-        <button class="actionBtn" title="Edit" onclick="openClientModal('${c.id}')">â</button>
-        <button class="actionBtn" title="Send WA" onclick="openSendModalFor('${c.waNumber||''}','${(c.storeName||c.name||'').replace(/'/g,"\\'")}')">ð¬</button>
-        <button class="actionBtn danger" title="Delete" onclick="deleteClient('${c.id}')">â</button>
+        <button class="actionBtn" title="Edit" onclick="openClientModal('${c.id}')"></button>
+        <button class="actionBtn" title="Send WA" onclick="openSendModalFor('${c.waNumber||''}','${(c.storeName||c.name||'').replace(/'/g,"\\'")}')"></button>
+        <button class="actionBtn danger" title="Delete" onclick="deleteClient('${c.id}')"></button>
       </td>
     </tr>`;
   }).join('');
