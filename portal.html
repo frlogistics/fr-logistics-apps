@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>FR-Logistics Â· Apps Portal</title>
+<title>FR-Logistics · Apps Portal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -247,7 +247,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
       <label>Password</label>
       <input type="password" id="pwInput" placeholder="â¢â¢â¢â¢â¢â¢â¢â¢" autocomplete="current-password" />
     </div>
-    <button class="loginBtn" id="loginBtn">Access Portal â</button>
+    <button class="loginBtn" id="loginBtn">Access Portal →</button>
     <div class="loginError" id="loginError"></div>
   </div>
 </div>
@@ -258,7 +258,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
       <div class="brand">
         <img src="fr_logo.png" alt="FR" onerror="this.style.display='none'">
         <div>
-          <h1>FR-Logistics Â· Operations</h1>
+          <h1>FR-Logistics · Operations</h1>
           <div class="sub">apps.fr-logistics.net</div>
         </div>
       </div>
@@ -291,7 +291,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
       <div class="waHeader">
         <div class="waTitle">
           <div class="waIcon">ð¬</div>
-          WhatsApp Inbox Â· +1 305-240-3172
+          WhatsApp Inbox · +1 305-240-3172
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <button class="waBtn" onclick="loadMessages()">â» Refresh</button>
@@ -301,7 +301,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
 
       <div class="statusBar">
         <div class="statusDot"></div>
-        <span id="waStatusText">Conectado Â· FR Logistics Miami Â· Meta Cloud API</span>
+        <span id="waStatusText">Conectado · FR Logistics Miami · Meta Cloud API</span>
       </div>
 
       <div class="inboxGrid">
@@ -325,8 +325,8 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     <div id="tabClients">
       <div class="clientsHeader">
         <div>
-          <div class="waTitle" style="font-size:16px">ð¥ Clients Â· Tabla Maestra</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:3px">Fuente Ãºnica de verdad Â· WA Â· EcoPack+ Â· Inbound/Outbound Â· Daily Summary</div>
+          <div class="waTitle" style="font-size:16px">ð¥ Clients · Tabla Maestra</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">Fuente Ãºnica de verdad · WA · EcoPack+ · Inbound/Outbound · Daily Summary</div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <button class="waBtn" onclick="loadClients()">â» Reload</button>
@@ -382,7 +382,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
         </table>
       </div>
       <div style="margin-top:10px;font-size:11px;color:var(--muted);font-family:'DM Mono',monospace">
-        Store: Supabase Â· fr_clients Â· +1 305-240-3172
+        Store: Supabase · fr_clients · +1 305-240-3172
       </div>
     </div>
 
@@ -460,8 +460,8 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
   </main>
   <footer>
     <div class="footRow">
-      <span>FR-Logistics Â· Miami, FL</span>
-      <span>WhatsApp API Â· Supabase Â· ShipStation</span>
+      <span>FR-Logistics · Miami, FL</span>
+      <span>WhatsApp API · Supabase · ShipStation</span>
     </div>
   </footer>
 </div>
@@ -482,7 +482,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px">
       <div>
         <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:800" id="clientModalTitle">New Client</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:3px;font-family:'DM Mono',monospace">FR-Logistics Â· Master Client Record</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px;font-family:'DM Mono',monospace">FR-Logistics · Master Client Record</div>
       </div>
       <button onclick="closeClientModal()" style="background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--muted);cursor:pointer;font-size:13px">â</button>
     </div>
@@ -560,7 +560,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     </div>
     <div class="modalActions">
       <button class="modalClose" onclick="closeSendModal()">Cancel</button>
-      <button class="waBtn primary" onclick="sendMessage()">Send Message â</button>
+      <button class="waBtn primary" onclick="sendMessage()">Send Message →</button>
     </div>
   </div>
 </div>
@@ -1004,7 +1004,7 @@ function renderClientsTable(clients){
       <td style="color:var(--muted);font-size:11px;font-family:'DM Mono',monospace">${i+1}</td>
       <td>
         <div style="font-weight:600;font-size:13px">${c.storeName||c.name||'â'}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:1px">${c.name||''} ${c.company?'Â· '+c.company:''}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:1px">${c.name||''} ${c.company?'· '+c.company:''}</div>
         ${c.storeId?`<div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:1px">${c.storeId}</div>`:''}
       </td>
       <td><span style="font-size:11px;font-family:'DM Mono',monospace;background:rgba(255,255,255,.05);padding:2px 7px;border-radius:999px">${c.country||'â'}</span></td>
