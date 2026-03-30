@@ -8,13 +8,16 @@ const PHONE_ID = Netlify.env.get("WHATSAPP_PHONE_ID");
 const TOKEN = Netlify.env.get("WHATSAPP_TOKEN");
 
 async function getClients() {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/fr_clients?wa_notifications=eq.true&wa_phone=not.is.null&select=name,wa_phone,daily_inbound,daily_outbound`, {
-    headers: {
-      "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${SUPABASE_KEY}`,
-      "Content-Type": "application/json"
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/fr_clients?wa_notifications=eq.true&wa_number=not.is.null&select=name,wa_number,daily_inbound,daily_outbound`,
+    {
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": "application/json"
+      }
     }
-  });
+  );
   return res.json();
 }
 
@@ -69,13 +72,13 @@ export default async (req) => {
     for (const client of clients) {
       try {
         const result = await sendDailySummary(
-          client.wa_phone,
+          client.wa_number,
           client.name,
           dateLabel,
           client.daily_inbound || 0,
           client.daily_outbound || 0
         );
-        console.log(`Sent to ${client.name} (${client.wa_phone}): ${JSON.stringify(result)}`);
+        console.log(`Sent to ${client.name} (${client.wa_number}): ${JSON.stringify(result)}`);
       } catch (err) {
         console.error(`Error sending to ${client.name}: ${err.message}`);
       }
