@@ -295,7 +295,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <button class="waBtn" onclick="loadMessages()">â» Actualizar</button>
-          <button class="waBtn primary" onclick="openSendModal()">+ Nuevo mensaje</button>
+          <button class="waBtn primary" onclick="openSendModal()">+ New Message</button>
         </div>
       </div>
 
@@ -331,7 +331,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <button class="waBtn" onclick="loadClients()">â» Recargar</button>
           <button class="waBtn primary" onclick="openClientModal(null)">+ New Client</button>
-          <button class="waBtn" style="background:rgba(31,164,99,.12);border-color:rgba(31,164,99,.35);color:var(--accent)" onclick="saveAllClients()">ð¾ Guardar</button>
+          <button class="waBtn" style="background:rgba(31,164,99,.12);border-color:rgba(31,164,99,.35);color:var(--accent)" onclick="saveAllClients()">ð¾ Save</button>
         </div>
       </div>
 
@@ -522,7 +522,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:22px">
       <button onclick="closeClientModal()" class="modalClose">Cancel</button>
-      <button onclick="saveClientModal()" class="waBtn primary" style="padding:9px 22px">Guardar cliente â</button>
+      <button onclick="saveClientModal()" class="waBtn primary" style="padding:9px 22px">Save cliente â</button>
     </div>
   </div>
 </div>
@@ -530,7 +530,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
 <!-- SEND MESSAGE MODAL -->
 <div class="modal" id="sendModal">
   <div class="modalBox">
-    <div class="modalTitle">ð¬ Nuevo mensaje WhatsApp</div>
+    <div class="modalTitle">ð¬ New Message WhatsApp</div>
     <div class="formGroup">
       <label>Client (select from list)</label>
       <select id="sendClient" onchange="onClientSelect()">
@@ -544,7 +544,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     <div class="formGroup">
       <label>Template</label>
       <select id="sendTemplate" onchange="updateTemplatePreview()">
-        <option value="order_received">Orden recibida</option>
+        <option value="order_received">Order Received</option>
         <option value="tracking_update">Tracking Update</option>
         <option value="payment_link">Payment Link</option>
           <option value="daily_summary">Daily Summary</option>
@@ -593,12 +593,12 @@ const APPS = [
   { name:"KPI Dashboard",desc:"Dashboard en tiempo real â shipments, revenue, SLA y stores desde ShipStation",tag:"Analytics",url:"https://apps.fr-logistics.net/kpi-dash.html"},
   { name:"Inbound / Outbound",desc:"Registro general de entradas y salidas de mercancÃ­a",tag:"Operations",url:"https://apps.fr-logistics.net/Inbound_Outbound.html"},
   { name:"Email Ops",desc:"Labels de Gmail en tiempo real â OPS, URGENT, BILLING, CALLS",tag:"Email",url:"https://apps.fr-logistics.net/email-ops.html"},
-  { name:"Quote System v3",desc:"Calculadora de cotizaciones para clientes â fulfillment, storage, prep",tag:"Sales",url:"https://apps.fr-logistics.net/FR_Logistics_Quote_System_v3.html"},
+  { name:"Quote System v3",desc:"Calculadora de cotizaciones para clients â fulfillment, storage, prep",tag:"Sales",url:"https://apps.fr-logistics.net/FR_Logistics_Quote_System_v3.html"},
   { name:"LN Store",desc:"GestiÃ³n de shipments para LN Store â FBA/FBM",tag:"Client App",url:"https://apps.fr-logistics.net/LN_Store.html"},
-  { name:"FR Inbounds",desc:"Registro de paquetes entrantes â escanear, registrar, guardar",tag:"Inbound",url:"https://apps.fr-logistics.net/fr-inbounds.html"},
+  { name:"FR Inbounds",desc:"Registro de paquetes entrantes â escanear, registrar, save",tag:"Inbound",url:"https://apps.fr-logistics.net/fr-inbounds.html"},
   { name:"MXS Overseas LTD",desc:"Shipments y tracking para cliente MXS Overseas",tag:"Client App",url:"https://apps.fr-logistics.net/MXS_Overseas_LTD.html"},
   { name:"Pallets (WMS)",desc:"Pallet builder con WMS ID â escanear, marcar, imprimir QR 4x6",tag:"Warehouse",url:"https://apps.fr-logistics.net/pallets.html"},
-  { name:"NO WMS Pallets",desc:"Pallet builder para clientes sin WMS â registro QR y open pallets",tag:"Warehouse",url:"https://apps.fr-logistics.net/NO_WMS.html"},
+  { name:"NO WMS Pallets",desc:"Pallet builder para clients sin WMS â registro QR y open pallets",tag:"Warehouse",url:"https://apps.fr-logistics.net/NO_WMS.html"},
   { name:"Volume Calculator",desc:"Calculadora de volumen y dimensiones para carga y tarimas",tag:"Tools",url:"https://apps.fr-logistics.net/FR_Logistics_Volume_Calculator.html"},
   { name:"Shopify Runbook",desc:"Step-by-step guide â Shopify + ShipStation + SKUVault/Linnworks",tag:"Internal",url:"shopify_runbook_preview.html",openUrl:"shopify_integration_runbook.html"}
 ];
@@ -689,7 +689,7 @@ function renderMessageList(){
   const body = document.getElementById('msgListBody');
   document.getElementById('msgCount').textContent = allMessages.length;
   if(!allMessages.length){
-    body.innerHTML='<div style="padding:20px;text-align:center;font-size:12px;color:var(--muted)">Sin mensajes aÃºn</div>';
+    body.innerHTML='<div style="padding:20px;text-align:center;font-size:12px;color:var(--muted)">Sin Messages aÃºn</div>';
     return;
   }
   // Group by phone number
@@ -745,7 +745,7 @@ function openConv(phone){
         </div>`).join('')}
     </div>
     <div class="msgReplyBox">
-      <textarea id="replyText" rows="2" placeholder="Escribe un mensaje..."></textarea>
+      <textarea id="replyText" rows="2" placeholder="Escribe un message..."></textarea>
       <button class="sendBtn" onclick="sendReply('${phone}','${name}')">â</button>
     </div>`;
   const body=document.getElementById('convBody');
@@ -770,7 +770,7 @@ async function sendReply(phone,name){
     });
     await loadMessages();
     openConv(phone);
-  } catch(e){ alert('Error enviando mensaje'); }
+  } catch(e){ alert('Error enviando Message'); }
 }
 
 function updateUnreadBadge(){
@@ -849,7 +849,7 @@ async function sendMessage(){
     closeSendModal();
     await loadMessages();
     alert('Mensaje enviado â');
-  } catch(e){ alert('Error enviando mensaje'); }
+  } catch(e){ alert('Error enviando Message'); }
 }
 
 // CLIENTS â MASTER TABLE
@@ -932,16 +932,16 @@ function showMigrationBanner(localCount, supaCount){
   banner.id = 'migrationBanner';
   banner.style.cssText = 'background:rgba(251,191,36,.10);border:1px solid rgba(251,191,36,.45);border-radius:12px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;font-size:13px;color:#1a2e1f;';
   const msg = supaCount > 0
-    ? `Este dispositivo tiene <strong>${localCount} clientes</strong> vs ${supaCount} en la base central.`
-    : `<strong>${localCount} clientes</strong> encontrados en este dispositivo â no estÃ¡n en la base central.`;
+    ? `Este dispositivo tiene <strong>${localCount} clients</strong> vs ${supaCount} en la base central.`
+    : `<strong>${localCount} clients</strong> encontrados en este dispositivo â no estÃ¡n en la base central.`;
   banner.innerHTML = `
     <span style="font-size:20px">â ï¸</span>
     <div style="flex:1">
       ${msg}
-      <div style="font-size:11px;color:#4a6b54;margin-top:2px">Haz clic en Migrar para reemplazar la base central con estos ${localCount} clientes.</div>
+      <div style="font-size:11px;color:#4a6b54;margin-top:2px">Haz clic en Migrar para reemplazar la base central con estos ${localCount} clients.</div>
     </div>
     <button onclick="migrateLocalClients()" style="background:rgba(251,191,36,.25);border:1px solid rgba(251,191,36,.6);border-radius:8px;padding:8px 16px;font-weight:700;font-size:12px;cursor:pointer;color:#78350f;white-space:nowrap;font-family:'DM Sans',sans-serif">
-      ð¤ Migrar ${localCount} clientes
+      ð¤ Migrar ${localCount} clients
     </button>
   `;
   const kpis = document.getElementById('clientKpis');
@@ -959,7 +959,7 @@ async function migrateLocalClients(){
     const result = await res.json();
     if(res.ok && result.ok){
       banner?.remove();
-      alert('â '+allClients.length+' clientes migrados. Ahora disponibles en todos los dispositivos.');
+      alert('â '+allClients.length+' clients migrados. Ahora disponibles en todos los dispositivos.');
       await loadClients();
     } else {
       if(banner) banner.innerHTML = '<span>â Error: '+JSON.stringify(result)+'</span>';
@@ -990,7 +990,7 @@ function renderClientsTable(clients){
   const tbody = document.getElementById('clientTableBody');
   document.getElementById('clientCount').textContent = `${clients.length} / ${allClients.length} registros`;
   if(!clients.length){
-    tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--muted);font-size:13px">No hay clientes que coincidan.</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--muted);font-size:13px">No hay clients que coincidan.</td></tr>`;
     return;
   }
   tbody.innerHTML = clients.map((c,i) => {
@@ -1018,7 +1018,7 @@ function renderClientsTable(clients){
       <td style="font-size:11px;font-weight:600;color:${consentColor}">${c.waConsent||'Pending'}</td>
       <td>
         <button class="actionBtn" title="Edit" onclick="openClientModal('${c.id}')">â</button>
-        <button class="actionBtn" title="Enviar WA" onclick="openSendModalFor('${c.waNumber||''}','${(c.storeName||c.name||'').replace(/'/g,"\\'")}')">ð¬</button>
+        <button class="actionBtn" title="Send WA" onclick="openSendModalFor('${c.waNumber||''}','${(c.storeName||c.name||'').replace(/'/g,"\\'")}')">ð¬</button>
         <button class="actionBtn danger" title="Delete" onclick="deleteClient('${c.id}')">â</button>
       </td>
     </tr>`;
@@ -1147,7 +1147,7 @@ async function autoSaveClients(){
 
 async function saveAllClients(){
   if(!allClients || allClients.length === 0){
-    alert('No hay clientes para guardar.');
+    alert('No hay clients para save.');
     return;
   }
   try {
@@ -1157,7 +1157,7 @@ async function saveAllClients(){
       body:JSON.stringify({action:'save_all',clients:allClients})
     });
     localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
-    if(res.ok) alert('â ' + allClients.length + ' clientes guardados (disponibles en todos los dispositivos)');
+    if(res.ok) alert('â ' + allClients.length + ' clients guardados (disponibles en todos los dispositivos)');
     else alert('Guardado local â (cloud sync pendiente)');
   } catch(e){
     localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
