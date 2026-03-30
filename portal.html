@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>FR-Logistics · Apps Portal</title>
+<title>FR-Logistics Â· Apps Portal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -179,7 +179,7 @@ main{max-width:1400px;margin:0 auto;padding:24px 24px 60px}
 .clientFilterBar select{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:9px;padding:8px 12px;color:var(--text);font-size:12px;outline:none;cursor:pointer}
 .clientFilterBar select:focus{border-color:var(--green)}
 
-/* CLIENTS TAB — LIGHT THEME */
+/* CLIENTS TAB â LIGHT THEME */
 #tabClients{background:#f0f4f1;border-radius:16px;padding:20px;margin-top:4px}
 #tabClients .clientsHeader .waTitle{color:#0f1f15}
 #tabClients .clientFilterBar select,#tabClients .clientSearch{background:#fff;border:1px solid #c8dece;color:#0f1f15;border-radius:9px}
@@ -245,9 +245,9 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     <div class="loginSub">Enter your password to access the operations dashboard</div>
     <div class="loginField">
       <label>Password</label>
-      <input type="password" id="pwInput" placeholder="••••••••" autocomplete="current-password" />
+      <input type="password" id="pwInput" placeholder="â¢â¢â¢â¢â¢â¢â¢â¢" autocomplete="current-password" />
     </div>
-    <button class="loginBtn" id="loginBtn">Access Portal →</button>
+    <button class="loginBtn" id="loginBtn">Access Portal â</button>
     <div class="loginError" id="loginError"></div>
   </div>
 </div>
@@ -258,31 +258,31 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
       <div class="brand">
         <img src="fr_logo.png" alt="FR" onerror="this.style.display='none'">
         <div>
-          <h1>FR-Logistics · Operations</h1>
+          <h1>FR-Logistics Â· Operations</h1>
           <div class="sub">apps.fr-logistics.net</div>
         </div>
       </div>
       <div class="headerRight">
-        <span class="pill">● LIVE</span>
+        <span class="pill">â LIVE</span>
         <button class="logoutBtn" id="logoutBtn">Sign out</button>
       </div>
     </div>
   </header>
 
   <div class="navTabs">
-    <button class="navTab active" data-tab="apps" onclick="switchTab('apps',this)">📦 Apps</button>
+    <button class="navTab active" data-tab="apps" onclick="switchTab('apps',this)">ð¦ Apps</button>
     <button class="navTab" data-tab="whatsapp" onclick="switchTab('whatsapp',this)">
-      💬 WhatsApp Inbox <span class="badge" id="unreadBadge" style="display:none">0</span>
+      ð¬ WhatsApp Inbox <span class="badge" id="unreadBadge" style="display:none">0</span>
     </button>
-    <button class="navTab" data-tab="clients" onclick="switchTab('clients',this)">👥 Clientes</button>
-    <button class="navTab" data-tab="dashboard" onclick="switchTab('dashboard',this)">📊 Dashboard</button>
+    <button class="navTab" data-tab="clients" onclick="switchTab('clients',this)">ð¥ Clientes</button>
+    <button class="navTab" data-tab="dashboard" onclick="switchTab('dashboard',this)">ð Dashboard</button>
   </div>
 
   <main>
 
     <!-- TAB: APPS -->
     <div id="tabApps">
-      <div class="sectionTitle">Operations Apps — click to open</div>
+      <div class="sectionTitle">Operations Apps â click to open</div>
       <div class="appGrid" id="appGrid"></div>
     </div>
 
@@ -290,18 +290,18 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     <div id="tabWhatsapp">
       <div class="waHeader">
         <div class="waTitle">
-          <div class="waIcon">💬</div>
-          WhatsApp Inbox · +1 305-240-3172
+          <div class="waIcon">ð¬</div>
+          WhatsApp Inbox Â· +1 305-240-3172
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <button class="waBtn" onclick="loadMessages()">↻ Actualizar</button>
+          <button class="waBtn" onclick="loadMessages()">â» Actualizar</button>
           <button class="waBtn primary" onclick="openSendModal()">+ Nuevo mensaje</button>
         </div>
       </div>
 
       <div class="statusBar">
         <div class="statusDot"></div>
-        <span id="waStatusText">Conectado · FR Logistics Miami · Meta Cloud API</span>
+        <span id="waStatusText">Conectado Â· FR Logistics Miami Â· Meta Cloud API</span>
       </div>
 
       <div class="inboxGrid">
@@ -314,24 +314,24 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
         </div>
         <div class="msgDetail" id="msgDetail">
           <div class="emptyState">
-            <div class="emIcon">💬</div>
-            <p>Selecciona una conversación</p>
+            <div class="emIcon">ð¬</div>
+            <p>Selecciona una conversaciÃ³n</p>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- TAB: CLIENTES — TABLA MAESTRA -->
+    <!-- TAB: CLIENTES â TABLA MAESTRA -->
     <div id="tabClients">
       <div class="clientsHeader">
         <div>
-          <div class="waTitle" style="font-size:16px">👥 Clientes · Tabla Maestra</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:3px">Fuente única de verdad · WA · EcoPack+ · Inbound/Outbound · Daily Summary</div>
+          <div class="waTitle" style="font-size:16px">ð¥ Clientes Â· Tabla Maestra</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">Fuente Ãºnica de verdad Â· WA Â· EcoPack+ Â· Inbound/Outbound Â· Daily Summary</div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <button class="waBtn" onclick="loadClients()">↻ Recargar</button>
-          <button class="waBtn primary" onclick="openClientModal(null)">+ Nuevo cliente</button>
-          <button class="waBtn" style="background:rgba(31,164,99,.12);border-color:rgba(31,164,99,.35);color:var(--accent)" onclick="saveAllClients()">💾 Guardar</button>
+          <button class="waBtn" onclick="loadClients()">â» Recargar</button>
+          <button class="waBtn primary" onclick="openClientModal(null)">+ New Client</button>
+          <button class="waBtn" style="background:rgba(31,164,99,.12);border-color:rgba(31,164,99,.35);color:var(--accent)" onclick="saveAllClients()">ð¾ Guardar</button>
         </div>
       </div>
 
@@ -340,7 +340,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
 
       <!-- Filter bar -->
       <div class="clientFilterBar">
-        <input type="text" class="clientSearch" id="clientSearch" placeholder="Buscar nombre, empresa, WA, email…" oninput="filterClients()" style="width:240px">
+        <input type="text" class="clientSearch" id="clientSearch" placeholder="Buscar nombre, empresa, WA, emailâ¦" oninput="filterClients()" style="width:240px">
         <select id="filterSvc" onchange="filterClients()">
           <option value="">Todos los servicios</option>
           <option>FBA Prep</option>
@@ -369,11 +369,11 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
             <tr>
               <th>#</th>
               <th>Cliente / Empresa</th>
-              <th>País</th>
+              <th>PaÃ­s</th>
               <th>Lang</th>
-              <th>Número WA</th>
+              <th>NÃºmero WA</th>
               <th>Servicios contratados</th>
-              <th>Estado</th>
+              <th>Status</th>
               <th>Consent WA</th>
               <th>Acciones</th>
             </tr>
@@ -382,7 +382,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
         </table>
       </div>
       <div style="margin-top:10px;font-size:11px;color:var(--muted);font-family:'DM Mono',monospace">
-        Store: Supabase · fr_clients · +1 305-240-3172
+        Store: Supabase Â· fr_clients Â· +1 305-240-3172
       </div>
     </div>
 
@@ -390,30 +390,30 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     <!-- TAB: DASHBOARD -->
     <div id="tabDashboard" style="display:none">
       <div class="waHeader">
-        <div class="waTitle">📊 Operations Dashboard</div>
-        <button class="waBtn" onclick="loadDashboard()">↻ Refresh</button>
+        <div class="waTitle">ð Operations Dashboard</div>
+        <button class="waBtn" onclick="loadDashboard()">â» Refresh</button>
       </div>
 
       <!-- KPI Cards -->
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:24px">
         <div class="card-kpi" id="kpi-sent">
-          <div class="kpi-icon">💬</div>
-          <div class="kpi-value" id="kpi-sent-val">—</div>
+          <div class="kpi-icon">ð¬</div>
+          <div class="kpi-value" id="kpi-sent-val">â</div>
           <div class="kpi-label">Messages Sent Today</div>
         </div>
         <div class="card-kpi" id="kpi-received">
-          <div class="kpi-icon">📥</div>
-          <div class="kpi-value" id="kpi-received-val">—</div>
+          <div class="kpi-icon">ð¥</div>
+          <div class="kpi-value" id="kpi-received-val">â</div>
           <div class="kpi-label">Messages Received Today</div>
         </div>
         <div class="card-kpi" id="kpi-open">
-          <div class="kpi-icon">🎫</div>
-          <div class="kpi-value" id="kpi-open-val">—</div>
+          <div class="kpi-icon">ð«</div>
+          <div class="kpi-value" id="kpi-open-val">â</div>
           <div class="kpi-label">Open Tickets</div>
         </div>
         <div class="card-kpi" id="kpi-low">
-          <div class="kpi-icon">⚠️</div>
-          <div class="kpi-value" id="kpi-low-val">—</div>
+          <div class="kpi-icon">â ï¸</div>
+          <div class="kpi-value" id="kpi-low-val">â</div>
           <div class="kpi-label">Low Stock SKUs</div>
         </div>
       </div>
@@ -423,7 +423,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
         <!-- Low Stock Alerts -->
         <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden">
           <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700">⚠️ Low Stock Alerts</span>
+            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700">â ï¸ Low Stock Alerts</span>
             <span id="low-stock-count" style="font-size:11px;color:var(--muted)"></span>
           </div>
           <div id="low-stock-list" style="max-height:300px;overflow-y:auto;padding:8px 0"></div>
@@ -432,7 +432,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
         <!-- Incoming Messages -->
         <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden">
           <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700">💬 Incoming Messages</span>
+            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700">ð¬ Incoming Messages</span>
             <span id="msg-count-dash" style="font-size:11px;color:var(--muted)"></span>
           </div>
           <div id="msg-list-dash" style="max-height:300px;overflow-y:auto;padding:8px 0"></div>
@@ -441,7 +441,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
         <!-- Messages Sent Log -->
         <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden">
           <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
-            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700">📤 Messages Sent</span>
+            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700">ð¤ Messages Sent</span>
           </div>
           <div id="sent-list-dash" style="max-height:300px;overflow-y:auto;padding:8px 0"></div>
         </div>
@@ -449,7 +449,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
         <!-- Daily Summary -->
         <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden">
           <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
-            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700">📈 Activity (Last 7 Days)</span>
+            <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700">ð Activity (Last 7 Days)</span>
           </div>
           <div id="activity-chart" style="padding:16px"></div>
         </div>
@@ -460,8 +460,8 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
   </main>
   <footer>
     <div class="footRow">
-      <span>FR-Logistics · Miami, FL</span>
-      <span>WhatsApp API · Supabase · ShipStation</span>
+      <span>FR-Logistics Â· Miami, FL</span>
+      <span>WhatsApp API Â· Supabase Â· ShipStation</span>
     </div>
   </footer>
 </div>
@@ -469,7 +469,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
 <!-- APP OVERLAY -->
 <div id="appOverlay">
   <div class="overlayBar">
-    <button class="closeBtn" id="closeBtn">← Back to Portal</button>
+    <button class="closeBtn" id="closeBtn">â Back to Portal</button>
     <span class="overlayTitle" id="overlayTitle"></span>
     <span class="overlayUrl" id="overlayUrl"></span>
   </div>
@@ -481,17 +481,17 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
   <div class="clientModalBox">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px">
       <div>
-        <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:800" id="clientModalTitle">Nuevo cliente</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:3px;font-family:'DM Mono',monospace">FR-Logistics · Master Client Record</div>
+        <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:800" id="clientModalTitle">New Client</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px;font-family:'DM Mono',monospace">FR-Logistics Â· Master Client Record</div>
       </div>
-      <button onclick="closeClientModal()" style="background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--muted);cursor:pointer;font-size:13px">✕</button>
+      <button onclick="closeClientModal()" style="background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--muted);cursor:pointer;font-size:13px">â</button>
     </div>
     <div class="cmGrid">
       <div class="cmField"><label>Nombre contacto *</label><input id="cm_name" placeholder="Nombre completo"></div>
       <div class="cmField"><label>Empresa / Brand</label><input id="cm_company" placeholder="Nombre empresa"></div>
       <div class="cmField"><label>ShipStation Store ID</label><input id="cm_storeId" placeholder="SS-XXX" style="font-family:'DM Mono',monospace"></div>
       <div class="cmField"><label>Nombre tienda SS</label><input id="cm_storeName" placeholder="Nombre de la tienda"></div>
-      <div class="cmField"><label>País</label>
+      <div class="cmField"><label>PaÃ­s</label>
         <select id="cm_country">
           <option>MX</option><option>CO</option><option>BR</option><option>PE</option>
           <option>AR</option><option>CL</option><option>US</option><option>EC</option>
@@ -505,24 +505,24 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
       <div class="cmField"><label>Tipo de cliente</label>
         <select id="cm_type"><option>Business</option><option>Brand</option><option>Influencer</option><option>Individual</option></select>
       </div>
-      <div class="cmField"><label>Estado</label>
+      <div class="cmField"><label>Status</label>
         <select id="cm_status"><option>Active</option><option>Inactive</option><option>Pending</option><option>Onboarding</option></select>
       </div>
-      <div class="cmField"><label>Número WhatsApp</label><input id="cm_waNumber" placeholder="+1 305 XXX XXXX" style="font-family:'DM Mono',monospace"></div>
+      <div class="cmField"><label>NÃºmero WhatsApp</label><input id="cm_waNumber" placeholder="+1 305 XXX XXXX" style="font-family:'DM Mono',monospace"></div>
       <div class="cmField"><label>Email</label><input id="cm_email" placeholder="email@empresa.com" style="font-family:'DM Mono',monospace"></div>
       <div class="cmField"><label>Consent WA</label>
         <select id="cm_consent"><option value="Opted In">Opted In</option><option value="Pending">Pending</option><option value="Opted Out">Opted Out</option></select>
       </div>
-      <div class="cmField"><label>Teléfono adicional</label><input id="cm_phone" placeholder="+1 XXX XXX XXXX" style="font-family:'DM Mono',monospace"></div>
+      <div class="cmField"><label>TelÃ©fono adicional</label><input id="cm_phone" placeholder="+1 XXX XXX XXXX" style="font-family:'DM Mono',monospace"></div>
       <div class="cmField full">
         <label>Servicios contratados</label>
         <div class="svcCheckGrid" id="cm_services"></div>
       </div>
-      <div class="cmField full"><label>Notas</label><textarea id="cm_notes" rows="2" placeholder="Instrucciones especiales, contexto, handling…"></textarea></div>
+      <div class="cmField full"><label>Notes</label><textarea id="cm_notes" rows="2" placeholder="Instrucciones especiales, contexto, handlingâ¦"></textarea></div>
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:22px">
-      <button onclick="closeClientModal()" class="modalClose">Cancelar</button>
-      <button onclick="saveClientModal()" class="waBtn primary" style="padding:9px 22px">Guardar cliente →</button>
+      <button onclick="closeClientModal()" class="modalClose">Cancel</button>
+      <button onclick="saveClientModal()" class="waBtn primary" style="padding:9px 22px">Guardar cliente â</button>
     </div>
   </div>
 </div>
@@ -530,7 +530,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
 <!-- SEND MESSAGE MODAL -->
 <div class="modal" id="sendModal">
   <div class="modalBox">
-    <div class="modalTitle">💬 Nuevo mensaje WhatsApp</div>
+    <div class="modalTitle">ð¬ Nuevo mensaje WhatsApp</div>
     <div class="formGroup">
       <label>Cliente (seleccionar de la lista)</label>
       <select id="sendClient" onchange="onClientSelect()">
@@ -538,15 +538,15 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
       </select>
     </div>
     <div class="formGroup">
-      <label>Número WA (con código de país)</label>
+      <label>NÃºmero WA (con cÃ³digo de paÃ­s)</label>
       <input type="text" id="sendNumber" placeholder="Ej: 5215512345678">
     </div>
     <div class="formGroup">
       <label>Plantilla</label>
       <select id="sendTemplate" onchange="updateTemplatePreview()">
-        <option value="orden_recibida">Orden recibida</option>
-        <option value="tracking_update">Tracking update</option>
-        <option value="link_de_pago">Link de pago</option>
+        <option value="order_received">Orden recibida</option>
+        <option value="tracking_update">Tracking Update</option>
+        <option value="payment_link">Payment Link</option>
       </select>
     </div>
     <div class="formGroup">
@@ -558,8 +558,8 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
       <div class="templatePreview" id="templatePreview"></div>
     </div>
     <div class="modalActions">
-      <button class="modalClose" onclick="closeSendModal()">Cancelar</button>
-      <button class="waBtn primary" onclick="sendMessage()">Enviar mensaje →</button>
+      <button class="modalClose" onclick="closeSendModal()">Cancel</button>
+      <button class="waBtn primary" onclick="sendMessage()">Enviar mensaje â</button>
     </div>
   </div>
 </div>
@@ -570,36 +570,36 @@ const SESSION_KEY = "fr_portal_auth";
 const API_BASE = "";
 
 const TEMPLATES = {
-  orden_recibida: {
-    name: "orden_recibida",
-    text: "Hola {1}, recibimos tu envío en FR-Logistics Miami. Orden #{2}. Te mantenemos al tanto de cada paso del proceso.",
-    vars: ["Nombre del cliente", "Número de orden"]
+  order_received: {
+    name: "order_received",
+    text: "Hola {1}, recibimos tu envÃ­o en FR-Logistics Miami. Orden #{2}. Te mantenemos al tanto de cada paso del proceso.",
+    vars: ["Client Name", "NÃºmero de orden"]
   },
   tracking_update: {
     name: "tracking_update",
-    text: "Hola {1}, tu orden #{2} de FR-Logistics Miami fue procesada exitosamente. Tu número de tracking es {3} con {4}. Puedes rastrear tu envío en el sitio del carrier.",
-    vars: ["Nombre del cliente", "Número de orden", "Número de tracking", "Carrier"]
+    text: "Hola {1}, tu orden #{2} de FR-Logistics Miami fue procesada exitosamente. Tu nÃºmero de tracking es {3} con {4}. Puedes rastrear tu envÃ­o en el sitio del carrier.",
+    vars: ["Client Name", "NÃºmero de orden", "NÃºmero de tracking", "Carrier"]
   },
-  link_de_pago: {
-    name: "link_de_pago",
-    text: "Hola {1}, tu factura de FR-Logistics Miami por ${2} está lista. Puedes realizar tu pago aquí: {3} Gracias por tu confianza.",
-    vars: ["Nombre del cliente", "Monto", "Link de QuickBooks"]
+  payment_link: {
+    name: "payment_link",
+    text: "Hola {1}, tu factura de FR-Logistics Miami por ${2} estÃ¡ lista. Puedes realizar tu pago aquÃ­: {3} Gracias por tu confianza.",
+    vars: ["Client Name", "Monto", "Link de QuickBooks"]
   }
 };
 
 const APPS = [
-  { name:"Inventory Dashboard",desc:"Inventario en tiempo real desde SKUVault — 140 SKUs, stock levels, alerts",tag:"Warehouse",url:"https://apps.fr-logistics.net/dashboard-inventory.html"},
-  { name:"KPI Dashboard",desc:"Dashboard en tiempo real — shipments, revenue, SLA y stores desde ShipStation",tag:"Analytics",url:"https://apps.fr-logistics.net/kpi-dash.html"},
-  { name:"Inbound / Outbound",desc:"Registro general de entradas y salidas de mercancía",tag:"Operations",url:"https://apps.fr-logistics.net/Inbound_Outbound.html"},
-  { name:"Email Ops",desc:"Labels de Gmail en tiempo real — OPS, URGENT, BILLING, CALLS",tag:"Email",url:"https://apps.fr-logistics.net/email-ops.html"},
-  { name:"Quote System v3",desc:"Calculadora de cotizaciones para clientes — fulfillment, storage, prep",tag:"Sales",url:"https://apps.fr-logistics.net/FR_Logistics_Quote_System_v3.html"},
-  { name:"LN Store",desc:"Gestión de shipments para LN Store — FBA/FBM",tag:"Client App",url:"https://apps.fr-logistics.net/LN_Store.html"},
-  { name:"FR Inbounds",desc:"Registro de paquetes entrantes — escanear, registrar, guardar",tag:"Inbound",url:"https://apps.fr-logistics.net/fr-inbounds.html"},
+  { name:"Inventory Dashboard",desc:"Inventario en tiempo real desde SKUVault â 140 SKUs, stock levels, alerts",tag:"Warehouse",url:"https://apps.fr-logistics.net/dashboard-inventory.html"},
+  { name:"KPI Dashboard",desc:"Dashboard en tiempo real â shipments, revenue, SLA y stores desde ShipStation",tag:"Analytics",url:"https://apps.fr-logistics.net/kpi-dash.html"},
+  { name:"Inbound / Outbound",desc:"Registro general de entradas y salidas de mercancÃ­a",tag:"Operations",url:"https://apps.fr-logistics.net/Inbound_Outbound.html"},
+  { name:"Email Ops",desc:"Labels de Gmail en tiempo real â OPS, URGENT, BILLING, CALLS",tag:"Email",url:"https://apps.fr-logistics.net/email-ops.html"},
+  { name:"Quote System v3",desc:"Calculadora de cotizaciones para clientes â fulfillment, storage, prep",tag:"Sales",url:"https://apps.fr-logistics.net/FR_Logistics_Quote_System_v3.html"},
+  { name:"LN Store",desc:"GestiÃ³n de shipments para LN Store â FBA/FBM",tag:"Client App",url:"https://apps.fr-logistics.net/LN_Store.html"},
+  { name:"FR Inbounds",desc:"Registro de paquetes entrantes â escanear, registrar, guardar",tag:"Inbound",url:"https://apps.fr-logistics.net/fr-inbounds.html"},
   { name:"MXS Overseas LTD",desc:"Shipments y tracking para cliente MXS Overseas",tag:"Client App",url:"https://apps.fr-logistics.net/MXS_Overseas_LTD.html"},
-  { name:"Pallets (WMS)",desc:"Pallet builder con WMS ID — escanear, marcar, imprimir QR 4x6",tag:"Warehouse",url:"https://apps.fr-logistics.net/pallets.html"},
-  { name:"NO WMS Pallets",desc:"Pallet builder para clientes sin WMS — registro QR y open pallets",tag:"Warehouse",url:"https://apps.fr-logistics.net/NO_WMS.html"},
+  { name:"Pallets (WMS)",desc:"Pallet builder con WMS ID â escanear, marcar, imprimir QR 4x6",tag:"Warehouse",url:"https://apps.fr-logistics.net/pallets.html"},
+  { name:"NO WMS Pallets",desc:"Pallet builder para clientes sin WMS â registro QR y open pallets",tag:"Warehouse",url:"https://apps.fr-logistics.net/NO_WMS.html"},
   { name:"Volume Calculator",desc:"Calculadora de volumen y dimensiones para carga y tarimas",tag:"Tools",url:"https://apps.fr-logistics.net/FR_Logistics_Volume_Calculator.html"},
-  { name:"Shopify Runbook",desc:"Step-by-step guide — Shopify + ShipStation + SKUVault/Linnworks",tag:"Internal",url:"shopify_runbook_preview.html",openUrl:"shopify_integration_runbook.html"}
+  { name:"Shopify Runbook",desc:"Step-by-step guide â Shopify + ShipStation + SKUVault/Linnworks",tag:"Internal",url:"shopify_runbook_preview.html",openUrl:"shopify_integration_runbook.html"}
 ];
 
 let allMessages = [];
@@ -655,7 +655,7 @@ function renderApps(){
     let tagClass="appTag";
     if(app.tag==="Analytics")tagClass="appTag analytics";
     if(app.tag==="Email")tagClass="appTag email";
-    card.innerHTML=`<div class="previewFrame"><iframe src="${app.url}" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms"></iframe><div class="previewOverlay"></div><div class="previewClick"><span>Open App →</span></div></div><div class="appInfo"><div class="appName">${app.name}</div><div class="appDesc">${app.desc}</div><span class="${tagClass}">${app.tag}</span></div>`;
+    card.innerHTML=`<div class="previewFrame"><iframe src="${app.url}" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms"></iframe><div class="previewOverlay"></div><div class="previewClick"><span>Open App â</span></div></div><div class="appInfo"><div class="appName">${app.name}</div><div class="appDesc">${app.desc}</div><span class="${tagClass}">${app.tag}</span></div>`;
     card.addEventListener("click",()=>openApp(app.openUrl?{...app,url:app.openUrl}:app));
     grid.appendChild(card);
   });
@@ -688,7 +688,7 @@ function renderMessageList(){
   const body = document.getElementById('msgListBody');
   document.getElementById('msgCount').textContent = allMessages.length;
   if(!allMessages.length){
-    body.innerHTML='<div style="padding:20px;text-align:center;font-size:12px;color:var(--muted)">Sin mensajes aún</div>';
+    body.innerHTML='<div style="padding:20px;text-align:center;font-size:12px;color:var(--muted)">Sin mensajes aÃºn</div>';
     return;
   }
   // Group by phone number
@@ -745,7 +745,7 @@ function openConv(phone){
     </div>
     <div class="msgReplyBox">
       <textarea id="replyText" rows="2" placeholder="Escribe un mensaje..."></textarea>
-      <button class="sendBtn" onclick="sendReply('${phone}','${name}')">→</button>
+      <button class="sendBtn" onclick="sendReply('${phone}','${name}')">â</button>
     </div>`;
   const body=document.getElementById('convBody');
   if(body) body.scrollTop=body.scrollHeight;
@@ -799,7 +799,7 @@ function populateClientSelect(){
   allClients.filter(c=>c.active&&c.waNumber).forEach(c=>{
     const label = c.storeName || c.company || c.name;
     const display = c.storeName ? `${c.storeName} (${c.name})` : c.name;
-    sel.innerHTML+=`<option value="${c.waNumber}">${display} — ${c.waNumber}</option>`;
+    sel.innerHTML+=`<option value="${c.waNumber}">${display} â ${c.waNumber}</option>`;
   });
 }
 
@@ -832,7 +832,7 @@ async function sendMessage(){
   const tKey=document.getElementById('sendTemplate').value;
   const t=TEMPLATES[tKey];
   const clientName=document.getElementById('sendClient').selectedOptions[0]?.text||phone;
-  if(!phone){alert('Ingresa un número de WhatsApp');return;}
+  if(!phone){alert('Ingresa un nÃºmero de WhatsApp');return;}
   const params=t.vars.map((_,i)=>document.getElementById(`tvar_${i}`)?.value||'');
   try {
     await fetch('/.netlify/functions/whatsapp-notify',{
@@ -847,11 +847,11 @@ async function sendMessage(){
     });
     closeSendModal();
     await loadMessages();
-    alert('Mensaje enviado ✓');
+    alert('Mensaje enviado â');
   } catch(e){ alert('Error enviando mensaje'); }
 }
 
-// CLIENTS — MASTER TABLE
+// CLIENTS â MASTER TABLE
 const SVC_LIST = ['FBA Prep','FBM / DTC Fulfillment','Kitting & Bundling','Storage','Walmart DSV','EcoPack+','Dropship','Cross-Docking','Returns / Reverse Logistics'];
 const SVC_COLORS = {
   'FBA Prep':'#60a5fa','FBM / DTC Fulfillment':'#a78bfa','Kitting & Bundling':'#fb923c',
@@ -898,7 +898,7 @@ async function loadClients(){
       if(Array.isArray(data) && data.length > 0){
         // Supabase has data
         if(local.length > data.length){
-          // localStorage has MORE clients — offer migration
+          // localStorage has MORE clients â offer migration
           allClients = local;
           showMigrationBanner(local.length, data.length);
         } else {
@@ -907,12 +907,12 @@ async function loadClients(){
           localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
         }
       } else {
-        // Supabase empty — use localStorage and offer migration
+        // Supabase empty â use localStorage and offer migration
         allClients = local;
         if(local.length > 0) showMigrationBanner(local.length, 0);
       }
     } else {
-      // Function error — fall back to localStorage
+      // Function error â fall back to localStorage
       const stored = localStorage.getItem('fr_wa_clients');
       allClients = stored ? JSON.parse(stored) : [];
     }
@@ -932,15 +932,15 @@ function showMigrationBanner(localCount, supaCount){
   banner.style.cssText = 'background:rgba(251,191,36,.10);border:1px solid rgba(251,191,36,.45);border-radius:12px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;font-size:13px;color:#1a2e1f;';
   const msg = supaCount > 0
     ? `Este dispositivo tiene <strong>${localCount} clientes</strong> vs ${supaCount} en la base central.`
-    : `<strong>${localCount} clientes</strong> encontrados en este dispositivo — no están en la base central.`;
+    : `<strong>${localCount} clientes</strong> encontrados en este dispositivo â no estÃ¡n en la base central.`;
   banner.innerHTML = `
-    <span style="font-size:20px">⚠️</span>
+    <span style="font-size:20px">â ï¸</span>
     <div style="flex:1">
       ${msg}
       <div style="font-size:11px;color:#4a6b54;margin-top:2px">Haz clic en Migrar para reemplazar la base central con estos ${localCount} clientes.</div>
     </div>
     <button onclick="migrateLocalClients()" style="background:rgba(251,191,36,.25);border:1px solid rgba(251,191,36,.6);border-radius:8px;padding:8px 16px;font-weight:700;font-size:12px;cursor:pointer;color:#78350f;white-space:nowrap;font-family:'DM Sans',sans-serif">
-      📤 Migrar ${localCount} clientes
+      ð¤ Migrar ${localCount} clientes
     </button>
   `;
   const kpis = document.getElementById('clientKpis');
@@ -949,7 +949,7 @@ function showMigrationBanner(localCount, supaCount){
 
 async function migrateLocalClients(){
   const banner = document.getElementById('migrationBanner');
-  if(banner) banner.innerHTML = '<span>⏳</span><div style="margin-left:10px">Migrando...</div>';
+  if(banner) banner.innerHTML = '<span>â³</span><div style="margin-left:10px">Migrando...</div>';
   try{
     const res = await fetch('/.netlify/functions/wa-clients',{
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -958,13 +958,13 @@ async function migrateLocalClients(){
     const result = await res.json();
     if(res.ok && result.ok){
       banner?.remove();
-      alert('✅ '+allClients.length+' clientes migrados. Ahora disponibles en todos los dispositivos.');
+      alert('â '+allClients.length+' clientes migrados. Ahora disponibles en todos los dispositivos.');
       await loadClients();
     } else {
-      if(banner) banner.innerHTML = '<span>❌ Error: '+JSON.stringify(result)+'</span>';
+      if(banner) banner.innerHTML = '<span>â Error: '+JSON.stringify(result)+'</span>';
     }
   } catch(e){
-    if(banner) banner.innerHTML = '<span>❌ '+e.message+'</span>';
+    if(banner) banner.innerHTML = '<span>â '+e.message+'</span>';
   }
 }
 
@@ -975,7 +975,7 @@ function renderClientKpis(){
   const eco = allClients.filter(c=>c.services&&c.services.includes('EcoPack+')).length;
   document.getElementById('clientKpis').innerHTML = [
     {label:'Total',value:total,color:'#1a2e1f'},
-    {label:'Activos',value:active,color:'#16a34a'},
+    {label:'Actives',value:active,color:'#16a34a'},
     {label:'WA Opted In',value:waOpted,color:'#128C7E'},
     {label:'EcoPack+',value:eco,color:'#15803d'},
   ].map(k=>`
@@ -997,28 +997,28 @@ function renderClientsTable(clients){
     const svcs = Array.isArray(c.services) ? c.services : [];
     const svcHtml = svcs.length
       ? `<div class="svcWrap">${svcs.map(s=>`<span class="svcPill" style="background:${SVC_COLORS[s]||'#6b8a74'}18;border:1px solid ${SVC_COLORS[s]||'#6b8a74'}35;color:${SVC_COLORS[s]||'#6b8a74'}">${s}</span>`).join('')}</div>`
-      : `<span style="font-size:11px;color:var(--muted)">—</span>`;
+      : `<span style="font-size:11px;color:var(--muted)">â</span>`;
     const consentColor = c.waConsent==='Opted In'?'#25D366':c.waConsent==='Opted Out'?'#f87171':'var(--muted)';
     return `<tr id="row_${c.id||i}">
       <td style="color:var(--muted);font-size:11px;font-family:'DM Mono',monospace">${i+1}</td>
       <td>
-        <div style="font-weight:600;font-size:13px">${c.storeName||c.name||'—'}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:1px">${c.name||''} ${c.company?'· '+c.company:''}</div>
+        <div style="font-weight:600;font-size:13px">${c.storeName||c.name||'â'}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:1px">${c.name||''} ${c.company?'Â· '+c.company:''}</div>
         ${c.storeId?`<div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:1px">${c.storeId}</div>`:''}
       </td>
-      <td><span style="font-size:11px;font-family:'DM Mono',monospace;background:rgba(255,255,255,.05);padding:2px 7px;border-radius:999px">${c.country||'—'}</span></td>
+      <td><span style="font-size:11px;font-family:'DM Mono',monospace;background:rgba(255,255,255,.05);padding:2px 7px;border-radius:999px">${c.country||'â'}</span></td>
       <td><span class="langBadge ${(c.lang||'EN').toLowerCase()}">${c.lang||'EN'}</span></td>
       <td style="font-family:'DM Mono',monospace;font-size:11px;color:${c.waNumber?'#25D366':'var(--muted)'}">
-        ${c.waNumber||'—'}
+        ${c.waNumber||'â'}
         ${c.email?`<div style="color:var(--muted);font-size:10px;margin-top:1px">${c.email}</div>`:''}
       </td>
       <td>${svcHtml}</td>
-      <td><span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:999px;background:${sc}18;border:1px solid ${sc}35;color:${sc};white-space:nowrap">${c.status||'—'}</span></td>
+      <td><span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:999px;background:${sc}18;border:1px solid ${sc}35;color:${sc};white-space:nowrap">${c.status||'â'}</span></td>
       <td style="font-size:11px;font-weight:600;color:${consentColor}">${c.waConsent||'Pending'}</td>
       <td>
-        <button class="actionBtn" title="Editar" onclick="openClientModal('${c.id}')">✎</button>
-        <button class="actionBtn" title="Enviar WA" onclick="openSendModalFor('${c.waNumber||''}','${(c.storeName||c.name||'').replace(/'/g,"\\'")}')">💬</button>
-        <button class="actionBtn danger" title="Eliminar" onclick="deleteClient('${c.id}')">✕</button>
+        <button class="actionBtn" title="Edit" onclick="openClientModal('${c.id}')">â</button>
+        <button class="actionBtn" title="Enviar WA" onclick="openSendModalFor('${c.waNumber||''}','${(c.storeName||c.name||'').replace(/'/g,"\\'")}')">ð¬</button>
+        <button class="actionBtn danger" title="Delete" onclick="deleteClient('${c.id}')">â</button>
       </td>
     </tr>`;
   }).join('');
@@ -1041,7 +1041,7 @@ function filterClients(){
 function openClientModal(id){
   editingClientId = id;
   const c = id ? allClients.find(x=>x.id===id) : null;
-  document.getElementById('clientModalTitle').textContent = c ? 'Editar cliente' : 'Nuevo cliente';
+  document.getElementById('clientModalTitle').textContent = c ? 'Edit cliente' : 'New Client';
   document.getElementById('cm_name').value = c?.name||'';
   document.getElementById('cm_company').value = c?.company||'';
   document.getElementById('cm_storeId').value = c?.storeId||'';
@@ -1122,7 +1122,7 @@ function toggleActive(id){
 function addClientRow(){ openClientModal(null); }
 
 function deleteClient(id){
-  if(!confirm('¿Eliminar este cliente?')) return;
+  if(!confirm('Â¿Delete este cliente?')) return;
   allClients=allClients.filter(c=>c.id!==id);
   renderClientsTable(allClients);
   renderClientKpis();
@@ -1130,7 +1130,7 @@ function deleteClient(id){
 }
 
 async function autoSaveClients(){
-  // Never auto-save an empty list — would wipe the database
+  // Never auto-save an empty list â would wipe the database
   if(!allClients || allClients.length === 0) return;
   try {
     await fetch('/.netlify/functions/wa-clients',{
@@ -1156,11 +1156,11 @@ async function saveAllClients(){
       body:JSON.stringify({action:'save_all',clients:allClients})
     });
     localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
-    if(res.ok) alert('✅ ' + allClients.length + ' clientes guardados (disponibles en todos los dispositivos)');
-    else alert('Guardado local ✓ (cloud sync pendiente)');
+    if(res.ok) alert('â ' + allClients.length + ' clientes guardados (disponibles en todos los dispositivos)');
+    else alert('Guardado local â (cloud sync pendiente)');
   } catch(e){
     localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
-    alert('Guardado local ✓');
+    alert('Guardado local â');
   }
 }
 
