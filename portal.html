@@ -270,12 +270,12 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
   </header>
 
   <div class="navTabs">
-    <button class="navTab active" data-tab="apps" onclick="switchTab('apps',this)">ð¦ Apps</button>
+    <button class="navTab active" data-tab="apps" onclick="switchTab('apps',this)">📦 Apps</button>
     <button class="navTab" data-tab="whatsapp" onclick="switchTab('whatsapp',this)">
-      ð¬ WhatsApp Inbox <span class="badge" id="unreadBadge" style="display:none">0</span>
+      💬 WhatsApp Inbox <span class="badge" id="unreadBadge" style="display:none">0</span>
     </button>
-    <button class="navTab" data-tab="clients" onclick="switchTab('clients',this)">ð¥ Clientes</button>
-    <button class="navTab" data-tab="dashboard" onclick="switchTab('dashboard',this)">ð Dashboard</button>
+    <button class="navTab" data-tab="clients" onclick="switchTab('clients',this)">👥 Clients</button>
+    <button class="navTab" data-tab="dashboard" onclick="switchTab('dashboard',this)">📊 Dashboard</button>
   </div>
 
   <main>
@@ -325,7 +325,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
     <div id="tabClients">
       <div class="clientsHeader">
         <div>
-          <div class="waTitle" style="font-size:16px">ð¥ Clientes Â· Tabla Maestra</div>
+          <div class="waTitle" style="font-size:16px">ð¥ Clients Â· Tabla Maestra</div>
           <div style="font-size:11px;color:var(--muted);margin-top:3px">Fuente Ãºnica de verdad Â· WA Â· EcoPack+ Â· Inbound/Outbound Â· Daily Summary</div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
@@ -342,7 +342,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
       <div class="clientFilterBar">
         <input type="text" class="clientSearch" id="clientSearch" placeholder="Buscar nombre, empresa, WA, emailâ¦" oninput="filterClients()" style="width:240px">
         <select id="filterSvc" onchange="filterClients()">
-          <option value="">Todos los servicios</option>
+          <option value="">All services</option>
           <option>FBA Prep</option>
           <option>FBM / DTC Fulfillment</option>
           <option>Kitting &amp; Bundling</option>
@@ -354,7 +354,7 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
           <option>Returns / Reverse Logistics</option>
         </select>
         <select id="filterStatus" onchange="filterClients()">
-          <option value="">Todos los estados</option>
+          <option value="">All statuses</option>
           <option>Active</option>
           <option>Inactive</option>
           <option>Pending</option>
@@ -369,10 +369,10 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
             <tr>
               <th>#</th>
               <th>Cliente / Empresa</th>
-              <th>PaÃ­s</th>
+              <th>Country</th>
               <th>Lang</th>
               <th>NÃºmero WA</th>
-              <th>Servicios contratados</th>
+              <th>Services</th>
               <th>Status</th>
               <th>Consent WA</th>
               <th>Acciones</th>
@@ -487,11 +487,11 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
       <button onclick="closeClientModal()" style="background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--muted);cursor:pointer;font-size:13px">â</button>
     </div>
     <div class="cmGrid">
-      <div class="cmField"><label>Nombre contacto *</label><input id="cm_name" placeholder="Nombre completo"></div>
-      <div class="cmField"><label>Empresa / Brand</label><input id="cm_company" placeholder="Nombre empresa"></div>
+      <div class="cmField"><label>Contact Name *</label><input id="cm_name" placeholder="Full name"></div>
+      <div class="cmField"><label>Company / Brand</label><input id="cm_company" placeholder="Company name"></div>
       <div class="cmField"><label>ShipStation Store ID</label><input id="cm_storeId" placeholder="SS-XXX" style="font-family:'DM Mono',monospace"></div>
-      <div class="cmField"><label>Nombre tienda SS</label><input id="cm_storeName" placeholder="Nombre de la tienda"></div>
-      <div class="cmField"><label>PaÃ­s</label>
+      <div class="cmField"><label>SS Store Name</label><input id="cm_storeName" placeholder="Store name"></div>
+      <div class="cmField"><label>Country</label>
         <select id="cm_country">
           <option>MX</option><option>CO</option><option>BR</option><option>PE</option>
           <option>AR</option><option>CL</option><option>US</option><option>EC</option>
@@ -499,23 +499,23 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
           <option>CR</option><option>OTHER</option>
         </select>
       </div>
-      <div class="cmField"><label>Idioma preferido</label>
+      <div class="cmField"><label>Preferred Language</label>
         <select id="cm_lang"><option value="ES">ES</option><option value="EN">EN</option><option value="PT">PT</option></select>
       </div>
-      <div class="cmField"><label>Tipo de cliente</label>
+      <div class="cmField"><label>Client Type</label>
         <select id="cm_type"><option>Business</option><option>Brand</option><option>Influencer</option><option>Individual</option></select>
       </div>
       <div class="cmField"><label>Status</label>
         <select id="cm_status"><option>Active</option><option>Inactive</option><option>Pending</option><option>Onboarding</option></select>
       </div>
-      <div class="cmField"><label>NÃºmero WhatsApp</label><input id="cm_waNumber" placeholder="+1 305 XXX XXXX" style="font-family:'DM Mono',monospace"></div>
+      <div class="cmField"><label>WhatsApp Number</label><input id="cm_waNumber" placeholder="+1 305 XXX XXXX" style="font-family:'DM Mono',monospace"></div>
       <div class="cmField"><label>Email</label><input id="cm_email" placeholder="email@empresa.com" style="font-family:'DM Mono',monospace"></div>
       <div class="cmField"><label>Consent WA</label>
         <select id="cm_consent"><option value="Opted In">Opted In</option><option value="Pending">Pending</option><option value="Opted Out">Opted Out</option></select>
       </div>
-      <div class="cmField"><label>TelÃ©fono adicional</label><input id="cm_phone" placeholder="+1 XXX XXX XXXX" style="font-family:'DM Mono',monospace"></div>
+      <div class="cmField"><label>Additional Phone</label><input id="cm_phone" placeholder="+1 XXX XXX XXXX" style="font-family:'DM Mono',monospace"></div>
       <div class="cmField full">
-        <label>Servicios contratados</label>
+        <label>Services</label>
         <div class="svcCheckGrid" id="cm_services"></div>
       </div>
       <div class="cmField full"><label>Notes</label><textarea id="cm_notes" rows="2" placeholder="Instrucciones especiales, contexto, handlingâ¦"></textarea></div>
@@ -532,34 +532,35 @@ footer{border-top:1px solid var(--border);padding:20px 24px;background:rgba(10,1
   <div class="modalBox">
     <div class="modalTitle">ð¬ Nuevo mensaje WhatsApp</div>
     <div class="formGroup">
-      <label>Cliente (seleccionar de la lista)</label>
+      <label>Client (select from list)</label>
       <select id="sendClient" onchange="onClientSelect()">
         <option value="">-- Seleccionar cliente --</option>
       </select>
     </div>
     <div class="formGroup">
-      <label>NÃºmero WA (con cÃ³digo de paÃ­s)</label>
+      <label>WA Number (with country code)</label>
       <input type="text" id="sendNumber" placeholder="Ej: 5215512345678">
     </div>
     <div class="formGroup">
-      <label>Plantilla</label>
+      <label>Template</label>
       <select id="sendTemplate" onchange="updateTemplatePreview()">
         <option value="order_received">Orden recibida</option>
         <option value="tracking_update">Tracking Update</option>
         <option value="payment_link">Payment Link</option>
+          <option value="daily_summary">Daily Summary</option>
       </select>
     </div>
     <div class="formGroup">
-      <label>Variables del mensaje</label>
+      <label>Message Variables</label>
       <div id="templateVars"></div>
     </div>
     <div class="formGroup">
-      <label>Vista previa</label>
+      <label>Preview</label>
       <div class="templatePreview" id="templatePreview"></div>
     </div>
     <div class="modalActions">
       <button class="modalClose" onclick="closeSendModal()">Cancel</button>
-      <button class="waBtn primary" onclick="sendMessage()">Enviar mensaje â</button>
+      <button class="waBtn primary" onclick="sendMessage()">Send Message â</button>
     </div>
   </div>
 </div>
@@ -709,7 +710,7 @@ function renderMessageList(){
     const client = allClients.find(cl=>cl.waNumber===c.phone||cl.waNumber==='+'+c.phone);
     const name = client?client.name:c.phone;
     const preview = last?.text?.slice(0,50)||'...';
-    const time = last?new Date(last.timestamp).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'}):'';
+    const time = last?new Date(last.timestamp).toLocaleTimeString('en_US',{hour:'2-digit',minute:'2-digit'}):'';
     return `<div class="msgItem ${c.unread?'unread':''} ${activeConv===c.phone?'active':''}" onclick="openConv('${c.phone}')">
       <div class="msgFrom"><span>${name}</span>${c.unread?'<span class="unreadDot"></span>':''}</div>
       <div class="msgPreview">${preview}</div>
@@ -740,7 +741,7 @@ function openConv(phone){
       ${msgs.sort((a,b)=>a.timestamp.localeCompare(b.timestamp)).map(m=>`
         <div class="msgBubble ${m.direction}">
           ${m.text||''}
-          <div class="bTime">${new Date(m.timestamp).toLocaleString('es',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})}</div>
+          <div class="bTime">${new Date(m.timestamp).toLocaleString('en_US',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})}</div>
         </div>`).join('')}
     </div>
     <div class="msgReplyBox">
@@ -838,7 +839,7 @@ async function sendMessage(){
     await fetch('/.netlify/functions/whatsapp-notify',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-fr-secret':'frlogistics_wa_2026'},
-      body:JSON.stringify({to:phone,type:'template',templateName:t.name,templateLanguage:'es',templateParams:params})
+      body:JSON.stringify({to:phone,type:'template',templateName:t.name,templateLanguage:'en_US',templateParams:params})
     });
     await fetch('/.netlify/functions/wa-messages',{
       method:'POST',
