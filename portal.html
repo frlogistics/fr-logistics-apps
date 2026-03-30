@@ -864,68 +864,60 @@ const STATUS_COLORS = {
 
 let editingClientId = null;
 
-function normalizeClient(c){
-  const services = Array.isArray(c.services) ? c.services
-    : (typeof c.services==='string' && c.services ? c.services.split(',').map(s=>s.trim()).filter(Boolean) : []);
-  const status = c.status || (c.active ? 'Active' : 'Inactive');
-  return {
-    id:        c.id        || String(Date.now()+Math.random()),
-    name:      c.name      || '',
-    company:   c.company   || '',
-    storeName: c.store_name || c.storeName || '',
-    storeId:   c.store_id  || c.storeId   || '',
-    country:   c.country   || 'US',
-    lang:      c.lang      || 'EN',
-    type:      c.type      || 'Business',
-    waNumber:  c.wa_number  || c.waNumber  || '',
-    email:     c.email     || '',
-    phone:     c.phone     || '',
-    services,
-    status,
-    active:    status === 'Active',
-    waConsent: c.wa_consent || c.waConsent || 'Pending',
-    notes:     c.notes     || '',
-  };
-}
-
-async function loadClients(){
-  try {
-    const res = await fetch('/.netlify/functions/wa-clients');
-    if(res.ok){
-      const data = await res.json();
-      const stored = localStorage.getItem('fr_wa_clients');
-      const local = stored ? JSON.parse(stored) : [];
-      if(Array.isArray(data) && data.length > 0){
-        // Supabase has data
-        if(local.length > data.length){
-          // localStorage has MORE clients â offer migration
-          allClients = local;
-          showMigrationBanner(local.length, data.length);
-        } else {
-          // Supabase is canonical
-          allClients = data.map(normalizeClient);
-          localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
+function normalizeClient(raw) {
+    const r = raw || {};
+    return {
+      id: r.id || '',
+      name: r.name || '',
+      company: r.company || '',
+      storeId: r.storeId || r.store_id || '',
+      storeName: r.storeName || r.store_name || '',
+      country: r.country || 'US',
+      lang: r.lang || 'EN',
+      type: r.type || 'Business',
+      wa_number: r.wa_number || r.waNumber || '',
+      waNumber: r.wa_number || r.waNumber || '',
+      email: r.email || '',
+      phone: r.phone || '',
+      services: r.services || [],
+      status: r.status || 'Active',
+      active: r.active !== undefined ? r.active : true,
+      waConsent: r.waConsent || r.wa_consent || 'Pending',
+      wa_notifications: r.wa_notifications || false,
+      daily_inbound: r.daily_inbound || 0,
+      daily_outbound: r.daily_outbound || 0,
+      notes: r.notes || ''
+    };
+  }function loadClients() {
+    fetch('/.netlify/functions/wa-clients')
+      .then(r => r.json())
+      .then(data => {
+        if (!Array.isArray(data)) {
+          console.error('loadClients error:', data);
+          return;
         }
-      } else {
-        // Supabase empty â use localStorage and offer migration
-        allClients = local;
-        if(local.length > 0) showMigrationBanner(local.length, 0);
-      }
-    } else {
-      // Function error â fall back to localStorage
-      const stored = localStorage.getItem('fr_wa_clients');
-      allClients = stored ? JSON.parse(stored) : [];
-    }
-  } catch(e){
-    const stored = localStorage.getItem('fr_wa_clients');
-    allClients = stored ? JSON.parse(stored) : [];
+        // Normalize and store
+        window.clients = data.map(normalizeClient);
+        // Sync to localStorage as backup
+        try { localStorage.setItem('fr_wa_clients', JSON.stringify(window.clients)); } catch(e) {}
+        renderClientsTable(window.clients);
+        renderClientKpis(window.clients);
+        populateClientSelect(window.clients);
+        const countEl = document.getElementById('clientCount');
+        if (countEl) countEl.textContent = window.clients.length + ' clients';
+      })
+      .catch(err => {
+        console.error('loadClients fetch error:', err);
+        // Fallback to localStorage
+        try {
+          const local = JSON.parse(localStorage.getItem('fr_wa_clients') || '[]');
+          window.clients = local.map(normalizeClient);
+          renderClientsTable(window.clients);
+          renderClientKpis(window.clients);
+        } catch(e) {}
+      });
   }
-  renderClientsTable(allClients);
-  renderClientKpis();
-  populateClientSelect();
-}
-
-function showMigrationBanner(localCount, supaCount){
+  function showMigrationBanner(localCount, supaCount){
   document.getElementById('migrationBanner')?.remove();
   const banner = document.createElement('div');
   banner.id = 'migrationBanner';
@@ -1075,41 +1067,47 @@ function closeClientModal(){
   editingClientId = null;
 }
 
-function saveClientModal(){
-  const name = document.getElementById('cm_name').value.trim();
-  if(!name){ alert('El nombre es obligatorio'); return; }
-  const services = [...document.querySelectorAll('#cm_services input:checked')].map(x=>x.value);
-  const status = document.getElementById('cm_status').value;
-  const client = {
-    id: editingClientId || Date.now().toString(),
-    name, company: document.getElementById('cm_company').value.trim(),
-    storeId: document.getElementById('cm_storeId').value.trim(),
-    storeName: document.getElementById('cm_storeName').value.trim(),
-    country: document.getElementById('cm_country').value,
-    lang: document.getElementById('cm_lang').value,
-    type: document.getElementById('cm_type').value,
-    status, active: status === 'Active',
-    waNumber: document.getElementById('cm_waNumber').value.trim(),
-    email: document.getElementById('cm_email').value.trim(),
-    waConsent: document.getElementById('cm_consent').value,
-    phone: document.getElementById('cm_phone').value.trim(),
-    services,
-    notes: document.getElementById('cm_notes').value.trim()
-  };
-  if(editingClientId){
-    const idx = allClients.findIndex(c=>c.id===editingClientId);
-    if(idx>=0) allClients[idx] = client;
-  } else {
-    allClients.push(client);
-  }
-  closeClientModal();
-  renderClientsTable(allClients);
-  renderClientKpis();
-  populateClientSelect();
-  autoSaveClients();
-}
+function saveClientModal() {
+    const isNew = !window._editingClientId;
+    const clientData = {
+      name: document.getElementById('cm_name')?.value?.trim() || '',
+      company: document.getElementById('cm_company')?.value?.trim() || '',
+      store_id: document.getElementById('cm_storeId')?.value?.trim() || '',
+      store_name: document.getElementById('cm_storeName')?.value?.trim() || '',
+      country: document.getElementById('cm_country')?.value || 'US',
+      lang: document.getElementById('cm_lang')?.value || 'EN',
+      type: document.getElementById('cm_type')?.value || 'Business',
+      wa_number: document.getElementById('cm_waNumber')?.value?.trim() || '',
+      email: document.getElementById('cm_email')?.value?.trim() || '',
+      phone: document.getElementById('cm_phone')?.value?.trim() || '',
+      status: document.getElementById('cm_status')?.value || 'Active',
+      active: true,
+      wa_notifications: document.getElementById('cm_waNotif')?.checked || false,
+      notes: document.getElementById('cm_notes')?.value?.trim() || ''
+    };
 
-function updateClientField(id,field,value){
+    if (!clientData.name) { alert('Contact Name is required'); return; }
+
+    const method = isNew ? 'POST' : 'PATCH';
+    if (!isNew) clientData.id = window._editingClientId;
+
+    fetch('/.netlify/functions/wa-clients', {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(clientData)
+    })
+    .then(r => r.json())
+    .then(() => {
+      closeClientModal();
+      loadClients();
+    })
+    .catch(err => {
+      console.error('saveClientModal error:', err);
+      closeClientModal();
+      loadClients();
+    });
+  }
+  function updateClientField(id,field,value){
   const c=allClients.find(c=>c.id===id);
   if(c) c[field]=value;
 }
@@ -1144,28 +1142,47 @@ async function autoSaveClients(){
   }
 }
 
-async function saveAllClients(){
-  if(!allClients || allClients.length === 0){
-    alert('No hay clients para save.');
-    return;
-  }
-  try {
-    const res = await fetch('/.netlify/functions/wa-clients',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({action:'save_all',clients:allClients})
-    });
-    localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
-    if(res.ok) alert('â ' + allClients.length + ' clients guardados (disponibles en todos los dispositivos)');
-    else alert('Guardado local â (cloud sync pendiente)');
-  } catch(e){
-    localStorage.setItem('fr_wa_clients', JSON.stringify(allClients));
-    alert('Guardado local â');
-  }
-}
+async function saveAllClients() {
+    const clients = window.clients || [];
+    if (!clients.length) return;
 
-// DASHBOARD
-async function loadDashboard() {
+    // Save each modified client to Supabase via PATCH
+    const promises = clients.map(c => {
+      const payload = {
+        id: c.id,
+        name: c.name,
+        company: c.company || '',
+        wa_number: c.wa_number || c.waNumber || '',
+        wa_notifications: c.wa_notifications || false,
+        daily_inbound: c.daily_inbound || 0,
+        daily_outbound: c.daily_outbound || 0,
+        email: c.email || '',
+        phone: c.phone || '',
+        status: c.status || 'Active',
+        active: c.active !== undefined ? c.active : true,
+        notes: c.notes || ''
+      };
+      return fetch('/.netlify/functions/wa-clients', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    });
+
+    Promise.all(promises)
+      .then(() => {
+        // Also sync localStorage
+        try { localStorage.setItem('fr_wa_clients', JSON.stringify(clients)); } catch(e) {}
+        const btn = document.querySelector('[onclick="saveAllClients()"]');
+        if (btn) { btn.textContent = '✓ Saved'; setTimeout(() => btn.textContent = '💾 Save All', 2000); }
+      })
+      .catch(err => {
+        console.error('saveAllClients error:', err);
+        // Fallback: save to localStorage only
+        try { localStorage.setItem('fr_wa_clients', JSON.stringify(clients)); } catch(e) {}
+      });
+  }
+  function loadDashboard() {
   try {
     const SUPA_URL = "https://rijbschnchjiuggrhfrx.supabase.co";
     const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpamJzY2huY2hqaXVnZ3JoZnJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMTQwOTQsImV4cCI6MjA4ODg5MDA5NH0.s3T4CStjWqOvz7qDpYtjt0yVJ0iyOMAKKwxkADSEs4s";
