@@ -673,6 +673,8 @@ function sendWAMessage(){
 // ── WHATSAPP INBOX ────────────────────────────────────────────
 let allMessages = [];
 let activePhone  = null;
+// Expose key state and functions on window so dynamic onclick HTML can access them
+window._portalState = { get activePhone(){ return activePhone; }, set activePhone(v){ activePhone = v; } };
 
 function loadMessages(){
   const listBody = document.getElementById('inboxListBody');
@@ -683,12 +685,15 @@ function loadMessages(){
     .then(data => {
       allMessages = Array.isArray(data) ? data : [];
       renderInboxList();
+      // If a thread is already open, refresh it
+      if(activePhone) openThread(activePhone, document.getElementById('threadName')?.textContent || activePhone);
     })
     .catch(() => {
       allMessages = [];
       renderInboxList();
     });
 }
+window.loadMessages = loadMessages;
 
 function renderInboxList(){
   const listBody = document.getElementById('inboxListBody');
@@ -745,6 +750,7 @@ function renderInboxList(){
 
 function openThread(phone, name){
   activePhone = phone;
+  window._activePhone = phone; // extra safety
   renderInboxList(); // re-render to show active state
 
   // Show thread header
@@ -786,9 +792,11 @@ function openThread(phone, name){
   // Scroll to bottom
   msgs.scrollTop = msgs.scrollHeight;
 }
+window.openThread = openThread;
 
 function sendReply(){
-  if(!activePhone) return;
+  const phone = activePhone || window._activePhone;
+  if(!phone){ alert('No conversation selected'); return; }
   const input = document.getElementById('replyText');
   const btn   = document.getElementById('replyBtn');
   const text  = input.value.trim();
@@ -797,31 +805,27 @@ function sendReply(){
   btn.disabled = true;
   btn.textContent = '...';
 
-  // Find client name
   const clientName = document.getElementById('threadName').textContent;
 
   fetch('/.netlify/functions/wa-messages', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ action: 'reply', to: activePhone, text, clientName })
+    body: JSON.stringify({ action: 'reply', to: phone, text, clientName })
   })
   .then(r => r.json())
   .then(res => {
-    if(res.error && !res.messaging_product) {
+    if(res.error && !res.messaging_product && !res.messages) {
       alert('Error: ' + (res.error?.message || JSON.stringify(res)));
     } else {
       input.value = '';
-      // Optimistically add message to thread
-      allMessages.push({
-        id: 'out-' + Date.now(),
-        direction: 'outbound',
-        to: activePhone,
-        clientName,
-        text,
-        timestamp: Math.floor(Date.now()/1000),
-        read: true
-      });
-      openThread(activePhone, clientName);
+      // Reload from Supabase so UI reflects actual state
+      fetch('/.netlify/functions/wa-messages')
+        .then(r => r.json())
+        .then(data => {
+          allMessages = Array.isArray(data) ? data : [];
+          renderInboxList();
+          openThread(phone, clientName);
+        });
     }
   })
   .catch(e => alert('Error: ' + e.message))
@@ -830,17 +834,35 @@ function sendReply(){
     btn.textContent = 'Send ↑';
   });
 }
+window.sendReply = sendReply;
 
 function replyWithTemplate(){
-  if(!activePhone) return;
-  // Pre-fill the send modal with this client's number
+  if(!activePhone && !window._activePhone) return;
   openSendModal();
-  document.getElementById('sm_to').value = activePhone;
-  // Try to match client in select
+  const phone = activePhone || window._activePhone;
+  document.getElementById('sm_to').value = phone;
   const sel = document.getElementById('sm_client');
-  const opt = Array.from(sel.options).find(o => (o.dataset.wa||'').replace(/\D/g,'') === activePhone.replace(/\D/g,''));
+  const opt = Array.from(sel.options).find(o => (o.dataset.wa||'').replace(/\D/g,'') === phone.replace(/\D/g,''));
   if(opt) sel.value = opt.value;
 }
+window.replyWithTemplate = replyWithTemplate;
+
+// Auto-refresh inbox every 30 seconds when WA tab is active
+setInterval(() => {
+  const waSection = document.getElementById('tabWhatsapp');
+  if(waSection && waSection.classList.contains('active')) {
+    const phone = activePhone || window._activePhone;
+    const name  = document.getElementById('threadName')?.textContent;
+    fetch('/.netlify/functions/wa-messages')
+      .then(r => r.json())
+      .then(data => {
+        allMessages = Array.isArray(data) ? data : [];
+        renderInboxList();
+        if(phone) openThread(phone, name || phone);
+      })
+      .catch(() => {});
+  }
+}, 30000);
 
 function fmtTime(ts){
   const d = new Date(ts * 1000);
