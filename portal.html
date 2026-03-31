@@ -10,6 +10,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#f4f6f9;--card:#fff;--border:#e2e8f0;--text:#1a202c;--muted:#718096;--accent:#1fa463;--danger:#e53e3e;--wa:#25d366;--shadow:0 2px 8px rgba(0,0,0,.08)}
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+/* LOGIN */
 #loginOverlay{position:fixed;inset:0;background:linear-gradient(135deg,#0f172a,#1e3a5f);display:flex;align-items:center;justify-content:center;z-index:1000}
 .loginBox{background:#fff;border-radius:20px;padding:48px 40px;width:380px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .loginLogo{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;margin-bottom:6px}
@@ -19,37 +20,42 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .loginBtn{width:100%;padding:13px;background:#1fa463;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit}
 .loginBtn:hover{background:#17a358}
 .loginErr{color:#e53e3e;font-size:13px;margin-top:10px;display:none}
+/* LAYOUT */
 #app{display:none}
-.topBar{background:#fff;border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100}
+.topBar{background:#fff;border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100;box-shadow:var(--shadow)}
 .topLogo{font-family:'Syne',sans-serif;font-size:16px;font-weight:800}
-.signOutBtn{background:none;border:1px solid var(--border);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;color:var(--muted)}
+.signOutBtn{background:none;border:1px solid var(--border);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;color:var(--muted);font-family:inherit}
 .signOutBtn:hover{border-color:var(--danger);color:var(--danger)}
 .navTabs{max-width:1400px;margin:0 auto;padding:16px 24px 0;display:flex;gap:8px;flex-wrap:wrap}
-.navTab{background:rgba(0,0,0,.04);border:1px solid var(--border);border-radius:10px;padding:8px 18px;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
+.navTab{background:rgba(0,0,0,.04);border:1px solid var(--border);border-radius:10px;padding:8px 18px;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;font-family:inherit}
 .navTab:hover{background:rgba(31,164,99,.08);border-color:rgba(31,164,99,.35);color:var(--text)}
 .navTab.active{background:rgba(31,164,99,.12);border-color:rgba(31,164,99,.5);color:var(--accent)}
 main{max-width:1400px;margin:0 auto;padding:24px}
 section{display:none}
 section.active{display:block}
 .sectionTitle{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;margin-bottom:16px}
+/* APPS */
 .appGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:12px}
-.appCard{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;cursor:pointer;transition:all .2s;text-align:center}
-.appCard:hover{border-color:var(--accent);box-shadow:var(--shadow);transform:translateY(-2px)}
+.appCard{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px 18px;cursor:pointer;transition:all .2s;text-align:center;text-decoration:none;display:block;color:var(--text)}
+.appCard:hover{border-color:var(--accent);box-shadow:0 4px 16px rgba(31,164,99,.15);transform:translateY(-2px)}
 .appIcon{font-size:32px;margin-bottom:10px}
 .appName{font-weight:600;font-size:14px}
 .appDesc{font-size:12px;color:var(--muted);margin-top:4px}
+/* WHATSAPP */
 .waHeader{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px}
 .waTitle{font-family:'Syne',sans-serif;font-size:18px;font-weight:800}
-.waBtn{background:rgba(37,211,102,.12);border:1px solid rgba(37,211,102,.35);border-radius:10px;padding:9px 18px;color:var(--wa);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
-.waBtn:hover{background:rgba(37,211,102,.2)}
+.waBtn{background:rgba(37,211,102,.12);border:1px solid rgba(37,211,102,.35);border-radius:10px;padding:9px 18px;color:var(--wa);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}
+.waBtn:hover{background:rgba(37,211,102,.22)}
 .waBtn.primary{background:var(--wa);color:#000;border-color:var(--wa)}
 .btnRow{display:flex;gap:8px;flex-wrap:wrap}
+.msgCard{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px}
+/* CLIENTS */
 .kpiStrip{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap}
 .kpiCard{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 20px;flex:1;min-width:130px}
 .kpiLabel{font-size:12px;color:var(--muted);margin-bottom:4px}
-.kpiVal{font-family:'Syne',sans-serif;font-size:22px;font-weight:800}
-.tableWrap{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
-table{width:100%;border-collapse:collapse;font-size:13px}
+.kpiVal{font-family:'Syne',sans-serif;font-size:24px;font-weight:800}
+.tableWrap{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:750px}
 thead{background:#f8fafc}
 th{padding:11px 14px;text-align:left;font-weight:600;color:var(--muted);white-space:nowrap;border-bottom:1px solid var(--border)}
 td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:middle}
@@ -59,40 +65,51 @@ tr:hover td{background:#f8fafc}
 .badge.active{background:#dcfce7;color:#16a34a}
 .badge.inactive{background:#fee2e2;color:#dc2626}
 .badge.pending,.badge.onboarding{background:#fef9c3;color:#854d0e}
-.actionBtn{background:none;border:1px solid var(--border);border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;margin:0 2px;font-family:inherit}
+.actionBtn{background:none;border:1px solid var(--border);border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;margin:0 2px;font-family:inherit;transition:all .2s}
 .actionBtn:hover{border-color:var(--accent);color:var(--accent)}
 .actionBtn.danger:hover{border-color:var(--danger);color:var(--danger)}
 .emptyMsg{text-align:center;padding:40px;color:var(--muted)}
 .searchRow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .searchInput{padding:9px 14px;border:1px solid var(--border);border-radius:9px;font-size:13px;outline:none;width:220px;font-family:inherit}
 .searchInput:focus{border-color:var(--accent)}
-.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;padding:16px}
+/* MODAL */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto}
 .modal.open{display:flex}
-.modalBox{background:#fff;border-radius:16px;padding:32px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modalBox{background:#fff;border-radius:16px;padding:32px;width:100%;max-width:620px;box-shadow:0 20px 60px rgba(0,0,0,.2);margin:auto}
 .modalTitle{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;margin-bottom:24px}
 .formGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-@media(max-width:500px){.formGrid{grid-template-columns:1fr}}
+@media(max-width:540px){.formGrid{grid-template-columns:1fr}}
 .formField{display:flex;flex-direction:column;gap:5px}
 .formField.full{grid-column:1/-1}
-.formField label{font-size:12px;font-weight:600;color:var(--muted)}
-.formField input,.formField select,.formField textarea{padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-size:14px;font-family:inherit;outline:none;transition:border .2s}
+.formField label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.formField input,.formField select,.formField textarea{padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-size:14px;font-family:inherit;outline:none;transition:border .2s;background:#fff}
 .formField input:focus,.formField select:focus,.formField textarea:focus{border-color:var(--accent)}
+.multiSelect{border:1px solid var(--border);border-radius:9px;background:#fff;overflow:hidden}
+.multiSelect label{display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:9px 12px;border-bottom:1px solid var(--border);transition:background .15s}
+.multiSelect label:last-child{border-bottom:none}
+.multiSelect label:hover{background:#f0fdf4}
+.multiSelect input[type=checkbox]{width:15px;height:15px;accent-color:var(--wa);cursor:pointer;flex-shrink:0}
 .checkLabel{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500}
-.checkLabel input{width:16px;height:16px;accent-color:var(--wa)}
-.modalFooter{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}
+.checkLabel input{width:16px;height:16px;accent-color:var(--wa);cursor:pointer}
+.modalFooter{display:flex;gap:8px;justify-content:flex-end;margin-top:24px;padding-top:16px;border-top:1px solid var(--border)}
 .btnPrimary{background:var(--accent);color:#fff;border:none;border-radius:9px;padding:10px 22px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
 .btnPrimary:hover{background:#17a358}
+.btnPrimary:disabled{background:#a0aec0;cursor:not-allowed}
 .btnSecondary{background:none;border:1px solid var(--border);border-radius:9px;padding:10px 22px;font-size:14px;cursor:pointer;color:var(--muted);font-family:inherit}
 .btnSecondary:hover{border-color:var(--text);color:var(--text)}
+/* SEND MSG */
 .templatePreview{background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;font-size:13px;color:#166534;margin-top:8px;min-height:60px;line-height:1.6}
 .varRow{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.varRow label{font-size:12px;color:var(--muted);min-width:90px;flex-shrink:0}
+.varRow label{font-size:12px;color:var(--muted);min-width:100px;flex-shrink:0}
 .varRow input{flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;font-family:inherit;outline:none}
 .varRow input:focus{border-color:var(--accent)}
+/* DASHBOARD */
+.dashFrame{width:100%;height:calc(100vh - 150px);border:none;border-radius:14px;background:var(--card);box-shadow:var(--shadow)}
 </style>
 </head>
 <body>
 
+<!-- LOGIN -->
 <div id="loginOverlay">
   <div class="loginBox">
     <div class="loginLogo">FR-Logistics</div>
@@ -103,10 +120,11 @@ tr:hover td{background:#f8fafc}
   </div>
 </div>
 
+<!-- APP -->
 <div id="app">
   <div class="topBar">
     <div class="topLogo">FR-Logistics · Apps Portal</div>
-    <div style="display:flex;align-items:center;gap:12px">
+    <div style="display:flex;align-items:center;gap:14px">
       <span id="clientCountTop" style="font-size:13px;color:var(--muted)"></span>
       <button class="signOutBtn" onclick="signOut()">Sign out</button>
     </div>
@@ -118,10 +136,14 @@ tr:hover td{background:#f8fafc}
     <button class="navTab" onclick="switchTab('Dashboard',this)">📊 Dashboard</button>
   </div>
   <main>
+
+    <!-- APPS -->
     <section id="tabApps" class="active">
       <div class="sectionTitle">Operations Apps — click to open</div>
       <div class="appGrid" id="appGrid"></div>
     </section>
+
+    <!-- WHATSAPP INBOX -->
     <section id="tabWhatsapp">
       <div class="waHeader">
         <div class="waTitle">💬 WhatsApp Inbox</div>
@@ -130,13 +152,18 @@ tr:hover td{background:#f8fafc}
           <button class="waBtn primary" onclick="openSendModal()">+ New Message</button>
         </div>
       </div>
-      <div id="inboxContent" style="text-align:center;padding:60px;color:var(--muted)">Loading messages...</div>
+      <div id="inboxContent" style="text-align:center;padding:60px;color:var(--muted)">
+        <div style="font-size:36px;margin-bottom:12px">⏳</div>
+        <div style="font-weight:600">Loading messages...</div>
+      </div>
     </section>
+
+    <!-- CLIENTS -->
     <section id="tabClients">
       <div class="waHeader">
         <div class="waTitle">👥 WA Clients</div>
         <div class="searchRow">
-          <input class="searchInput" type="text" id="clientSearch" placeholder="Search clients..." oninput="filterClients(this.value)"/>
+          <input class="searchInput" type="text" id="clientSearch" placeholder="Search name, company, WA..." oninput="filterClients(this.value)"/>
           <button class="waBtn" onclick="loadClients()">↻ Reload</button>
           <button class="waBtn primary" onclick="openClientModal('new')">+ New Client</button>
         </div>
@@ -149,51 +176,82 @@ tr:hover td{background:#f8fafc}
       </div>
       <div class="tableWrap">
         <table>
-          <thead><tr><th>#</th><th>Name</th><th>Company</th><th>WA Number</th><th>Notifications</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody id="clientTableBody"><tr><td colspan="7" class="emptyMsg">Loading...</td></tr></tbody>
+          <thead>
+            <tr><th>#</th><th>Name</th><th>Company</th><th>WA Number</th><th>Services</th><th>Notif.</th><th>Status</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="clientTableBody">
+            <tr><td colspan="8" class="emptyMsg">Loading clients from Supabase...</td></tr>
+          </tbody>
         </table>
       </div>
     </section>
+
+    <!-- DASHBOARD -->
     <section id="tabDashboard">
-      <div style="text-align:center;padding:80px;color:var(--muted)">
-        <div style="font-size:48px;margin-bottom:16px">📊</div>
-        <div style="font-size:18px;font-weight:600;margin-bottom:8px">Operations Dashboard</div>
-        <div>ShipStation KPIs coming soon</div>
+      <div class="waHeader">
+        <div class="waTitle">📊 Operations Dashboard</div>
+        <button class="waBtn" onclick="reloadDash()">↻ Reload</button>
       </div>
+      <iframe id="dashFrame" class="dashFrame" src="" title="Operations Dashboard"></iframe>
     </section>
+
   </main>
 </div>
 
+<!-- CLIENT MODAL -->
 <div class="modal" id="clientModal">
   <div class="modalBox">
     <div class="modalTitle" id="clientModalTitle">New Client</div>
     <div class="formGrid">
       <div class="formField"><label>Contact Name *</label><input id="cm_name" placeholder="Full name"/></div>
       <div class="formField"><label>Company / Brand</label><input id="cm_company" placeholder="Company name"/></div>
-      <div class="formField"><label>ShipStation Store ID</label><input id="cm_storeId" placeholder="SS-XXX"/></div>
+      <div class="formField"><label>ShipStation Store ID</label><input id="cm_storeId" placeholder="SS-XXX" style="font-family:'DM Mono',monospace"/></div>
       <div class="formField"><label>SS Store Name</label><input id="cm_storeName" placeholder="Store name"/></div>
       <div class="formField"><label>Country</label>
-        <select id="cm_country"><option value="US">US</option><option value="MX">MX</option><option value="CO">CO</option><option value="AR">AR</option><option value="PE">PE</option><option value="CL">CL</option><option value="BR">BR</option><option value="OTHER">OTHER</option></select>
+        <select id="cm_country">
+          <option value="US">US</option><option value="MX">MX</option><option value="CO">CO</option>
+          <option value="AR">AR</option><option value="PE">PE</option><option value="CL">CL</option>
+          <option value="BR">BR</option><option value="EC">EC</option><option value="OTHER">OTHER</option>
+        </select>
       </div>
       <div class="formField"><label>Preferred Language</label>
         <select id="cm_lang"><option value="EN">English</option><option value="ES">Español</option></select>
       </div>
       <div class="formField"><label>Client Type</label>
-        <select id="cm_type"><option value="Business">Business</option><option value="Individual">Individual</option></select>
+        <select id="cm_type"><option value="Business">Business</option><option value="Individual">Individual</option><option value="Brand">Brand</option></select>
       </div>
       <div class="formField"><label>Status</label>
-        <select id="cm_status"><option value="Active">Active</option><option value="Inactive">Inactive</option><option value="Pending">Pending</option><option value="Onboarding">Onboarding</option></select>
+        <select id="cm_status">
+          <option value="Active">Active</option><option value="Inactive">Inactive</option>
+          <option value="Pending">Pending</option><option value="Onboarding">Onboarding</option>
+        </select>
       </div>
-      <div class="formField"><label>WhatsApp Number</label><input id="cm_waNumber" placeholder="17865551234"/></div>
+      <div class="formField"><label>WhatsApp Number</label><input id="cm_waNumber" placeholder="17865551234" style="font-family:'DM Mono',monospace"/></div>
       <div class="formField"><label>Email</label><input id="cm_email" type="email" placeholder="email@example.com"/></div>
       <div class="formField"><label>Additional Phone</label><input id="cm_phone" placeholder="+1 305 000 0000"/></div>
       <div class="formField"><label>WA Consent</label>
         <select id="cm_waConsent"><option value="Pending">Pending</option><option value="Yes">Yes</option><option value="No">No</option></select>
       </div>
-      <div class="formField full"><label>Services</label><input id="cm_services" placeholder="FBA Prep, Storage, Kitting..."/></div>
+      <div class="formField full">
+        <label>Services Contracted</label>
+        <div class="multiSelect">
+          <label><input type="checkbox" name="svc" value="FBA Prep"/> FBA Prep</label>
+          <label><input type="checkbox" name="svc" value="FBM / DTC Fulfillment"/> FBM / DTC Fulfillment</label>
+          <label><input type="checkbox" name="svc" value="Kitting &amp; Bundling"/> Kitting &amp; Bundling</label>
+          <label><input type="checkbox" name="svc" value="Storage"/> Storage</label>
+          <label><input type="checkbox" name="svc" value="Walmart DSV"/> Walmart DSV</label>
+          <label><input type="checkbox" name="svc" value="EcoPack+"/> EcoPack+</label>
+          <label><input type="checkbox" name="svc" value="Dropship"/> Dropship</label>
+          <label><input type="checkbox" name="svc" value="Cross-Docking"/> Cross-Docking</label>
+          <label><input type="checkbox" name="svc" value="Returns / Reverse Logistics"/> Returns / Reverse Logistics</label>
+        </div>
+      </div>
       <div class="formField full"><label>Notes</label><textarea id="cm_notes" rows="2" placeholder="Optional notes..."></textarea></div>
       <div class="formField full">
-        <label class="checkLabel"><input type="checkbox" id="cm_waNotif"/> Enable WhatsApp Notifications</label>
+        <label class="checkLabel">
+          <input type="checkbox" id="cm_waNotif"/>
+          Enable WhatsApp Notifications (daily summary &amp; order updates)
+        </label>
       </div>
     </div>
     <div class="modalFooter">
@@ -203,6 +261,7 @@ tr:hover td{background:#f8fafc}
   </div>
 </div>
 
+<!-- SEND MESSAGE MODAL -->
 <div class="modal" id="sendModal">
   <div class="modalBox">
     <div class="modalTitle">Send WhatsApp Message</div>
@@ -210,7 +269,9 @@ tr:hover td{background:#f8fafc}
       <div class="formField full"><label>Client</label>
         <select id="sm_client" onchange="onClientSelect()"><option value="">— Select client —</option></select>
       </div>
-      <div class="formField full"><label>WA Number (with country code)</label><input id="sm_to" placeholder="17865551234"/></div>
+      <div class="formField full"><label>WA Number (with country code)</label>
+        <input id="sm_to" placeholder="17865551234" style="font-family:'DM Mono',monospace"/>
+      </div>
       <div class="formField full"><label>Template</label>
         <select id="sm_template" onchange="updatePreview()">
           <option value="">— Select template —</option>
@@ -221,7 +282,9 @@ tr:hover td{background:#f8fafc}
         </select>
       </div>
       <div class="formField full"><label>Message Variables</label><div id="sm_vars"></div></div>
-      <div class="formField full"><label>Preview</label><div class="templatePreview" id="sm_preview">Select a template to preview...</div></div>
+      <div class="formField full"><label>Preview</label>
+        <div class="templatePreview" id="sm_preview">Select a template to preview...</div>
+      </div>
     </div>
     <div class="modalFooter">
       <button class="btnSecondary" onclick="closeSendModal()">Cancel</button>
@@ -232,28 +295,33 @@ tr:hover td{background:#f8fafc}
 
 <script>
 const PW = 'frlogistics2024';
+
+// ── APPS — verified filenames ─────────────────────────────────────
 const APPS = [
-  {icon:'📦',name:'Inbound / Outbound',desc:'Track receiving & shipping',url:'Inbound_Outbound.html'},
-  {icon:'📊',name:'SKUVault Inventory',desc:'Live inventory status',url:'skuvault-dashboard.html'},
-  {icon:'📈',name:'ShipStation KPIs',desc:'Shipping performance',url:'kpi-dashboard.html'},
-  {icon:'♻️',name:'EcoPack+',desc:'Sustainable packaging hub',url:'ecopack.html'},
-  {icon:'💰',name:'Quote Builder',desc:'Logistics rate quotes',url:'FR_Logistics_Quote_System_v3.html'},
-  {icon:'📐',name:'Volume Calculator',desc:'Box & pallet calculator',url:'FR_Logistics_Volume_Calculator.html'},
-  {icon:'🏪',name:'LN Store',desc:'LN Store operations',url:'LN_Store.html'},
-  {icon:'🌎',name:'MXS Overseas',desc:'MXS Overseas logistics',url:'MXS_Overseas_LTD.html'},
-  {icon:'📋',name:'No WMS',desc:'Manual operations',url:'NO_WMS.html'},
-  {icon:'🏗️',name:'Pallets',desc:'Pallet management',url:'pallets.html'},
+  {icon:'📦', name:'Inbound / Outbound',   desc:'Receiving & shipping tracker',    url:'Inbound_Outbound.html'},
+  {icon:'📊', name:'SKUVault Inventory',    desc:'Live inventory status',            url:'dashboard-inventory.html'},
+  {icon:'📈', name:'ShipStation KPIs',      desc:'Shipping performance metrics',     url:'kpi-dashboard.html'},
+  {icon:'♻️', name:'EcoPack+',             desc:'Sustainable packaging hub',        url:'ecopack.html'},
+  {icon:'💰', name:'Quote Builder',         desc:'Logistics rate quotes',            url:'FR_Logistics_Quote_System_v3.html'},
+  {icon:'📐', name:'Volume Calculator',     desc:'Box & pallet calculator',          url:'FR_Logistics_Volume_Calculator.html'},
+  {icon:'🏪', name:'LN Store',             desc:'LN Store operations',              url:'LN_Store.html'},
+  {icon:'🌎', name:'MXS Overseas',         desc:'MXS Overseas logistics',           url:'MXS_Overseas_LTD.html'},
+  {icon:'📋', name:'No WMS',               desc:'Manual operations log',            url:'NO_WMS.html'},
+  {icon:'🏗️', name:'Pallets',             desc:'Pallet management',                url:'pallets.html'},
 ];
+
 const TPLS = {
   order_received:{text:'Hi {{1}}, we received your shipment at FR-Logistics Miami. Order #{{2}}. We will keep you updated every step of the way.',vars:['Client Name','Order Number']},
-  tracking_update:{text:'Hi {{1}}, your order #{{2}} from FR-Logistics Miami has been processed. Your tracking number is {{3}} with {{4}}. You can track your shipment on the carrier\'s website.',vars:['Client Name','Order Number','Tracking Number','Carrier']},
-  payment_link:{text:'Hi {{1}}, your FR-Logistics Miami invoice for ${{2}} is ready. You can make your payment here: {{3}}. Thank you for your trust.',vars:['Client Name','Amount','Payment Link']},
-  daily_summary:{text:'Hi {{1}}, here is your daily summary from FR-Logistics Miami — {{2}}: Inbound: {{3}} package(s) received. Outbound: {{4}} shipment(s) processed. For full details contact info@fr-logistics.net.',vars:['Client Name','Date','Inbound Count','Outbound Count']}
+  tracking_update:{text:'Hi {{1}}, your order #{{2}} has been processed. Tracking number: {{3}} with {{4}}.',vars:['Client Name','Order Number','Tracking Number','Carrier']},
+  payment_link:{text:'Hi {{1}}, your FR-Logistics invoice for ${{2}} is ready. Pay here: {{3}}. Thank you!',vars:['Client Name','Amount','Payment Link']},
+  daily_summary:{text:'Hi {{1}}, daily summary {{2}} — Inbound: {{3}} packages. Outbound: {{4}} shipments. Questions? info@fr-logistics.net',vars:['Client Name','Date','Inbound Count','Outbound Count']}
 };
+
 let clients=[], filtered=[], editId=null;
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 
+// ── LOGIN ─────────────────────────────────────────────────────────
 function doLogin(){
   const v=document.getElementById('pwInput').value;
   const e=document.getElementById('loginErr');
@@ -268,69 +336,95 @@ function doLogin(){
     document.getElementById('pwInput').focus();
   }
 }
-
 function signOut(){
   document.getElementById('loginOverlay').style.display='flex';
   document.getElementById('app').style.display='none';
   document.getElementById('pwInput').value='';
 }
 
+// ── INIT ──────────────────────────────────────────────────────────
 function init(){
   renderApps();
   loadClients();
   loadMessages();
 }
 
+// ── TABS ──────────────────────────────────────────────────────────
 function switchTab(name,btn){
   document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.navTab').forEach(b=>b.classList.remove('active'));
   const el=document.getElementById('tab'+name);
   if(el)el.classList.add('active');
   if(btn)btn.classList.add('active');
+  // Load dashboard iframe on first visit
+  if(name==='Dashboard'){
+    const fr=document.getElementById('dashFrame');
+    if(!fr.src||fr.src==='about:blank'||fr.src===window.location.href)
+      fr.src='kpi-dashboard.html';
+  }
 }
 
+// ── APPS ──────────────────────────────────────────────────────────
 function renderApps(){
-  document.getElementById('appGrid').innerHTML=APPS.map(a=>`
-    <div class="appCard" onclick="window.open('${a.url}','_blank')">
+  document.getElementById('appGrid').innerHTML=APPS.map(a=>
+    `<a class="appCard" href="${a.url}" target="_blank" rel="noopener">
       <div class="appIcon">${a.icon}</div>
       <div class="appName">${a.name}</div>
       <div class="appDesc">${a.desc}</div>
-    </div>`).join('');
+    </a>`
+  ).join('');
 }
 
+function reloadDash(){
+  const fr=document.getElementById('dashFrame');
+  fr.src='kpi-dashboard.html?t='+Date.now();
+}
+
+// ── CLIENTS ───────────────────────────────────────────────────────
 function loadClients(){
   const tb=document.getElementById('clientTableBody');
-  tb.innerHTML='<tr><td colspan="7" class="emptyMsg">Loading from Supabase...</td></tr>';
+  tb.innerHTML='<tr><td colspan="8" class="emptyMsg">Loading from Supabase...</td></tr>';
   fetch('/.netlify/functions/wa-clients')
     .then(r=>r.json())
     .then(data=>{
-      if(!Array.isArray(data)){tb.innerHTML='<tr><td colspan="7" class="emptyMsg">Error: '+(data.error||JSON.stringify(data))+'</td></tr>';return;}
+      if(!Array.isArray(data)){
+        tb.innerHTML='<tr><td colspan="8" class="emptyMsg">Error: '+esc(data.error||JSON.stringify(data))+'</td></tr>';
+        return;
+      }
       clients=data; filtered=[...data];
-      renderTable(filtered); renderKpis(clients); fillSelect(clients);
-      const t=document.getElementById('clientCountTop');
-      if(t)t.textContent=clients.length+' clients';
+      renderTable(filtered); renderKpis(clients); fillClientSelect(clients);
+      const ct=document.getElementById('clientCountTop');
+      if(ct)ct.textContent=clients.length+' clients';
     })
-    .catch(e=>{tb.innerHTML='<tr><td colspan="7" class="emptyMsg">Connection error: '+e.message+'</td></tr>';});
+    .catch(e=>{
+      tb.innerHTML='<tr><td colspan="8" class="emptyMsg">⚠️ Error: '+esc(e.message)+'</td></tr>';
+    });
 }
 
 function renderTable(list){
   const tb=document.getElementById('clientTableBody');
-  if(!list.length){tb.innerHTML='<tr><td colspan="7" class="emptyMsg">No clients found.</td></tr>';return;}
+  if(!list.length){tb.innerHTML='<tr><td colspan="8" class="emptyMsg">No clients found.</td></tr>';return;}
   tb.innerHTML=list.map((c,i)=>{
     const wa=c.wa_number||'';
     const st=(c.status||'Active').toLowerCase();
+    const svcs=Array.isArray(c.services)?c.services:[];
+    const svcsHtml=svcs.length
+      ? svcs.slice(0,2).map(s=>`<span style="background:#e2e8f0;border-radius:4px;padding:1px 6px;font-size:11px;margin:1px;display:inline-block">${esc(s)}</span>`).join('')+(svcs.length>2?`<span style="font-size:11px;color:var(--muted)"> +${svcs.length-2}</span>`:'')
+      : '<span style="color:var(--border)">—</span>';
     return`<tr>
       <td style="color:var(--muted);font-size:12px">${i+1}</td>
       <td><strong>${esc(c.name||'—')}</strong></td>
-      <td>${esc(c.company||'—')}</td>
-      <td style="font-family:'DM Mono',monospace;font-size:12px">${wa||'<span style="color:var(--muted)">—</span>'}</td>
-      <td style="text-align:center">${c.wa_notifications?'✅':'○'}</td>
+      <td style="color:var(--muted)">${esc(c.company||'—')}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:12px">${wa||'<span style="color:var(--border)">—</span>'}</td>
+      <td>${svcsHtml}</td>
+      <td style="text-align:center;font-size:16px">${c.wa_notifications?'✅':'○'}</td>
       <td><span class="badge ${st}">${c.status||'Active'}</span></td>
       <td>
-        <button class="actionBtn" onclick="openClientModal('edit','${c.id}')">✎ Edit</button>
-        <button class="actionBtn" style="border-color:rgba(37,211,102,.4);color:var(--wa)" onclick="openSendToClient('${c.id}')">💬</button>
-        <button class="actionBtn danger" onclick="delClient('${c.id}','${esc(c.name||'')}')">✕</button>
-      </td></tr>`;
+        <button class="actionBtn" title="Edit" onclick="openClientModal('edit','${c.id}')">✎</button>
+        <button class="actionBtn" title="Send WA" style="color:var(--wa);border-color:rgba(37,211,102,.4)" onclick="openSendToClient('${c.id}')">💬</button>
+        <button class="actionBtn danger" title="Delete" onclick="delClient('${c.id}','${esc(c.name||'')}')">✕</button>
+      </td>
+    </tr>`;
   }).join('');
 }
 
@@ -347,22 +441,27 @@ function filterClients(q){
   renderTable(filtered);
 }
 
-function fillSelect(list){
+function fillClientSelect(list){
   const sel=document.getElementById('sm_client');
   sel.innerHTML='<option value="">— Select client —</option>'+
     list.map(c=>`<option value="${c.id}" data-wa="${esc(c.wa_number||'')}" data-name="${esc(c.name||'')}">${esc(c.name)}${c.company?' — '+esc(c.company):''}</option>`).join('');
 }
 
+// ── CLIENT MODAL ──────────────────────────────────────────────────
 function openClientModal(mode,id){
   editId=null;
-  ['name','company','storeId','storeName','waNumber','email','phone','services','notes'].forEach(f=>{const el=document.getElementById('cm_'+f);if(el)el.value='';});
+  ['name','company','storeId','storeName','waNumber','email','phone','notes'].forEach(f=>{
+    const el=document.getElementById('cm_'+f); if(el)el.value='';
+  });
   document.getElementById('cm_country').value='US';
   document.getElementById('cm_lang').value='EN';
   document.getElementById('cm_type').value='Business';
   document.getElementById('cm_status').value='Active';
   document.getElementById('cm_waConsent').value='Pending';
   document.getElementById('cm_waNotif').checked=false;
+  document.querySelectorAll('[name=svc]').forEach(cb=>cb.checked=false);
   document.getElementById('clientModalTitle').textContent=mode==='edit'?'Edit Client':'New Client';
+
   if(mode==='edit'&&id){
     const c=clients.find(x=>x.id===id);
     if(c){
@@ -380,22 +479,29 @@ function openClientModal(mode,id){
       document.getElementById('cm_status').value=c.status||'Active';
       document.getElementById('cm_waConsent').value=c.wa_consent||'Pending';
       document.getElementById('cm_waNotif').checked=c.wa_notifications||false;
-      document.getElementById('cm_services').value=Array.isArray(c.services)?c.services.join(', '):(c.services||'');
       document.getElementById('cm_notes').value=c.notes||'';
+      const svcs=Array.isArray(c.services)?c.services:(c.services?String(c.services).split(',').map(s=>s.trim()):[]);
+      document.querySelectorAll('[name=svc]').forEach(cb=>{
+        cb.checked=svcs.some(s=>s.toLowerCase()===cb.value.toLowerCase()||s.toLowerCase().includes(cb.value.toLowerCase().split('&')[0].trim()));
+      });
     }
   }
   document.getElementById('clientModal').classList.add('open');
-  setTimeout(()=>document.getElementById('cm_name').focus(),100);
+  setTimeout(()=>document.getElementById('cm_name').focus(),80);
 }
 
-function closeClientModal(){document.getElementById('clientModal').classList.remove('open');editId=null;}
+function closeClientModal(){
+  document.getElementById('clientModal').classList.remove('open');
+  editId=null;
+}
 
 function saveClientModal(){
   const name=document.getElementById('cm_name').value.trim();
   if(!name){alert('Contact Name is required');return;}
-  const svcs=document.getElementById('cm_services').value.trim();
+  const services=Array.from(document.querySelectorAll('[name=svc]:checked')).map(cb=>cb.value);
   const payload={
-    name,company:document.getElementById('cm_company').value.trim(),
+    name,
+    company:document.getElementById('cm_company').value.trim(),
     store_id:document.getElementById('cm_storeId').value.trim(),
     store_name:document.getElementById('cm_storeName').value.trim(),
     country:document.getElementById('cm_country').value,
@@ -408,25 +514,31 @@ function saveClientModal(){
     active:true,
     wa_consent:document.getElementById('cm_waConsent').value,
     wa_notifications:document.getElementById('cm_waNotif').checked,
-    services:svcs?svcs.split(',').map(s=>s.trim()).filter(Boolean):[],
+    services,
     notes:document.getElementById('cm_notes').value.trim()
   };
-  if(!editId===false&&editId)payload.id=editId;
+  if(editId)payload.id=editId;
   const btn=document.getElementById('saveClientBtn');
-  btn.textContent='Saving...';btn.disabled=true;
-  fetch('/.netlify/functions/wa-clients',{method:editId?'PATCH':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-    .then(r=>r.json())
-    .then(()=>{closeClientModal();loadClients();})
-    .catch(e=>{alert('Error: '+e.message);})
-    .finally(()=>{btn.textContent='Save Client';btn.disabled=false;});
+  btn.textContent='Saving...'; btn.disabled=true;
+  fetch('/.netlify/functions/wa-clients',{
+    method:editId?'PATCH':'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(payload)
+  })
+  .then(r=>r.json())
+  .then(res=>{if(res.error)throw new Error(res.error); closeClientModal(); loadClients();})
+  .catch(e=>alert('Error: '+e.message))
+  .finally(()=>{btn.textContent='Save Client';btn.disabled=false;});
 }
 
 function delClient(id,name){
-  if(!confirm('Delete "'+name+'"?'))return;
-  fetch('/.netlify/functions/wa-clients',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
-    .then(()=>loadClients()).catch(e=>console.error(e));
+  if(!confirm('Delete "'+name+'"?\nThis cannot be undone.'))return;
+  fetch('/.netlify/functions/wa-clients',{
+    method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})
+  }).then(()=>loadClients()).catch(e=>alert('Error: '+e.message));
 }
 
+// ── SEND MESSAGE ──────────────────────────────────────────────────
 function openSendModal(){
   document.getElementById('sm_client').value='';
   document.getElementById('sm_to').value='';
@@ -435,35 +547,28 @@ function openSendModal(){
   document.getElementById('sm_preview').textContent='Select a template to preview...';
   document.getElementById('sendModal').classList.add('open');
 }
-
 function openSendToClient(id){
   openSendModal();
   const sel=document.getElementById('sm_client');
   const opt=Array.from(sel.options).find(o=>o.value===id);
   if(opt){sel.value=id;onClientSelect();}
 }
-
 function closeSendModal(){document.getElementById('sendModal').classList.remove('open');}
-
 function onClientSelect(){
   const sel=document.getElementById('sm_client');
   const opt=sel.options[sel.selectedIndex];
   if(opt&&opt.value)document.getElementById('sm_to').value=opt.dataset.wa||'';
 }
-
 function updatePreview(){
   const t=document.getElementById('sm_template').value;
   const tpl=TPLS[t];
   const vd=document.getElementById('sm_vars');
   const pv=document.getElementById('sm_preview');
   if(!tpl){vd.innerHTML='';pv.textContent='Select a template to preview...';return;}
-  const sel=document.getElementById('sm_client');
-  const opt=sel.options[sel.selectedIndex];
-  const cn=opt?.dataset?.name||'';
-  vd.innerHTML=tpl.vars.map((v,i)=>`<div class="varRow"><label>{{${i+1}}} ${v}</label><input id="sv${i}" placeholder="${v}" value="${i===0&&cn?cn:''}" oninput="refreshPreview()"/></div>`).join('');
+  const cn=document.getElementById('sm_client').options[document.getElementById('sm_client').selectedIndex]?.dataset?.name||'';
+  vd.innerHTML=tpl.vars.map((v,i)=>`<div class="varRow"><label>{{${i+1}}} ${v}</label><input id="sv${i}" placeholder="${v}" value="${i===0&&cn?esc(cn):''}" oninput="refreshPreview()"/></div>`).join('');
   refreshPreview();
 }
-
 function refreshPreview(){
   const t=document.getElementById('sm_template').value;
   const tpl=TPLS[t];if(!tpl)return;
@@ -471,11 +576,10 @@ function refreshPreview(){
   tpl.vars.forEach((_,i)=>{const v=document.getElementById('sv'+i)?.value||'{{' +(i+1)+'}}';tx=tx.replace('{{' +(i+1)+'}}',v);});
   document.getElementById('sm_preview').textContent=tx;
 }
-
 function sendWAMessage(){
   const to=document.getElementById('sm_to').value.trim().replace(/\D/g,'');
   const t=document.getElementById('sm_template').value;
-  if(!to){alert('WA Number required');return;}
+  if(!to){alert('WA Number is required');return;}
   if(!t){alert('Select a template');return;}
   const tpl=TPLS[t];
   const params=tpl.vars.map((_,i)=>document.getElementById('sv'+i)?.value||'');
@@ -486,24 +590,40 @@ function sendWAMessage(){
   fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:t,to,data})})
     .then(r=>r.json())
     .then(res=>{
-      if(res.messages?.[0]?.message_status==='accepted'||res.messaging_product){alert('Message sent!');closeSendModal();}
+      if(res.messages?.[0]?.message_status==='accepted'||res.messaging_product){alert('✅ Message sent!');closeSendModal();}
       else alert('Response: '+JSON.stringify(res));
     })
     .catch(e=>alert('Error: '+e.message))
     .finally(()=>{btn.textContent='Send Message';btn.disabled=false;});
 }
 
+// ── WHATSAPP INBOX ────────────────────────────────────────────────
 function loadMessages(){
   const div=document.getElementById('inboxContent');
   if(!div)return;
-  div.innerHTML='<div style="text-align:center;padding:40px;color:var(--muted)">Loading...</div>';
-  fetch('/.netlify/functions/wa-messages')
+  div.innerHTML='<div style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:32px;margin-bottom:12px">⏳</div><div>Loading messages...</div></div>';
+  fetch('/.netlify/functions/wa-clients?action=inbox')
     .then(r=>r.json())
-    .then(data=>{
-      if(!data||!data.length){div.innerHTML='<div style="text-align:center;padding:60px;color:var(--muted)">📬 No messages yet.</div>';return;}
-      div.innerHTML=data.map(m=>`<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><strong>${esc(m.from||m.phone||'Unknown')}</strong><span style="font-size:12px;color:var(--muted)">${m.timestamp?new Date(m.timestamp*1000).toLocaleString():''}</span></div><div style="font-size:14px">${esc(m.text||m.body||'')}</div></div>`).join('');
-    })
-    .catch(()=>{div.innerHTML='<div style="text-align:center;padding:60px;color:var(--muted)">📬 Inbox connected — no messages yet.</div>';});
+    .then(d=>renderInbox(Array.isArray(d)?d:(d.messages||d.data||[])))
+    .catch(()=>showInboxEmpty());
+}
+function renderInbox(msgs){
+  const div=document.getElementById('inboxContent');
+  if(!msgs||!msgs.length){showInboxEmpty();return;}
+  div.innerHTML=msgs.map(m=>{
+    const ts=m.timestamp?new Date(m.timestamp*1000).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+    return`<div class="msgCard">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <strong style="font-size:14px">📱 ${esc(m.from||m.phone||'Unknown')}</strong>
+        <span style="font-size:11px;color:var(--muted)">${ts}</span>
+      </div>
+      <div style="font-size:13px;line-height:1.5">${esc(m.text||m.body||m.message||'')}</div>
+    </div>`;
+  }).join('');
+}
+function showInboxEmpty(){
+  document.getElementById('inboxContent').innerHTML=
+    '<div style="text-align:center;padding:60px;color:var(--muted)"><div style="font-size:36px;margin-bottom:12px">📬</div><div style="font-weight:600;margin-bottom:6px">Inbox connected</div><div style="font-size:13px">Messages from clients via +1 305-240-3172 will appear here.</div></div>';
 }
 </script>
 </body>
