@@ -50,6 +50,7 @@ async function sbPatch(table, filter, data) {
 }
 
 // ── Template component builder ────────────────────────────────────
+/* NEW */
 function buildComponents(type, data) {
   const templates = {
     order_received: [{ type: "body", parameters: [
@@ -72,20 +73,37 @@ function buildComponents(type, data) {
       { type: "text", text: data.dateLabel || new Date().toLocaleDateString("en-US") },
       { type: "text", text: String(data.inbound || "0") },
       { type: "text", text: String(data.outbound || "0") }
+    ]}],
+    ecopack_package_received: [{ type: "body", parameters: [
+      { type: "text", text: data.clientName || "" }
+    ]}],
+    ecopack_multi_package: [{ type: "body", parameters: [
+      { type: "text", text: data.clientName || "" },
+      { type: "text", text: String(data.packageCount || data.package_count || "0") }
+    ]}],
+    ecopack_pickup_scheduled: [{ type: "body", parameters: [
+      { type: "text", text: data.clientName || "" },
+      { type: "text", text: data.date || "" },
+      { type: "text", text: data.time || "" },
+      { type: "text", text: String(data.packageCount || data.package_count || "0") }
     ]}]
   };
   return templates[type] || null;
 }
-
+/* NEW */
 function buildPreviewText(type, data) {
   const map = {
-    order_received:  `Hi ${data.clientName}, we received your shipment at FR-Logistics Miami. Order #${data.orderNumber}.`,
-    tracking_update: `Hi ${data.clientName}, your order #${data.orderNumber} has been processed. Tracking: ${data.trackingNumber} with ${data.carrier}.`,
-    payment_link:    `Hi ${data.clientName}, your FR-Logistics invoice for $${data.amount} is ready. Pay here: ${data.link}.`,
-    daily_summary:   `Hi ${data.clientName}, daily summary ${data.dateLabel} — Inbound: ${data.inbound}. Outbound: ${data.outbound}.`
+    order_received:           `Hi ${data.clientName}, we received your shipment at FR-Logistics Miami. Order #${data.orderNumber}.`,
+    tracking_update:          `Hi ${data.clientName}, your order #${data.orderNumber} has been processed. Tracking: ${data.trackingNumber} with ${data.carrier}.`,
+    payment_link:             `Hi ${data.clientName}, your FR-Logistics invoice for $${data.amount} is ready. Pay here: ${data.link}.`,
+    daily_summary:            `Hi ${data.clientName}, daily summary ${data.dateLabel} — Inbound: ${data.inbound}. Outbound: ${data.outbound}.`,
+    ecopack_package_received: `Hi ${data.clientName}, we received a package for you at FR-Logistics! Reply PICKUP to schedule or HOURS for availability.`,
+    ecopack_multi_package:    `Hi ${data.clientName}, you now have ${data.packageCount || data.package_count || 0} packages waiting at FR-Logistics. Reply PICKUP to schedule.`,
+    ecopack_pickup_scheduled: `Hi ${data.clientName}, your EcoPack+ pickup is scheduled for ${data.date} at ${data.time}. You have ${data.packageCount || data.package_count || 0} packages ready.`
   };
   return map[type] || "";
 }
+
 
 export default async function handler(req, context) {
   const method = req.method;
