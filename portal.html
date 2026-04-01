@@ -375,10 +375,13 @@ tr:hover td{background:#f8fafc}
       <div class="formField full"><label>Template</label>
         <select id="sm_template" onchange="updatePreview()">
           <option value="">— Select template —</option>
-          <option value="order_received">Order Received</option>
-          <option value="tracking_update">Tracking Update</option>
-          <option value="payment_link">Payment Link</option>
-          <option value="daily_summary">Daily Summary</option>
+       <option value="order_received">Order Received</option>
+<option value="tracking_update">Tracking Update</option>
+<option value="payment_link">Payment Link</option>
+<option value="daily_summary">Daily Summary</option>
+<option value="ecopack_package_received">EcoPack+ Package Received</option>
+<option value="ecopack_multi_package">EcoPack+ Multi Package</option>
+<option value="ecopack_pickup_scheduled">EcoPack+ Pickup Scheduled</option>
         </select>
       </div>
       <div class="formField full"><label>Message Variables</label><div id="sm_vars"></div></div>
@@ -421,7 +424,10 @@ const TPLS = {
   order_received:{text:'Hi {{1}}, we received your shipment at FR-Logistics Miami. Order #{{2}}. We will keep you updated every step of the way.',vars:['Client Name','Order Number']},
   tracking_update:{text:'Hi {{1}}, your order #{{2}} has been processed. Tracking number: {{3}} with {{4}}.',vars:['Client Name','Order Number','Tracking Number','Carrier']},
   payment_link:{text:'Hi {{1}}, your FR-Logistics invoice for ${{2}} is ready. Pay here: {{3}}. Thank you!',vars:['Client Name','Amount','Payment Link']},
-  daily_summary:{text:'Hi {{1}}, daily summary {{2}} — Inbound: {{3}} packages. Outbound: {{4}} shipments. Questions? info@fr-logistics.net',vars:['Client Name','Date','Inbound Count','Outbound Count']}
+  daily_summary:{text:'Hi {{1}}, daily summary {{2}} — Inbound: {{3}} packages. Outbound: {{4}} shipments. Questions? info@fr-logistics.net',vars:['Client Name','Date','Inbound Count','Outbound Count']},
+  ecopack_package_received:{text:'Hi {{1}}, we received a package for you at FR-Logistics! Come pick it up at your convenience. Reply PICKUP to schedule or HOURS for availability.',vars:['Client Name']},
+  ecopack_multi_package:{text:'Hi {{1}}, you now have {{2}} packages waiting at FR-Logistics. Reply PICKUP to consolidate and schedule collection.',vars:['Client Name','Package Count']},
+  ecopack_pickup_scheduled:{text:'Hi {{1}}, your EcoPack+ pickup is scheduled for {{2}} at {{3}}. You have {{4}} packages ready. Reply CONFIRM to confirm.',vars:['Client Name','Date','Time','Package Count']}
 };
 
 let clients=[], filtered=[], editId=null;
