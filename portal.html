@@ -169,6 +169,7 @@ tr:hover td{background:#f8fafc}
     <button class="navTab" onclick="switchTab('Whatsapp',this)">💬 WhatsApp Inbox</button>
     <button class="navTab" onclick="switchTab('Clients',this)">👥 Clients</button>
     <button class="navTab" onclick="switchTab('Dashboard',this)">📊 Dashboard</button>
+    <button class="navTab" onclick="switchTab('Pickups',this)">📅 EcoPack+ Pickups</button>
   </div>
   <main>
 
@@ -250,7 +251,30 @@ tr:hover td{background:#f8fafc}
         </table>
       </div>
     </section>
-
+<!-- ECOPACK+ PICKUPS TAB -->
+    <section id="tabPickups">
+      <div class="waHeader">
+        <div class="waTitle">📅 EcoPack+ Pickups</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div style="display:flex;gap:4px">
+            <button class="navTab active" id="pickupFilterPending" onclick="setPickupFilter('pending',this)" style="padding:6px 14px;font-size:12px">Upcoming</button>
+            <button class="navTab" id="pickupFilterHistory" onclick="setPickupFilter('history',this)" style="padding:6px 14px;font-size:12px">History</button>
+          </div>
+          <button class="waBtn" onclick="loadPickups()">↻ Reload</button>
+        </div>
+      </div>
+ 
+      <!-- KPIs -->
+      <div class="kpiStrip" id="pickupKpis">
+        <div class="kpiCard"><div class="kpiLabel">Scheduled</div><div class="kpiVal" id="pkpScheduled">—</div></div>
+        <div class="kpiCard"><div class="kpiLabel">Confirmed</div><div class="kpiVal" id="pkpConfirmed">—</div></div>
+        <div class="kpiCard"><div class="kpiLabel">Completed Today</div><div class="kpiVal" id="pkpCompleted">—</div></div>
+        <div class="kpiCard"><div class="kpiLabel">Total Packages</div><div class="kpiVal" id="pkpPackages">—</div></div>
+      </div>
+ 
+      <!-- Agenda list -->
+      <div id="pickupList" style="display:flex;flex-direction:column;gap:10px"></div>
+    </section>
     <!-- DASHBOARD TAB — kpi-dash.html in iframe -->
     <section id="tabDashboard">
       <div class="waHeader">
@@ -1029,6 +1053,185 @@ async function submitPickup() {
     btn.disabled    = false;
   }
 }
+  // ── ECOPACK+ PICKUPS TAB ──────────────────────────────────────────
+let allPickups    = [];
+let pickupFilter  = 'pending';
+ 
+function setPickupFilter(filter, btn) {
+  pickupFilter = filter;
+  document.querySelectorAll('#pickupFilterPending, #pickupFilterHistory').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderPickups();
+}
+ 
+async function loadPickups() {
+  document.getElementById('pickupList').innerHTML = `
+    <div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">Loading pickups...</div>`;
+ 
+  try {
+    const res  = await fetch('/.netlify/functions/ecopack-wa');
+    const data = await res.json();
+    allPickups  = Array.isArray(data) ? data : [];
+    renderPickups();
+    renderPickupKpis();
+  } catch (e) {
+    document.getElementById('pickupList').innerHTML = `
+      <div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">⚠️ Error loading pickups: ${esc(e.message)}</div>`;
+  }
+}
+ 
+function renderPickupKpis() {
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('pkpScheduled').textContent  = allPickups.filter(p => p.status === 'scheduled').length;
+  document.getElementById('pkpConfirmed').textContent  = allPickups.filter(p => p.status === 'confirmed').length;
+  document.getElementById('pkpCompleted').textContent  = allPickups.filter(p => p.status === 'completed' && (p.completed_at || '').startsWith(today)).length;
+  document.getElementById('pkpPackages').textContent   = allPickups.filter(p => p.status !== 'cancelled').reduce((s, p) => s + (p.pending_count || 0), 0);
+}
+ 
+function renderPickups() {
+  const list = document.getElementById('pickupList');
+  const isHistory = pickupFilter === 'history';
+ 
+  const filtered = allPickups.filter(p =>
+    isHistory
+      ? ['completed', 'cancelled'].includes(p.status)
+      : ['scheduled', 'confirmed'].includes(p.status)
+  ).sort((a, b) => {
+    if (!isHistory) return (a.scheduled_date || '').localeCompare(b.scheduled_date || '');
+    return new Date(b.completed_at || b.created_at) - new Date(a.completed_at || a.created_at);
+  });
+ 
+  if (!filtered.length) {
+    list.innerHTML = `
+      <div style="text-align:center;padding:60px;color:var(--muted);font-size:14px">
+        <div style="font-size:36px;margin-bottom:12px">📭</div>
+        <div>${isHistory ? 'No pickup history yet.' : 'No upcoming pickups scheduled.'}</div>
+      </div>`;
+    return;
+  }
+ 
+  list.innerHTML = filtered.map(p => {
+    const statusColors = {
+      scheduled: 'background:#fef9c3;color:#854d0e;border-color:#fde047',
+      confirmed: 'background:#dcfce7;color:#16a34a;border-color:#86efac',
+      completed: 'background:#dbeafe;color:#1d4ed8;border-color:#93c5fd',
+      cancelled: 'background:#fee2e2;color:#dc2626;border-color:#fca5a5'
+    };
+    const statusStyle = statusColors[p.status] || '';
+    const statusLabel = p.status.charAt(0).toUpperCase() + p.status.slice(1);
+ 
+    const createdDate = p.created_at
+      ? new Date(p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : '—';
+ 
+    const actionBtns = [];
+    if (p.status === 'scheduled' || p.status === 'confirmed') {
+      actionBtns.push(`
+        <button class="actionBtn" style="color:#16a34a;border-color:rgba(22,163,74,.4)"
+          onclick="updatePickupStatus('${p.id}','completed')">✓ Complete</button>`);
+    }
+    if (p.status === 'scheduled') {
+      actionBtns.push(`
+        <button class="actionBtn" style="color:#1d4ed8;border-color:rgba(29,78,216,.4)"
+          onclick="updatePickupStatus('${p.id}','confirmed')">✓ Confirm</button>`);
+    }
+    if (p.status !== 'cancelled' && p.status !== 'completed') {
+      actionBtns.push(`
+        <button class="actionBtn danger"
+          onclick="updatePickupStatus('${p.id}','cancelled')">✕ Cancel</button>`);
+    }
+ 
+    return `
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px 20px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+ 
+        <!-- Left: client + details -->
+        <div style="flex:1;min-width:200px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:800">${esc(p.client_name || '—')}</div>
+            <span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid;${statusStyle}">${statusLabel}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
+            <div>
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Pickup Date</div>
+              <div style="font-size:13px;font-weight:600">📅 ${esc(p.scheduled_date || '—')}</div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Time</div>
+              <div style="font-size:13px;font-weight:600">🕐 ${esc(p.scheduled_time || '—')}</div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Packages</div>
+              <div style="font-size:13px;font-weight:600">📦 ${p.pending_count || 0} pkg${(p.pending_count || 0) !== 1 ? 's' : ''}</div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">WhatsApp</div>
+              <div style="font-size:12px;font-family:'DM Mono',monospace;color:var(--muted)">${esc(p.wa_number || '—')}</div>
+            </div>
+            ${p.status === 'completed' ? `
+            <div>
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Completed</div>
+              <div style="font-size:12px;color:var(--muted)">${p.completed_at ? new Date(p.completed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'}</div>
+            </div>` : ''}
+            <div>
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Scheduled on</div>
+              <div style="font-size:12px;color:var(--muted)">${createdDate}</div>
+            </div>
+          </div>
+        </div>
+ 
+        <!-- Right: actions -->
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+          ${actionBtns.join('')}
+        </div>
+ 
+      </div>
+    </div>`;
+  }).join('');
+}
+ 
+async function updatePickupStatus(id, status) {
+  const labels = { completed: 'Complete', confirmed: 'Confirm', cancelled: 'Cancel' };
+  const msgs   = {
+    completed: 'Mark this pickup as completed? This will reset the package counter.',
+    confirmed: 'Mark this pickup as confirmed?',
+    cancelled: 'Cancel this pickup?'
+  };
+  if (!confirm(msgs[status])) return;
+ 
+  try {
+    const res  = await fetch('/.netlify/functions/ecopack-wa', {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ id, status })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+ 
+    // If completed, reset package counter in fr_clients
+    if (status === 'completed') {
+      const pickup = allPickups.find(p => p.id === id);
+      if (pickup?.client_id) {
+        await fetch('/.netlify/functions/wa-clients', {
+          method:  'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ id: pickup.client_id, daily_inbound: 0, daily_outbound: 0 })
+        });
+      }
+    }
+ 
+    await loadPickups();
+  } catch (e) {
+    alert('Error updating pickup: ' + e.message);
+  }
+}
+ 
+// Auto-load when tab is opened
+const _origSwitchTab = switchTab;
+switchTab = function(name, btn) {
+  _origSwitchTab(name, btn);
+  if (name === 'Pickups' && allPickups.length === 0) loadPickups();
+};
 </script>
 </body>
 </html>
