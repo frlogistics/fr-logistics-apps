@@ -92,7 +92,7 @@ export default async (req) => {
 
     const isMulti       = pending_count >= 2;
     const templateName  = isMulti ? "ecopack_multi_package" : "ecopack_package_received";
-    const templateLang  = lang === "ES" ? "es" : "en_US";
+    const templateLang  = "es"
     const params        = isMulti ? [client_name, String(pending_count)] : [client_name];
 
     try {
@@ -139,7 +139,7 @@ export default async (req) => {
           wa_number,
           "ecopack_pickup_scheduled",
           [client_name, scheduled_date, scheduled_time, String(pending_count || 0)],
-          lang === "ES" ? "es" : "en_US"
+          "es"
         );
         console.log(`EcoPack schedule → ${wa_number}:`, JSON.stringify(waResult));
       } catch (e) {
