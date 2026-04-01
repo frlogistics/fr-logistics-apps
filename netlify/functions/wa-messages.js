@@ -57,7 +57,8 @@ const ECOPACK_TEMPLATES = [
 ];
 
 function getLangCode(type) {
-  return ECOPACK_TEMPLATES.includes(type) ? "es" : "en_US";
+  /* NEW */
+  return ECOPACK_TEMPLATES.includes(type) ? "en" : "en_US";
 }
 
 // ── Template component builder ────────────────────────────────────
