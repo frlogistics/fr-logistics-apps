@@ -560,7 +560,7 @@ function renderTable(list){
    <td>
         <button class="actionBtn" title="Edit" onclick="openClientModal('edit','${c.id}')">✎</button>
         <button class="actionBtn" title="Send WA" style="color:var(--wa);border-color:rgba(37,211,102,.4)" onclick="openSendToClient('${c.id}')">💬</button>
-        ${svcs.includes('EcoPack+') ? `<button class="actionBtn" title="Schedule EcoPack+ Pickup" style="color:#1fa463;border-color:rgba(31,164,99,.4)" onclick="openPickupModal('${c.id}')">📅</button>` : ''}
+       ${svcs.some(s=>s.replace(/"/g,'').trim()==='EcoPack+') ? `<button class="actionBtn" title="Schedule EcoPack+ Pickup" style="color:#1fa463;border-color:rgba(31,164,99,.4)" onclick="openPickupModal('${c.id}')">📅</button>` : ''}
         <button class="actionBtn danger" title="Delete" onclick="delClient('${c.id}','${esc(c.name||'')}')">✕</button>
       </td>
     </tr>`;
