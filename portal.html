@@ -698,7 +698,15 @@ function sendWAMessage(){
   if(!t){alert('Select a template');return;}
   const tpl=TPLS[t];
   const params=tpl.vars.map((_,i)=>document.getElementById('sv'+i)?.value||'');
-  const keys={order_received:['clientName','orderNumber'],tracking_update:['clientName','orderNumber','trackingNumber','carrier'],payment_link:['clientName','amount','link'],daily_summary:['clientName','dateLabel','inbound','outbound']};
+  const keys={
+  order_received:['clientName','orderNumber'],
+  tracking_update:['clientName','orderNumber','trackingNumber','carrier'],
+  payment_link:['clientName','amount','link'],
+  daily_summary:['clientName','dateLabel','inbound','outbound'],
+  ecopack_package_received:['clientName'],
+  ecopack_multi_package:['clientName','packageCount'],
+  ecopack_pickup_scheduled:['clientName','date','time','packageCount']
+};
   const data={};(keys[t]||[]).forEach((k,i)=>data[k]=params[i]||'');
   const btn=document.getElementById('sendMsgBtn');
   btn.textContent='Sending...';btn.disabled=true;
