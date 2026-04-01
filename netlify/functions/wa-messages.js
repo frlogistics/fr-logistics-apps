@@ -217,7 +217,7 @@ export default async function handler(req, context) {
       const waPayload = {
         messaging_product: "whatsapp",
         to,
-       /* NEW */
+      
       template: {
           name:       body.type,
           language:   { code: body.type.startsWith("ecopack_") ? "es" : "en_US" },
