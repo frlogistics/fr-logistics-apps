@@ -52,7 +52,14 @@ export default async (req) => {
       { headers }
     );
     const data = await res.json();
-    return new Response(JSON.stringify(data), {
+    // Clean services array — remove extra quotes stored in Supabase
+    const clean = Array.isArray(data) ? data.map(c => ({
+      ...c,
+      services: Array.isArray(c.services)
+        ? c.services.map(s => String(s).replace(/"/g, '').trim())
+        : []
+    })) : data;
+    return new Response(JSON.stringify(clean), {
       status: 200, headers: { "Content-Type": "application/json" }
     });
   }
