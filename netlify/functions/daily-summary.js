@@ -69,9 +69,14 @@ export default async (req) => {
 
     console.log(`Sending to ${clients.length} client(s)`);
 
-    for (const client of clients) {
-      try {
-        const result = await sendDailySummary(
+   for (const client of clients) {
+  // Solo enviar si hubo actividad real ese día
+  if (!client.daily_inbound && !client.daily_outbound) {
+    console.log(`Skipping ${client.name} — no activity today`);
+    continue;
+  }
+  try {
+    const result = await sendDailySummary(
           client.wa_number,
           client.name,
           dateLabel,
