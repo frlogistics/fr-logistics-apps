@@ -358,31 +358,7 @@ tr:hover td{background:#f8fafc}
       <div class="formField full"><label>Client</label>
         <select id="sm_client" onchange="onClientSelect()"><option value="">— Select client —</option></select>
       </div>
-      <!-- ECOPACK+ PICKUP MODAL -->
-<div class="modal" id="pickupModal">
-  <div class="modalBox">
-    <div class="modalTitle">📅 Schedule EcoPack+ Pickup</div>
-    <div id="pickupClientInfo" style="background:rgba(31,164,99,.08);border:1px solid rgba(31,164,99,.3);border-radius:10px;padding:12px 14px;margin-bottom:18px;font-size:13px"></div>
-    <div class="formGrid">
-      <div class="formField">
-        <label>Pickup Date</label>
-        <input type="date" id="pm_date"/>
-      </div>
-      <div class="formField">
-        <label>Pickup Time</label>
-        <select id="pm_time">
-          <option value="9:00 AM">9:00 AM</option>
-          <option value="10:00 AM" selected>10:00 AM</option>
-          <option value="11:00 AM">11:00 AM</option>
-          <option value="12:00 PM">12:00 PM</option>
-          <option value="1:00 PM">1:00 PM</option>
-          <option value="2:00 PM">2:00 PM</option>
-          <option value="3:00 PM">3:00 PM</option>
-          <option value="4:00 PM">4:00 PM</option>
-          <option value="5:00 PM">5:00 PM</option>
-        </select>
-      </div>
-      <div class="formField full">
+            <div class="formField full">
         <label>Packages Pending Pickup</label>
         <div id="pm_pending" data-count="0" style="padding:10px 12px;background:#f0fdf4;border:1px solid #86efac;border-radius:9px;font-size:14px;font-weight:600;color:#166534">Loading...</div>
       </div>
@@ -1187,6 +1163,42 @@ function renderPickups() {
  
       </div>
     </div>`;
+<!-- ECOPACK+ PICKUP MODAL -->
+<div class="modal" id="pickupModal">
+  <div class="modalBox">
+    <div class="modalTitle">📅 Schedule EcoPack+ Pickup</div>
+    <div id="pickupClientInfo" style="background:rgba(31,164,99,.08);border:1px solid rgba(31,164,99,.3);border-radius:10px;padding:12px 14px;margin-bottom:18px;font-size:13px"></div>
+    <div class="formGrid">
+      <div class="formField">
+        <label>Pickup Date</label>
+        <input type="date" id="pm_date"/>
+      </div>
+      <div class="formField">
+        <label>Pickup Time</label>
+        <select id="pm_time">
+          <option value="9:00 AM">9:00 AM</option>
+          <option value="10:00 AM" selected>10:00 AM</option>
+          <option value="11:00 AM">11:00 AM</option>
+          <option value="12:00 PM">12:00 PM</option>
+          <option value="1:00 PM">1:00 PM</option>
+          <option value="2:00 PM">2:00 PM</option>
+          <option value="3:00 PM">3:00 PM</option>
+          <option value="4:00 PM">4:00 PM</option>
+          <option value="5:00 PM">5:00 PM</option>
+        </select>
+      </div>
+      <div class="formField full">
+        <label>Packages Pending Pickup</label>
+        <div id="pm_pending" data-count="0" style="padding:10px 12px;background:#f0fdf4;border:1px solid #86efac;border-radius:9px;font-size:14px;font-weight:600;color:#166534">Loading...</div>
+      </div>
+    </div>
+    <div class="modalFooter">
+      <button class="btnSecondary" onclick="closePickupModal()">Cancel</button>
+      <button class="btnPrimary" id="schedulePickupBtn" onclick="submitPickup()">📅 Schedule & Send WA</button>
+    </div>
+  </div>
+</div>
+    
   }).join('');
 }
  
