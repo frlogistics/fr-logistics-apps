@@ -320,8 +320,9 @@ const OUT_TYPES = ["Outbound (Shipment)","Outbound (Drop-Shipment)","Outbound (P
           company:   c.company   || "",
           storeName: c.store_name || c.storeName || "",
           waNumber:  c.wa_number  || c.waNumber  || "",
-          services:  Array.isArray(c.services) ? c.services
-                       : (c.services ? c.services.split(",").map(s=>s.trim()).filter(Boolean) : []),
+          services:  Array.isArray(c.services)
+                       ? c.services.map(s => s.replace(/"/g,'').trim())
+                       : (c.services ? c.services.split(",").map(s=>s.replace(/"/g,'').trim()).filter(Boolean) : []),
           waConsent: c.wa_consent || c.waConsent || "Pending",
           lang:      c.lang || "EN",
         }));
