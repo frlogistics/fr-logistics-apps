@@ -348,7 +348,7 @@ const OUT_TYPES = ["Outbound (Shipment)","Outbound (Drop-Shipment)","Outbound (P
     const hasEco = c && c.services.includes("EcoPack+");
     if(hasEco){
       badge.classList.add("show");
-      const hasWA = c.waNumber && c.waConsent === "Opted In";
+      const hasWA = c.waNumber && c.waConsent === "Yes";
       waNum.textContent = hasWA ? c.waNumber : "(no WA number — notification skipped)";
       waSt.textContent  = hasWA ? "WA auto-notify ✓" : "No WA";
       waSt.style.color  = hasWA ? "#128C7E" : "#888";
@@ -367,83 +367,79 @@ const OUT_TYPES = ["Outbound (Shipment)","Outbound (Drop-Shipment)","Outbound (P
     } catch(e){ return 1; }
   }
 
-  async function sendEcoPackWA(clientDisplayName, pendingCount){
+ async function sendEcoPackWA(clientDisplayName, pendingCount) {
     const c = getMasterClient(clientDisplayName);
-    if(!c || !c.waNumber || c.waConsent !== "Opted In") return;
-
+    if (!c || !c.waNumber || c.waConsent !== "Yes") return;
+ 
     const sendDiv = document.getElementById("inWaSending");
     const sendMsg = document.getElementById("inWaMsg");
     sendDiv.classList.add("show");
-
-    const clientLabel = c.storeName || c.name || clientDisplayName;
-    let templateName, templateParams, fallbackText;
-
-    if(pendingCount >= 2){
-      templateName   = "ecopack_multi_package";
-      templateParams = [clientLabel, String(pendingCount)];
-      fallbackText   = `✅ You now have ${pendingCount} packages ready for pickup at FR-Logistics. We can consolidate them for a faster EcoPack+ experience. Reply READY to schedule.`;
-      sendMsg.textContent = `Sending consolidation alert (${pendingCount} packages)…`;
-    } else {
-      templateName   = "ecopack_package_received";
-      templateParams = [clientLabel];
-      fallbackText   = `📦 EcoPack+ Update — We received a package for you at FR-Logistics. Reply PICKUP to schedule collection or HOURS to see availability.`;
-      sendMsg.textContent = "Sending package received notification…";
-    }
-
+    sendMsg.textContent = pendingCount >= 2
+      ? `Sending consolidation alert (${pendingCount} packages)…`
+      : "Sending package received notification…";
+ 
     try {
-      await fetch("/.netlify/functions/whatsapp-notify", {
+      await fetch("/.netlify/functions/ecopack-wa?action=notify", {
         method: "POST",
-        headers: {"Content-Type":"application/json","x-fr-secret":"frlogistics_wa_2026"},
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          to: c.waNumber, type:"template",
-          templateName, templateLanguage: c.lang === "ES" ? "es" : "en",
-          templateParams, fallbackText
+          to:            c.waNumber,
+          client_name:   c.storeName || c.name || clientDisplayName,
+          pending_count: pendingCount,
+          lang:          c.lang || "EN"
         })
       });
-      await fetch("/.netlify/functions/wa-messages", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({action:"add_outbound", to:c.waNumber, clientName:clientLabel, template:templateName, text:fallbackText})
-      });
-      sendMsg.textContent = pendingCount >= 2 ? `✓ Consolidation WA sent (${pendingCount} pkgs)` : "✓ Package received WA sent";
-    } catch(e){
-      sendMsg.textContent = "WA notification skipped (offline or template pending approval)";
+      sendMsg.textContent = pendingCount >= 2
+        ? `✓ Consolidation WA sent (${pendingCount} pkgs)`
+        : "✓ Package received WA sent";
+    } catch (e) {
+      sendMsg.textContent = "WA notification skipped (offline or template pending)";
     }
     setTimeout(() => sendDiv.classList.remove("show"), 3500);
   }
-
-  /* ── Supabase ── */
-  const SUPA_URL = "https://rijbschnchjiuggrhfrx.supabase.co";
-  const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpamJzY2huY2hqaXVnZ3JoZnJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMTQwOTQsImV4cCI6MjA4ODg5MDA5NH0.s3T4CStjWqOvz7qDpYtjt0yVJ0iyOMAKKwxkADSEs4s";
-  const TABLE = "shipments_general";
-
-  async function sbFetch(method, path, body){
-    const res = await fetch(SUPA_URL + path, {
+ /* ── Shipments via Netlify proxy (secure, RLS compatible) ── */
+  async function proxyFetch(method, params = {}, body = null) {
+    const url = new URL("/.netlify/functions/shipments-proxy", location.origin);
+    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    const res = await fetch(url.toString(), {
       method,
-      headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY,"Content-Type":"application/json","Prefer":method==="POST"?"return=representation":""},
+      headers: body ? { "Content-Type": "application/json" } : {},
       body: body ? JSON.stringify(body) : undefined
     });
-    if(!res.ok){ throw new Error(await res.text()); }
+    if (!res.ok) throw new Error(await res.text());
     const text = await res.text();
     return text ? JSON.parse(text) : [];
   }
-  async function openDB(){}
-  async function addShipment(item){
-    await sbFetch("POST",`/rest/v1/${TABLE}`,{tracking:item.tracking,direction:item.direction,received_at:item.createdAt,carrier:item.carrier,type:item.type,client:item.client,notes:item.notes||""});
+  async function openDB() {}
+  async function addShipment(item) {
+    await proxyFetch("POST", {}, {
+      tracking:    item.tracking,
+      direction:   item.direction,
+      received_at: item.createdAt,
+      carrier:     item.carrier,
+      type:        item.type,
+      client:      item.client,
+      notes:       item.notes || ""
+    });
     return true;
   }
-  async function getShipment(tracking){
-    const data = await sbFetch("GET",`/rest/v1/${TABLE}?tracking=eq.${encodeURIComponent(tracking)}&limit=1`);
-    if(!data||!data.length) return null;
-    const r=data[0];
-    return {tracking:r.tracking,direction:r.direction,createdAt:r.received_at||r.created_at,carrier:r.carrier,type:r.type,client:r.client,notes:r.notes};
+  async function getShipment(tracking) {
+    const data = await proxyFetch("GET", { tracking });
+    if (!data || !data.length) return null;
+    const r = data[0];
+    return { tracking: r.tracking, direction: r.direction, createdAt: r.received_at || r.created_at, carrier: r.carrier, type: r.type, client: r.client, notes: r.notes };
   }
-  async function getAllShipments(){
-    const data = await sbFetch("GET",`/rest/v1/${TABLE}?order=received_at.desc&limit=2000`);
-    return (data||[]).map(r=>({tracking:r.tracking,direction:r.direction,createdAt:r.received_at||r.created_at,carrier:r.carrier,type:r.type,client:r.client,notes:r.notes}));
+  async function getAllShipments() {
+    const data = await proxyFetch("GET");
+    return (data || []).map(r => ({
+      tracking: r.tracking, direction: r.direction,
+      createdAt: r.received_at || r.created_at,
+      carrier: r.carrier, type: r.type, client: r.client, notes: r.notes
+    }));
   }
-  async function clearAll(){
-    if(!confirm("DELETE ALL records from cloud database? This cannot be undone.")) return false;
-    await sbFetch("DELETE",`/rest/v1/${TABLE}?id=neq.00000000-0000-0000-0000-000000000000`);
+  async function clearAll() {
+    if (!confirm("DELETE ALL records from cloud database? This cannot be undone.")) return false;
+    await proxyFetch("DELETE");
     return true;
   }
 
@@ -547,7 +543,7 @@ const OUT_TYPES = ["Outbound (Shipment)","Outbound (Drop-Shipment)","Outbound (P
         $("inTracking").focus();
         /* EcoPack+ WA trigger */
         const c=getMasterClient(clientDisplay);
-        if(c && c.services.includes("EcoPack+") && c.waNumber && c.waConsent==="Opted In"){
+        if(c && c.services.includes("EcoPack+") && c.waNumber && c.waConsent==="Yes"){
           const pending=await countPendingPackages(clientDisplay);
           await sendEcoPackWA(clientDisplay, pending);
         }
