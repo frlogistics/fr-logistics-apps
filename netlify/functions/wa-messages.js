@@ -74,19 +74,19 @@ function buildComponents(type, data) {
       { type: "text", text: String(data.inbound || "0") },
       { type: "text", text: String(data.outbound || "0") }
     ]}],
+  ecopack_pickup_scheduled: [{ type: "body", parameters: [
+      { type: "text", text: String(data.clientName || "Client") },
+      { type: "text", text: String(data.date || "TBD") },
+      { type: "text", text: String(data.time || "TBD") },
+      { type: "text", text: String(data.packageCount || data.package_count || "1") }
+    ]}],
     ecopack_package_received: [{ type: "body", parameters: [
-      { type: "text", text: data.clientName || "" }
+      { type: "text", text: String(data.clientName || "Client") }
     ]}],
     ecopack_multi_package: [{ type: "body", parameters: [
-      { type: "text", text: data.clientName || "" },
-      { type: "text", text: String(data.packageCount || data.package_count || "0") }
+      { type: "text", text: String(data.clientName || "Client") },
+      { type: "text", text: String(data.packageCount || data.package_count || "1") }
     ]}],
-    ecopack_pickup_scheduled: [{ type: "body", parameters: [
-      { type: "text", text: data.clientName || "" },
-      { type: "text", text: data.date || "" },
-      { type: "text", text: data.time || "" },
-      { type: "text", text: String(data.packageCount || data.package_count || "0") }
-    ]}]
   };
   return templates[type] || null;
 }
