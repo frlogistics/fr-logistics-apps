@@ -334,6 +334,41 @@ tr:hover td{background:#f8fafc}
       <div class="formField full"><label>Client</label>
         <select id="sm_client" onchange="onClientSelect()"><option value="">— Select client —</option></select>
       </div>
+      <!-- ECOPACK+ PICKUP MODAL -->
+<div class="modal" id="pickupModal">
+  <div class="modalBox">
+    <div class="modalTitle">📅 Schedule EcoPack+ Pickup</div>
+    <div id="pickupClientInfo" style="background:rgba(31,164,99,.08);border:1px solid rgba(31,164,99,.3);border-radius:10px;padding:12px 14px;margin-bottom:18px;font-size:13px"></div>
+    <div class="formGrid">
+      <div class="formField">
+        <label>Pickup Date</label>
+        <input type="date" id="pm_date"/>
+      </div>
+      <div class="formField">
+        <label>Pickup Time</label>
+        <select id="pm_time">
+          <option value="9:00 AM">9:00 AM</option>
+          <option value="10:00 AM" selected>10:00 AM</option>
+          <option value="11:00 AM">11:00 AM</option>
+          <option value="12:00 PM">12:00 PM</option>
+          <option value="1:00 PM">1:00 PM</option>
+          <option value="2:00 PM">2:00 PM</option>
+          <option value="3:00 PM">3:00 PM</option>
+          <option value="4:00 PM">4:00 PM</option>
+          <option value="5:00 PM">5:00 PM</option>
+        </select>
+      </div>
+      <div class="formField full">
+        <label>Packages Pending Pickup</label>
+        <div id="pm_pending" data-count="0" style="padding:10px 12px;background:#f0fdf4;border:1px solid #86efac;border-radius:9px;font-size:14px;font-weight:600;color:#166534">Loading...</div>
+      </div>
+    </div>
+    <div class="modalFooter">
+      <button class="btnSecondary" onclick="closePickupModal()">Cancel</button>
+      <button class="btnPrimary" id="schedulePickupBtn" onclick="submitPickup()">📅 Schedule & Send WA</button>
+    </div>
+  </div>
+</div>
       <div class="formField full"><label>WA Number (with country code)</label>
         <input id="sm_to" placeholder="17865551234" style="font-family:'DM Mono',monospace"/>
       </div>
@@ -492,9 +527,10 @@ function renderTable(list){
       <td>${svcsHtml}</td>
       <td style="text-align:center;font-size:15px">${c.wa_notifications?'✅':'○'}</td>
       <td><span class="badge ${st}">${c.status||'Active'}</span></td>
-      <td>
+   <td>
         <button class="actionBtn" title="Edit" onclick="openClientModal('edit','${c.id}')">✎</button>
         <button class="actionBtn" title="Send WA" style="color:var(--wa);border-color:rgba(37,211,102,.4)" onclick="openSendToClient('${c.id}')">💬</button>
+        ${svcs.includes('EcoPack+') ? `<button class="actionBtn" title="Schedule EcoPack+ Pickup" style="color:#1fa463;border-color:rgba(31,164,99,.4)" onclick="openPickupModal('${c.id}')">📅</button>` : ''}
         <button class="actionBtn danger" title="Delete" onclick="delClient('${c.id}','${esc(c.name||'')}')">✕</button>
       </td>
     </tr>`;
@@ -872,6 +908,112 @@ function fmtTime(ts){
   if(dDay.getTime() === today.getTime())
     return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
   return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+  // ── ECOPACK+ PICKUP MODULE ────────────────────────────────────────
+let pickupClientId = null;
+ 
+async function openPickupModal(clientId) {
+  pickupClientId = clientId;
+  const c = clients.find(x => x.id === clientId);
+  if (!c) return;
+ 
+  // Default date = tomorrow
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  document.getElementById('pm_date').value = tomorrow.toISOString().split('T')[0];
+  document.getElementById('pm_time').value = '10:00 AM';
+ 
+  // Client info panel
+  const displayName = c.store_name || c.company || c.name;
+  document.getElementById('pickupClientInfo').innerHTML = `
+    <div style="font-weight:600;margin-bottom:4px">♻️ ${esc(c.name || displayName)}</div>
+    <div style="color:var(--muted);font-size:12px">
+      WA: ${esc(c.wa_number || '—')}
+      ${c.company ? '&nbsp;·&nbsp;' + esc(c.company) : ''}
+      &nbsp;·&nbsp; Consent: <strong>${esc(c.wa_consent || 'Pending')}</strong>
+    </div>
+  `;
+ 
+  const pendingEl = document.getElementById('pm_pending');
+  pendingEl.textContent = 'Counting packages...';
+  pendingEl.dataset.count = '0';
+  document.getElementById('pickupModal').classList.add('open');
+ 
+  // Async pending count
+  try {
+    const res   = await fetch(`/.netlify/functions/ecopack-wa?action=pending&client_name=${encodeURIComponent(displayName)}`);
+    const data  = await res.json();
+    const count = data.count || 0;
+    pendingEl.dataset.count = String(count);
+ 
+    if (count === 0) {
+      pendingEl.textContent       = '⚠️ No pending packages found';
+      pendingEl.style.background  = '#fef9c3';
+      pendingEl.style.borderColor = '#fde047';
+      pendingEl.style.color       = '#854d0e';
+    } else {
+      pendingEl.textContent       = `${count} package${count !== 1 ? 's' : ''} waiting for pickup`;
+      pendingEl.style.background  = '#f0fdf4';
+      pendingEl.style.borderColor = '#86efac';
+      pendingEl.style.color       = '#166534';
+    }
+  } catch (e) {
+    pendingEl.textContent = 'Could not count packages — proceed manually';
+  }
+}
+ 
+function closePickupModal() {
+  document.getElementById('pickupModal').classList.remove('open');
+  pickupClientId = null;
+}
+ 
+async function submitPickup() {
+  const c = clients.find(x => x.id === pickupClientId);
+  if (!c) return;
+ 
+  const date      = document.getElementById('pm_date').value;
+  const time      = document.getElementById('pm_time').value;
+  const pendingEl = document.getElementById('pm_pending');
+  const count     = parseInt(pendingEl.dataset.count || '0');
+ 
+  if (!date) { alert('Select a pickup date'); return; }
+  if (!c.wa_number) { alert('This client has no WhatsApp number registered'); return; }
+  if (c.wa_consent !== 'Yes') { alert('Client WA consent is not confirmed.\nUpdate consent to "Yes" in client settings first.'); return; }
+ 
+  const btn = document.getElementById('schedulePickupBtn');
+  btn.textContent = 'Scheduling...';
+  btn.disabled    = true;
+ 
+  const displayName   = c.store_name || c.company || c.name;
+  const dateFormatted = new Date(date + 'T12:00:00').toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric'
+  });
+ 
+  try {
+    const res = await fetch('/.netlify/functions/ecopack-wa?action=schedule', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id:      c.id,
+        client_name:    displayName,
+        wa_number:      c.wa_number,
+        pending_count:  count,
+        scheduled_date: dateFormatted,
+        scheduled_time: time,
+        lang:           c.lang || 'EN'
+      })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+ 
+    alert(`✅ Pickup scheduled!\n\n📅 ${dateFormatted} at ${time}\n📦 ${count} package${count !== 1 ? 's' : ''}\n💬 WA sent to ${c.wa_number}`);
+    closePickupModal();
+  } catch (e) {
+    alert('Error scheduling pickup: ' + e.message);
+  } finally {
+    btn.textContent = '📅 Schedule & Send WA';
+    btn.disabled    = false;
+  }
 }
 </script>
 </body>
