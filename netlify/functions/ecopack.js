@@ -14,7 +14,7 @@ function fmt12(t){const[h,m]=t.split(":").map(Number);return`${h%12||12}:${Strin
 function fmtDate(s){const[y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d).toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"});}
 async function sendWA(to,name,date,time,cnt){const r=await fetch(WA_BASE,{method:"POST",headers:{"Authorization":`Bearer ${WA_TOKEN}`,"Content-Type":"application/json"},body:JSON.stringify({messaging_product:"whatsapp",to:to.replace(/\D/g,""),type:"template",template:{name:"ecopack_pickup_scheduled",language:{code:"en"},components:[{type:"body",parameters:[{type:"text",text:name},{type:"text",text:fmtDate(date)},{type:"text",text:fmt12(time)},{type:"text",text:String(cnt)}]}]}})});const j=await r.json();if(!r.ok)throw new Error(j.error?.message);return j.messages?.[0]?.id;}
 async function sendAlert(to,name,cnt){const tpl=cnt>1?"ecopack_multi_package":"ecopack_package_received";const params=cnt>1?[{type:"text",text:name},{type:"text",text:String(cnt)}]:[{type:"text",text:name}];const r=await fetch(WA_BASE,{method:"POST",headers:{"Authorization":`Bearer ${WA_TOKEN}`,"Content-Type":"application/json"},body:JSON.stringify({messaging_product:"whatsapp",to:to.replace(/\D/g,""),type:"template",template:{name:tpl,language:{code:"en"},components:[{type:"body",parameters:params}]}})});const j=await r.json();if(!r.ok)throw new Error(j.error?.message);return{template:tpl,msgId:j.messages?.[0]?.id};}
-const CORS={"Content-Type":"application/json","Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"GET,POST,OPTIONS"};
+const CORS={"Content-Type":"application/json","Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"GET,POST,OPTIONS","Access-Control-Allow-Headers":"Content-Type,Authorization"};
 const jRes=(d,s=200)=>new Response(JSON.stringify(d),{status:s,headers:CORS});
 export default async function handler(req){
   if(req.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
@@ -34,27 +34,3 @@ export default async function handler(req){
   }
   if(req.method==="POST"){
     let body;try{body=await req.json();}catch{return jRes({error:"Invalid JSON"},400);}
-    if(body.action==="book"){
-      const{client_name,wa_number,email,pickup_date,pickup_time,package_count,notes}=body;
-      if(!client_name||!pickup_date||!pickup_time)return jRes({error:"client_name, pickup_date, pickup_time required"},400);
-      const[y,m,d]=pickup_date.split("-").map(Number);
-      if(!HOURS[new Date(y,m-1,d).getDay()])return jRes({error:"Not a business day"},400);
-      const existing=await sbSelect("ecopack_pickups",`?pickup_date=eq.${pickup_date}&pickup_time=eq.${pickup_time}&status=not.in.(cancelled)&select=id`);
-      if(existing.length>=2)return jRes({error:"Slot fully booked. Please select another time."},409);
-      const[p]=await sbInsert("ecopack_pickups",{client_name,wa_number:(wa_number||"").replace(/\D/g,""),email:email||"",pickup_date,pickup_time,package_count:parseInt(package_count)||1,status:"scheduled",notes:notes||""});
-      let waMsgId=null;
-      if(wa_number){try{waMsgId=await sendWA(wa_number,client_name,pickup_date,pickup_time,package_count||1);}catch(e){console.error("[ecopack]",e.message);}}
-      return jRes({ok:true,pickup:p,waMsgId});
-    }
-    if(body.action==="complete"&&body.id){await sbPatch("ecopack_pickups",`id=eq.${body.id}`,{status:"completed",completed_at:new Date().toISOString()});return jRes({ok:true});}
-    if(body.action==="cancel"&&body.id){await sbPatch("ecopack_pickups",`id=eq.${body.id}`,{status:"cancelled"});return jRes({ok:true});}
-    if(body.action==="notify"){
-      const{wa_number,client_name,package_count}=body;
-      if(!wa_number||!client_name)return jRes({error:"wa_number and client_name required"},400);
-      return jRes({ok:true,...await sendAlert(wa_number,client_name,package_count||1)});
-    }
-    return jRes({error:"Unknown action"},400);
-  }
-  return jRes({error:"Method not allowed"},405);
-}
-export const config={path:"/.netlify/functions/ecopack"};
