@@ -1,6 +1,7 @@
 // netlify/functions/inventory-alert.js
 // Scheduled daily at 9PM UTC (5PM EST)
 // Gets KPIs from inventory function → sends via inventory_alert WA template
+// Falls back to daily_summary if inventory_alert is still pending approval
 
 const WA_TOKEN     = Netlify.env.get("WHATSAPP_TOKEN");
 const PHONE_ID     = Netlify.env.get("WHATSAPP_PHONE_ID");
@@ -8,12 +9,77 @@ const ALERT_NUMBER = Netlify.env.get("ALERT_PHONE") || "17863001443";
 const SITE_URL     = Netlify.env.get("URL") || "https://apps.fr-logistics.net";
 const WA_BASE      = `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`;
 
-// Template: inventory_alert (UTILITY, en, APPROVED)
-// Body: "Hi {{1}}, here is your FR-Logistics inventory alert for {{2}}:
-//        OK (above reorder point): {{3}} SKUs
-//        Needs Reorder: {{4}} SKUs
-//        Out of Stock: {{5}} SKUs
-//        Total tracked: {{6}} SKUs. Full detail: apps.fr-logistics.net/dashboard-inventory.html"
+// ── WA send helpers ───────────────────────────────────────────────
+
+async function sendInventoryAlert(okCount, lowStock, outOfStock, total, today) {
+  // Try the proper inventory_alert template first (6 params, clean format)
+  const res = await fetch(WA_BASE, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${WA_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: ALERT_NUMBER,
+      type: "template",
+      template: {
+        name: "inventory_alert",
+        language: { code: "en" },
+        components: [{
+          type: "body",
+          parameters: [
+            { type: "text", text: "FR-Logistics Team" },
+            { type: "text", text: today },
+            { type: "text", text: String(okCount) },
+            { type: "text", text: String(lowStock) },
+            { type: "text", text: String(outOfStock) },
+            { type: "text", text: String(total) }
+          ]
+        }]
+      }
+    })
+  });
+  const result = await res.json();
+
+  // If inventory_alert not yet approved, fall back to daily_summary
+  if (!res.ok && result.error?.code === 132001) {
+    console.log("[inventory-alert] inventory_alert not yet approved — using daily_summary fallback");
+    return sendFallback(okCount, lowStock, outOfStock, today);
+  }
+
+  if (!res.ok) throw new Error(result.error?.message || JSON.stringify(result).substring(0, 200));
+  return { template: "inventory_alert", msgId: result.messages?.[0]?.id };
+}
+
+async function sendFallback(okCount, lowStock, outOfStock, today) {
+  // Fallback: daily_summary template (4 params)
+  // Repurposes fields clearly: {{3}}=reorder count, {{4}}=outOfStock count
+  const res = await fetch(WA_BASE, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${WA_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: ALERT_NUMBER,
+      type: "template",
+      template: {
+        name: "daily_summary",
+        language: { code: "en_US" },
+        components: [{
+          type: "body",
+          parameters: [
+            { type: "text", text: "FR-Logistics Team" },
+            { type: "text", text: today + " Inventory Alert" },
+            { type: "text", text: String(lowStock) + " SKUs need reorder" },
+            { type: "text", text: String(outOfStock) + " SKUs out of stock (OK: " + String(okCount) + ")" }
+          ]
+        }]
+      }
+    })
+  });
+  const result = await res.json();
+  if (!res.ok) throw new Error(result.error?.message || JSON.stringify(result).substring(0, 200));
+  return { template: "daily_summary_fallback", msgId: result.messages?.[0]?.id };
+}
+
+// ── Main handler ──────────────────────────────────────────────────
 
 export default async function handler(req) {
   console.log("[inventory-alert] Starting at", new Date().toISOString());
@@ -31,12 +97,12 @@ export default async function handler(req) {
     const okCount    = total - outOfStock - lowStock;
     const totalUnits = kpis.totalUnits    || 0;
 
-    console.log("[inventory-alert] KPIs:", { total, outOfStock, lowStock, okCount });
+    console.log("[inventory-alert] KPIs:", { total, outOfStock, lowStock, okCount, totalUnits });
 
     // Skip if everything is fine
     if (outOfStock === 0 && lowStock === 0) {
-      console.log("[inventory-alert] All OK — no alert needed");
-      return new Response(JSON.stringify({ ok: true, message: "All stock OK" }), { status: 200 });
+      console.log("[inventory-alert] All stock OK — no alert needed");
+      return new Response(JSON.stringify({ ok: true, message: "All stock OK, no alert sent" }), { status: 200 });
     }
 
     const today = new Date().toLocaleDateString("en-US", {
@@ -44,48 +110,15 @@ export default async function handler(req) {
       month: "short", day: "numeric", year: "numeric"
     });
 
-    // 2. Send via inventory_alert template
-    const waRes = await fetch(WA_BASE, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${WA_TOKEN}`,
-        "Content-Type":  "application/json"
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to:   ALERT_NUMBER,
-        type: "template",
-        template: {
-          name:     "inventory_alert",
-          language: { code: "en" },
-          components: [{
-            type: "body",
-            parameters: [
-              { type: "text", text: "FR-Logistics Team" },
-              { type: "text", text: today },
-              { type: "text", text: String(okCount) },
-              { type: "text", text: String(lowStock) },
-              { type: "text", text: String(outOfStock) },
-              { type: "text", text: String(total) }
-            ]
-          }]
-        }
-      })
-    });
-
-    const waResult = await waRes.json();
-
-    if (waRes.ok) {
-      console.log("[inventory-alert] Sent OK | msgId:", waResult.messages?.[0]?.id);
-    } else {
-      console.error("[inventory-alert] WA error:", JSON.stringify(waResult).substring(0, 400));
-    }
+    // 2. Send alert (with automatic fallback)
+    const waResult = await sendInventoryAlert(okCount, lowStock, outOfStock, total, today);
+    console.log("[inventory-alert] Sent via", waResult.template, "| msgId:", waResult.msgId);
 
     return new Response(JSON.stringify({
-      ok:         waRes.ok,
+      ok:         true,
+      template:   waResult.template,
       kpis:       { total, outOfStock, lowStock, okCount, totalUnits },
-      waMsgId:    waResult.messages?.[0]?.id,
-      waError:    waResult.error?.message
+      waMsgId:    waResult.msgId
     }), { status: 200, headers: { "Content-Type": "application/json" } });
 
   } catch (err) {
