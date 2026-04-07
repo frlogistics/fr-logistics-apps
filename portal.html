@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>FR-Logistics Â· Apps Portal</title>
+<title>FR-Logistics · Apps Portal</title>
 <link rel="manifest" href="/manifest.json"/>
 <meta name="theme-color" content="#1e3a5f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="FR-Logistics"/>
 <link rel="apple-touch-icon" href="https://fr-logistics.net/wp-content/uploads/2024/03/favicon-196x196.png"/>
-<meta name="description" content="FR-Logistics Miami â Operations Portal"/>
+<meta name="description" content="FR-Logistics Miami — Operations Portal"/>
 <meta name="robots" content="noindex,nofollow"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&family=DM+Mono&display=swap" rel="stylesheet"/>
@@ -130,24 +130,24 @@ tr:hover td{background:#f8fafc}
 .threadEmpty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;text-align:center;padding:40px}
 @media(max-width:700px){.inboxWrap{flex-direction:column;height:auto}.inboxList{flex:none;height:240px}.inboxThread{height:400px}}
 
-/* âââââââââââââââââââââââââââââââââââââââââââââââââââ
-   FR-LOGISTICS PORTAL Â· RESPONSIVE + PWA PATCH v1.0
-   âââââââââââââââââââââââââââââââââââââââââââââââââââ */
+/* ═══════════════════════════════════════════════════
+   FR-LOGISTICS PORTAL · RESPONSIVE + PWA PATCH v1.0
+   ═══════════════════════════════════════════════════ */
 
-/* ââ Global text wrap fixes âââââââââââââââââââââââ */
+/* ── Global text wrap fixes ─────────────────────── */
 .appName,.appDesc{overflow-wrap:anywhere;word-break:break-word}
 .appDesc{white-space:normal!important;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 td,th{overflow-wrap:anywhere}
 td:nth-child(2),td:nth-child(3),td:nth-child(5){white-space:normal;word-break:break-word;min-width:80px}
 td:nth-child(4){white-space:nowrap;font-size:12px}
 
-/* ââ PWA safe area for iPhone notch âââââââââââââââ */
+/* ── PWA safe area for iPhone notch ─────────────── */
 @media(display-mode:standalone){
   body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
   .topBar{padding-top:calc(8px + env(safe-area-inset-top))}
 }
 
-/* ââ Tablet 768â1023px âââââââââââââââââââââââââââââ */
+/* ── Tablet 768–1023px ───────────────────────────── */
 @media(max-width:1023px){
   .navTabsWrapper{position:relative}
   .navTabsWrapper::after{content:'';position:absolute;right:0;top:0;bottom:3px;width:36px;background:linear-gradient(to right,transparent,var(--bg));pointer-events:none;z-index:2}
@@ -163,7 +163,7 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
   main{padding:16px}
 }
 
-/* ââ Mobile â¤767px ââââââââââââââââââââââââââââââââââ */
+/* ── Mobile ≤767px ────────────────────────────────── */
 @media(max-width:767px){
   /* Top bar */
   .topBar{height:52px;padding:0 14px;gap:8px}
@@ -189,8 +189,8 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
 
   /* WA Inbox: stack vertical */
   .inboxWrap{flex-direction:column!important;height:auto!important;gap:10px}
-  .inboxList{flex:none!important;height:220px;border-radius:12px}
-  .inboxThread{height:420px;border-radius:12px}
+  .inboxList{flex:none!important;height:180px;border-radius:12px;overflow-y:auto}
+  .inboxThread{height:calc(100vh - 380px);min-height:320px;border-radius:12px}
   .inboxPreview{max-width:160px}
 
   /* KPI: 2x2 grid */
@@ -243,7 +243,7 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
   .dashFrame{height:calc(100vh - 120px)}
 }
 
-/* ââ Small mobile â¤390px ââââââââââââââââââââââââââââ */
+/* ── Small mobile ≤390px ──────────────────────────── */
 @media(max-width:390px){
   .navTab{font-size:11px;padding:6px 10px}
   .kpiVal{font-size:20px}
@@ -251,10 +251,14 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
 }
 
 
-/* -- In-App Viewer -- */
+/* ── In-App Viewer ── */
 #appViewer{padding-top:env(safe-area-inset-top)}
 #appViewerBar{padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
-@media(max-width:767px){#appViewerBar{height:48px}#appViewerBar button{padding:6px 12px;font-size:14px}#appViewerExternal{display:none}}
+@media(max-width:767px){
+  #appViewerBar{height:48px}
+  #appViewerBar button{padding:6px 12px;font-size:14px}
+  #appViewerExternal{display:none}
+}
 @media(display-mode:standalone){#appViewerExternal{display:none}}
 </style>
 </head>
@@ -272,35 +276,35 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
 
 <div id="app">
   <div class="topBar">
-    <div class="topLogo">FR-Logistics Â· Apps Portal</div>
+    <div class="topLogo">FR-Logistics · Apps Portal</div>
     <div style="display:flex;align-items:center;gap:14px">
       <span id="clientCountTop" style="font-size:13px;color:var(--muted)"></span>
       <button class="signOutBtn" onclick="signOut()">Sign out</button>
     </div>
   </div>
   <div class="navTabsWrapper"><div class="navTabs">
-    <button class="navTab active" onclick="switchTab('Apps',this)">ð¦ Apps</button>
-    <button class="navTab" onclick="switchTab('Whatsapp',this)">ð¬ WhatsApp Inbox</button>
-    <button class="navTab" onclick="switchTab('Clients',this)">ð¥ Clients</button>
-    <button class="navTab" onclick="switchTab('Dashboard',this)">ð Dashboard</button>
-    <button class="navTab" onclick="switchTab('Pickups',this)">ð EcoPack+ Pickups</button>
+    <button class="navTab active" onclick="switchTab('Apps',this)">📦 Apps</button>
+    <button class="navTab" onclick="switchTab('Whatsapp',this)">💬 WhatsApp Inbox</button>
+    <button class="navTab" onclick="switchTab('Clients',this)">👥 Clients</button>
+    <button class="navTab" onclick="switchTab('Dashboard',this)">📊 Dashboard</button>
+    <button class="navTab" onclick="switchTab('Pickups',this)">📅 EcoPack+ Pickups</button>
   </div></div>
   <main>
     <section id="tabApps" class="active">
-      <div class="sectionTitle">Operations Apps â click to open</div>
+      <div class="sectionTitle">Operations Apps — click to open</div>
       <div class="appGrid" id="appGrid"></div>
     </section>
     <section id="tabWhatsapp">
       <div class="waHeader">
-        <div class="waTitle">ð¬ WhatsApp Inbox</div>
+        <div class="waTitle">💬 WhatsApp Inbox</div>
         <div class="btnRow">
-          <button class="waBtn" onclick="loadMessages()">â» Refresh</button>
+          <button class="waBtn" onclick="loadMessages()">↻ Refresh</button>
           <button class="waBtn primary" onclick="openSendModal()">+ New Message</button>
         </div>
       </div>
       <div class="inboxWrap">
         <div class="inboxList">
-          <div class="inboxHeader"><span>Conversations</span><span id="inboxCount" style="font-size:12px">â</span></div>
+          <div class="inboxHeader"><span>Conversations</span><span id="inboxCount" style="font-size:12px">—</span></div>
           <div id="inboxListBody"><div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">Loading...</div></div>
         </div>
         <div class="inboxThread" id="inboxThread">
@@ -313,7 +317,7 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
           </div>
           <div class="threadEmpty" id="threadEmpty">
             <div>
-              <div style="font-size:36px;margin-bottom:12px">ð¬</div>
+              <div style="font-size:36px;margin-bottom:12px">💬</div>
               <div style="font-weight:600;margin-bottom:6px">Select a conversation</div>
               <div style="font-size:13px">Messages from clients via<br><strong>+1 305-240-3172</strong></div>
             </div>
@@ -321,25 +325,25 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
           <div class="threadMsgs" id="threadMsgs" style="display:none"></div>
           <div class="replyBar" id="replyBar" style="display:none">
             <textarea class="replyInput" id="replyText" placeholder="Type a reply... (only within 24h of last client message)" rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendReply()}"></textarea>
-            <button class="replyBtn" id="replyBtn" onclick="sendReply()">Send â</button>
+            <button class="replyBtn" id="replyBtn" onclick="sendReply()">Send ↑</button>
           </div>
         </div>
       </div>
     </section>
     <section id="tabClients" class="">
       <div class="waHeader">
-        <div class="waTitle">ð¥ WA Clients</div>
+        <div class="waTitle">👥 WA Clients</div>
         <div class="searchRow">
           <input class="searchInput" type="text" id="clientSearch" placeholder="Search name, company, WA..." oninput="filterClients(this.value)"/>
-          <button class="waBtn" onclick="loadClients()">â» Reload</button>
+          <button class="waBtn" onclick="loadClients()">↻ Reload</button>
           <button class="waBtn primary" onclick="openClientModal('new')">+ New Client</button>
         </div>
       </div>
       <div class="kpiStrip">
-        <div class="kpiCard"><div class="kpiLabel">Total Clients</div><div class="kpiVal" id="kpiTotal">â</div></div>
-        <div class="kpiCard"><div class="kpiLabel">WA Enabled</div><div class="kpiVal" id="kpiWA">â</div></div>
-        <div class="kpiCard"><div class="kpiLabel">Active</div><div class="kpiVal" id="kpiActive">â</div></div>
-        <div class="kpiCard"><div class="kpiLabel">Notifications On</div><div class="kpiVal" id="kpiNotif">â</div></div>
+        <div class="kpiCard"><div class="kpiLabel">Total Clients</div><div class="kpiVal" id="kpiTotal">—</div></div>
+        <div class="kpiCard"><div class="kpiLabel">WA Enabled</div><div class="kpiVal" id="kpiWA">—</div></div>
+        <div class="kpiCard"><div class="kpiLabel">Active</div><div class="kpiVal" id="kpiActive">—</div></div>
+        <div class="kpiCard"><div class="kpiLabel">Notifications On</div><div class="kpiVal" id="kpiNotif">—</div></div>
       </div>
       <div class="tableWrap">
         <table>
@@ -351,27 +355,27 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
     </section>
     <section id="tabPickups">
       <div class="waHeader">
-        <div class="waTitle">ð EcoPack+ Pickups</div>
+        <div class="waTitle">📅 EcoPack+ Pickups</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <div style="display:flex;gap:4px">
             <button class="navTab active" id="pickupFilterPending" onclick="setPickupFilter('pending',this)" style="padding:6px 14px;font-size:12px">Upcoming</button>
             <button class="navTab" id="pickupFilterHistory" onclick="setPickupFilter('history',this)" style="padding:6px 14px;font-size:12px">History</button>
           </div>
-          <button class="waBtn" onclick="loadPickups()">â» Reload</button>
+          <button class="waBtn" onclick="loadPickups()">↻ Reload</button>
         </div>
       </div>
       <div class="kpiStrip">
-        <div class="kpiCard"><div class="kpiLabel">Scheduled</div><div class="kpiVal" id="pkpScheduled">â</div></div>
-        <div class="kpiCard"><div class="kpiLabel">Confirmed</div><div class="kpiVal" id="pkpConfirmed">â</div></div>
-        <div class="kpiCard"><div class="kpiLabel">Completed Today</div><div class="kpiVal" id="pkpCompleted">â</div></div>
-        <div class="kpiCard"><div class="kpiLabel">Total Packages</div><div class="kpiVal" id="pkpPackages">â</div></div>
+        <div class="kpiCard"><div class="kpiLabel">Scheduled</div><div class="kpiVal" id="pkpScheduled">—</div></div>
+        <div class="kpiCard"><div class="kpiLabel">Confirmed</div><div class="kpiVal" id="pkpConfirmed">—</div></div>
+        <div class="kpiCard"><div class="kpiLabel">Completed Today</div><div class="kpiVal" id="pkpCompleted">—</div></div>
+        <div class="kpiCard"><div class="kpiLabel">Total Packages</div><div class="kpiVal" id="pkpPackages">—</div></div>
       </div>
       <div id="pickupList" style="display:flex;flex-direction:column;gap:10px"></div>
     </section>
     <section id="tabDashboard">
       <div class="waHeader">
-        <div class="waTitle">ð ShipStation KPI Dashboard</div>
-        <button class="waBtn" onclick="reloadDash()">â» Reload</button>
+        <div class="waTitle">📊 ShipStation KPI Dashboard</div>
+        <button class="waBtn" onclick="reloadDash()">↻ Reload</button>
       </div>
       <iframe id="dashFrame" class="dashFrame" src="" title="ShipStation KPI Dashboard"></iframe>
     </section>
@@ -391,7 +395,7 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
         <select id="cm_country"><option value="US">US</option><option value="MX">MX</option><option value="CO">CO</option><option value="AR">AR</option><option value="PE">PE</option><option value="CL">CL</option><option value="BR">BR</option><option value="EC">EC</option><option value="OTHER">OTHER</option></select>
       </div>
       <div class="formField"><label>Preferred Language</label>
-        <select id="cm_lang"><option value="EN">English</option><option value="ES">EspaÃ±ol</option></select>
+        <select id="cm_lang"><option value="EN">English</option><option value="ES">Español</option></select>
       </div>
       <div class="formField"><label>Client Type</label>
         <select id="cm_type"><option value="Business">Business</option><option value="Individual">Individual</option><option value="Brand">Brand</option></select>
@@ -437,14 +441,14 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
     <div class="modalTitle">Send WhatsApp Message</div>
     <div class="formGrid">
       <div class="formField full"><label>Client</label>
-        <select id="sm_client" onchange="onClientSelect()"><option value="">â Select client â</option></select>
+        <select id="sm_client" onchange="onClientSelect()"><option value="">— Select client —</option></select>
       </div>
       <div class="formField full"><label>WA Number (with country code)</label>
         <input id="sm_to" placeholder="17865551234" style="font-family:'DM Mono',monospace"/>
       </div>
       <div class="formField full"><label>Template</label>
         <select id="sm_template" onchange="updatePreview()">
-          <option value="">â Select template â</option>
+          <option value="">— Select template —</option>
           <option value="order_received">Order Received</option>
           <option value="tracking_update">Tracking Update</option>
           <option value="payment_link">Payment Link</option>
@@ -469,7 +473,7 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
 <!-- ECOPACK+ PICKUP MODAL -->
 <div class="modal" id="pickupModal">
   <div class="modalBox">
-    <div class="modalTitle">ð Schedule EcoPack+ Pickup</div>
+    <div class="modalTitle">📅 Schedule EcoPack+ Pickup</div>
     <div id="pickupClientInfo" style="background:rgba(31,164,99,.08);border:1px solid rgba(31,164,99,.3);border-radius:10px;padding:12px 14px;margin-bottom:18px;font-size:13px"></div>
     <div class="formGrid">
       <div class="formField"><label>Pickup Date</label><input type="date" id="pm_date"/></div>
@@ -493,7 +497,7 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
     </div>
     <div class="modalFooter">
       <button class="btnSecondary" onclick="closePickupModal()">Cancel</button>
-      <button class="btnPrimary" id="schedulePickupBtn" onclick="submitPickup()">ð Schedule &amp; Send WA</button>
+      <button class="btnPrimary" id="schedulePickupBtn" onclick="submitPickup()">📅 Schedule &amp; Send WA</button>
     </div>
   </div>
 </div>
@@ -501,24 +505,24 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
 <script>
 const PW='frlogistics2024';
 const APPS=[
-  {icon:'ð¦',name:'Inbound / Outbound',desc:'Receiving & shipping tracker',url:'Inbound_Outbound.html'},
-  {icon:'ð',name:'Inventory Dashboard',desc:'SKUVault live inventory status',url:'dashboard-inventory.html'},
-  {icon:'ð',name:'ShipStation KPIs',desc:'Shipping performance metrics',url:'kpi-dash.html'},
-  {icon:'ð°',name:'Quote Builder',desc:'Logistics rate quotes',url:'FR_Logistics_Quote_System_v3.html'},
-  {icon:'ð',name:'Volume Calculator',desc:'Box & pallet calculator',url:'FR_Logistics_Volume_Calculator.html'},
-  {icon:'ðª',name:'LN Store',desc:'LN Store operations',url:'LN_Store.html'},
-  {icon:'ð',name:'MXS Overseas',desc:'MXS Overseas fulfillment',url:'MXS_Overseas_LTD.html'},
-  {icon:'ð',name:'No WMS',desc:'Manual operations log',url:'NO_WMS.html'},
-  {icon:'ðï¸',name:'Pallets',desc:'Pallet management',url:'pallets.html'},
-  {icon:'ð',name:'FR Inbounds',desc:'Inbound shipment tracking',url:'fr-inbounds.html'},
-  {icon:'ð§',name:'Email Ops',desc:'Email operations dashboard',url:'email-ops.html'},
-  {icon:'ð',name:'Shopify Runbook',desc:'Shopify + ShipStation + SKUVault',url:'shopify_integration_runbook.html'},
+  {icon:'📦',name:'Inbound / Outbound',desc:'Receiving & shipping tracker',url:'Inbound_Outbound.html'},
+  {icon:'📊',name:'Inventory Dashboard',desc:'SKUVault live inventory status',url:'dashboard-inventory.html'},
+  {icon:'📈',name:'ShipStation KPIs',desc:'Shipping performance metrics',url:'kpi-dash.html'},
+  {icon:'💰',name:'Quote Builder',desc:'Logistics rate quotes',url:'FR_Logistics_Quote_System_v3.html'},
+  {icon:'📐',name:'Volume Calculator',desc:'Box & pallet calculator',url:'FR_Logistics_Volume_Calculator.html'},
+  {icon:'🏪',name:'LN Store',desc:'LN Store operations',url:'LN_Store.html'},
+  {icon:'🌎',name:'MXS Overseas',desc:'MXS Overseas fulfillment',url:'MXS_Overseas_LTD.html'},
+  {icon:'📋',name:'No WMS',desc:'Manual operations log',url:'NO_WMS.html'},
+  {icon:'🏗️',name:'Pallets',desc:'Pallet management',url:'pallets.html'},
+  {icon:'🚚',name:'FR Inbounds',desc:'Inbound shipment tracking',url:'fr-inbounds.html'},
+  {icon:'📧',name:'Email Ops',desc:'Email operations dashboard',url:'email-ops.html'},
+  {icon:'🔗',name:'Shopify Runbook',desc:'Shopify + ShipStation + SKUVault',url:'shopify_integration_runbook.html'},
 ];
 const TPLS={
   order_received:{text:'Hi {{1}}, we received your shipment at FR-Logistics Miami. Order #{{2}}. We will keep you updated every step of the way.',vars:['Client Name','Order Number']},
   tracking_update:{text:'Hi {{1}}, your order #{{2}} has been processed. Tracking number: {{3}} with {{4}}.',vars:['Client Name','Order Number','Tracking Number','Carrier']},
   payment_link:{text:'Hi {{1}}, your FR-Logistics invoice for ${{2}} is ready. Pay here: {{3}}. Thank you!',vars:['Client Name','Amount','Payment Link']},
-  daily_summary:{text:'Hi {{1}}, daily summary {{2}} â Inbound: {{3}} packages. Outbound: {{4}} shipments. Questions? info@fr-logistics.net',vars:['Client Name','Date','Inbound Count','Outbound Count']},
+  daily_summary:{text:'Hi {{1}}, daily summary {{2}} — Inbound: {{3}} packages. Outbound: {{4}} shipments. Questions? info@fr-logistics.net',vars:['Client Name','Date','Inbound Count','Outbound Count']},
   ecopack_package_received:{text:'Hi {{1}}, we received a package for you at FR-Logistics! Come pick it up at your convenience. Reply PICKUP to schedule or HOURS for availability.',vars:['Client Name']},
   ecopack_multi_package:{text:'Hi {{1}}, you now have {{2}} packages waiting at FR-Logistics. Reply PICKUP to consolidate and schedule collection.',vars:['Client Name','Package Count']},
   ecopack_pickup_scheduled:{text:'Hi {{1}}, your EcoPack+ pickup is scheduled for {{2}} at {{3}}. You have {{4}} packages ready. Reply CONFIRM to confirm.',vars:['Client Name','Date','Time','Package Count']}
@@ -574,7 +578,7 @@ function loadClients(){
     if(!Array.isArray(data)){tb.innerHTML='<tr><td colspan="8" class="emptyMsg">Error: '+esc(data.error||JSON.stringify(data))+'</td></tr>';return;}
     clients=data;filtered=[...data];renderTable(filtered);renderKpis(clients);fillClientSelect(clients);
     const ct=document.getElementById('clientCountTop');if(ct)ct.textContent=clients.length+' clients';
-  }).catch(e=>{tb.innerHTML='<tr><td colspan="8" class="emptyMsg">â ï¸ Error: '+esc(e.message)+'</td></tr>';});
+  }).catch(e=>{tb.innerHTML='<tr><td colspan="8" class="emptyMsg">⚠️ Error: '+esc(e.message)+'</td></tr>';});
 }
 
 function renderTable(list){
@@ -584,21 +588,21 @@ function renderTable(list){
     const wa=c.wa_number||'';
     const st=(c.status||'Active').toLowerCase();
     const svcs=Array.isArray(c.services)?c.services.map(s=>s.replace(/"/g,'').trim()):[];
-    const svcsHtml=svcs.length?svcs.slice(0,2).map(s=>`<span style="background:#e2e8f0;border-radius:4px;padding:1px 6px;font-size:11px;display:inline-block;margin:1px">${esc(s)}</span>`).join('')+(svcs.length>2?` <span style="font-size:11px;color:var(--muted)">+${svcs.length-2}</span>`:''):'<span style="color:var(--border)">â</span>';
+    const svcsHtml=svcs.length?svcs.slice(0,2).map(s=>`<span style="background:#e2e8f0;border-radius:4px;padding:1px 6px;font-size:11px;display:inline-block;margin:1px">${esc(s)}</span>`).join('')+(svcs.length>2?` <span style="font-size:11px;color:var(--muted)">+${svcs.length-2}</span>`:''):'<span style="color:var(--border)">—</span>';
     const hasEco=svcs.includes('EcoPack+');
     return`<tr>
       <td style="color:var(--muted);font-size:12px">${i+1}</td>
-      <td><strong>${esc(c.name||'â')}</strong></td>
-      <td style="color:var(--muted)">${esc(c.company||'â')}</td>
-      <td style="font-family:'DM Mono',monospace;font-size:12px">${wa||'<span style="color:var(--border)">â</span>'}</td>
+      <td><strong>${esc(c.name||'—')}</strong></td>
+      <td style="color:var(--muted)">${esc(c.company||'—')}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:12px">${wa||'<span style="color:var(--border)">—</span>'}</td>
       <td>${svcsHtml}</td>
-      <td style="text-align:center;font-size:15px">${c.wa_notifications?'â':'â'}</td>
+      <td style="text-align:center;font-size:15px">${c.wa_notifications?'✅':'○'}</td>
       <td><span class="badge ${st}">${c.status||'Active'}</span></td>
       <td>
-        <button class="actionBtn" title="Edit" onclick="openClientModal('edit','${c.id}')">â</button>
-        <button class="actionBtn" title="Send WA" style="color:var(--wa);border-color:rgba(37,211,102,.4)" onclick="openSendToClient('${c.id}')">ð¬</button>
-        ${hasEco?`<button class="actionBtn" title="Schedule EcoPack+ Pickup" style="color:#1fa463;border-color:rgba(31,164,99,.4)" onclick="openPickupModal('${c.id}')">ð</button>`:''}
-        <button class="actionBtn danger" title="Delete" onclick="delClient('${c.id}','${esc(c.name||'')}')">â</button>
+        <button class="actionBtn" title="Edit" onclick="openClientModal('edit','${c.id}')">✎</button>
+        <button class="actionBtn" title="Send WA" style="color:var(--wa);border-color:rgba(37,211,102,.4)" onclick="openSendToClient('${c.id}')">💬</button>
+        ${hasEco?`<button class="actionBtn" title="Schedule EcoPack+ Pickup" style="color:#1fa463;border-color:rgba(31,164,99,.4)" onclick="openPickupModal('${c.id}')">📅</button>`:''}
+        <button class="actionBtn danger" title="Delete" onclick="delClient('${c.id}','${esc(c.name||'')}')">✕</button>
       </td>
     </tr>`;
   }).join('');
@@ -617,7 +621,7 @@ function filterClients(q){
 }
 function fillClientSelect(list){
   const sel=document.getElementById('sm_client');
-  sel.innerHTML='<option value="">â Select client â</option>'+list.map(c=>`<option value="${c.id}" data-wa="${esc(c.wa_number||'')}" data-name="${esc(c.name||'')}">${esc(c.name)}${c.company?' â '+esc(c.company):''}</option>`).join('');
+  sel.innerHTML='<option value="">— Select client —</option>'+list.map(c=>`<option value="${c.id}" data-wa="${esc(c.wa_number||'')}" data-name="${esc(c.name||'')}">${esc(c.name)}${c.company?' — '+esc(c.company):''}</option>`).join('');
 }
 
 function openClientModal(mode,id){
@@ -676,7 +680,7 @@ function sendWAMessage(){
   const keys={order_received:['clientName','orderNumber'],tracking_update:['clientName','orderNumber','trackingNumber','carrier'],payment_link:['clientName','amount','link'],daily_summary:['clientName','dateLabel','inbound','outbound'],ecopack_package_received:['clientName'],ecopack_multi_package:['clientName','packageCount'],ecopack_pickup_scheduled:['clientName','date','time','packageCount']};
   const data={};(keys[t]||[]).forEach((k,i)=>data[k]=params[i]||'');
   const btn=document.getElementById('sendMsgBtn');btn.textContent='Sending...';btn.disabled=true;
-  fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:t,to,data})}).then(r=>r.json()).then(res=>{if(res.messages?.[0]?.message_status==='accepted'||res.messaging_product){alert('â Message sent!');closeSendModal();}else alert('Response: '+JSON.stringify(res));}).catch(e=>alert('Error: '+e.message)).finally(()=>{btn.textContent='Send Message';btn.disabled=false;});
+  fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:t,to,data})}).then(r=>r.json()).then(res=>{if(res.messages?.[0]?.message_status==='accepted'||res.messaging_product){alert('✅ Message sent!');closeSendModal();}else alert('Response: '+JSON.stringify(res));}).catch(e=>alert('Error: '+e.message)).finally(()=>{btn.textContent='Send Message';btn.disabled=false;});
 }
 
 let allMessages=[],activePhone=null;
@@ -692,8 +696,8 @@ function renderInboxList(){
   allMessages.forEach(m=>{const phone=m.direction==='inbound'?m.from:m.to;if(!threads[phone]){threads[phone]={phone,clientName:m.clientName||m.from||phone,msgs:[],unread:0};}threads[phone].msgs.push(m);if(m.direction==='inbound'&&!m.read)threads[phone].unread++;});
   const sorted=Object.values(threads).sort((a,b)=>{const la=a.msgs[a.msgs.length-1]?.timestamp||0;const lb2=b.msgs[b.msgs.length-1]?.timestamp||0;return lb2-la;});
   if(ce)ce.textContent=sorted.length+' chat'+(sorted.length!==1?'s':'');
-  if(!sorted.length){lb.innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px"><div style="font-size:28px;margin-bottom:10px">ð­</div>No messages yet.<br>Send a template to get started.</div>`;return;}
-  lb.innerHTML=sorted.map(t=>{const last=t.msgs[t.msgs.length-1];const ts=last?.timestamp?fmtTime(last.timestamp):'';const preview=(last?.text||'').substring(0,40)+(last?.text?.length>40?'â¦':'');const initials=(t.clientName||'?').split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();const isActive=t.phone===activePhone;const hasUnread=t.unread>0;return`<div class="inboxItem${isActive?' active':''}${hasUnread?' unread':''}" onclick="openThread('${esc(t.phone)}','${esc(t.clientName)}')"><div class="inboxAvatar">${initials}</div><div style="flex:1;min-width:0"><div class="inboxFrom">${esc(t.clientName||t.phone)}</div><div class="inboxPreview">${esc(preview||'â')}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="inboxTime">${ts}</div>${hasUnread?`<div class="inboxUnreadDot"></div>`:''}</div></div>`;}).join('');
+  if(!sorted.length){lb.innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px"><div style="font-size:28px;margin-bottom:10px">📭</div>No messages yet.<br>Send a template to get started.</div>`;return;}
+  lb.innerHTML=sorted.map(t=>{const last=t.msgs[t.msgs.length-1];const ts=last?.timestamp?fmtTime(last.timestamp):'';const preview=(last?.text||'').substring(0,40)+(last?.text?.length>40?'…':'');const initials=(t.clientName||'?').split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();const isActive=t.phone===activePhone;const hasUnread=t.unread>0;return`<div class="inboxItem${isActive?' active':''}${hasUnread?' unread':''}" onclick="openThread('${esc(t.phone)}','${esc(t.clientName)}')"><div class="inboxAvatar">${initials}</div><div style="flex:1;min-width:0"><div class="inboxFrom">${esc(t.clientName||t.phone)}</div><div class="inboxPreview">${esc(preview||'—')}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="inboxTime">${ts}</div>${hasUnread?`<div class="inboxUnreadDot"></div>`:''}</div></div>`;}).join('');
 }
 function openThread(phone,name){
   activePhone=phone;window._activePhone=phone;renderInboxList();
@@ -702,7 +706,7 @@ function openThread(phone,name){
   document.getElementById('threadName').textContent=name||phone;document.getElementById('threadPhone').textContent='+'+phone;
   const thread=allMessages.filter(m=>m.from===phone||m.to===phone).sort((a,b)=>a.timestamp-b.timestamp);
   thread.filter(m=>m.direction==='inbound'&&!m.read).forEach(m=>{fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'mark_read',id:m.id})}).catch(()=>{});m.read=true;});
-  msgs.innerHTML=thread.map(m=>{const dir=m.direction==='inbound'?'in':'out';const time=m.timestamp?new Date(m.timestamp*1000).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';return`<div class="bubble ${dir}">${esc(m.text||'')}<span class="bubbleTime">${time}${dir==='out'?' Â· Sent â':''}</span></div>`;}).join('');
+  msgs.innerHTML=thread.map(m=>{const dir=m.direction==='inbound'?'in':'out';const time=m.timestamp?new Date(m.timestamp*1000).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';return`<div class="bubble ${dir}">${esc(m.text||'')}<span class="bubbleTime">${time}${dir==='out'?' · Sent ✓':''}</span></div>`;}).join('');
   msgs.scrollTop=msgs.scrollHeight;
 }
 window.openThread=openThread;
@@ -710,7 +714,7 @@ function sendReply(){
   const phone=activePhone||window._activePhone;if(!phone){alert('No conversation selected');return;}
   const input=document.getElementById('replyText');const btn=document.getElementById('replyBtn');const text=input.value.trim();if(!text)return;
   btn.disabled=true;btn.textContent='...';const clientName=document.getElementById('threadName').textContent;
-  fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'reply',to:phone,text,clientName})}).then(r=>r.json()).then(res=>{if(res.error&&!res.messaging_product&&!res.messages){alert('Error: '+(res.error?.message||JSON.stringify(res)));}else{input.value='';fetch('/.netlify/functions/wa-messages').then(r=>r.json()).then(data=>{allMessages=Array.isArray(data)?data:[];renderInboxList();openThread(phone,clientName);});}}).catch(e=>alert('Error: '+e.message)).finally(()=>{btn.disabled=false;btn.textContent='Send â';});
+  fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'reply',to:phone,text,clientName})}).then(r=>r.json()).then(res=>{if(res.error&&!res.messaging_product&&!res.messages){alert('Error: '+(res.error?.message||JSON.stringify(res)));}else{input.value='';fetch('/.netlify/functions/wa-messages').then(r=>r.json()).then(data=>{allMessages=Array.isArray(data)?data:[];renderInboxList();openThread(phone,clientName);});}}).catch(e=>alert('Error: '+e.message)).finally(()=>{btn.disabled=false;btn.textContent='Send ↑';});
 }
 window.sendReply=sendReply;
 function replyWithTemplate(){
@@ -722,7 +726,7 @@ window.replyWithTemplate=replyWithTemplate;
 setInterval(()=>{const ws=document.getElementById('tabWhatsapp');if(ws&&ws.classList.contains('active')){const phone=activePhone||window._activePhone;const name=document.getElementById('threadName')?.textContent;fetch('/.netlify/functions/wa-messages').then(r=>r.json()).then(data=>{allMessages=Array.isArray(data)?data:[];renderInboxList();if(phone)openThread(phone,name||phone);}).catch(()=>{}); }},30000);
 function fmtTime(ts){const d=new Date(ts*1000);const now=new Date();const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());const dDay=new Date(d.getFullYear(),d.getMonth(),d.getDate());if(dDay.getTime()===today.getTime())return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}
 
-// ââ ECOPACK+ PICKUP MODAL ââââââââââââââââââââââââââââââââââââââââ
+// ── ECOPACK+ PICKUP MODAL ────────────────────────────────────────
 let pickupClientId=null;
 async function openPickupModal(clientId){
   pickupClientId=clientId;const c=clients.find(x=>x.id===clientId);if(!c)return;
@@ -730,15 +734,15 @@ async function openPickupModal(clientId){
   document.getElementById('pm_date').value=tomorrow.toISOString().split('T')[0];
   document.getElementById('pm_time').value='10:00 AM';
   const displayName=c.store_name||c.company||c.name;
-  document.getElementById('pickupClientInfo').innerHTML=`<div style="font-weight:600;margin-bottom:4px">â»ï¸ ${esc(c.name||displayName)}</div><div style="color:var(--muted);font-size:12px">WA: ${esc(c.wa_number||'â')}${c.company?' &nbsp;Â·&nbsp; '+esc(c.company):''} &nbsp;Â·&nbsp; Consent: <strong>${esc(c.wa_consent||'Pending')}</strong></div>`;
+  document.getElementById('pickupClientInfo').innerHTML=`<div style="font-weight:600;margin-bottom:4px">♻️ ${esc(c.name||displayName)}</div><div style="color:var(--muted);font-size:12px">WA: ${esc(c.wa_number||'—')}${c.company?' &nbsp;·&nbsp; '+esc(c.company):''} &nbsp;·&nbsp; Consent: <strong>${esc(c.wa_consent||'Pending')}</strong></div>`;
   const pe=document.getElementById('pm_pending');pe.textContent='Counting packages...';pe.dataset.count='0';
   document.getElementById('pickupModal').classList.add('open');
   try{
     const res=await fetch(`/.netlify/functions/ecopack-wa?action=pending&client_name=${encodeURIComponent(displayName)}`);
     const data=await res.json();const count=data.count||0;pe.dataset.count=String(count);
-    if(count===0){pe.textContent='â ï¸ No pending packages found';pe.style.background='#fef9c3';pe.style.borderColor='#fde047';pe.style.color='#854d0e';}
+    if(count===0){pe.textContent='⚠️ No pending packages found';pe.style.background='#fef9c3';pe.style.borderColor='#fde047';pe.style.color='#854d0e';}
     else{pe.textContent=`${count} package${count!==1?'s':''} waiting for pickup`;pe.style.background='#f0fdf4';pe.style.borderColor='#86efac';pe.style.color='#166534';}
-  }catch(e){document.getElementById('pm_pending').textContent='Could not count packages â proceed manually';}
+  }catch(e){document.getElementById('pm_pending').textContent='Could not count packages — proceed manually';}
 }
 function closePickupModal(){document.getElementById('pickupModal').classList.remove('open');pickupClientId=null;}
 async function submitPickup(){
@@ -754,19 +758,19 @@ async function submitPickup(){
   try{
     const res=await fetch('/.netlify/functions/ecopack-wa?action=schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:c.id,client_name:displayName,wa_number:c.wa_number,pending_count:count,scheduled_date:dateFormatted,scheduled_time:time,lang:c.lang||'EN'})});
     const data=await res.json();if(data.error)throw new Error(data.error);
-    alert(`â Pickup scheduled!\n\nð ${dateFormatted} at ${time}\nð¦ ${count} package${count!==1?'s':''}\nð¬ WA sent to ${c.wa_number}`);
+    alert(`✅ Pickup scheduled!\n\n📅 ${dateFormatted} at ${time}\n📦 ${count} package${count!==1?'s':''}\n💬 WA sent to ${c.wa_number}`);
     closePickupModal();
   }catch(e){alert('Error scheduling pickup: '+e.message);}
-  finally{btn.textContent='ð Schedule & Send WA';btn.disabled=false;}
+  finally{btn.textContent='📅 Schedule & Send WA';btn.disabled=false;}
 }
 
-// ââ ECOPACK+ PICKUPS TAB âââââââââââââââââââââââââââââââââââââââââ
+// ── ECOPACK+ PICKUPS TAB ─────────────────────────────────────────
 let allPickups=[],pickupFilter='pending';
 function setPickupFilter(filter,btn){pickupFilter=filter;document.querySelectorAll('#pickupFilterPending, #pickupFilterHistory').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderPickups();}
 async function loadPickups(){
   document.getElementById('pickupList').innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">Loading pickups...</div>`;
   try{const res=await fetch('/.netlify/functions/ecopack-wa');const data=await res.json();allPickups=Array.isArray(data)?data:[];renderPickups();renderPickupKpis();}
-  catch(e){document.getElementById('pickupList').innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">â ï¸ Error: ${esc(e.message)}</div>`;}
+  catch(e){document.getElementById('pickupList').innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">⚠️ Error: ${esc(e.message)}</div>`;}
 }
 function renderPickupKpis(){
   const today=new Date().toISOString().split('T')[0];
@@ -778,16 +782,16 @@ function renderPickupKpis(){
 function renderPickups(){
   const list=document.getElementById('pickupList');const isHistory=pickupFilter==='history';
   const filtered=allPickups.filter(p=>isHistory?['completed','cancelled'].includes(p.status):['scheduled','confirmed'].includes(p.status)).sort((a,b)=>{if(!isHistory)return(a.scheduled_date||'').localeCompare(b.scheduled_date||'');return new Date(b.completed_at||b.created_at)-new Date(a.completed_at||a.created_at);});
-  if(!filtered.length){list.innerHTML=`<div style="text-align:center;padding:60px;color:var(--muted);font-size:14px"><div style="font-size:36px;margin-bottom:12px">ð­</div><div>${isHistory?'No pickup history yet.':'No upcoming pickups scheduled.'}</div></div>`;return;}
+  if(!filtered.length){list.innerHTML=`<div style="text-align:center;padding:60px;color:var(--muted);font-size:14px"><div style="font-size:36px;margin-bottom:12px">📭</div><div>${isHistory?'No pickup history yet.':'No upcoming pickups scheduled.'}</div></div>`;return;}
   const sc={scheduled:'background:#fef9c3;color:#854d0e;border-color:#fde047',confirmed:'background:#dcfce7;color:#16a34a;border-color:#86efac',completed:'background:#dbeafe;color:#1d4ed8;border-color:#93c5fd',cancelled:'background:#fee2e2;color:#dc2626;border-color:#fca5a5'};
   list.innerHTML=filtered.map(p=>{
     const ss=sc[p.status]||'';const sl=p.status.charAt(0).toUpperCase()+p.status.slice(1);
-    const cd=p.created_at?new Date(p.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'â';
+    const cd=p.created_at?new Date(p.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
     const ab=[];
-    if(p.status==='scheduled'||p.status==='confirmed')ab.push(`<button class="actionBtn" style="color:#16a34a;border-color:rgba(22,163,74,.4)" onclick="updatePickupStatus('${p.id}','completed')">â Complete</button>`);
-    if(p.status==='scheduled')ab.push(`<button class="actionBtn" style="color:#1d4ed8;border-color:rgba(29,78,216,.4)" onclick="updatePickupStatus('${p.id}','confirmed')">â Confirm</button>`);
-    if(p.status!=='cancelled'&&p.status!=='completed')ab.push(`<button class="actionBtn danger" onclick="updatePickupStatus('${p.id}','cancelled')">â Cancel</button>`);
-    return`<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px 20px"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px"><div style="flex:1;min-width:200px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:800">${esc(p.client_name||'â')}</div><span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid;${ss}">${sl}</span></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px"><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Pickup Date</div><div style="font-size:13px;font-weight:600">ð ${esc(p.scheduled_date||'â')}</div></div><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Time</div><div style="font-size:13px;font-weight:600">ð ${esc(p.scheduled_time||'â')}</div></div><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Packages</div><div style="font-size:13px;font-weight:600">ð¦ ${p.pending_count||0} pkg${(p.pending_count||0)!==1?'s':''}</div></div><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">WhatsApp</div><div style="font-size:12px;font-family:'DM Mono',monospace;color:var(--muted)">${esc(p.wa_number||'â')}</div></div>${p.status==='completed'?`<div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Completed</div><div style="font-size:12px;color:var(--muted)">${p.completed_at?new Date(p.completed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'â'}</div></div>`:''}<div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Scheduled on</div><div style="font-size:12px;color:var(--muted)">${cd}</div></div></div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">${ab.join('')}</div></div></div>`;
+    if(p.status==='scheduled'||p.status==='confirmed')ab.push(`<button class="actionBtn" style="color:#16a34a;border-color:rgba(22,163,74,.4)" onclick="updatePickupStatus('${p.id}','completed')">✓ Complete</button>`);
+    if(p.status==='scheduled')ab.push(`<button class="actionBtn" style="color:#1d4ed8;border-color:rgba(29,78,216,.4)" onclick="updatePickupStatus('${p.id}','confirmed')">✓ Confirm</button>`);
+    if(p.status!=='cancelled'&&p.status!=='completed')ab.push(`<button class="actionBtn danger" onclick="updatePickupStatus('${p.id}','cancelled')">✕ Cancel</button>`);
+    return`<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px 20px"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px"><div style="flex:1;min-width:200px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:800">${esc(p.client_name||'—')}</div><span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid;${ss}">${sl}</span></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px"><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Pickup Date</div><div style="font-size:13px;font-weight:600">📅 ${esc(p.scheduled_date||'—')}</div></div><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Time</div><div style="font-size:13px;font-weight:600">🕐 ${esc(p.scheduled_time||'—')}</div></div><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Packages</div><div style="font-size:13px;font-weight:600">📦 ${p.pending_count||0} pkg${(p.pending_count||0)!==1?'s':''}</div></div><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">WhatsApp</div><div style="font-size:12px;font-family:'DM Mono',monospace;color:var(--muted)">${esc(p.wa_number||'—')}</div></div>${p.status==='completed'?`<div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Completed</div><div style="font-size:12px;color:var(--muted)">${p.completed_at?new Date(p.completed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—'}</div></div>`:''}<div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Scheduled on</div><div style="font-size:12px;color:var(--muted)">${cd}</div></div></div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">${ab.join('')}</div></div></div>`;
   }).join('');
 }
 async function updatePickupStatus(id,status){
@@ -802,18 +806,18 @@ async function updatePickupStatus(id,status){
 }
 </script>
 
-<!-- In-App Viewer -->
+<!-- ── In-App Viewer ── -->
 <div id="appViewer" style="display:none;position:fixed;inset:0;z-index:200;flex-direction:column;background:#f4f6f9">
   <div id="appViewerBar" style="background:#1e3a5f;color:#fff;padding:0 16px;height:52px;display:flex;align-items:center;gap:12px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.3)">
-    <button onclick="closeApp()" style="background:rgba(255,255,255,.15);border:none;border-radius:8px;color:#fff;font-size:15px;font-weight:600;padding:7px 14px;cursor:pointer;font-family:inherit;flex-shrink:0">← Back</button>
+    <button onclick="closeApp()" style="background:rgba(255,255,255,.15);border:none;border-radius:8px;color:#fff;font-size:15px;font-weight:600;padding:7px 14px;cursor:pointer;font-family:inherit;flex-shrink:0;display:flex;align-items:center;gap:5px">← Back</button>
     <span id="appViewerTitle" style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
     <a id="appViewerExternal" href="#" target="_blank" rel="noopener" style="background:rgba(255,255,255,.15);border-radius:8px;color:#fff;font-size:13px;padding:7px 12px;text-decoration:none;flex-shrink:0">↗ New tab</a>
   </div>
-  <iframe id="appViewerFrame" src="about:blank" style="flex:1;border:none;width:100%;height:100%;background:#fff"></iframe>
+  <iframe id="appViewerFrame" src="about:blank" style="flex:1;border:none;width:100%;height:100%;background:#fff" allowfullscreen></iframe>
 </div>
 
 <script>
-/* ââ PWA: Service Worker ââ */
+/* ── PWA: Service Worker ── */
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
     navigator.serviceWorker.register('/sw.js',{scope:'/'})
@@ -822,7 +826,7 @@ if('serviceWorker' in navigator){
   });
 }
 
-/* ââ Mobile card view for WA Clients ââ */
+/* ── Mobile card view for WA Clients ── */
 function renderClientCards(list){
   const el=document.getElementById('clientCardList');
   if(!el)return;
@@ -836,23 +840,23 @@ function renderClientCards(list){
     const hasEco=svcs.some(s=>s.includes('EcoPack'));
     return`<div class="cCard">
       <div class="cCard-top">
-        <div><div class="cCard-name">${esc(c.name||'â')}</div><div class="cCard-co">${esc(c.company||'')}</div></div>
+        <div><div class="cCard-name">${esc(c.name||'—')}</div><div class="cCard-co">${esc(c.company||'')}</div></div>
         <span style="background:${stC}22;color:${stC};font-size:10px;padding:3px 8px;border-radius:6px;font-weight:700">${st}</span>
       </div>
       <div class="cCard-meta">
-        ${wa?`<div class="cCard-wa">â ${esc(wa)}</div>`:'<span style="color:var(--muted);font-size:11px">No WA</span>'}
+        ${wa?`<div class="cCard-wa">● ${esc(wa)}</div>`:'<span style="color:var(--muted);font-size:11px">No WA</span>'}
         ${pills}${svcs.length>3?`<span style="color:var(--muted);font-size:10px">+${svcs.length-3}</span>`:''}
       </div>
       <div class="cCard-btns">
-        <button class="cCard-btn" onclick="openSendToClient&&openSendToClient('${c.id||''}')">ð¬ WA</button>
-        ${hasEco?`<button class="cCard-btn" style="color:#1fa463" onclick="openPickupModal&&openPickupModal('${c.id||''}')">ð Pickup</button>`:''}
-        <button class="cCard-btn p" onclick="openClientModal('edit','${c.id||''}')">â Edit</button>
+        <button class="cCard-btn" onclick="openSendToClient&&openSendToClient('${c.id||''}')">💬 WA</button>
+        ${hasEco?`<button class="cCard-btn" style="color:#1fa463" onclick="openPickupModal&&openPickupModal('${c.id||''}')">📅 Pickup</button>`:''}
+        <button class="cCard-btn p" onclick="openClientModal('edit','${c.id||''}')">✏ Edit</button>
       </div>
     </div>`;
   }).join('');
 }
 
-/* Show table on desktop, cards on mobile â toggle both */
+/* Show table on desktop, cards on mobile — toggle both */
 function syncClientView(list){
   const isMobile=window.innerWidth<=767;
   const tbl=document.querySelector('#tabClients .tableWrap');
