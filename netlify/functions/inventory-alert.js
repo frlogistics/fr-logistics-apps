@@ -1,6 +1,6 @@
 // netlify/functions/inventory-alert.js
 // Scheduled daily at 9PM UTC (5PM EST)
-// Calls inventory function → sends inventory summary via WhatsApp template
+// Gets KPIs from inventory function, sends WhatsApp summary via daily_summary template
 
 const WA_TOKEN     = Netlify.env.get("WHATSAPP_TOKEN");
 const PHONE_ID     = Netlify.env.get("WHATSAPP_PHONE_ID");
@@ -28,7 +28,7 @@ export default async function handler(req) {
 
     // Skip if everything is fine
     if (outOfStock === 0 && lowStock === 0) {
-      console.log("[inventory-alert] All OK — no alert");
+      console.log("[inventory-alert] All OK - no alert needed");
       return new Response(JSON.stringify({ ok: true, message: "All stock OK" }), { status: 200 });
     }
 
@@ -37,23 +37,28 @@ export default async function handler(req) {
       month: "short", day: "numeric", year: "numeric"
     });
 
-    // 2. Send via daily_summary template (already approved by Meta)
-    // Template vars: {{1}}=clientName, {{2}}=dateLabel, {{3}}=inbound, {{4}}=outbound
-    // We repurpose: {{1}}=team, {{2}}=date+SKU summary, {{3}}=reorder SKUs, {{4}}=out-of-stock SKUs
+    // 2. Send via daily_summary template
+    // Template: "Hi {{1}}, here is your daily summary from FR-Logistics Miami
+    //            — {{2}}: Inbound: {{3}} package(s) received. Outbound: {{4}} shipment(s) processed."
+    // We repurpose the vars for inventory summary:
+    // {{1}} = "FR-Logistics Team"
+    // {{2}} = date
+    // {{3}} = reorder alert count  (reads as: "Inbound: 56 package(s) received")
+    // {{4}} = out-of-stock count   (reads as: "Outbound: 1 shipment(s) processed")
     const waPayload = {
       messaging_product: "whatsapp",
       to:   ALERT_NUMBER,
       type: "template",
       template: {
-        name: "daily_summary",
+        name:     "daily_summary",
         language: { code: "en_US" },
         components: [{
           type: "body",
           parameters: [
-            { type: "text", text: "FR-Logistics Inventory" },
-            { type: "text", text: `${today} | ${total} SKUs · ${totalUnits.toLocaleString()} units | ✅ OK: ${okCount}` },
-            { type: "text", text: `${lowStock} SKUs need reorder (≤12 units)` },
-            { type: "text", text: `${outOfStock} SKUs out of stock` }
+            { type: "text", text: "FR-Logistics Team" },
+            { type: "text", text: today + " - Inventory Alert - " + total + " SKUs, " + totalUnits + " units" },
+            { type: "text", text: String(lowStock) + " SKUs need reorder" },
+            { type: "text", text: String(outOfStock) + " SKUs out of stock (OK: " + okCount + ")" }
           ]
         }]
       }
@@ -71,9 +76,9 @@ export default async function handler(req) {
     const waResult = await waRes.json();
 
     if (waRes.ok) {
-      console.log("[inventory-alert] ✅ Alert sent | msgId:", waResult.messages?.[0]?.id);
+      console.log("[inventory-alert] WA sent OK | msgId:", waResult.messages?.[0]?.id);
     } else {
-      console.error("[inventory-alert] ❌ WA error:", JSON.stringify(waResult).substring(0, 400));
+      console.error("[inventory-alert] WA error:", JSON.stringify(waResult).substring(0, 400));
     }
 
     return new Response(JSON.stringify({
