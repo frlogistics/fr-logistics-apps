@@ -43,7 +43,7 @@
       z-index: 5;
     }
     .headRow{
-      max-width:1200px;
+      max-width:100%;max-width:1200px;
       margin:0 auto;
       display:flex;
       gap:12px;
@@ -64,7 +64,7 @@
     header .sub{margin-top:4px; color:var(--muted); font-size:12px}
 
     .wrap{
-      max-width:1200px;
+      max-width:100%;max-width:1200px;
       width:100%;
       margin:0 auto;
       padding:16px;
@@ -350,7 +350,7 @@
       padding:12px 18px;
     }
     .footRow{
-      max-width:1200px;
+      max-width:100%;max-width:1200px;
       margin:0 auto;
       display:flex;
       align-items:center;
@@ -375,7 +375,15 @@
       background:#fff;
       padding:6px;
     }
-  </style>
+  
+/* ── Mobile Responsive Patch ── */
+@media(max-width:900px){
+body,html{overflow-x:hidden!important}
+.container,.wrapper,.main,.content,.page{width:100%!important;max-width:100%!important;padding-left:8px!important;padding-right:8px!important}
+table{width:100%!important;display:block!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch}
+td,th{white-space:nowrap}
+}
+</style>
 </head>
 
 <body>
