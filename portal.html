@@ -769,7 +769,7 @@ let allPickups=[],pickupFilter='pending';
 function setPickupFilter(filter,btn){pickupFilter=filter;document.querySelectorAll('#pickupFilterPending, #pickupFilterHistory').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderPickups();}
 async function loadPickups(){
   document.getElementById('pickupList').innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">Loading pickups...</div>`;
-  try{const res=await fetch('/.netlify/functions/ecopack-wa');const data=await res.json();allPickups=Array.isArray(data)?data:[];renderPickups();renderPickupKpis();}
+  try{const res=await fetch('/.netlify/functions/ecopack?action=pickups');const data=await res.json();allPickups=Array.isArray(data)?data:[];renderPickups();renderPickupKpis();}
   catch(e){document.getElementById('pickupList').innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">⚠️ Error: ${esc(e.message)}</div>`;}
 }
 function renderPickupKpis(){
