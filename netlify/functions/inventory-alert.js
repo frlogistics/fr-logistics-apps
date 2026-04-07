@@ -4,7 +4,7 @@
 
 const WA_TOKEN     = Netlify.env.get("WHATSAPP_TOKEN");
 const PHONE_ID     = Netlify.env.get("WHATSAPP_PHONE_ID");
-const ALERT_NUMBER = Netlify.env.get("ALERT_PHONE") || "13052403172";
+const ALERT_NUMBER = Netlify.env.get("ALERT_PHONE") || "17863001443";
 const SITE_URL     = Netlify.env.get("URL") || "https://apps.fr-logistics.net";
 const WA_BASE      = `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`;
 
