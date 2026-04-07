@@ -1,179 +1,137 @@
-// ecopack-wa.js — FR-Logistics EcoPack+ WhatsApp Module
-// Handles: package received notifications, multi-package alerts, pickup scheduling
-//
-// Actions (via ?action= query param):
-//   POST ?action=notify    — send package received WA (called from Inbound app)
-//   POST ?action=schedule  — create pickup record + send pickup_scheduled WA
-//   GET  ?action=pending   — get pending package count for a client
-//   GET  (no action)       — list pickups (optionally ?client_id=)
-//   PATCH                  — update pickup status (confirmed/completed/cancelled)
+// netlify/functions/ecopack-wa.js
+// EcoPack+ WhatsApp notifications
+// Opcion A: Only sends WA on FIRST inbound of the day per client
+//           Message shows TOTAL pending packages (all-time, not just today)
 
 const SUPABASE_URL = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY = Netlify.env.get("SUPABASE_SERVICE_KEY");
+const WA_TOKEN     = Netlify.env.get("WHATSAPP_TOKEN");
 const PHONE_ID     = Netlify.env.get("WHATSAPP_PHONE_ID");
-const TOKEN        = Netlify.env.get("WHATSAPP_TOKEN");
+const WA_BASE      = `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`;
 
-const sbHeaders = {
-  "apikey":        SUPABASE_KEY,
+const SB = () => ({
+  "apikey": SUPABASE_KEY,
   "Authorization": `Bearer ${SUPABASE_KEY}`,
-  "Content-Type":  "application/json",
-  "Prefer":        "return=representation"
-};
+  "Content-Type": "application/json"
+});
 
-// ── WA Template sender ───────────────────────────────────────────
-async function sendTemplate(to, templateName, params, lang = "en_US") {
-  const res = await fetch(`https://graph.facebook.com/v20.0/${PHONE_ID}/messages`, {
+async function getClient(displayName) {
+  const encoded = encodeURIComponent(displayName);
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/fr_clients?or=(name.ilike.${encoded},store_name.ilike.${encoded})&limit=1`,
+    { headers: SB() }
+  );
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return rows[0] || null;
+}
+
+async function countTodayInbounds(clientName) {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const iso = todayStart.toISOString();
+  const encoded = encodeURIComponent(clientName);
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/shipments_general?client=ilike.${encoded}&direction=eq.Inbound&received_at=gte.${iso}&select=id`,
+    { headers: SB() }
+  );
+  if (!res.ok) return 0;
+  return (await res.json()).length;
+}
+
+async function countTotalPending(clientName) {
+  const encoded = encodeURIComponent(clientName);
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/shipments_general?client=ilike.${encoded}&direction=eq.Inbound&select=id`,
+    { headers: SB() }
+  );
+  if (!res.ok) return 1;
+  return (await res.json()).length;
+}
+
+async function sendTemplate(to, templateName, params) {
+  const phone = to.replace(/\D/g, "");
+  const res = await fetch(WA_BASE, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+    headers: { "Authorization": `Bearer ${WA_TOKEN}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       messaging_product: "whatsapp",
-      to,
+      to: phone,
       type: "template",
       template: {
         name: templateName,
-        language: { code: lang },
-        components: params.length > 0 ? [{
-          type: "body",
-          parameters: params.map(text => ({ type: "text", text: String(text) }))
-        }] : []
+        language: { code: "en" },
+        components: [{ type: "body", parameters: params.map(p => ({ type: "text", text: String(p) })) }]
       }
     })
   });
-  return res.json();
+  const j = await res.json();
+  if (!res.ok) throw new Error(j.error?.message || "WA send failed");
+  return j.messages?.[0]?.id;
 }
 
-// ── Compute pending EcoPack+ packages for a client ───────────────
-async function getPendingCount(clientName) {
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/shipments_general?client=eq.${encodeURIComponent(clientName)}&type=like.*EcoPack*&select=direction`,
-    { headers: sbHeaders }
-  );
-  const data = await res.json();
-  if (!Array.isArray(data)) return 0;
-  const inbound  = data.filter(r => r.direction === "Inbound").length;
-  const outbound = data.filter(r => r.direction === "Outbound").length;
-  return Math.max(0, inbound - outbound);
-}
-
-export default async (req) => {
-  const method   = req.method;
-  const url      = new URL(req.url);
-  const action   = url.searchParams.get("action");
-  const clientId = url.searchParams.get("client_id");
-
-  // ── GET — list pending pickups ────────────────────────────────────
-  if (method === "GET" && !action) {
-    const endpoint = clientId
-      ? `${SUPABASE_URL}/rest/v1/ecopack_pickups?client_id=eq.${clientId}&order=created_at.desc`
-      : `${SUPABASE_URL}/rest/v1/ecopack_pickups?status=neq.completed&status=neq.cancelled&order=scheduled_date.asc&limit=50`;
-    const res  = await fetch(endpoint, { headers: sbHeaders });
-    const data = await res.json();
-    return new Response(JSON.stringify(data), {
-      status: 200, headers: { "Content-Type": "application/json" }
-    });
-  }
-
-  // ── GET ?action=pending — pending package count ───────────────────
-  if (method === "GET" && action === "pending") {
-    const clientName = url.searchParams.get("client_name") || "";
-    const count = await getPendingCount(clientName);
-    return new Response(JSON.stringify({ count }), {
-      status: 200, headers: { "Content-Type": "application/json" }
-    });
-  }
-
-  // ── POST ?action=notify — package received WA ────────────────────
-  // Called automatically from Inbound_Outbound.html after saving EcoPack+ inbound
-  if (method === "POST" && action === "notify") {
-    const body = await req.json();
-    const { to, client_name, pending_count, lang } = body;
-
-    if (!to) return new Response(JSON.stringify({ error: "to is required" }), { status: 400 });
-
-    const isMulti       = pending_count >= 2;
-    const templateName  = isMulti ? "ecopack_multi_package" : "ecopack_package_received";
-    const templateLang  = "es"
-    const params        = isMulti ? [client_name, String(pending_count)] : [client_name];
-
-    try {
-      const waResult = await sendTemplate(to, templateName, params, templateLang);
-      console.log(`EcoPack notify → ${to} (${templateName}):`, JSON.stringify(waResult));
-      return new Response(JSON.stringify({ success: true, waResult }), {
-        status: 200, headers: { "Content-Type": "application/json" }
-      });
-    } catch (e) {
-      return new Response(JSON.stringify({ error: e.message }), { status: 500 });
-    }
-  }
-
-  // ── POST ?action=schedule — create pickup + send WA ───────────────
-  if (method === "POST" && action === "schedule") {
-    const body = await req.json();
-    const { client_id, client_name, wa_number, pending_count, scheduled_date, scheduled_time, lang } = body;
-
-    if (!client_id || !client_name) {
-      return new Response(JSON.stringify({ error: "client_id and client_name required" }), { status: 400 });
-    }
-
-    // 1. Create pickup record in Supabase
-    const pickupRes = await fetch(`${SUPABASE_URL}/rest/v1/ecopack_pickups`, {
-      method: "POST",
-      headers: sbHeaders,
-      body: JSON.stringify({
-        client_id,
-        client_name,
-        wa_number:      wa_number || null,
-        pending_count:  pending_count || 0,
-        scheduled_date,
-        scheduled_time,
-        status: "scheduled"
-      })
-    });
-    const pickup = await pickupRes.json();
-
-    // 2. Send pickup_scheduled WA template
-    let waResult = null;
-    if (wa_number) {
-      try {
-        waResult = await sendTemplate(
-          wa_number,
-          "ecopack_pickup_scheduled",
-          [client_name, scheduled_date, scheduled_time, String(pending_count || 0)],
-          "es"
-        );
-        console.log(`EcoPack schedule → ${wa_number}:`, JSON.stringify(waResult));
-      } catch (e) {
-        console.error("WA send error:", e.message);
-      }
-    }
-
-    return new Response(JSON.stringify({
-      pickup: Array.isArray(pickup) ? pickup[0] : pickup,
-      waResult
-    }), { status: 201, headers: { "Content-Type": "application/json" } });
-  }
-
-  // ── PATCH — update pickup status ──────────────────────────────────
-  if (method === "PATCH") {
-    const body = await req.json();
-    const { id, status } = body;
-    if (!id || !status) {
-      return new Response(JSON.stringify({ error: "id and status required" }), { status: 400 });
-    }
-    const updates = { status };
-    if (status === "confirmed") updates.confirmed_at = new Date().toISOString();
-    if (status === "completed") updates.completed_at = new Date().toISOString();
-
-    const res  = await fetch(`${SUPABASE_URL}/rest/v1/ecopack_pickups?id=eq.${id}`, {
-      method: "PATCH",
-      headers: sbHeaders,
-      body: JSON.stringify(updates)
-    });
-    const data = await res.json();
-    return new Response(JSON.stringify(data), {
-      status: 200, headers: { "Content-Type": "application/json" }
-    });
-  }
-
-  return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
+const CORS = {
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
 };
+const jRes = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: CORS });
+
+export default async function handler(req) {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+
+  const url    = new URL(req.url);
+  const action = url.searchParams.get("action");
+
+  if (req.method === "POST" && action === "notify") {
+    let body;
+    try { body = await req.json(); } catch { return jRes({ error: "Invalid JSON" }, 400); }
+
+    const { clientDisplayName } = body;
+    if (!clientDisplayName) return jRes({ error: "clientDisplayName required" }, 400);
+
+    // STEP 1: Look up client in fr_clients
+    const client = await getClient(clientDisplayName);
+    if (!client) {
+      console.log(`[ecopack-wa] Client not found: ${clientDisplayName}`);
+      return jRes({ ok: false, reason: "client_not_found" });
+    }
+
+    const waNumber = client.wa_number;
+    const services = client.services || [];
+    const hasEco   = services.includes("EcoPack+");
+
+    if (!hasEco) return jRes({ ok: false, reason: "not_ecopack_client" });
+    if (!waNumber) return jRes({ ok: false, reason: "no_wa_number" });
+
+    // STEP 2: Check if this is the FIRST inbound of today (Opcion A)
+    const countToday = await countTodayInbounds(client.name || clientDisplayName);
+    if (countToday > 1) {
+      console.log(`[ecopack-wa] Already notified ${clientDisplayName} today (${countToday} pkgs). Skipping.`);
+      return jRes({ ok: true, skipped: true, reason: "already_notified_today", count_today: countToday });
+    }
+
+    // STEP 3: Count TOTAL pending packages (what client will pick up)
+    const totalPending = await countTotalPending(client.name || clientDisplayName);
+    const firstName    = (client.name || clientDisplayName).split(" ")[0];
+
+    // STEP 4: Send correct template based on total count
+    let templateName, params;
+    if (totalPending <= 1) {
+      templateName = "ecopack_package_received";
+      params       = [firstName];
+    } else {
+      templateName = "ecopack_multi_package";
+      params       = [firstName, String(totalPending)];
+    }
+
+    const msgId = await sendTemplate(waNumber, templateName, params);
+    console.log(`[ecopack-wa] Sent to ${clientDisplayName} | ${templateName} | total:${totalPending} | id:${msgId}`);
+
+    return jRes({ ok: true, template: templateName, total_pending: totalPending, first_of_day: true, msgId });
+  }
+
+  return jRes({ error: "Unknown action or method" }, 400);
+}
+
+export const config = { path: "/.netlify/functions/ecopack-wa" };
