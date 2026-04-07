@@ -1,6 +1,6 @@
 // netlify/functions/inventory-alert.js
 // Scheduled daily at 9PM UTC (5PM EST)
-// Calls the inventory function (which reads SKUVault) and sends a WhatsApp summary
+// Calls inventory function → sends inventory summary via WhatsApp template
 
 const WA_TOKEN     = Netlify.env.get("WHATSAPP_TOKEN");
 const PHONE_ID     = Netlify.env.get("WHATSAPP_PHONE_ID");
@@ -12,96 +12,75 @@ export default async function handler(req) {
   console.log("[inventory-alert] Starting at", new Date().toISOString());
 
   try {
-    // 1. Get inventory data from the inventory function (already calls SKUVault)
+    // 1. Get inventory KPIs from the working inventory function
     const invRes = await fetch(`${SITE_URL}/.netlify/functions/inventory`);
-    if (!invRes.ok) throw new Error(`inventory function error: ${invRes.status}`);
+    if (!invRes.ok) throw new Error(`inventory fn error: ${invRes.status}`);
     const inv = await invRes.json();
 
     const { kpis, skus = [] } = inv;
-    const total      = kpis.totalSKUs   || skus.length;
-    const outOfStock = kpis.outOfStock  || 0;
+    const total      = kpis.totalSKUs     || skus.length;
+    const outOfStock = kpis.outOfStock    || 0;
     const lowStock   = kpis.reorderAlerts || kpis.lowStock || 0;
     const okCount    = total - outOfStock - lowStock;
+    const totalUnits = kpis.totalUnits    || 0;
 
     console.log("[inventory-alert] KPIs:", { total, outOfStock, lowStock, okCount });
 
-    // Only alert if there are issues
+    // Skip if everything is fine
     if (outOfStock === 0 && lowStock === 0) {
-      console.log("[inventory-alert] All items OK — no alert sent");
-      return new Response(JSON.stringify({ ok: true, message: "All stock OK, no alert needed" }), { status: 200 });
+      console.log("[inventory-alert] All OK — no alert");
+      return new Response(JSON.stringify({ ok: true, message: "All stock OK" }), { status: 200 });
     }
 
-    // 2. Get top out-of-stock SKU names for context
-    const outSkus = skus.filter(s => (s.available ?? s.onHand ?? 0) <= 0);
-    const lowSkus = skus.filter(s => {
-      const qty = s.available ?? s.onHand ?? 0;
-      return qty > 0 && qty <= 12;
-    });
-
-    // 3. Build summary message
     const today = new Date().toLocaleDateString("en-US", {
       timeZone: "America/New_York",
       month: "short", day: "numeric", year: "numeric"
     });
 
-    const lines = [
-      `📦 *FR-Logistics Inventory Alert*`,
-      `${today} · 5:00 PM EST`,
-      ``,
-      `✅ OK: *${okCount} SKUs*`,
-      `⚠️ Needs Reorder: *${lowStock} SKUs*`,
-      `🚨 Out of Stock: *${outOfStock} SKUs*`,
-      ``,
-      `Total tracked: ${total} SKUs · ${(kpis.totalUnits || 0).toLocaleString()} units`
-    ];
+    // 2. Send via daily_summary template (already approved by Meta)
+    // Template vars: {{1}}=clientName, {{2}}=dateLabel, {{3}}=inbound, {{4}}=outbound
+    // We repurpose: {{1}}=team, {{2}}=date+SKU summary, {{3}}=reorder SKUs, {{4}}=out-of-stock SKUs
+    const waPayload = {
+      messaging_product: "whatsapp",
+      to:   ALERT_NUMBER,
+      type: "template",
+      template: {
+        name: "daily_summary",
+        language: { code: "en_US" },
+        components: [{
+          type: "body",
+          parameters: [
+            { type: "text", text: "FR-Logistics Inventory" },
+            { type: "text", text: `${today} | ${total} SKUs · ${totalUnits.toLocaleString()} units | ✅ OK: ${okCount}` },
+            { type: "text", text: `${lowStock} SKUs need reorder (≤12 units)` },
+            { type: "text", text: `${outOfStock} SKUs out of stock` }
+          ]
+        }]
+      }
+    };
 
-    if (outSkus.length > 0) {
-      lines.push(``);
-      lines.push(`*Out of Stock:*`);
-      outSkus.slice(0, 5).forEach(s => lines.push(`• ${s.sku}`));
-      if (outOfStock > 5) lines.push(`  ...and ${outOfStock - 5} more`);
-    }
-
-    if (lowSkus.length > 0) {
-      lines.push(``);
-      lines.push(`*Needs Reorder (≤12 units):*`);
-      lowSkus.slice(0, 5).forEach(s => lines.push(`• ${s.sku} (${s.available ?? s.onHand} left)`));
-      if (lowStock > lowSkus.length) lines.push(`  ...and ${lowStock - lowSkus.length} more`);
-    }
-
-    lines.push(``);
-    lines.push(`_Full detail: apps.fr-logistics.net/dashboard-inventory.html_`);
-
-    const body = lines.join("\n");
-
-    // 4. Send via WhatsApp
     const waRes = await fetch(WA_BASE, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${WA_TOKEN}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to:   ALERT_NUMBER,
-        type: "text",
-        text: { body }
-      })
+      body: JSON.stringify(waPayload)
     });
 
     const waResult = await waRes.json();
 
     if (waRes.ok) {
-      console.log("[inventory-alert] WA sent OK | id:", waResult.messages?.[0]?.id);
+      console.log("[inventory-alert] ✅ Alert sent | msgId:", waResult.messages?.[0]?.id);
     } else {
-      console.error("[inventory-alert] WA error:", JSON.stringify(waResult).substring(0, 300));
+      console.error("[inventory-alert] ❌ WA error:", JSON.stringify(waResult).substring(0, 400));
     }
 
     return new Response(JSON.stringify({
-      ok: waRes.ok,
-      kpis: { total, outOfStock, lowStock, okCount },
-      waMsgId: waResult.messages?.[0]?.id,
-      waError: waResult.error?.message
+      ok:         waRes.ok,
+      kpis:       { total, outOfStock, lowStock, okCount, totalUnits },
+      waMsgId:    waResult.messages?.[0]?.id,
+      waError:    waResult.error?.message
     }), { status: 200, headers: { "Content-Type": "application/json" } });
 
   } catch (err) {
@@ -111,5 +90,5 @@ export default async function handler(req) {
 }
 
 export const config = {
-  schedule: "0 21 * * *"   // 9PM UTC = 5PM EST daily
+  schedule: "0 21 * * *"
 };
