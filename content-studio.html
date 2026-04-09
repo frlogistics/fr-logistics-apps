@@ -470,9 +470,12 @@ async function redraw() {
   await document.fonts.ready;
   const canvas = document.getElementById('mc');
   canvas.style.display = 'block';
+  document.getElementById('cnvPh').style.display = 'none';
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, CS, CS);
+  // Always draw background (navy if no image)
   drawBg(ctx, uploadedImg, FILTERS[curAcct]);
+  // Always draw template overlay
   if (curTpl && DRAWFNS[curTpl.id]) DRAWFNS[curTpl.id](ctx, fieldVals);
 }
 
@@ -690,7 +693,7 @@ async function generate() {
       showLd(false);
     }
 
-    if (!uploadedImg) { resetBtn(); return; }
+    if (!uploadedImg && imgSrc !== 'ai') { resetBtn(); return; }
 
     showLd(true, 'Renderizando template...');
     await redraw();
@@ -728,10 +731,28 @@ async function genAIImage() {
     ? 'Miami marathon runner training Tropical Park athletic inspirational'
     : 'Modern logistics warehouse Doral Miami professional Amazon FBA clean organized';
   const url = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(base + ' ' + (SMAP[style]||'photorealistic') + ' square format no text no watermark') + '?width=1080&height=1080&seed=' + Math.floor(Math.random()*99999) + '&nologo=true';
+  
   return new Promise(res => {
     const img = new Image(); img.crossOrigin = 'anonymous';
-    img.onload = () => { uploadedImg = img; uploadedB64 = null; res(); };
-    img.onerror = () => res();
+    
+    // Timeout after 20 seconds — render template on solid background anyway
+    const timeout = setTimeout(() => {
+      showToast('Imagen IA tardó demasiado — renderizando sin imagen');
+      uploadedImg = null;
+      res();
+    }, 20000);
+    
+    img.onload = () => {
+      clearTimeout(timeout);
+      uploadedImg = img; uploadedB64 = null;
+      res();
+    };
+    img.onerror = () => {
+      clearTimeout(timeout);
+      showToast('Imagen IA no disponible — renderizando sin imagen');
+      uploadedImg = null;
+      res();
+    };
     img.src = url;
   });
 }
