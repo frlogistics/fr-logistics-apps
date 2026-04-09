@@ -281,9 +281,7 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
 <div class="toast" id="toast"></div>
 
 <script>
-// Portal handles auth — init directly
-document.getElementById('app').style.display = 'block';
-init();
+
 
 const ACCTS = {
   srj: { handle:'@strokerunnerjourney', loc:'Tropical Park, Miami', av:'JK', avBg:'#0F1D35' },
@@ -819,6 +817,10 @@ function resetPreview() {
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 }
+
+// Init — runs after all constants and functions are defined
+document.getElementById('app').style.display = 'block';
+init();
 </script>
 </body>
 </html>
