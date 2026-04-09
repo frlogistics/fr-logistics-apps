@@ -32,8 +32,8 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
 .nav-link.active { background: rgba(0,180,170,.1); color: var(--teal); font-weight: 600; }
 .nav-badge { background: var(--teal); color: #fff; font-size: 9px; font-weight: 700; padding: 2px 5px; border-radius: 4px; margin-left: 4px; vertical-align: middle; }
 
-#authWall { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 999; }
-.auth-card { background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 40px; width: 360px; text-align: center; box-shadow: 0 4px 24px rgba(0,0,0,0.1); }
+
+/* auth-card unused */ .auth-card-unused { background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 40px; width: 360px; text-align: center; box-shadow: 0 4px 24px rgba(0,0,0,0.1); }
 .auth-logo { font-size: 22px; font-weight: 800; color: var(--navy); margin-bottom: 6px; }
 .auth-sub { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
 .auth-card input { width: 100%; padding: 11px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 14px; font-family: 'Poppins', sans-serif; margin-bottom: 12px; }
@@ -41,7 +41,7 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
 .auth-btn { width: 100%; padding: 11px; border-radius: 8px; border: none; background: var(--teal); color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'Poppins', sans-serif; }
 .auth-err { font-size: 12px; color: var(--red); margin-top: 8px; display: none; }
 
-#app { display: none; }
+#app { display: block; }
 .page { max-width: 1100px; margin: 0 auto; padding: 28px 20px 60px; }
 
 .page-header { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
@@ -137,13 +137,10 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
 </head>
 <body>
 
-<div id="authWall">
-  <div class="auth-card">
-    <div class="auth-logo"><b>FR</b>-LOGISTICS</div>
     <div class="auth-sub">Content Studio · Portal Access</div>
-    <input type="password" id="pwInput" placeholder="Password" onkeydown="if(event.key==='Enter')checkAuth()">
-    <button class="auth-btn" onclick="checkAuth()">Enter Portal</button>
-    <div class="auth-err" id="authErr">Incorrect password</div>
+    
+    
+    
   </div>
 </div>
 
@@ -284,29 +281,9 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
 <div class="toast" id="toast"></div>
 
 <script>
-const PORTAL_PW = 'frlogistics2024';
-const API_FN = '/.netlify/functions/generate-caption';
-const CS = 1080;
-
-function checkAuth() {
-  if (document.getElementById('pwInput').value === PORTAL_PW) {
-    sessionStorage.setItem('frauth','1');
-    localStorage.setItem('frauth','1');
-    document.getElementById('authWall').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    init();
-  } else {
-    document.getElementById('authErr').style.display = 'block';
-  }
-}
-// Auto-pass auth if inside portal iframe, or if previously authenticated
-const inIframe = window !== window.parent;
-if (inIframe || sessionStorage.getItem('frauth') || localStorage.getItem('frauth')) {
-  document.getElementById('authWall').style.display = 'none';
-  document.getElementById('app').style.display = 'block';
-  init();
-}
-document.getElementById('pwInput').addEventListener('keydown', e => { if(e.key==='Enter') checkAuth(); });
+// Portal handles auth — init directly
+document.getElementById('app').style.display = 'block';
+init();
 
 const ACCTS = {
   srj: { handle:'@strokerunnerjourney', loc:'Tropical Park, Miami', av:'JK', avBg:'#0F1D35' },
