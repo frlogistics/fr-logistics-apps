@@ -137,6 +137,13 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
 </head>
 <body>
 
+<script>
+  // If inside portal iframe, navigate top frame to this page directly
+  if (window !== window.parent) {
+    window.top.location.href = window.location.href;
+  }
+</script>
+
     <div class="auth-sub">Content Studio · Portal Access</div>
     
     
