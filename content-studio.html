@@ -91,6 +91,8 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
 
 .gbtn { width: 100%; padding: 12px; border-radius: 8px; border: none; background: var(--teal); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'Poppins', sans-serif; transition: opacity .2s; margin-top: 4px; }
 .gbtn:hover { opacity: .88; }
+.lang-btn { flex:1; padding:7px 6px; border-radius:7px; border:1px solid var(--border); font-size:11px; font-weight:600; cursor:pointer; background:var(--surface2); color:var(--muted); font-family:'Poppins',sans-serif; transition:all .15s; text-align:center; }
+.lang-btn.on { background:var(--navy); color:var(--teal); border-color:var(--navy); }
 .gbtn:disabled { opacity: .4; cursor: not-allowed; }
 .gbtn.ld { background: #4ecdc4; }
 
@@ -218,8 +220,16 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
           <div class="tpl-scroll" id="tplRow"></div>
 
           <div class="plbl" style="margin-top:4px">Tipo de post</div>
-          <div class="frow" style="margin-bottom:14px">
+          <div class="frow" style="margin-bottom:10px">
             <select id="postType"></select>
+          </div>
+          <div class="plbl">Idioma del caption</div>
+          <div class="frow" style="margin-bottom:14px">
+            <div style="display:flex;gap:6px">
+              <button class="lang-btn on" id="lang-es" onclick="setLang('es')">🇪🇸 Español</button>
+              <button class="lang-btn" id="lang-en" onclick="setLang('en')">🇺🇸 English</button>
+              <button class="lang-btn" id="lang-both" onclick="setLang('both')">🌎 Ambos</button>
+            </div>
           </div>
 
           <div class="plbl">Campos del template</div>
@@ -293,6 +303,15 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
 const CS = 1080;
 const API_FN = '/.netlify/functions/generate-caption';
 
+let captionLang = 'es';
+
+function setLang(lang) {
+  captionLang = lang;
+  ['es','en','both'].forEach(l => {
+    document.getElementById('lang-' + l).className = 'lang-btn' + (l === lang ? ' on' : '');
+  });
+}
+
 const ACCTS = {
   srj: { handle:'@strokerunnerjourney', loc:'Tropical Park, Miami', av:'JK', avBg:'#0F1D35' },
   frl: { handle:'@frlogisticsmiamiinc', loc:'Doral, FL 33172', av:'FR', avBg:'#0F1D35' }
@@ -352,24 +371,34 @@ const FILTERS = {
   frl: { f:'brightness(1.05) contrast(1.05) saturate(0.9)', ov:'rgba(255,255,255,0.1)', bm:'screen' }
 };
 
-const SYSPROMPTS = {
-  srj: `You are a social media copywriter for @StrokeRunnerJourney. Analyze the image and write a post.
+function getSysPrompt(accountType, lang) {
+  const langInstr = {
+    es: 'Write the caption ENTIRELY IN SPANISH.',
+    en: 'Write the caption ENTIRELY IN ENGLISH.',
+    both: 'Write the caption in BOTH languages: first the full caption in Spanish, then a separator line "---", then the full caption in English.'
+  };
+  const langNote = langInstr[lang] || langInstr.es;
+
+  if (accountType === 'srj') {
+    return `You are a social media copywriter for @StrokeRunnerJourney. Analyze the image and write a post.
 BRAND: Jose — stroke survivor, marathon runner Miami. Chicago 299 days post-stroke, 3:35:19. NYC Marathon Nov 2026 goal 3:30:00. Achilles International. Tropical Park.
-TONE: Authentic, inspiring, Spanglish OK.
+TONE: Authentic, inspiring. ${langNote}
 Return ONLY:
 CAPTION:
 [150-200 words]
 HASHTAGS:
-[20-25 hashtags]`,
-  frl: `You are a copywriter for FR-Logistics Miami. Analyze the image and write a business post.
+[20-25 hashtags]`;
+  } else {
+    return `You are a copywriter for FR-Logistics Miami. Analyze the image and write a business post.
 BRAND: Amazon SPN-certified 3PL in Doral FL. FBA prep, FBM, LATAM clients. EcoPack+ service.
-TONE: Professional, bilingual Spanish primary / English secondary.
+TONE: Professional. ${langNote}
 Return ONLY:
 CAPTION:
-[130-180 words Spanish primary]
+[130-180 words]
 HASHTAGS:
-[20-25 hashtags Spanish+English]`
-};
+[20-25 hashtags]`;
+  }
+}
 
 let curAcct = 'srj', imgSrc = 'up', curTpl = null;
 let uploadedImg = null, uploadedB64 = null, generatedCaption = '';
@@ -763,6 +792,7 @@ async function genCaption() {
   try {
     const body = { accountType: curAcct, postType, brief };
     if (uploadedB64) { body.imageData = uploadedB64; body.imageMediaType = 'image/jpeg'; }
+    body.systemPrompt = getSysPrompt(curAcct, captionLang);
     const res = await fetch(API_FN, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
