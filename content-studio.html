@@ -12,34 +12,34 @@
     --teal: #00B4AA;
     --red: #CC2936;
     --green: #1a8c3a;
-    --bg: #0a1628;
-    --surface: #132040;
-    --surface2: #1a2d50;
-    --border: rgba(255,255,255,0.08);
-    --text: #f0f4f8;
-    --muted: rgba(255,255,255,0.5);
+    --bg: #f0f2f5;
+    --surface: #ffffff;
+    --surface2: #f8f9fb;
+    --border: rgba(0,0,0,0.09);
+    --text: #1a2332;
+    --muted: #6b7a8d;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
 
   /* ── NAV ── */
-  .nav { background: var(--navy); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; align-items: center; gap: 20px; height: 56px; position: sticky; top: 0; z-index: 100; }
-  .nav-logo { font-size: 15px; font-weight: 700; color: var(--teal); letter-spacing: .04em; white-space: nowrap; }
+  .nav { background: #fff; border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; align-items: center; gap: 20px; height: 56px; position: sticky; top: 0; z-index: 100; }
+  .nav-logo { font-size: 15px; font-weight: 700; color: var(--navy); letter-spacing: .02em; white-space: nowrap; }
   .nav-links { display: flex; gap: 4px; flex: 1; overflow-x: auto; scrollbar-width: none; }
   .nav-links::-webkit-scrollbar { display: none; }
   .nav-link { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; color: var(--muted); text-decoration: none; white-space: nowrap; transition: all .15s; }
-  .nav-link:hover { background: rgba(255,255,255,.06); color: var(--text); }
-  .nav-link.active { background: rgba(0,180,170,.15); color: var(--teal); }
-  .nav-badge { background: var(--teal); color: var(--navy); font-size: 9px; font-weight: 700; padding: 2px 5px; border-radius: 4px; letter-spacing: .04em; margin-left: 4px; vertical-align: middle; }
+  .nav-link:hover { background: #f0f2f5; color: var(--text); }
+  .nav-link.active { background: rgba(0,180,170,.1); color: var(--teal); }
+  .nav-badge { background: var(--teal); color: #fff; font-size: 9px; font-weight: 700; padding: 2px 5px; border-radius: 4px; letter-spacing: .04em; margin-left: 4px; vertical-align: middle; }
 
   /* ── AUTH ── */
-  #authWall { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 999; }
-  .auth-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 40px; width: 360px; text-align: center; }
-  .auth-logo { font-size: 22px; font-weight: 800; color: var(--teal); margin-bottom: 6px; }
+  #authWall { position: fixed; inset: 0; background: #f0f2f5; display: flex; align-items: center; justify-content: center; z-index: 999; }
+  .auth-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 40px; width: 360px; text-align: center; box-shadow: 0 4px 24px rgba(0,0,0,0.1); }
+  .auth-logo { font-size: 22px; font-weight: 800; color: var(--navy); margin-bottom: 6px; }
   .auth-sub { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
-  .auth-card input { width: 100%; padding: 11px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 14px; font-family: 'Poppins', sans-serif; margin-bottom: 12px; }
+  .auth-card input { width: 100%; padding: 11px 14px; border-radius: 8px; border: 1px solid var(--border); background: #f8f9fb; color: var(--text); font-size: 14px; font-family: 'Poppins', sans-serif; margin-bottom: 12px; }
   .auth-card input:focus { outline: none; border-color: var(--teal); }
-  .auth-btn { width: 100%; padding: 11px; border-radius: 8px; border: none; background: var(--teal); color: var(--navy); font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'Poppins', sans-serif; }
+  .auth-btn { width: 100%; padding: 11px; border-radius: 8px; border: none; background: var(--teal); color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'Poppins', sans-serif; }
   .auth-err { font-size: 12px; color: var(--red); margin-top: 8px; display: none; }
 
   /* ── MAIN ── */
@@ -51,28 +51,28 @@
 
   /* ── ACCOUNT SWITCHER ── */
   .acct-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 22px; }
-  .acct-btn { padding: 12px 16px; border-radius: 10px; border: 1.5px solid var(--border); cursor: pointer; text-align: left; background: var(--surface); transition: all .18s; }
-  .acct-btn.active { border-color: var(--teal); background: rgba(0,180,170,.1); }
+  .acct-btn { padding: 12px 16px; border-radius: 10px; border: 1.5px solid var(--border); cursor: pointer; text-align: left; background: var(--surface); transition: all .18s; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  .acct-btn.active { border-color: var(--teal); background: rgba(0,180,170,.06); }
   .acct-btn .al { font-size: 10px; font-weight: 600; letter-spacing: .07em; color: var(--muted); text-transform: uppercase; }
   .acct-btn .an { font-size: 13px; font-weight: 600; color: var(--text); margin-top: 2px; }
   .acct-btn.active .al { color: var(--teal); }
-  .acct-btn.active .an { color: #fff; }
+  .acct-btn.active .an { color: var(--navy); }
 
   /* ── LAYOUT ── */
   .studio-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   @media(max-width:700px) { .studio-cols { grid-template-columns: 1fr; } .acct-bar { grid-template-columns: 1fr 1fr; } }
 
   /* ── PANELS ── */
-  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 14px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
   .plbl { font-size: 10px; font-weight: 600; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; margin-bottom: 11px; }
 
   /* ── SOURCE TABS ── */
   .src-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
   .stab { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid var(--border); font-size: 12px; font-weight: 500; cursor: pointer; background: var(--surface2); color: var(--muted); font-family: 'Poppins', sans-serif; transition: all .15s; text-align: center; }
-  .stab.on { background: var(--navy); color: var(--teal); border-color: var(--teal); }
+  .stab.on { background: var(--navy); color: var(--teal); border-color: var(--navy); }
 
   /* ── UPLOAD ZONE ── */
-  .upzone { border: 1.5px dashed rgba(255,255,255,.2); border-radius: 10px; padding: 20px; text-align: center; cursor: pointer; background: var(--surface2); margin-bottom: 10px; transition: all .2s; }
+  .upzone { border: 1.5px dashed rgba(0,0,0,.15); border-radius: 10px; padding: 20px; text-align: center; cursor: pointer; background: var(--surface2); margin-bottom: 10px; transition: all .2s; }
   .upzone:hover, .upzone.has { border-color: var(--teal); border-style: solid; }
   .upzone p { font-size: 12px; color: var(--muted); line-height: 1.6; }
   .upzone p strong { color: var(--teal); }
@@ -80,7 +80,7 @@
   /* ── TEMPLATE SELECTOR ── */
   .tpl-scroll { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 14px; scrollbar-width: none; }
   .tpl-scroll::-webkit-scrollbar { display: none; }
-  .tplcard { flex: 0 0 88px; padding: 10px 8px; border-radius: 9px; border: 1.5px solid var(--border); cursor: pointer; text-align: center; background: var(--surface2); transition: all .15s; }
+  .tplcard { flex: 0 0 88px; padding: 10px 8px; border-radius: 9px; border: 1.5px solid var(--border); cursor: pointer; text-align: center; background: var(--surface2); border: 1px solid var(--border); transition: all .15s; }
   .tplcard.on { border-color: var(--teal); background: rgba(0,180,170,.12); }
   .tplcard .ti { font-size: 20px; display: block; margin-bottom: 5px; }
   .tplcard .tn { font-size: 11px; font-weight: 600; color: var(--muted); line-height: 1.2; }
@@ -142,13 +142,13 @@
   .drafts-table td { padding: 12px 14px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: top; }
   .drafts-table tr:hover td { background: rgba(255,255,255,.03); }
   .draft-acct { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
-  .draft-acct.srj { background: rgba(0,180,170,.15); color: var(--teal); }
+  .draft-acct.srj { background: rgba(0,180,170,.1); color: var(--teal); }
   .draft-acct.frl { background: rgba(26,140,58,.15); color: #4caf6e; }
   .draft-caption { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
   .empty-state { text-align: center; padding: 40px; color: var(--muted); font-size: 13px; }
 
   /* ── TOAST ── */
-  .toast { position: fixed; bottom: 28px; right: 28px; background: var(--navy); border: 1px solid var(--teal); color: var(--text); padding: 12px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; z-index: 200; opacity: 0; transform: translateY(8px); transition: all .25s; pointer-events: none; }
+  .toast { position: fixed; bottom: 28px; right: 28px; background: var(--text); border: 1px solid var(--teal); color: var(--text); padding: 12px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; z-index: 200; opacity: 0; transform: translateY(8px); transition: all .25s; pointer-events: none; }
   .toast.show { opacity: 1; transform: translateY(0); }
 </style>
 </head>
@@ -157,7 +157,7 @@
 <!-- AUTH WALL -->
 <div id="authWall">
   <div class="auth-card">
-    <div class="auth-logo">FR-LOGISTICS</div>
+    <div class="auth-logo"><span style="color:var(--teal)">FR</span>-LOGISTICS</div>
     <div class="auth-sub">Content Studio · Portal Access</div>
     <input type="password" id="pwInput" placeholder="Password" onkeydown="if(event.key==='Enter')checkAuth()">
     <button class="auth-btn" onclick="checkAuth()">Enter Portal</button>
@@ -168,7 +168,7 @@
 <!-- APP -->
 <div id="app">
   <nav class="nav">
-    <div class="nav-logo">FR-LOGISTICS</div>
+    <div class="nav-logo"><span>FR</span>-LOGISTICS</div>
     <div class="nav-links">
       <a href="portal.html" class="nav-link">Dashboard</a>
       <a href="Inbound_Outbound.html" class="nav-link">Inbound/Outbound</a>
@@ -180,9 +180,13 @@
   </nav>
 
   <div class="page">
-    <div class="page-header">
-      <div class="page-title">Instagram Content Studio</div>
-      <div class="page-sub">Generate, style, and export posts for both brands — powered by Claude AI</div>
+    <div class="page-header" style="display:flex;align-items:center;gap:14px;margin-bottom:24px">
+      <div style="width:44px;height:44px;border-radius:12px;background:rgba(0,180,170,.12);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">📸</div>
+      <div>
+        <div class="page-title" style="font-size:20px;font-weight:700;color:var(--text)">Instagram Content Studio</div>
+        <div class="page-sub" style="font-size:13px;color:var(--muted);margin-top:2px">Generate, style, and export posts for both brands — powered by Claude AI</div>
+      </div>
+      <a href="portal.html" style="margin-left:auto;font-size:12px;color:var(--muted);text-decoration:none;padding:7px 14px;border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:5px;white-space:nowrap;background:#fff">← Portal</a>
     </div>
 
     <!-- Account Switcher -->
@@ -236,7 +240,7 @@
 
           <div class="plbl" style="margin-top:4px">Tipo de post</div>
           <div class="frow" style="margin-bottom:14px">
-            <select id="postType"></select>
+            <select id="postType" onchange="if(uploadedImg) redraw()"></select>
           </div>
 
           <div class="plbl">Campos del template</div>
@@ -293,8 +297,8 @@
     <!-- Drafts -->
     <div class="drafts-section">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <div style="font-size:15px;font-weight:600;">Borradores guardados</div>
-        <button onclick="loadDrafts()" style="font-size:12px;color:var(--teal);background:none;border:none;cursor:pointer;font-family:'Poppins',sans-serif;font-weight:500;">↻ Actualizar</button>
+        <div style="font-size:15px;font-weight:600;color:var(--text)">Borradores guardados</div>
+        <button onclick="loadDrafts()" style="font-size:12px;color:var(--teal);background:none;border:none;cursor:pointer;font-family:'Poppins',sans-serif;font-weight:500;padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:#fff;">↻ Actualizar</button>
       </div>
       <div class="panel" style="padding:0;overflow:hidden">
         <div id="draftsBody">
@@ -436,7 +440,7 @@ function renderTpls(id) {
     const d = document.createElement('div');
     d.className = 'tplcard' + (i===0 ? ' on' : '');
     d.innerHTML = `<span class="ti">${t.icon}</span><span class="tn">${t.name}</span>`;
-    d.onclick = () => { document.querySelectorAll('.tplcard').forEach(x=>x.classList.remove('on')); d.classList.add('on'); curTpl = t; renderFields(t); };
+    d.onclick = () => { document.querySelectorAll('.tplcard').forEach(x=>x.classList.remove('on')); d.classList.add('on'); curTpl = t; renderFields(t); if(uploadedImg) redraw(); };
     row.appendChild(d);
   });
   curTpl = TPLS[id][0];
@@ -758,7 +762,31 @@ function deleteDraft(id) {
 }
 
 function showPub() {
-  alert('📲 Para publicar en Instagram directamente:\n\n1. Ve a apps.fr-logistics.net → Settings → Instagram Connect\n2. Conecta tu Meta Graph API Token\n3. Vuelve aquí y el botón publicará automáticamente');
+  if (!generatedCaption && document.getElementById('mc').style.display === 'none') {
+    showToast('Genera un post primero antes de publicar'); return;
+  }
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `<div style="background:#132040;border:1px solid rgba(0,180,170,0.3);border-radius:16px;padding:28px;max-width:440px;width:100%;font-family:Poppins,sans-serif">
+    <div style="font-size:16px;font-weight:700;color:#f0f4f8;margin-bottom:6px">📲 Publicar en Instagram</div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:20px">Para publicar directo necesitas conectar el Meta Graph API</div>
+    <div style="background:#0a1628;border-radius:10px;padding:16px;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:600;color:#00B4AA;letter-spacing:.06em;margin-bottom:10px">PASOS PARA ACTIVAR</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.7);line-height:2">
+        1. Ve a <a href="https://developers.facebook.com" target="_blank" style="color:#00B4AA">developers.facebook.com</a><br>
+        2. Crea una app → Instagram Basic Display<br>
+        3. Obtén tu <strong style="color:#fff">Access Token</strong><br>
+        4. Agrégalo en Netlify como <code style="background:#1a2d50;padding:2px 6px;border-radius:4px;color:#00B4AA">IG_ACCESS_TOKEN</code>
+      </div>
+    </div>
+    <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-bottom:16px">Por ahora puedes guardar la imagen y caption, y publicar manualmente en Instagram.</div>
+    <div style="display:flex;gap:8px">
+      <button onclick="savePNG();this.closest('div[style]').remove()" style="flex:1;padding:10px;background:#00B4AA;color:#0F1D35;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-family:Poppins,sans-serif;font-size:13px">💾 Guardar imagen</button>
+      <button onclick="this.closest('div[style]').remove()" style="flex:1;padding:10px;background:transparent;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;font-family:Poppins,sans-serif;font-size:13px">Cerrar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  modal.onclick = e => { if(e.target===modal) modal.remove(); };
 }
 
 /* ═══════════ UTILS ═══════════ */
