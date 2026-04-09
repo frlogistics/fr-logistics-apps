@@ -832,22 +832,63 @@ function deleteDraft(id) {
 }
 
 function showPub() {
+  const canvas = document.getElementById('mc');
+  if (canvas.style.display === 'none' || !generatedCaption) {
+    showToast('Genera un post primero'); return;
+  }
+  const acctHandle = curAcct === 'frl' ? '@fr_logistics' : '@strokerunnerjourney';
+  const preview = generatedCaption.substring(0, 150) + '...';
   const modal = document.createElement('div');
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px';
-  modal.innerHTML = '<div style="background:#fff;border:1px solid var(--border);border-radius:16px;padding:28px;max-width:440px;width:100%;font-family:Poppins,sans-serif;box-shadow:0 8px 32px rgba(0,0,0,0.15)">' +
-    '<div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:6px">📲 Publicar en Instagram</div>' +
-    '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Para publicar directo necesitas conectar el Meta Graph API</div>' +
-    '<div style="background:var(--surface2);border-radius:10px;padding:16px;margin-bottom:16px;border:1px solid var(--border)">' +
-    '<div style="font-size:11px;font-weight:600;color:var(--teal);letter-spacing:.06em;margin-bottom:10px">PASOS PARA ACTIVAR</div>' +
-    '<div style="font-size:12px;color:var(--text);line-height:2.2">1. Ve a <a href="https://developers.facebook.com" target="_blank" style="color:var(--teal)">developers.facebook.com</a><br>2. Crea una app → Instagram Basic Display<br>3. Obtén tu <b>Access Token</b><br>4. Agrégalo en Netlify como <code style="background:#e8f4f3;padding:2px 6px;border-radius:4px;color:var(--teal)">IG_ACCESS_TOKEN</code></div></div>' +
-    '<div style="font-size:11px;color:var(--muted);margin-bottom:16px">Por ahora guarda la imagen y caption, y publica manualmente.</div>' +
-    '<div style="display:flex;gap:8px"><button onclick="savePNG();this.closest(\'[style]\').remove()" style="flex:1;padding:10px;background:var(--teal);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-family:Poppins,sans-serif;font-size:13px">💾 Guardar imagen</button>' +
-    '<button onclick="this.closest(\'[style]\').remove()" style="flex:1;padding:10px;background:#fff;color:var(--muted);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-family:Poppins,sans-serif;font-size:13px">Cerrar</button></div></div>';
-  document.body.appendChild(modal);
+  modal.innerHTML = `<div style="background:#fff;border-radius:16px;padding:28px;max-width:440px;width:100%;font-family:Poppins,sans-serif;box-shadow:0 8px 32px rgba(0,0,0,0.15)">
+    <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:4px">📲 Publicar en Instagram</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Cuenta: <b>${acctHandle}</b></div>
+    <div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:16px;font-size:12px;color:var(--text);max-height:80px;overflow-y:auto;line-height:1.5">${preview}</div>
+    <div style="display:flex;gap:8px">
+      <button id="pubBtn" style="flex:1;padding:10px;background:var(--teal);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-family:Poppins,sans-serif;font-size:13px">✅ Publicar ahora</button>
+      <button onclick="this.closest('div[style*=fixed]').remove()" style="flex:1;padding:10px;background:#fff;color:var(--muted);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-family:Poppins,sans-serif;font-size:13px">Cancelar</button>
+    </div>
+    <div id="pubStatus" style="font-size:12px;color:var(--muted);text-align:center;margin-top:10px;display:none"></div>
+  </div>`;
   modal.onclick = e => { if(e.target===modal) modal.remove(); };
+  document.body.appendChild(modal);
+  document.getElementById('pubBtn').onclick = () => doPublish(modal);
 }
 
-function showLd(show, msg) {
+async function doPublish(modal) {
+  const btn = document.getElementById('pubBtn');
+  const status = document.getElementById('pubStatus');
+  const canvas = document.getElementById('mc');
+  const imageBase64 = canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin-sm"></span>Publicando...';
+  status.style.display = 'block';
+  status.textContent = 'Subiendo imagen...';
+  try {
+    const res = await fetch('/.netlify/functions/publish-instagram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caption: generatedCaption, imageBase64, accountType: curAcct })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    status.style.color = 'var(--teal)';
+    status.textContent = '✅ ' + data.message;
+    btn.style.background = '#1a8c3a';
+    btn.innerHTML = '✅ Publicado';
+    showToast('✅ Post publicado en Instagram');
+    setTimeout(() => modal.remove(), 3000);
+  } catch(e) {
+    status.style.color = 'var(--red)';
+    status.textContent = '⚠️ ' + e.message;
+    btn.disabled = false;
+    btn.innerHTML = '↻ Reintentar';
+  }
+}
+
+
+
+function showLd(function showLd(show, msg) {
   const el = document.getElementById('cnvLd');
   el.style.display = show ? 'flex' : 'none';
   if (msg) document.getElementById('ldMsg').textContent = msg;
