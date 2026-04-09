@@ -50,7 +50,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { accountType, postType, brief, imageData, imageMediaType } =
+    const { accountType, postType, brief, imageData, imageMediaType, systemPrompt: systemPromptOverride } =
       JSON.parse(event.body);
 
     if (!accountType || !SYSTEM_PROMPTS[accountType]) {
@@ -87,10 +87,13 @@ exports.handler = async (event) => {
       ];
     }
 
+    // Use custom systemPrompt if provided, otherwise use default
+    const systemPrompt = systemPromptOverride || SYSTEM_PROMPTS[accountType];
+
     const message = await client.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1000,
-      system: SYSTEM_PROMPTS[accountType],
+      system: systemPrompt,
       messages: [{ role: "user", content: messageContent }],
     });
 
