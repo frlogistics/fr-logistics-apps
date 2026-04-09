@@ -291,6 +291,7 @@ const CS = 1080;
 function checkAuth() {
   if (document.getElementById('pwInput').value === PORTAL_PW) {
     sessionStorage.setItem('frauth','1');
+    localStorage.setItem('frauth','1');
     document.getElementById('authWall').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     init();
@@ -298,7 +299,9 @@ function checkAuth() {
     document.getElementById('authErr').style.display = 'block';
   }
 }
-if (sessionStorage.getItem('frauth')) {
+// Auto-pass auth if inside portal iframe, or if previously authenticated
+const inIframe = window !== window.parent;
+if (inIframe || sessionStorage.getItem('frauth') || localStorage.getItem('frauth')) {
   document.getElementById('authWall').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   init();
