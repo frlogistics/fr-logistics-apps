@@ -513,6 +513,26 @@ function tx(ctx, s, x, y, font, color, maxW) {
 
 const P = 65;
 
+
+// Cross-browser rounded rect helper
+function roundRect(ctx, x, y, w, h, r) {
+  const tl = typeof r === 'object' ? (r.tl || r.upperLeft || 0) : r;
+  const tr = typeof r === 'object' ? (r.tr || r.upperRight || 0) : r;
+  const br = typeof r === 'object' ? (r.br || r.lowerRight || 0) : r;
+  const bl = typeof r === 'object' ? (r.bl || r.lowerLeft || 0) : r;
+  ctx.beginPath();
+  ctx.moveTo(x + tl, y);
+  ctx.lineTo(x + w - tr, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + tr);
+  ctx.lineTo(x + w, y + h - br);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - br, y + h);
+  ctx.lineTo(x + bl, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - bl);
+  ctx.lineTo(x, y + tl);
+  ctx.quadraticCurveTo(x, y, x + tl, y);
+  ctx.closePath();
+}
+
 const DRAWFNS = {
   srj_stat(ctx, f) {
     tx(ctx, 'STROKE RUNNER JOURNEY', P, 76, '600 26px Poppins', '#00B4AA');
@@ -585,7 +605,7 @@ const DRAWFNS = {
     ctx.fillStyle = '#1a8c3a'; ctx.fillRect((CS-lw)/2, 110, lw, 4);
     const cx = P, cy = 162, cw = CS-P*2, ch = 726;
     ctx.fillStyle = 'rgba(255,255,255,0.96)';
-    ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch, 22); ctx.fill();
+    roundRect(ctx, cx, cy, cw, ch, 22); ctx.fill();
     ctx.strokeStyle = 'rgba(26,140,58,0.2)'; ctx.lineWidth = 1.5; ctx.stroke();
     tx(ctx, f.headline || 'Important Notice', cx+40, cy+70, '700 44px Poppins', '#0F1D35');
     ctx.fillStyle = 'rgba(26,140,58,0.25)'; ctx.fillRect(cx+40, cy+86, cw-80, 1.5);
@@ -601,7 +621,7 @@ const DRAWFNS = {
     ctx.fillText(dl, cx+40, dy); dy += 58;
     tx(ctx, f.resume || '', cx+40, dy, '600 30px Poppins', '#1a8c3a', cw-80);
     ctx.fillStyle = '#1a8c3a';
-    ctx.beginPath(); ctx.roundRect(cx, cy+ch-74, cw, 74, {lowerLeft:22,lowerRight:22,upperLeft:0,upperRight:0}); ctx.fill();
+    roundRect(ctx, cx, cy+ch-74, cw, 74, {bl:22, br:22, tl:0, tr:0}); ctx.fill();
     ctx.font = '400 21px Poppins';
     const ft = 'Please plan shipments accordingly.  ·  info@fr-logistics.net';
     ctx.fillStyle = 'rgba(255,255,255,0.9)';
@@ -645,7 +665,7 @@ const DRAWFNS = {
     ctx.font = '600 26px Poppins';
     const bw2 = ctx.measureText(String(f.client || '')).width + 40;
     ctx.fillStyle = 'rgba(26,140,58,0.12)';
-    ctx.beginPath(); ctx.roundRect(P, hy, bw2, 50, 8); ctx.fill();
+    roundRect(ctx, P, hy, bw2, 50, 8); ctx.fill();
     tx(ctx, f.client || '', P+20, hy+35, '600 26px Poppins', '#1a8c3a');
     ctx.fillStyle = 'rgba(15,29,53,0.06)'; ctx.fillRect(0, CS-100, CS, 100);
     ctx.fillStyle = '#1a8c3a'; ctx.fillRect(0, CS-100, CS, 3);
@@ -660,24 +680,29 @@ async function generate() {
   const btn = document.getElementById('gbtn');
   btn.disabled = true; btn.className = 'gbtn ld';
   btn.innerHTML = '<span class="spin-sm"></span>Generando...';
+  try {
+    if (imgSrc === 'ai' && !uploadedImg) {
+      showLd(true, 'Generando imagen con IA...');
+      await genAIImage();
+      showLd(false);
+    }
 
-  if (imgSrc === 'ai' && !uploadedImg) {
-    showLd(true, 'Generando imagen con IA...');
-    await genAIImage();
+    if (!uploadedImg) { resetBtn(); return; }
+
+    showLd(true, 'Renderizando template...');
+    await redraw();
     showLd(false);
+
+    showLd(true, 'Claude generando caption...');
+    await genCaption();
+    showLd(false);
+
+    document.getElementById('arow').style.display = 'grid';
+  } catch(err) {
+    showLd(false);
+    showToast('Error: ' + err.message);
+    console.error('Generate error:', err);
   }
-
-  if (!uploadedImg) { resetBtn(); return; }
-
-  showLd(true, 'Renderizando template...');
-  await redraw();
-  showLd(false);
-
-  showLd(true, 'Claude generando caption...');
-  await genCaption();
-  showLd(false);
-
-  document.getElementById('arow').style.display = 'grid';
   resetBtn();
 }
 
