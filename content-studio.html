@@ -339,6 +339,7 @@ const POST_TYPES = {
 
 const TPLS = {
   srj:[
+    {id:'blank', name:'Sin texto', icon:'🖼️', fields:[]},
     {id:'srj_stat',name:'Bold Stat',icon:'📊',fields:[
       {k:'mainStat',lbl:'Número principal',def:'299'},
       {k:'statLabel',lbl:'Etiqueta',def:'DAYS.'},
@@ -360,6 +361,7 @@ const TPLS = {
     ]}
   ],
   frl:[
+    {id:'blank', name:'Sin texto', icon:'🖼️', fields:[]},
     {id:'frl_announce',name:'Aviso',icon:'📢',fields:[
       {k:'headline',lbl:'Titular',def:'Important Notice'},
       {k:'mainLine',lbl:'Línea principal',def:'We will be CLOSED on'},
@@ -825,6 +827,9 @@ const DRAWFNS = {
     tx(ctx,'FR-LOGISTICS MIAMI',P,CS-55,'600 24px Poppins','rgba(0,180,170,.7)');
     tx(ctx,'Amazon SPN  ·  3PL  ·  Doral, FL',P,CS-22,'400 20px Poppins','rgba(255,255,255,.4)');
   },
+  blank(ctx,f) {
+    // No text overlay — just the background image
+  },
   frl_stat(ctx,f) {
     ctx.fillStyle='rgba(245,248,245,.92)'; ctx.fillRect(0,0,CS,CS);
     ctx.fillStyle='#0F1D35'; ctx.fillRect(0,0,CS,305);
@@ -852,18 +857,36 @@ async function generate() {
   btn.disabled = true; btn.className = 'gbtn ld';
   btn.innerHTML = '<span class="spin-sm"></span>Generando...';
   try {
-    if (imgSrc==='ai' && !uploadedImg) {
-      showLd(true,'Generando imagen con IA...');
-      await genAIImage();
+    if (pubMode === 'reel') {
+      if (!videoB64) { showToast('Sube un video primero'); resetBtn(); return; }
+      // Redraw reel canvas placeholder
+      await reelCanvas();
+      showLd(true,'Claude generando caption...');
+      await genCaption();
+      showLd(false);
+    } else if (pubMode === 'carousel') {
+      if (carouselSlots.length < 2) { showToast('Agrega al menos 2 imágenes'); resetBtn(); return; }
+      showLd(true,'Renderizando slide 1...');
+      await goToSlide(0);
+      showLd(false);
+      showLd(true,'Claude generando caption...');
+      await genCaption();
+      showLd(false);
+    } else {
+      // Normal post mode
+      if (imgSrc==='ai' && !uploadedImg) {
+        showLd(true,'Generando imagen con IA...');
+        await genAIImage();
+        showLd(false);
+      }
+      if (!uploadedImg && imgSrc!=='ai') { resetBtn(); return; }
+      showLd(true,'Renderizando template...');
+      await redraw();
+      showLd(false);
+      showLd(true,'Claude generando caption...');
+      await genCaption();
       showLd(false);
     }
-    if (!uploadedImg && imgSrc!=='ai') { resetBtn(); return; }
-    showLd(true,'Renderizando template...');
-    await redraw();
-    showLd(false);
-    showLd(true,'Claude generando caption...');
-    await genCaption();
-    showLd(false);
     document.getElementById('arow').style.display = 'grid';
   } catch(err) {
     showLd(false);
@@ -871,6 +894,30 @@ async function generate() {
     console.error(err);
   }
   resetBtn();
+}
+
+async function reelCanvas() {
+  await document.fonts.ready;
+  const canvas = document.getElementById('mc');
+  canvas.style.display = 'block';
+  document.getElementById('cnvPh').style.display = 'none';
+  document.getElementById('sliderControls').classList.remove('show');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,CS,CS);
+  ctx.fillStyle = '#0F1D35'; ctx.fillRect(0,0,CS,CS);
+  ctx.fillStyle = '#00B4AA'; ctx.fillRect(0,0,CS,8);
+  ctx.fillStyle = 'rgba(0,180,170,0.15)'; ctx.fillRect(0,CS-100,CS,100);
+  ctx.fillStyle = '#00B4AA'; ctx.font = 'bold 52px Poppins';
+  const rl = '🎬 REEL';
+  ctx.fillText(rl, (CS - ctx.measureText(rl).width)/2, CS/2+30);
+  if(videoFile) {
+    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '400 22px Poppins';
+    const fn = videoFile.name.length > 35 ? videoFile.name.substring(0,35)+'...' : videoFile.name;
+    ctx.fillText(fn, (CS - ctx.measureText(fn).width)/2, CS/2+90);
+  }
+  const acct = curAcct==='srj'?'@strokerunnerjourney':'@FR_Logistics';
+  ctx.fillStyle = '#00B4AA'; ctx.font = '600 22px Poppins';
+  ctx.fillText(acct, (CS - ctx.measureText(acct).width)/2, CS-50);
 }
 
 function resetBtn() {
@@ -915,12 +962,13 @@ async function genCaption() {
       body.imageData = uploadedB64;
       body.imageMediaType = uploadedMimeType || 'image/jpeg';
     }
-    // For reel mode: add language reinforcement to brief
-    if (pubMode === 'reel') {
-      const langNote = captionLang==='en' ? ' [RESPOND ONLY IN ENGLISH]'
-        : captionLang==='es' ? ' [RESPONDE SOLO EN ESPANOL]' : '';
-      body.brief = (brief||'') + langNote;
-    }
+    // Always add language to user message for enforcement
+    const langEnforce = captionLang==='en'
+      ? '\n\nIMPORTANT: Your response must be 100% in English. Zero Spanish words.'
+      : captionLang==='es'
+      ? '\n\nIMPORTANTE: Tu respuesta debe ser 100% en Español. Cero palabras en inglés.'
+      : '';
+    body.brief = (brief||'') + langEnforce;
     const res = await fetch(API_FN, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
     const data = await res.json();
     if (data.error) throw new Error(data.error);
