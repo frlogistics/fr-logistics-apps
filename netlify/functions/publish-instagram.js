@@ -4,102 +4,92 @@ exports.handler = async (event) => {
     'Access-Control-Allow-Headers': 'Content-Type',
     'Content-Type': 'application/json'
   };
-
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
-
   try {
-    const { caption, imageBase64, accountType } = JSON.parse(event.body);
+    const { caption, imageBase64, images, videoBase64, videoMimeType, accountType, mode = 'post' } = JSON.parse(event.body);
+    const ACCESS_TOKEN = accountType === 'frl' ? process.env.IG_ACCESS_TOKEN_FRL : process.env.IG_ACCESS_TOKEN_SRJ;
+    const USER_ID = accountType === 'frl' ? process.env.IG_USER_ID_FRL : process.env.IG_USER_ID_SRJ;
+    if (!ACCESS_TOKEN || !USER_ID) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Credenciales no configuradas' }) };
 
-    // Select credentials based on account
-    const ACCESS_TOKEN = accountType === 'frl'
-      ? process.env.IG_ACCESS_TOKEN_FRL
-      : process.env.IG_ACCESS_TOKEN_SRJ;
-
-    const USER_ID = accountType === 'frl'
-      ? process.env.IG_USER_ID_FRL
-      : process.env.IG_USER_ID_SRJ;
-
-    if (!ACCESS_TOKEN || !USER_ID) {
-      return { statusCode: 400, headers, body: JSON.stringify({ error: 'Instagram credentials not configured for this account' }) };
+    async function uploadToImgur(b64) {
+      const r = await fetch('https://api.imgur.com/3/image', { method:'POST', headers:{'Authorization':'Client-ID '+process.env.IMGUR_CLIENT_ID,'Content-Type':'application/json'}, body:JSON.stringify({image:b64,type:'base64'}) });
+      const d = await r.json();
+      if (!d.success) throw new Error('Imgur: '+JSON.stringify(d.data));
+      return d.data.link;
     }
 
-    // Step 1: Upload image to a temporary hosting (Imgur free API)
-    // Meta requires a public URL — we upload to Imgur first
-    const imgurRes = await fetch('https://api.imgur.com/3/image', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Client-ID ' + (process.env.IMGUR_CLIENT_ID || '546c25a59c58ad7'),
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ image: imageBase64, type: 'base64' })
-    });
-
-    const imgurData = await imgurRes.json();
-    if (!imgurData.success) throw new Error('Image upload failed: ' + JSON.stringify(imgurData));
-    const imageUrl = imgurData.data.link;
-
-    // Step 2: Create media container on Instagram
-    const containerRes = await fetch(
-      `https://graph.facebook.com/v19.0/${USER_ID}/media`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        image_url: imageUrl,
-        caption: caption,
-        access_token: ACCESS_TOKEN
-      })
-    });
-
-    const containerData = await containerRes.json();
-    if (containerData.error) throw new Error('Container error: ' + containerData.error.message);
-    const containerId = containerData.id;
-
-    // Step 3: Wait for container to be ready (up to 30 seconds)
-    let status = 'IN_PROGRESS';
-    let attempts = 0;
-    while (status === 'IN_PROGRESS' && attempts < 10) {
-      await new Promise(r => setTimeout(r, 3000));
-      const statusRes = await fetch(
-        `https://graph.facebook.com/v19.0/${containerId}?fields=status_code&access_token=${ACCESS_TOKEN}`
-      );
-      const statusData = await statusRes.json();
-      status = statusData.status_code;
-      attempts++;
+    async function uploadVideoTemp(b64, mime) {
+      const buf = Buffer.from(b64, 'base64');
+      const { Blob } = require('buffer');
+      const blob = new Blob([buf], { type: mime||'video/mp4' });
+      const fd = new FormData();
+      fd.append('file', blob, 'reel.mp4');
+      const r = await fetch('https://file.io/?expires=1h', { method:'POST', body:fd });
+      const d = await r.json();
+      if (!d.success) throw new Error('Video upload failed: ' + JSON.stringify(d));
+      return d.link;
     }
 
-    if (status !== 'FINISHED') throw new Error('Media container not ready: ' + status);
+    async function createContainer(params) {
+      const r = await fetch(`https://graph.facebook.com/v21.0/${USER_ID}/media`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...params, access_token:ACCESS_TOKEN}) });
+      const d = await r.json();
+      if (d.error) throw new Error(d.error.message);
+      return d.id;
+    }
 
-    // Step 4: Publish the container
-    const publishRes = await fetch(
-      `https://graph.facebook.com/v19.0/${USER_ID}/media_publish`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        creation_id: containerId,
-        access_token: ACCESS_TOKEN
-      })
-    });
+    async function waitReady(id, maxWait=15, interval=3000) {
+      for (let i=0; i<maxWait; i++) {
+        await new Promise(r => setTimeout(r, interval));
+        const r = await fetch(`https://graph.facebook.com/v21.0/${id}?fields=status_code&access_token=${ACCESS_TOKEN}`);
+        const d = await r.json();
+        if (d.status_code === 'FINISHED') return;
+        if (d.status_code === 'ERROR') throw new Error('Container failed');
+      }
+      throw new Error('Container timed out');
+    }
 
-    const publishData = await publishRes.json();
-    if (publishData.error) throw new Error('Publish error: ' + publishData.error.message);
+    async function publish(containerId) {
+      const r = await fetch(`https://graph.facebook.com/v21.0/${USER_ID}/media_publish`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({creation_id:containerId, access_token:ACCESS_TOKEN}) });
+      const d = await r.json();
+      if (d.error) throw new Error(d.error.message);
+      return d.id;
+    }
 
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({
-        success: true,
-        postId: publishData.id,
-        message: 'Post publicado exitosamente en Instagram'
-      })
-    };
+    if (mode === 'post') {
+      const url = await uploadToImgur(imageBase64);
+      const cid = await createContainer({ image_url:url, caption });
+      await waitReady(cid);
+      const pid = await publish(cid);
+      return { statusCode:200, headers, body:JSON.stringify({ success:true, postId:pid, message:'Post publicado en Instagram ✅' }) };
+    }
 
-  } catch (err) {
-    console.error('Instagram publish error:', err);
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: err.message })
-    };
+    if (mode === 'carousel') {
+      if (!images || images.length < 2) throw new Error('Mínimo 2 imágenes para carrusel');
+      const childIds = [];
+      for (const b64 of images) {
+        const url = await uploadToImgur(b64);
+        const cid = await createContainer({ image_url:url, is_carousel_item:true });
+        childIds.push(cid);
+      }
+      const cid = await createContainer({ media_type:'CAROUSEL', children:childIds.join(','), caption });
+      await waitReady(cid);
+      const pid = await publish(cid);
+      return { statusCode:200, headers, body:JSON.stringify({ success:true, postId:pid, message:`Carrusel de ${images.length} imágenes publicado ✅` }) };
+    }
+
+    if (mode === 'reel') {
+      if (!videoBase64) throw new Error('No video recibido');
+      const videoUrl = await uploadVideoTemp(videoBase64, videoMimeType);
+      const cid = await createContainer({ media_type:'REELS', video_url:videoUrl, caption });
+      await waitReady(cid, 20, 5000);
+      const pid = await publish(cid);
+      return { statusCode:200, headers, body:JSON.stringify({ success:true, postId:pid, message:'Reel publicado en Instagram ✅' }) };
+    }
+
+    throw new Error('Modo no válido: ' + mode);
+  } catch(err) {
+    console.error(err);
+    return { statusCode:500, headers, body:JSON.stringify({ error:err.message }) };
   }
 };
