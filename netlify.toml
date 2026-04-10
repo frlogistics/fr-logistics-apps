@@ -13,3 +13,12 @@
     Access-Control-Allow-Origin = "*"
     Access-Control-Allow-Methods = "GET, POST, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type, Authorization"
+[[redirects]]
+  from = "/"
+  to = "/portal.html"
+  status = 302
+
+[[redirects]]
+  from = "/portal"
+  to = "/portal.html"
+  status = 302
