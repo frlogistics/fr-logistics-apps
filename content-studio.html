@@ -396,14 +396,28 @@ function setMode(m) {
     document.getElementById('m'+x).className = 'mtab'+(x===m?' on':'');
     document.getElementById('mode'+x.charAt(0).toUpperCase()+x.slice(1)).style.display = x===m?'block':'none';
   });
-  // Update preview label
   const btn = document.getElementById('pubMainBtn');
   if(btn) {
     if(m==='carousel') btn.textContent = '🎠 Publicar Carrusel';
     else if(m==='reel') btn.textContent = '🎬 Publicar Reel';
     else btn.textContent = '📲 Publicar en Instagram';
   }
+  // Full reset including canvas
   resetPreview();
+  // Reset video state when leaving reel mode
+  if(m !== 'reel') {
+    videoFile = null; videoB64 = null;
+    const vp = document.getElementById('videoPreview');
+    if(vp) { vp.src=''; vp.style.display='none'; }
+    const vd = document.getElementById('videoDrop');
+    if(vd) { vd.className='video-drop'; vd.innerHTML='<p>🎬 Haz clic para subir tu video<br><b>MP4 · Máx 100MB · 9:16 recomendado</b></p>'; }
+  }
+  // Reset carousel state when leaving carousel mode
+  if(m !== 'carousel') {
+    carouselSlots = []; renderedSlides = []; currentSlide = 0;
+    const grid = document.getElementById('carouselGrid');
+    if(grid) grid.innerHTML = '';
+  }
 }
 
 function handleCarouselUp(e) {
@@ -459,16 +473,39 @@ function handleVideoUp(e) {
   const reader = new FileReader();
   reader.onload = ev => { videoB64 = ev.target.result.split(',')[1]; };
   reader.readAsDataURL(file);
-  // Show placeholder in canvas
-  document.getElementById('mc').style.display = 'block';
+  // Clear canvas and show reel placeholder
+  uploadedImg = null; uploadedB64 = null;
+  const canvas = document.getElementById('mc');
+  canvas.style.display = 'block';
   document.getElementById('cnvPh').style.display = 'none';
-  const ctx = document.getElementById('mc').getContext('2d');
-  ctx.fillStyle = '#0F1D35'; ctx.fillRect(0,0,CS,CS);
-  ctx.fillStyle = '#00B4AA'; ctx.font = '700 48px Poppins';
-  ctx.fillText('🎬 REEL', CS/2-80, CS/2);
-  ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '400 24px Poppins';
-  const fn = file.name.length > 30 ? file.name.substring(0,30)+'...' : file.name;
-  ctx.fillText(fn, CS/2 - ctx.measureText(fn).width/2, CS/2+50);
+  document.getElementById('sliderControls').classList.remove('show');
+  document.fonts.ready.then(() => {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,CS,CS);
+    ctx.fillStyle = '#0F1D35'; ctx.fillRect(0,0,CS,CS);
+    // Teal accent bar top
+    ctx.fillStyle = '#00B4AA'; ctx.fillRect(0,0,CS,8);
+    // Reel icon
+    ctx.font = '120px serif'; ctx.fillStyle = 'rgba(0,180,170,0.3)';
+    ctx.fillText('🎬', CS/2-60, CS/2-20);
+    // REEL label
+    ctx.fillStyle = '#00B4AA'; ctx.font = '700 52px Poppins';
+    const rl = 'REEL';
+    ctx.fillText(rl, (CS-ctx.measureText(rl).width)/2, CS/2+70);
+    // Filename
+    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '400 22px Poppins';
+    const fn = file.name.length > 35 ? file.name.substring(0,35)+'...' : file.name;
+    ctx.fillText(fn, (CS-ctx.measureText(fn).width)/2, CS/2+120);
+    // Size
+    const sz = (file.size/1024/1024).toFixed(1) + ' MB';
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '400 20px Poppins';
+    ctx.fillText(sz, (CS-ctx.measureText(sz).width)/2, CS/2+160);
+    // Bottom bar
+    ctx.fillStyle = 'rgba(0,180,170,0.15)'; ctx.fillRect(0,CS-80,CS,80);
+    ctx.fillStyle = '#00B4AA'; ctx.font = '600 20px Poppins';
+    const acct = curAcct==='srj'?'@strokerunnerjourney':'@FR_Logistics';
+    ctx.fillText(acct, (CS-ctx.measureText(acct).width)/2, CS-35);
+  });
 }
 let uploadedImg=null, uploadedB64=null, uploadedMimeType=null, generatedCaption='', fieldVals={};
 
@@ -872,12 +909,17 @@ async function genCaption() {
     // Use image for Vision analysis: carousel first slide, or uploaded image
     if (pubMode === 'carousel' && carouselSlots.length > 0) {
       body.imageData = carouselSlots[0].b64;
-      // Detect mime type from dataUrl
       const mime = carouselSlots[0].dataUrl.split(';')[0].split(':')[1];
       body.imageMediaType = mime || 'image/jpeg';
-    } else if (uploadedB64) {
+    } else if (uploadedB64 && pubMode !== 'reel') {
       body.imageData = uploadedB64;
       body.imageMediaType = uploadedMimeType || 'image/jpeg';
+    }
+    // For reel mode: add language reinforcement to brief
+    if (pubMode === 'reel') {
+      const langNote = captionLang==='en' ? ' [RESPOND ONLY IN ENGLISH]'
+        : captionLang==='es' ? ' [RESPONDE SOLO EN ESPANOL]' : '';
+      body.brief = (brief||'') + langNote;
     }
     const res = await fetch(API_FN, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
     const data = await res.json();
