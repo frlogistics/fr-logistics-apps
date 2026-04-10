@@ -81,6 +81,14 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);min
 .video-drop p{font-size:12px;color:var(--muted);line-height:1.6}
 .video-drop p b{color:var(--teal)}
 .video-preview{width:100%;border-radius:8px;margin-bottom:8px;display:none}
+.slider-controls{display:none;align-items:center;justify-content:space-between;background:#0F1D35;padding:8px 14px;gap:10px}
+.slider-controls.show{display:flex}
+.slider-btn{background:none;border:1px solid rgba(255,255,255,.3);color:#fff;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}
+.slider-btn:hover{background:rgba(255,255,255,.15)}
+.slider-dots{display:flex;gap:6px;align-items:center}
+.sdot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.3);cursor:pointer;transition:all .15s}
+.sdot.on{background:#00B4AA;width:10px;height:10px}
+.slider-label{font-size:11px;color:rgba(255,255,255,.6);font-family:'Poppins',sans-serif}
 .assets-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
 .asset-btn{width:70px;height:70px;border-radius:8px;border:1.5px solid var(--border);cursor:pointer;background:var(--surface2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;transition:all .15s;padding:4px}
 .asset-btn:hover{border-color:var(--teal)}
@@ -281,6 +289,12 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);min
             <span id="ldMsg">Procesando...</span>
           </div>
         </div>
+        <div class="slider-controls" id="sliderControls">
+          <button class="slider-btn" onclick="sliderNav(-1)">‹</button>
+          <div class="slider-dots" id="sliderDots"></div>
+          <span class="slider-label" id="sliderLabel">1 / 1</span>
+          <button class="slider-btn" onclick="sliderNav(1)">›</button>
+        </div>
         <div class="ig-acts"><span class="ig-act">♡</span><span class="ig-act">💬</span><span class="ig-act">↗</span></div>
         <div class="ig-cap" id="igCap"></div>
       </div>
@@ -415,12 +429,15 @@ function renderCarouselGrid() {
     div.innerHTML = `<span class="cnum">${i+1}</span><img src="${slot.dataUrl}"><button class="cdel" onclick="removeCarouselSlot(${i})">×</button>`;
     grid.appendChild(div);
   });
-  // Show first image in preview
+  // Show first image and update slider
+  currentSlide = 0;
+  renderedSlides = [];
   if(carouselSlots.length > 0) {
-    const img = new Image();
-    img.onload = () => { uploadedImg = img; uploadedB64 = carouselSlots[0].b64; redraw(); };
-    img.src = carouselSlots[0].dataUrl;
     document.getElementById('cnvPh').style.display = 'none';
+    goToSlide(0);
+    updateSliderUI();
+  } else {
+    document.getElementById('sliderControls').classList.remove('show');
   }
 }
 
@@ -461,34 +478,45 @@ function getSysPrompt(acct, lang) {
   const postType = document.getElementById('postType').value;
   const isCarousel = pubMode === 'carousel';
   const isReel = pubMode === 'reel';
-  const slideCount = carouselSlots.length;
 
+  // Language instruction — placed FIRST so model follows it
   const LANG = {
-    es: 'Escribe el caption COMPLETAMENTE EN ESPANOL.',
-    en: 'Write the caption ENTIRELY IN ENGLISH.',
-    both: 'Escribe en AMBOS idiomas:\n\n\uD83C\uDDEA\uD83C\uDDF8 ESPANOL:\n[caption espanol]\n\n\uD83C\uDDFA\uD83C\uDDF8 ENGLISH:\n[caption english]'
+    es: 'INSTRUCCION DE IDIOMA: Escribe TODO el caption UNICAMENTE EN ESPANOL. Ni una sola palabra en ingles.',
+    en: 'LANGUAGE INSTRUCTION: Write the ENTIRE caption ONLY IN ENGLISH. Not a single word in Spanish.',
+    both: 'LANGUAGE: Write in BOTH languages with this EXACT format:\n\n🇪🇸 ESPANOL:\n[caption completo en espanol]\n\n🇺🇸 ENGLISH:\n[full caption in english]'
   };
 
   const formatInstr = isCarousel
-    ? 'CARRUSEL de ' + slideCount + ' imagenes. Hook en primera linea con numero de slides. Termina: "Desliza para ver todo 👈"'
-    : isReel ? 'REEL. Hook impacto primera linea. Incluye "▶️ Mira el video" y "🔊 Activa el sonido".'
+    ? 'CARRUSEL: El caption debe comenzar con un hook tematico fuerte. Al final agrega: "Desliza para ver todo 👈"'
+    : isReel
+    ? 'REEL: Hook de impacto en primera linea. Incluye "▶️ Mira el video" y "🔊 Activa el sonido".'
     : 'POST individual.';
+
+  const imageRule = 'REGLA CRITICA: Si analizas una imagen, NUNCA escribas "IMAGE:" ni describas la imagen en el caption. Usala solo como inspiracion para el contenido, pero no la menciones ni la describes.';
 
   if (acct === 'srj') {
     const isFundraise = postType.includes('Fundraise') || postType.includes('Achilles');
     const isRecovery = postType.includes('Recovery') || postType.includes('My Story');
-    const tone = isRecovery ? 'Tono: personal, vulnerable, autentico. Desde adentro.' : 'Tono: inspirador, autentico, Spanglish natural.';
-    const fundraise = isFundraise ? 'OBLIGATORIO incluir: give.achillesinternational.org/fundraiser/7121629' : '';
-    return 'Eres copywriter de @StrokeRunnerJourney.\n\n'
+    const tone = isRecovery
+      ? 'Tono: personal, vulnerable, autentico. Comparte desde adentro.'
+      : 'Tono: inspirador, autentico, comunidad-primero.';
+    const fundraise = isFundraise
+      ? 'OBLIGATORIO incluir el link: give.achillesinternational.org/fundraiser/7121629' : '';
+
+    return LANG[lang] + '\n\n'
+      + imageRule + '\n\n'
+      + 'Eres copywriter de @StrokeRunnerJourney.\n\n'
       + 'BRAND: Jose, sobreviviente de stroke, maratonista Miami. Chicago 3:35:19 (299 dias post-stroke). '
       + 'NYC Marathon 1-Nov-2026, FALTAN ' + daysToNYC + ' DIAS, meta 3:30:00 BQ. Achilles International. Tropical Park.\n\n'
-      + 'TIPO: ' + postType + ' | FORMATO: ' + formatInstr + '\n' + tone + '\n' + fundraise + '\n\n'
-      + 'REGLAS: 1) Primera linea = HOOK que para el scroll. '
-      + '2) Instagram corta a 2 lineas, lo mejor primero. '
-      + '3) Max 2 emojis por parrafo. '
-      + '4) CTA variado: comenta/comparte/guarda/dona/visita link. '
-      + '5) Si hay imagen DESCRIBELA especificamente.\n\n'
-      + LANG[lang] + '\n\nResponde SOLO:\nCAPTION:\n[150-200 palabras]\n\nHASHTAGS:\n[20-25 hashtags]';
+      + 'TIPO: ' + postType + ' | FORMATO: ' + formatInstr + '\n'
+      + tone + '\n' + fundraise + '\n\n'
+      + 'REGLAS DE CAPTION:\n'
+      + '1. Primera linea = HOOK que para el scroll (pregunta poderosa, stat, frase bold)\n'
+      + '2. Instagram corta a 2 lineas — lo mejor primero\n'
+      + '3. Max 2 emojis por parrafo\n'
+      + '4. CTA variado: comenta/comparte/guarda/dona/visita link\n'
+      + '5. Usa la imagen como contexto pero NO la describas en el caption\n\n'
+      + 'Responde SOLO con este formato:\nCAPTION:\n[150-200 palabras]\n\nHASHTAGS:\n[20-25 hashtags]';
   }
 
   const svcTags = {
@@ -501,8 +529,8 @@ function getSysPrompt(acct, lang) {
   };
   const ctaMap = {
     'EcoPack':'Registrate gratis: fr-logistics.net',
-    'LATAM':'Tu marca entra a USA? +1 786-300-1443',
-    'Aviso':'Planifica: info@fr-logistics.net',
+    'LATAM':'Tu marca entra a USA? Escribenos: +1 786-300-1443',
+    'Aviso':'Planifica tus envios: info@fr-logistics.net',
     'Returns':'Convierte devoluciones en ingresos: fr-logistics.net',
     'FBA':'Cotiza hoy: fr-logistics.net'
   };
@@ -511,15 +539,20 @@ function getSysPrompt(acct, lang) {
   const tags = svcTags[sKey]||'#FRLogistics #Miami3PL #AmazonSPN #LogisticaMiami';
   const cta = ctaMap[cKey]||'fr-logistics.net o WhatsApp +1 786-300-1443';
 
-  return 'Eres copywriter de FR-Logistics Miami.\n\n'
+  return LANG[lang] + '\n\n'
+    + imageRule + '\n\n'
+    + 'Eres copywriter de FR-Logistics Miami (@FR_Logistics).\n\n'
     + 'BRAND: Amazon SPN-certified 3PL Doral FL. FBA Prep · EcoPack+ · LATAM · Returns · Shopify · Warehousing. '
     + 'Mascota LIAM. WhatsApp +1 786-300-1443 · fr-logistics.net · info@fr-logistics.net. Target: LATAM + Amazon sellers.\n\n'
     + 'TIPO: ' + postType + ' | FORMATO: ' + formatInstr + '\n\n'
-    + 'REGLAS: 1) Primera linea = HOOK (dato, pregunta, problema que resolvemos). '
-    + '2) Espanol PRIMERO. 3) Profesional pero cercano. '
-    + '4) CTA: ' + cta + '. 5) Tags: ' + tags + '. '
-    + '6) Si hay imagen DESCRIBELA especificamente. 7) Aviso: formal bilingue.\n\n'
-    + LANG[lang] + '\n\nResponde SOLO:\nCAPTION:\n[130-180 palabras]\n\nHASHTAGS:\n[20-25 hashtags, incluye: ' + tags + ']';
+    + 'REGLAS DE CAPTION:\n'
+    + '1. Primera linea = HOOK (dato impactante, pregunta, problema que resolvemos)\n'
+    + '2. Espanol PRIMERO\n'
+    + '3. Profesional pero cercano\n'
+    + '4. CTA: ' + cta + '\n'
+    + '5. Usa la imagen como contexto pero NO la describas en el caption\n'
+    + '6. Aviso: tono formal bilingue\n\n'
+    + 'Responde SOLO con este formato:\nCAPTION:\n[130-180 palabras]\n\nHASHTAGS:\n[20-25 hashtags, incluye: ' + tags + ']';
 }
 
 function selAcct(id) {
@@ -852,7 +885,7 @@ async function genCaption() {
     generatedCaption = data.caption+(data.hashtags?'\n\n'+data.hashtags:'');
     const box = document.getElementById('igCap');
     box.style.display = 'block';
-    const handle = curAcct==='srj'?'@strokerunnerjourney':'@frlogisticsmiamiinc';
+    const handle = curAcct==='srj'?'@strokerunnerjourney':'@FR_Logistics';
     box.innerHTML = '<span class="iu">'+handle+'</span>'+esc(data.caption)+(data.hashtags?'\n\n<span class="ih">'+esc(data.hashtags)+'</span>':'');
   } catch(e) { showToast('Error caption: '+e.message); }
 }
@@ -1133,6 +1166,52 @@ function drawAssetOverlay(ctx) {
     img.src = activeAsset.b64;
   }
 }
+
+let currentSlide = 0;
+let renderedSlides = []; // cache of rendered canvas dataURLs per slide
+
+async function renderCarouselSlide(idx) {
+  if (!carouselSlots[idx]) return;
+  const slot = carouselSlots[idx];
+  const img = new Image();
+  await new Promise(res => { img.onload = res; img.src = slot.dataUrl; });
+  uploadedImg = img;
+  uploadedB64 = slot.b64;
+  uploadedMimeType = slot.dataUrl.split(';')[0].split(':')[1];
+  await redraw();
+  renderedSlides[idx] = document.getElementById('mc').toDataURL('image/png');
+}
+
+function updateSliderUI() {
+  const total = carouselSlots.length;
+  const ctrl = document.getElementById('sliderControls');
+  const dots = document.getElementById('sliderDots');
+  const label = document.getElementById('sliderLabel');
+  if (total <= 1) { ctrl.classList.remove('show'); return; }
+  ctrl.classList.add('show');
+  label.textContent = (currentSlide + 1) + ' / ' + total;
+  dots.innerHTML = '';
+  for (let i=0; i<total; i++) {
+    const d = document.createElement('div');
+    d.className = 'sdot' + (i===currentSlide ? ' on' : '');
+    d.onclick = () => goToSlide(i);
+    dots.appendChild(d);
+  }
+}
+
+async function goToSlide(idx) {
+  if (idx < 0 || idx >= carouselSlots.length) return;
+  currentSlide = idx;
+  await renderCarouselSlide(idx);
+  updateSliderUI();
+}
+
+async function sliderNav(dir) {
+  const next = currentSlide + dir;
+  if (next < 0 || next >= carouselSlots.length) return;
+  await goToSlide(next);
+}
+
 
 // Start
 renderTpls('srj');
