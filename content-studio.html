@@ -142,7 +142,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);min
 </style>
 </head>
 <body>
-<script>if(window!==window.parent)window.top.location.href=window.location.href;</script>
+
 
 <nav class="nav">
   <div class="nav-logo"><b>FR</b>-LOGISTICS</div>
@@ -817,6 +817,347 @@ function resetPreview() {
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 }
+
+let captionLang = 'es';
+let curAcct = 'srj', imgSrc = 'up', curTpl = null;
+let uploadedImg = null, uploadedB64 = null, uploadedMimeType = null, generatedCaption = '', fieldVals = {};
+
+function selAcct(id) {
+  curAcct = id;
+  document.getElementById('bsrj').className = 'acct-btn'+(id==='srj'?' active':'');
+  document.getElementById('bfrl').className = 'acct-btn'+(id==='frl'?' active':'');
+  const a = ACCTS[id];
+  document.getElementById('igAv').textContent = a.av;
+  document.getElementById('igAv').style.background = a.avBg;
+  document.getElementById('igUname').textContent = a.handle;
+  document.getElementById('igLoc').textContent = a.loc;
+  renderTpls(id); renderPostTypes(id); renderAssets(id); resetPreview();
+}
+
+function setSrc(s) {
+  imgSrc = s;
+  document.getElementById('tup').className = 'stab'+(s==='up'?' on':'');
+  document.getElementById('tai').className = 'stab'+(s==='ai'?' on':'');
+  document.getElementById('secUp').style.display = s==='up'?'block':'none';
+  document.getElementById('secAI').style.display = s==='ai'?'block':'none';
+}
+
+function setLang(lang) {
+  captionLang = lang;
+  ['es','en','both'].forEach(l => {
+    document.getElementById('lang-'+l).className = 'lang-btn'+(l===lang?' on':'');
+  });
+}
+
+function renderTpls(id) {
+  const row = document.getElementById('tplRow');
+  row.innerHTML = '';
+  TPLS[id].forEach((t, i) => {
+    const d = document.createElement('div');
+    d.className = 'tplcard'+(i===0?' on':'');
+    d.innerHTML = '<span class="ti">'+t.icon+'</span><span class="tn">'+t.name+'</span>';
+    d.onclick = () => {
+      document.querySelectorAll('.tplcard').forEach(x => x.classList.remove('on'));
+      d.classList.add('on');
+      curTpl = t;
+      renderFields(t);
+      if (uploadedImg) redraw();
+    };
+    row.appendChild(d);
+  });
+  curTpl = TPLS[id][0];
+  renderFields(curTpl);
+}
+
+function renderPostTypes(id) {
+  const sel = document.getElementById('postType');
+  sel.innerHTML = '';
+  POST_TYPES[id].forEach(t => { const o = document.createElement('option'); o.textContent = t; sel.appendChild(o); });
+}
+
+function renderFields(tpl) {
+  const c = document.getElementById('flds');
+  c.innerHTML = ''; fieldVals = {};
+  if (!tpl || !tpl.fields || tpl.fields.length === 0) return;
+  tpl.fields.forEach(f => {
+    fieldVals[f.k] = f.def;
+    const row = document.createElement('div');
+    row.className = 'frow';
+    row.innerHTML = '<label>'+f.lbl+'</label>';
+    const el = document.createElement(f.big ? 'textarea' : 'input');
+    if (f.big) el.rows = 2; else el.type = 'text';
+    el.value = f.def;
+    el.oninput = e => { fieldVals[f.k] = e.target.value; if (uploadedImg) redraw(); };
+    row.appendChild(el);
+    c.appendChild(row);
+  });
+}
+
+function handleUp(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const dataUrl = ev.target.result;
+    uploadedMimeType = dataUrl.split(';')[0].split(':')[1];
+    uploadedB64 = dataUrl.split(',')[1];
+    const img = new Image();
+    img.onload = () => {
+      uploadedImg = img; redraw();
+      document.getElementById('uz').className = 'upzone has';
+      document.getElementById('uz').innerHTML = '<p>✅ <b>'+file.name+'</b><br><span style="opacity:.6">Clic para cambiar</span></p>';
+      document.getElementById('cnvPh').style.display = 'none';
+    };
+    img.src = dataUrl;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function redraw() {
+  await document.fonts.ready;
+  const canvas = document.getElementById('mc');
+  canvas.style.display = 'block';
+  document.getElementById('cnvPh').style.display = 'none';
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, CS, CS);
+  drawBg(ctx, uploadedImg, FILTERS[curAcct]);
+  if (curTpl && DRAWFNS[curTpl.id]) DRAWFNS[curTpl.id](ctx, fieldVals);
+  drawAssetOverlay(ctx);
+}
+
+function drawBg(ctx, img, flt) {
+  ctx.fillStyle = '#0F1D35'; ctx.fillRect(0,0,CS,CS);
+  if (img) {
+    if (flt.f && flt.f!=='none') ctx.filter = flt.f;
+    const sc = Math.max(CS/img.naturalWidth, CS/img.naturalHeight);
+    const w = img.naturalWidth*sc, h = img.naturalHeight*sc;
+    ctx.drawImage(img, (CS-w)/2, (CS-h)/2, w, h);
+    ctx.filter = 'none';
+    if (flt.ov) {
+      ctx.globalCompositeOperation = flt.bm||'multiply';
+      ctx.fillStyle = flt.ov; ctx.fillRect(0,0,CS,CS);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+  }
+}
+
+function tx(ctx, s, x, y, font, color, maxW) {
+  ctx.font = font; ctx.fillStyle = color;
+  s = String(s||'');
+  if (maxW) {
+    const words = s.split(' '); let line = '';
+    words.forEach(w => {
+      const test = line ? line+' '+w : w;
+      if (ctx.measureText(test).width > maxW && line) { ctx.fillText(line,x,y); y+=parseInt(font)*1.35; line=w; }
+      else line = test;
+    });
+    ctx.fillText(line,x,y);
+  } else ctx.fillText(s,x,y);
+}
+
+function rr(ctx, x, y, w, h, r) {
+  const tl=typeof r==='object'?(r.tl||0):r, tr=typeof r==='object'?(r.tr||0):r;
+  const br=typeof r==='object'?(r.br||0):r, bl=typeof r==='object'?(r.bl||0):r;
+  ctx.beginPath();
+  ctx.moveTo(x+tl,y); ctx.lineTo(x+w-tr,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+tr);
+  ctx.lineTo(x+w,y+h-br); ctx.quadraticCurveTo(x+w,y+h,x+w-br,y+h);
+  ctx.lineTo(x+bl,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-bl);
+  ctx.lineTo(x,y+tl); ctx.quadraticCurveTo(x,y,x+tl,y);
+  ctx.closePath();
+}
+
+const P = 65;
+
+const DRAWFNS = {
+  blank(ctx,f) {},
+  srj_stat(ctx,f) {
+    tx(ctx,'STROKE RUNNER JOURNEY',P,76,'600 26px Poppins','#00B4AA');
+    tx(ctx,'@StrokeRunnerJourney  ·  Road to NYC 2026',P,108,'400 20px Poppins','rgba(255,255,255,0.6)');
+    ctx.fillStyle='#00B4AA'; ctx.fillRect(P,124,88,3);
+    const sz=String(f.mainStat).length>3?155:210;
+    tx(ctx,f.mainStat||'299',P,360,'800 '+sz+'px Poppins','#00B4AA');
+    tx(ctx,f.statLabel||'DAYS.',P,450,'800 78px Poppins','#fff');
+    ctx.fillStyle='#CC2936'; ctx.fillRect(P,472,5,58);
+    tx(ctx,f.subtitle||'',P+18,512,'400 27px Poppins','rgba(255,255,255,.85)',CS-P*2-20);
+    ctx.fillStyle='rgba(0,180,170,.5)'; ctx.fillRect(P,570,CS-P*2,1.5);
+    tx(ctx,f.metric1||'26.2 MILES.',P,650,'700 58px Poppins','#fff');
+    tx(ctx,f.metric2||'3:35:19.',P,728,'700 58px Poppins','#00B4AA');
+    tx(ctx,'This is what',P,800,'400 30px Poppins','rgba(255,255,255,.9)');
+    tx(ctx,f.tagline||'nobody tells you.',P,840,'700 30px Poppins','#00B4AA');
+    for(let i=0;i<5;i++){ctx.beginPath();ctx.arc(CS-35,260+i*32,i===0?5:3.5,0,Math.PI*2);ctx.fillStyle=i===0?'#00B4AA':'rgba(255,255,255,.3)';ctx.fill();}
+    tx(ctx,'SWIPE →',CS/2-48,1000,'600 22px Poppins','#00B4AA');
+    ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillRect(0,952,CS,128);
+    ctx.font='400 20px Poppins';
+    const fw='Proudly running with  Achilles International  ·  Stroke Survivor';
+    ctx.fillStyle='rgba(255,255,255,.72)'; ctx.fillText(fw,(CS-ctx.measureText(fw).width)/2,1042);
+  },
+  srj_quote(ctx,f) {
+    ctx.fillStyle='rgba(15,29,53,.84)'; ctx.fillRect(0,0,CS,CS);
+    tx(ctx,'"',P-10,230,'700 180px Poppins','rgba(0,180,170,.2)');
+    ctx.font='700 52px Poppins'; ctx.fillStyle='#fff';
+    const words=String(f.quote||'').split(' '); let line='',y=320;
+    words.forEach(w=>{const tt=line?line+' '+w:w;if(ctx.measureText(tt).width>CS-P*2&&line){ctx.fillText(line,P,y);y+=72;line=w;}else line=tt;});
+    ctx.fillText(line,P,y); y+=72;
+    ctx.fillStyle='#00B4AA'; ctx.fillRect(P,y+10,80,4);
+    tx(ctx,f.context||'Road to NYC 2026',P,y+58,'400 28px Poppins','rgba(0,180,170,.9)');
+    tx(ctx,'@StrokeRunnerJourney',P,CS-50,'600 24px Poppins','rgba(255,255,255,.45)');
+    ctx.fillStyle='#CC2936'; ctx.fillRect(CS-P-40,CS-90,40,4);
+  },
+  srj_training(ctx,f) {
+    ctx.fillStyle='rgba(15,29,53,.9)'; ctx.fillRect(0,CS-390,CS,390);
+    ctx.fillStyle='rgba(0,180,170,.6)'; ctx.fillRect(P,CS-376,60,3);
+    tx(ctx,'TRAINING UPDATE',P,CS-344,'600 20px Poppins','#00B4AA');
+    tx(ctx,'@StrokeRunnerJourney  ·  Tropical Park, Miami',P,CS-308,'400 19px Poppins','rgba(255,255,255,.55)');
+    tx(ctx,f.distance||'18',P,CS-200,'800 130px Poppins','#00B4AA');
+    tx(ctx,f.unit||'MILES',P+145+String(f.distance||'18').length*62,CS-235,'700 42px Poppins','rgba(255,255,255,.85)');
+    ctx.fillStyle='rgba(0,180,170,.3)'; ctx.fillRect(P,CS-183,CS-P*2,1);
+    tx(ctx,'PACE',P,CS-147,'600 16px Poppins','rgba(0,180,170,.8)');
+    tx(ctx,f.pace||"8'42\"/mi",P,CS-114,'700 28px Poppins','#fff');
+    tx(ctx,'HR',385,CS-147,'600 16px Poppins','rgba(0,180,170,.8)');
+    tx(ctx,f.hr||'148 bpm',385,CS-114,'700 28px Poppins','#fff');
+    tx(ctx,f.notes||'',P,CS-65,'400 23px Poppins','rgba(255,255,255,.75)',CS-P*2);
+    for(let i=0;i<5;i++){ctx.beginPath();ctx.arc(CS-35,260+i*32,i===0?5:3.5,0,Math.PI*2);ctx.fillStyle=i===0?'#00B4AA':'rgba(255,255,255,.3)';ctx.fill();}
+  },
+  frl_announce(ctx,f) {
+    ctx.fillStyle='rgba(245,248,245,.93)'; ctx.fillRect(0,0,CS,CS);
+    ctx.font='800 52px Poppins'; ctx.fillStyle='#0F1D35';
+    const lw=ctx.measureText('FR-LOGISTICS').width;
+    ctx.fillText('FR-LOGISTICS',(CS-lw)/2,98);
+    ctx.fillStyle='#1a8c3a'; ctx.fillRect((CS-lw)/2,110,lw,4);
+    const cx=P,cy=162,cw=CS-P*2,ch=726;
+    ctx.fillStyle='rgba(255,255,255,.96)'; rr(ctx,cx,cy,cw,ch,22); ctx.fill();
+    ctx.strokeStyle='rgba(26,140,58,.2)'; ctx.lineWidth=1.5; ctx.stroke();
+    tx(ctx,f.headline||'Important Notice',cx+40,cy+70,'700 44px Poppins','#0F1D35');
+    ctx.fillStyle='rgba(26,140,58,.25)'; ctx.fillRect(cx+40,cy+86,cw-80,1.5);
+    tx(ctx,f.mainLine||'',cx+40,cy+152,'400 32px Poppins','#333',cw-80);
+    tx(ctx,f.highlight||'',cx+40,cy+214,'700 42px Poppins','#1a8c3a');
+    ctx.font='400 27px Poppins'; ctx.fillStyle='#555';
+    const dw=String(f.detail||'').split(' '); let dl='',dy=cy+294;
+    dw.forEach(w=>{const tt=dl?dl+' '+w:w;if(ctx.measureText(tt).width>cw-100&&dl){ctx.fillText(dl,cx+40,dy);dy+=42;dl=w;}else dl=tt;});
+    ctx.fillText(dl,cx+40,dy); dy+=58;
+    tx(ctx,f.resume||'',cx+40,dy,'600 30px Poppins','#1a8c3a',cw-80);
+    ctx.fillStyle='#1a8c3a'; rr(ctx,cx,cy+ch-74,cw,74,{tl:0,tr:0,br:22,bl:22}); ctx.fill();
+    ctx.font='400 21px Poppins';
+    const ft='Please plan shipments accordingly.  ·  info@fr-logistics.net';
+    ctx.fillStyle='rgba(255,255,255,.9)'; ctx.fillText(ft,(CS-ctx.measureText(ft).width)/2,cy+ch-26);
+  },
+  frl_tip(ctx,f) {
+    ctx.fillStyle='rgba(15,29,53,.88)'; ctx.fillRect(0,0,CS,CS);
+    ctx.fillStyle='#00B4AA'; ctx.fillRect(0,0,16,CS);
+    tx(ctx,'PRO TIP',P,88,'600 22px Poppins','#00B4AA');
+    ctx.fillStyle='rgba(0,180,170,.45)'; ctx.fillRect(P,100,50,2);
+    tx(ctx,'#'+(f.tipNum||'01'),P,185,'800 130px Poppins','rgba(0,180,170,.15)');
+    tx(ctx,f.tipTitle||'',P,258,'700 58px Poppins','#fff',CS-P*2);
+    ctx.fillStyle='rgba(0,180,170,.35)'; ctx.fillRect(P,288,CS-P*2,1.5);
+    ctx.font='400 33px Poppins'; ctx.fillStyle='rgba(255,255,255,.82)';
+    const bw=String(f.tipBody||'').split(' '); let bl='',by=365;
+    bw.forEach(w=>{const tt=bl?bl+' '+w:w;if(ctx.measureText(tt).width>CS-P*2&&bl){ctx.fillText(bl,P,by);by+=50;bl=w;}else bl=tt;});
+    ctx.fillText(bl,P,by);
+    tx(ctx,'FR-LOGISTICS MIAMI',P,CS-55,'600 24px Poppins','rgba(0,180,170,.7)');
+    tx(ctx,'Amazon SPN  ·  3PL  ·  Doral, FL',P,CS-22,'400 20px Poppins','rgba(255,255,255,.4)');
+  },
+  frl_stat(ctx,f) {
+    ctx.fillStyle='rgba(245,248,245,.92)'; ctx.fillRect(0,0,CS,CS);
+    ctx.fillStyle='#0F1D35'; ctx.fillRect(0,0,CS,305);
+    tx(ctx,f.stat||'48',P,242,'800 200px Poppins','#00B4AA');
+    tx(ctx,f.unit||'hrs',P+String(f.stat||'48').length*130,218,'700 60px Poppins','rgba(255,255,255,.85)');
+    ctx.fillStyle='#1a8c3a'; ctx.fillRect(0,305,CS,8);
+    ctx.font='700 44px Poppins'; ctx.fillStyle='#0F1D35';
+    const hw=String(f.headline||'').split(' '); let hl='',hy=402;
+    hw.forEach(w=>{const tt=hl?hl+' '+w:w;if(ctx.measureText(tt).width>CS-P*2&&hl){ctx.fillText(hl,P,hy);hy+=62;hl=w;}else hl=tt;});
+    ctx.fillText(hl,P,hy); hy+=82;
+    ctx.font='600 26px Poppins';
+    const bw2=ctx.measureText(String(f.client||'')).width+40;
+    ctx.fillStyle='rgba(26,140,58,.12)'; rr(ctx,P,hy,bw2,50,8); ctx.fill();
+    tx(ctx,f.client||'',P+20,hy+35,'600 26px Poppins','#1a8c3a');
+    ctx.fillStyle='rgba(15,29,53,.06)'; ctx.fillRect(0,CS-100,CS,100);
+    ctx.fillStyle='#1a8c3a'; ctx.fillRect(0,CS-100,CS,3);
+    ctx.font='600 21px Poppins';
+    const bt='FR-LOGISTICS MIAMI  ·  Amazon SPN  ·  Doral, FL 33172';
+    ctx.fillStyle='rgba(15,29,53,.65)'; ctx.fillText(bt,(CS-ctx.measureText(bt).width)/2,CS-43);
+  }
+};
+
+function getSysPrompt(acct, lang) {
+  const nycDate = new Date('2026-11-01');
+  const daysToNYC = Math.ceil((nycDate - new Date()) / (1000*60*60*24));
+  const postType = document.getElementById('postType').value;
+  const isCarousel = pubMode === 'carousel';
+  const isReel = pubMode === 'reel';
+  const slideCount = carouselSlots.length;
+
+  const LANG = {
+    es: 'INSTRUCCION DE IDIOMA: Escribe TODO el caption UNICAMENTE EN ESPANOL. Ni una sola palabra en ingles.',
+    en: 'LANGUAGE INSTRUCTION: Write the ENTIRE caption ONLY IN ENGLISH. Not a single word in Spanish.',
+    both: 'LANGUAGE: Write in BOTH languages:\n\n\uD83C\uDDEA\uD83C\uDDF8 ESPANOL:\n[caption espanol]\n\n\uD83C\uDDFA\uD83C\uDDF8 ENGLISH:\n[caption english]'
+  };
+
+  const formatInstr = isCarousel
+    ? 'CARRUSEL: Caption con hook tematico fuerte. Al final: "Desliza para ver todo \uD83D\uDC48"'
+    : isReel ? 'REEL: Hook impacto primera linea. Incluye "\u25B6\uFE0F Mira el video" y "\uD83D\uDD0A Activa el sonido".'
+    : 'POST individual.';
+
+  const imageRule = 'REGLA CRITICA: NUNCA escribas "IMAGE:" ni describas la imagen en el caption. Usala solo como inspiracion.';
+
+  if (acct === 'srj') {
+    const isFundraise = postType.includes('Fundraise') || postType.includes('Achilles');
+    const isRecovery = postType.includes('Recovery') || postType.includes('My Story');
+    const tone = isRecovery ? 'Tono: personal, vulnerable, autentico.' : 'Tono: inspirador, autentico, Spanglish natural.';
+    const fundraise = isFundraise ? 'OBLIGATORIO: give.achillesinternational.org/fundraiser/7121629' : '';
+    return LANG[lang]+'\n\n'+imageRule+'\n\nEres copywriter de @StrokeRunnerJourney.\n\nBRAND: Jose, stroke survivor, maratonista Miami. Chicago 3:35:19 (299 dias post-stroke). NYC Marathon 1-Nov-2026, FALTAN '+daysToNYC+' DIAS, meta 3:30:00 BQ. Achilles International. Tropical Park.\n\nTIPO: '+postType+' | FORMATO: '+formatInstr+'\n'+tone+'\n'+fundraise+'\n\nREGLAS: 1) HOOK en primera linea. 2) CTA variado. 3) Max 2 emojis/parrafo. 4) USA imagen como contexto, NO la describas.\n\nResponde SOLO:\nCAPTION:\n[150-200 palabras]\n\nHASHTAGS:\n[20-25 hashtags]';
+  }
+
+  const svcTags = {'FBA Prep':'#FBAPrep #AmazonFBA #FulfillmentByAmazon','EcoPack':'#EcoPack #EcoPackPlus #DoralFL #PackagePickup','LATAM':'#LATAMLogistics #LogisticaMiami #ImportacionUSA','Returns':'#ReturnsLogistics #AmazonReturns #ReverseLogistics','Shopify':'#ShopifyFulfillment #DTCFulfillment','Warehousing':'#Warehousing #Miami3PL #WarehouseMiami'};
+  const ctaMap = {'EcoPack':'fr-logistics.net','LATAM':'+1 786-300-1443','Aviso':'info@fr-logistics.net','Returns':'fr-logistics.net','FBA':'fr-logistics.net'};
+  const sKey = Object.keys(svcTags).find(k=>postType.includes(k))||'';
+  const cKey = Object.keys(ctaMap).find(k=>postType.includes(k))||'';
+  const tags = svcTags[sKey]||'#FRLogistics #Miami3PL #AmazonSPN';
+  const cta = ctaMap[cKey]||'fr-logistics.net';
+  return LANG[lang]+'\n\n'+imageRule+'\n\nEres copywriter de FR-Logistics Miami (@FR_Logistics).\n\nBRAND: Amazon SPN-certified 3PL Doral FL. FBA Prep · EcoPack+ · LATAM · Returns · Shopify · Warehousing. LIAM mascota. +1 786-300-1443 · fr-logistics.net.\n\nTIPO: '+postType+' | FORMATO: '+formatInstr+'\n\nREGLAS: 1) HOOK primera linea. 2) Espanol PRIMERO. 3) CTA: '+cta+'. 4) USA imagen como contexto, NO la describas.\n\nResponde SOLO:\nCAPTION:\n[130-180 palabras]\n\nHASHTAGS:\n[20-25 hashtags, incluye: '+tags+']';
+}
+
+async function generate() {
+  const btn = document.getElementById('gbtn');
+  btn.disabled = true; btn.className = 'gbtn ld';
+  btn.innerHTML = '<span class="spin-sm"></span>Generando...';
+  try {
+    if (pubMode === 'reel') {
+      if (!videoFile) { showToast('Sube un video primero'); resetBtn(); return; }
+      await reelCanvas();
+      showLd(true,'Claude generando caption...');
+      await genCaption();
+      showLd(false);
+    } else if (pubMode === 'carousel') {
+      if (carouselSlots.length < 2) { showToast('Agrega al menos 2 imágenes'); resetBtn(); return; }
+      showLd(true,'Renderizando slide 1...');
+      await goToSlide(0);
+      showLd(false);
+      showLd(true,'Claude generando caption...');
+      await genCaption();
+      showLd(false);
+    } else {
+      if (imgSrc==='ai' && !uploadedImg) {
+        showLd(true,'Generando imagen con IA...');
+        await genAIImage();
+        showLd(false);
+      }
+      if (!uploadedImg && imgSrc!=='ai') { resetBtn(); return; }
+      showLd(true,'Renderizando template...');
+      await redraw();
+      showLd(false);
+      showLd(true,'Claude generando caption...');
+      await genCaption();
+      showLd(false);
+    }
+    document.getElementById('arow').style.display = 'grid';
+  } catch(err) {
+    showLd(false);
+    showToast('Error: '+err.message);
+    console.error(err);
+  }
+  resetBtn();
+}
+
 
 
 const BRAND_ASSETS = {
