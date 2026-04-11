@@ -1096,6 +1096,7 @@ async function genCaption() {
     : '';
   const body = {
     accountType:curAcct, postType,
+    language: captionLang,
     brief: (brief||'')+langNote,
     systemPrompt: getSysPrompt(curAcct,captionLang)
   };
