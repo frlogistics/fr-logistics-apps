@@ -1,3 +1,5 @@
+const { getStore } = require('@netlify/blobs');
+
 exports.handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -9,36 +11,51 @@ exports.handler = async (event) => {
 
   try {
     const { caption, imageBase64, images, videoUrl, accountType, mode = 'post' } = JSON.parse(event.body);
-    const ACCESS_TOKEN = accountType === 'frl' ? process.env.IG_ACCESS_TOKEN_FRL : process.env.IG_ACCESS_TOKEN_SRJ;
-    const USER_ID = accountType === 'frl' ? process.env.IG_USER_ID_FRL : process.env.IG_USER_ID_SRJ;
+
+    // Get token — try Blobs first (auto-refreshed), fall back to env var
+    let ACCESS_TOKEN, USER_ID;
+    if (accountType === 'frl') {
+      USER_ID = process.env.IG_USER_ID_FRL;
+      try {
+        const store = getStore({ name: 'ig-tokens', consistency: 'strong' });
+        const blobToken = await store.get('frl_access_token');
+        ACCESS_TOKEN = blobToken || process.env.IG_ACCESS_TOKEN_FRL;
+      } catch {
+        ACCESS_TOKEN = process.env.IG_ACCESS_TOKEN_FRL;
+      }
+    } else {
+      ACCESS_TOKEN = process.env.IG_ACCESS_TOKEN_SRJ;
+      USER_ID = process.env.IG_USER_ID_SRJ;
+    }
+
     if (!ACCESS_TOKEN || !USER_ID) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Credenciales no configuradas' }) };
 
     async function uploadToImgur(b64) {
-      const res = await fetch('https://api.imgur.com/3/image', {
+      const r = await fetch('https://api.imgur.com/3/image', {
         method: 'POST',
         headers: { 'Authorization': 'Client-ID ' + process.env.IMGUR_CLIENT_ID, 'Content-Type': 'application/json' },
         body: JSON.stringify({ image: b64, type: 'base64' })
       });
-      const d = await res.json();
+      const d = await r.json();
       if (!d.success) throw new Error('Imgur: ' + (d.data?.error || JSON.stringify(d)));
       return d.data.link;
     }
 
     async function createContainer(params) {
-      const res = await fetch(`https://graph.facebook.com/v21.0/${USER_ID}/media`, {
+      const r = await fetch(`https://graph.facebook.com/v21.0/${USER_ID}/media`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...params, access_token: ACCESS_TOKEN })
       });
-      const d = await res.json();
-      if (d.error) throw new Error('Container: ' + d.error.message);
+      const d = await r.json();
+      if (d.error) throw new Error(d.error.message);
       return d.id;
     }
 
     async function waitReady(id, max = 15, interval = 3000) {
       for (let i = 0; i < max; i++) {
         await new Promise(r => setTimeout(r, interval));
-        const res = await fetch(`https://graph.facebook.com/v21.0/${id}?fields=status_code&access_token=${ACCESS_TOKEN}`);
-        const d = await res.json();
+        const r = await fetch(`https://graph.facebook.com/v21.0/${id}?fields=status_code&access_token=${ACCESS_TOKEN}`);
+        const d = await r.json();
         if (d.status_code === 'FINISHED') return;
         if (d.status_code === 'ERROR') throw new Error('Container failed');
       }
@@ -46,12 +63,12 @@ exports.handler = async (event) => {
     }
 
     async function publish(cid) {
-      const res = await fetch(`https://graph.facebook.com/v21.0/${USER_ID}/media_publish`, {
+      const r = await fetch(`https://graph.facebook.com/v21.0/${USER_ID}/media_publish`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ creation_id: cid, access_token: ACCESS_TOKEN })
       });
-      const d = await res.json();
-      if (d.error) throw new Error('Publish: ' + d.error.message);
+      const d = await r.json();
+      if (d.error) throw new Error(d.error.message);
       return d.id;
     }
 
