@@ -1,5 +1,3 @@
-const { getStore } = require('@netlify/blobs');
-
 exports.handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -11,23 +9,8 @@ exports.handler = async (event) => {
 
   try {
     const { caption, imageBase64, images, videoUrl, accountType, mode = 'post' } = JSON.parse(event.body);
-
-    // Get token — try Blobs first (auto-refreshed), fall back to env var
-    let ACCESS_TOKEN, USER_ID;
-    if (accountType === 'frl') {
-      USER_ID = process.env.IG_USER_ID_FRL;
-      try {
-        const store = getStore({ name: 'ig-tokens', consistency: 'strong' });
-        const blobToken = await store.get('frl_access_token');
-        ACCESS_TOKEN = blobToken || process.env.IG_ACCESS_TOKEN_FRL;
-      } catch {
-        ACCESS_TOKEN = process.env.IG_ACCESS_TOKEN_FRL;
-      }
-    } else {
-      ACCESS_TOKEN = process.env.IG_ACCESS_TOKEN_SRJ;
-      USER_ID = process.env.IG_USER_ID_SRJ;
-    }
-
+    const ACCESS_TOKEN = accountType === 'frl' ? process.env.IG_ACCESS_TOKEN_FRL : process.env.IG_ACCESS_TOKEN_SRJ;
+    const USER_ID = accountType === 'frl' ? process.env.IG_USER_ID_FRL : process.env.IG_USER_ID_SRJ;
     if (!ACCESS_TOKEN || !USER_ID) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Credenciales no configuradas' }) };
 
     async function uploadToImgur(b64) {
