@@ -7,12 +7,16 @@
 [functions."inventory-alert"]
   schedule = "0 21 * * *"
 
+[functions."refresh-ig-token"]
+  schedule = "0 12 1 */45 *"
+
 [[headers]]
   for = "/.netlify/functions/*"
   [headers.values]
     Access-Control-Allow-Origin = "*"
     Access-Control-Allow-Methods = "GET, POST, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type, Authorization"
+
 [[redirects]]
   from = "/"
   to = "/portal.html"
