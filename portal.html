@@ -165,44 +165,29 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
 
 /* ── Mobile ≤767px ────────────────────────────────── */
 @media(max-width:767px){
-  /* Top bar */
   .topBar{height:52px;padding:0 14px;gap:8px}
   .topLogo{font-size:13px}
   #clientCountTop{display:none}
-
-  /* Nav tabs */
   .navTabsWrapper{position:relative}
   .navTabsWrapper::after{content:'';position:absolute;right:0;top:0;bottom:3px;width:40px;background:linear-gradient(to right,transparent,var(--bg));pointer-events:none;z-index:2}
   .navTabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-wrap:nowrap!important;padding:10px 14px 0;gap:4px}
   .navTabs::-webkit-scrollbar{display:none}
   .navTab{font-size:12px;padding:7px 12px;white-space:nowrap;flex-shrink:0}
-
-  /* Main */
   main{padding:12px 14px}
-
-  /* Apps grid: 1 column, horizontal card layout */
   .appGrid{grid-template-columns:1fr!important;gap:10px}
   .appCard{display:flex!important;flex-direction:row;align-items:center;gap:14px;text-align:left;padding:14px 16px}
   .appIcon{font-size:26px;margin-bottom:0;flex-shrink:0}
   .appName{font-size:14px}
   .appDesc{font-size:12px;-webkit-line-clamp:2}
-
-  /* WA Inbox: stack vertical */
   .inboxWrap{flex-direction:column!important;height:auto!important;gap:10px}
   .inboxList{flex:none!important;height:180px;border-radius:12px;overflow-y:auto}
   .inboxThread{height:calc(100vh - 380px);min-height:320px;border-radius:12px}
   .inboxPreview{max-width:160px}
-
-  /* KPI: 2x2 grid */
   .kpiStrip{display:grid!important;grid-template-columns:1fr 1fr;gap:8px}
   .kpiCard{min-width:unset;flex:unset;padding:12px 14px}
   .kpiVal{font-size:22px}
-
-  /* Tables: horizontal scroll */
   .tableWrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px}
   table{min-width:600px}
-
-  /* Client card view (mobile) */
   .clientCardList{display:flex!important;flex-direction:column;gap:10px;margin-top:4px}
   .clientCardList .cCard{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px}
   .clientCardList .cCard-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
@@ -214,32 +199,20 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
   .clientCardList .cCard-btns{display:flex;gap:8px;border-top:1px solid var(--border);padding-top:10px}
   .clientCardList .cCard-btn{flex:1;font-size:12px;padding:7px;border-radius:8px;border:1px solid var(--border);background:#f8fafc;color:#1e3a5f;cursor:pointer;text-align:center;font-family:inherit}
   .clientCardList .cCard-btn.p{background:var(--accent);color:#fff;border-color:var(--accent)}
-
-  /* Modal: bottom sheet */
   .modal{padding:0!important;align-items:flex-end!important}
   .modalBox{border-radius:20px 20px 0 0!important;max-width:100%!important;max-height:88vh;overflow-y:auto;padding:24px 20px}
   .formGrid{grid-template-columns:1fr!important}
   .modalFooter{flex-direction:column-reverse}
   .btnPrimary,.btnSecondary{width:100%;text-align:center}
-
-  /* Search row */
   .searchInput{width:100%!important;min-width:unset!important}
   .searchRow{flex-direction:column;align-items:stretch}
   .searchRow .waBtn{width:100%}
-
-  /* Reply bar sticky */
   .replyBar{position:sticky;bottom:0;background:#fff;z-index:10}
-
-  /* Pickups: full width cards */
   .pickupCard,.pickupItem{flex-direction:column!important}
-
-  /* Section header */
   .waHeader{flex-direction:column;align-items:flex-start;gap:10px;padding:12px 0}
   .waTitle{font-size:17px}
   .btnRow{width:100%;flex-wrap:wrap}
   .btnRow .waBtn{flex:1;justify-content:center}
-
-  /* Dashboard iframe */
   .dashFrame{height:calc(100vh - 120px)}
 }
 
@@ -249,7 +222,6 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
   .kpiVal{font-size:20px}
   .waTitle{font-size:15px}
 }
-
 
 /* ── In-App Viewer ── */
 #appViewer{padding-top:env(safe-area-inset-top)}
@@ -517,7 +489,7 @@ const APPS=[
   {icon:'🚚',name:'FR Inbounds',desc:'Inbound shipment tracking',url:'fr-inbounds.html'},
   {icon:'📧',name:'Email Ops',desc:'Email operations dashboard',url:'email-ops.html'},
   {icon:'🔗',name:'Shopify Runbook',desc:'Shopify + ShipStation + SKUVault',url:'shopify_integration_runbook.html'},
-   {icon:'📸',name:'Content Studio',desc:'Instagram posts with AI',url:'content-studio.html'},
+  {icon:'📸',name:'Content Studio',desc:'Instagram posts with AI',url:'content-studio.html'},
 ];
 const TPLS={
   order_received:{text:'Hi {{1}}, we received your shipment at FR-Logistics Miami. Order #{{2}}. We will keep you updated every step of the way.',vars:['Client Name','Order Number']},
@@ -794,6 +766,8 @@ function renderPickups(){
     if(p.status!=='cancelled'&&p.status!=='completed')ab.push(`<button class="actionBtn danger" onclick="updatePickupStatus('${p.id}','cancelled')">✕ Cancel</button>`);
     return`<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px 20px"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px"><div style="flex:1;min-width:200px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:800">${esc(p.client_name||'—')}</div><span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid;${ss}">${sl}</span></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px"><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Pickup Date</div><div style="font-size:13px;font-weight:600">📅 ${esc(p.pickup_date||'—')}</div></div><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Time</div><div style="font-size:13px;font-weight:600">🕐 ${esc(p.pickup_time||'—')}</div></div><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Packages</div><div style="font-size:13px;font-weight:600">📦 ${p.package_count||0} pkg${(p.package_count||0)!==1?'s':''}</div></div><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">WhatsApp</div><div style="font-size:12px;font-family:'DM Mono',monospace;color:var(--muted)">${esc(p.wa_number||'—')}</div></div>${p.status==='completed'?`<div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Completed</div><div style="font-size:12px;color:var(--muted)">${p.completed_at?new Date(p.completed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—'}</div></div>`:''}<div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Scheduled on</div><div style="font-size:12px;color:var(--muted)">${cd}</div></div></div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">${ab.join('')}</div></div></div>`;
   }).join('');
+}
+
 async function updatePickupStatus(id,status){
   const msgs={completed:'Mark this pickup as completed? This will reset the package counter.',confirmed:'Mark this pickup as confirmed?',cancelled:'Cancel this pickup?'};
   if(!confirm(msgs[status]))return;
