@@ -458,11 +458,11 @@ td,th{white-space:nowrap}
     return true;
   }
 
-  /* ── FIX: Delete single shipment by tracking ── */
+  /* ── Delete single shipment by tracking (query param → proxy filters by tracking) ── */
   async function deleteShipment(tracking) {
     if (!confirm(`Delete record:\n${tracking}\n\nThis cannot be undone.`)) return;
     try {
-      await proxyFetch("DELETE", {}, { tracking }); // tracking in body — proxy handles single vs clearAll
+      await proxyFetch("DELETE", { tracking }); // ?tracking=xxx → proxy deletes only that row
       await renderTables();
     } catch(e) {
       alert("Error deleting record. Check connection.");
