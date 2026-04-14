@@ -84,6 +84,10 @@
     @keyframes spin{to{transform:rotate(360deg)}}
     .wa-spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(31,164,99,.3);border-top-color:#1fa463;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
 
+    /* Delete button in table rows */
+    button.del{padding:4px 8px;font-size:11px;background:rgba(239,68,68,.07);border-color:rgba(239,68,68,.30);color:#b91c1c;border-radius:8px;font-weight:950}
+    button.del:hover{background:rgba(239,68,68,.15)}
+
     @page{size:4in 6in;margin:0}
     @media print{
       html,body{margin:0!important;padding:0!important;height:auto!important;overflow:visible!important;background:#fff!important}
@@ -231,14 +235,14 @@ td,th{white-space:nowrap}
       <h3>Inbound Log</h3>
       <div class="tableWrap">
         <table id="inTbl">
-          <thead><tr><th>Date/Time</th><th>Dir</th><th>Tracking</th><th>Client</th><th>Type</th><th>Carrier</th><th>Action</th></tr></thead>
+          <thead><tr><th>Date/Time</th><th>Dir</th><th>Tracking</th><th>Client</th><th>Type</th><th>Carrier</th><th>Actions</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
       <h3 style="margin-top:12px">Outbound Log</h3>
       <div class="tableWrap">
         <table id="outTbl">
-          <thead><tr><th>Date/Time</th><th>Dir</th><th>Tracking</th><th>Client</th><th>Type</th><th>Carrier</th><th>Action</th></tr></thead>
+          <thead><tr><th>Date/Time</th><th>Dir</th><th>Tracking</th><th>Client</th><th>Type</th><th>Carrier</th><th>Actions</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -310,7 +314,7 @@ td,th{white-space:nowrap}
   ];
   const CARRIERS  = ["","Amazon","USPS","UPS","FedEx","DHL","Mail de las Americas","Other"];
   const IN_TYPES  = ["New Product","RMA (Returns)","Inbound (Prep Service)","Inbound (General)","Inbound (EcoPack+)","Overstock","Other"];
-const OUT_TYPES = ["Outbound (Shipment)","Outbound (Drop-Shipment)","Outbound (Pickup EcoPack+)","Replacement","Return to Sender","Other"];
+  const OUT_TYPES = ["Outbound (Shipment)","Outbound (Drop-Shipment)","Outbound (Pickup EcoPack+)","Replacement","Return to Sender","Other"];
 
   /* ── Master clients (loaded from portal wa-clients function) ── */
   let masterClients = [];
@@ -376,17 +380,17 @@ const OUT_TYPES = ["Outbound (Shipment)","Outbound (Drop-Shipment)","Outbound (P
     } catch(e){ return 1; }
   }
 
- async function sendEcoPackWA(clientDisplayName, pendingCount) {
+  async function sendEcoPackWA(clientDisplayName, pendingCount) {
     const c = getMasterClient(clientDisplayName);
     if (!c || !c.waNumber || c.waConsent !== "Yes") return;
- 
+
     const sendDiv = document.getElementById("inWaSending");
     const sendMsg = document.getElementById("inWaMsg");
     sendDiv.classList.add("show");
     sendMsg.textContent = pendingCount >= 2
       ? `Sending consolidation alert (${pendingCount} packages)…`
       : "Sending package received notification…";
- 
+
     try {
       await fetch("/.netlify/functions/ecopack-wa?action=notify", {
         method: "POST",
@@ -406,7 +410,8 @@ const OUT_TYPES = ["Outbound (Shipment)","Outbound (Drop-Shipment)","Outbound (P
     }
     setTimeout(() => sendDiv.classList.remove("show"), 3500);
   }
- /* ── Shipments via Netlify proxy (secure, RLS compatible) ── */
+
+  /* ── Shipments via Netlify proxy (secure, RLS compatible) ── */
   async function proxyFetch(method, params = {}, body = null) {
     const url = new URL("/.netlify/functions/shipments-proxy", location.origin);
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
@@ -436,11 +441,12 @@ const OUT_TYPES = ["Outbound (Shipment)","Outbound (Drop-Shipment)","Outbound (P
     const data = await proxyFetch("GET", { tracking });
     if (!data || !data.length) return null;
     const r = data[0];
-    return { tracking: r.tracking, direction: r.direction, createdAt: r.received_at || r.created_at, carrier: r.carrier, type: r.type, client: r.client, notes: r.notes };
+    return { id: r.id, tracking: r.tracking, direction: r.direction, createdAt: r.received_at || r.created_at, carrier: r.carrier, type: r.type, client: r.client, notes: r.notes };
   }
   async function getAllShipments() {
     const data = await proxyFetch("GET");
     return (data || []).map(r => ({
+      id: r.id,
       tracking: r.tracking, direction: r.direction,
       createdAt: r.received_at || r.created_at,
       carrier: r.carrier, type: r.type, client: r.client, notes: r.notes
@@ -450,6 +456,17 @@ const OUT_TYPES = ["Outbound (Shipment)","Outbound (Drop-Shipment)","Outbound (P
     if (!confirm("DELETE ALL records from cloud database? This cannot be undone.")) return false;
     await proxyFetch("DELETE");
     return true;
+  }
+
+  /* ── FIX: Delete single shipment by tracking ── */
+  async function deleteShipment(tracking) {
+    if (!confirm(`Delete record:\n${tracking}\n\nThis cannot be undone.`)) return;
+    try {
+      await proxyFetch("DELETE", {}, { tracking }); // tracking in body — proxy handles single vs clearAll
+      await renderTables();
+    } catch(e) {
+      alert("Error deleting record. Check connection.");
+    }
   }
 
   /* ── Helpers ── */
@@ -481,15 +498,18 @@ const OUT_TYPES = ["Outbound (Shipment)","Outbound (Drop-Shipment)","Outbound (P
     if(sq) data=data.filter(x=>(x.tracking||"").toLowerCase().includes(sq)||(x.notes||"").toLowerCase().includes(sq)||(x.client||"").toLowerCase().includes(sq));
     if(mf) data=data.filter(x=>monthKey(x.createdAt)===mf);
     const ib=data.filter(x=>x.direction==="Inbound"), ob=data.filter(x=>x.direction==="Outbound");
+
+    /* FIX: added 🗑️ delete button per row alongside Print */
     const fill=(items,tbl)=>{
       const tb=tbl.querySelector("tbody"); tb.innerHTML="";
       items.forEach(item=>{
         const tr=document.createElement("tr");
         const tag=item.direction==="Inbound"?`<span class="pill in">Inbound</span>`:`<span class="pill out">Outbound</span>`;
-        tr.innerHTML=`<td>${fmtDate(item.createdAt)} ${fmtTime(item.createdAt)}</td><td>${tag}</td><td class="mono">${item.tracking}</td><td>${item.client}</td><td>${item.type}</td><td>${item.carrier}</td><td><button data-print="${item.tracking}">Print</button></td>`;
+        tr.innerHTML=`<td>${fmtDate(item.createdAt)} ${fmtTime(item.createdAt)}</td><td>${tag}</td><td class="mono">${item.tracking}</td><td>${item.client}</td><td>${item.type}</td><td>${item.carrier}</td><td style="white-space:nowrap"><button data-print="${item.tracking}">Print</button> <button class="del" data-del="${item.tracking}" title="Delete this record">🗑️</button></td>`;
         tb.appendChild(tr);
       });
       tb.querySelectorAll("button[data-print]").forEach(btn=>btn.addEventListener("click",async()=>{ await openLabel(btn.getAttribute("data-print")); }));
+      tb.querySelectorAll("button[data-del]").forEach(btn=>btn.addEventListener("click",async()=>{ await deleteShipment(btn.getAttribute("data-del")); }));
     };
     fill(ib,$("inTbl")); fill(ob,$("outTbl"));
     $("summary").textContent=`Inbound: ${ib.length} • Outbound: ${ob.length} • Total: ${data.length}`;
@@ -536,7 +556,7 @@ const OUT_TYPES = ["Outbound (Shipment)","Outbound (Drop-Shipment)","Outbound (P
     $("inTracking").addEventListener("keydown",e=>{ if(e.key==="Enter"){e.preventDefault();$("saveInboundBtn").click();} });
     $("outTracking").addEventListener("keydown",e=>{ if(e.key==="Enter"){e.preventDefault();$("saveOutboundBtn").click();} });
 
-    /* Save Inbound */
+    /* ── FIX 1: Save Inbound — Carrier / Type / Client stay fixed ── */
     $("saveInboundBtn").addEventListener("click", async ()=>{
       const tracking=$("inTracking").value.trim();
       if(!tracking){ setBoxStatus("inStatus","Scan an inbound tracking number.","bad"); return; }
@@ -546,8 +566,9 @@ const OUT_TYPES = ["Outbound (Shipment)","Outbound (Drop-Shipment)","Outbound (P
         await addShipment({tracking,direction:"Inbound",createdAt:new Date().toISOString(),carrier:$("inCarrier").value,type:$("inType").value,client:clientDisplay,notes:$("inNotes").value.trim()});
         setLastSaved(tracking);
         setBoxStatus("inStatus","Inbound saved successfully.","ok");
-        $("inTracking").value=""; $("inNotes").value=""; $("inCarrier").value="Other"; $("inType").value="Inbound (Prep Service)";
-        onInClientChange();
+        /* Only clear tracking + notes — Carrier, Type, Client stay as-is */
+        $("inTracking").value=""; $("inNotes").value="";
+        onInClientChange(); // refresh EcoPack+ badge without resetting client
         await renderTables();
         $("inTracking").focus();
         /* EcoPack+ WA trigger */
@@ -559,15 +580,17 @@ const OUT_TYPES = ["Outbound (Shipment)","Outbound (Drop-Shipment)","Outbound (P
       }catch(err){ setBoxStatus("inStatus","Error saving. Check connection.","bad"); }
     });
 
-    /* Save Outbound */
+    /* ── FIX 2: Save Outbound — Carrier / Type / Client stay fixed ── */
     $("saveOutboundBtn").addEventListener("click", async ()=>{
       const tracking=$("outTracking").value.trim();
       if(!tracking){ setBoxStatus("outStatus","Scan an outbound tracking number.","bad"); return; }
       if(await getShipment(tracking)){ setBoxStatus("outStatus","Tracking number already registered","bad"); return; }
       try{
         await addShipment({tracking,direction:"Outbound",createdAt:new Date().toISOString(),carrier:$("outCarrier").value,type:$("outType").value,client:$("outClient").value,notes:$("outNotes").value.trim()});
-        setLastSaved(tracking); setBoxStatus("outStatus","Outbound saved successfully.","ok");
-        $("outTracking").value=""; $("outNotes").value=""; $("outCarrier").value="Other"; $("outType").value="Outbound (Shipment)";
+        setLastSaved(tracking);
+        setBoxStatus("outStatus","Outbound saved successfully.","ok");
+        /* Only clear tracking + notes — Carrier, Type, Client stay as-is */
+        $("outTracking").value=""; $("outNotes").value="";
         await renderTables(); $("outTracking").focus();
       }catch(err){ setBoxStatus("outStatus","Error saving. Check connection.","bad"); }
     });
