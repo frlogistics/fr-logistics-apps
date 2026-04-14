@@ -25,4 +25,4 @@
 [[redirects]]
   from = "/portal"
   to = "/portal.html"
-  status = 302
+  status = 302 
