@@ -425,7 +425,7 @@
           ✉️ Open in Gmail
         </button>
         <button class="em-copy-btn" id="copyBtn" onclick="copyEmailBody()">
-          📋 Copy Text
+          📋 Copy HTML
         </button>
         <button onclick="closeEmailModal()" style="background:transparent;color:#94a3b8;border:none;
                 cursor:pointer;font-family:'DM Sans',sans-serif;font-size:12.5px;font-weight:600;
@@ -659,13 +659,30 @@ function clearQ(){
 function ensureQ(){if(!CQ)genQuote();return CQ?.L?.length>0;}
 
 /* ═══════════════════════════════════════════════
-   EMAIL DRAFT v2 — Branded HTML Preview + Gmail
+   EMAIL DRAFT v3 — HTML Email + Gmail Fix + PDF
    Account: josefuentes@fr-logistics.net
-   PDF: auto-download on Gmail open
 ═══════════════════════════════════════════════ */
 const FR_GMAIL = 'josefuentes@fr-logistics.net';
 let _emailLang = 'en';
-let _emailTextBody = ''; // plain-text version for Gmail compose URL
+let _emailTextBody = '';
+let _emailHtmlBody = '';
+
+/* ── TOAST NOTIFICATION ── */
+function showToast(msg, dur=4000){
+  let t=$('frToast');
+  if(!t){
+    t=document.createElement('div');t.id='frToast';
+    t.style.cssText='position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(20px);'+
+      'background:#065f46;color:#fff;padding:11px 22px;border-radius:10px;font-size:13px;font-weight:600;'+
+      'font-family:"DM Sans",sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:99999;'+
+      'opacity:0;transition:all .25s ease;pointer-events:none;white-space:nowrap;';
+    document.body.appendChild(t);
+  }
+  t.innerHTML=msg;
+  requestAnimationFrame(()=>{t.style.opacity='1';t.style.transform='translateX(-50%) translateY(0)';});
+  clearTimeout(t._tid);
+  t._tid=setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(-50%) translateY(10px)';},dur);
+}
 
 function openEmailModal(){
   if(!ensureQ()){alert('Generate a quote with at least one service first.');return;}
@@ -686,98 +703,7 @@ function setEmailLang(lang){
   renderEmailPreview();
 }
 
-/* Returns { subject, textBody } — used for Gmail Compose URL */
-function buildEmailText(q,lang){
-  const c=q.c;
-  const qNum=getQNum(c);
-  const validUntil=getValidUntil(c);
-  const svcLines=q.L.map(l=>`  • ${l.service}: ${l.qty} ${l.unit} × ${fmt(l.rate)} = ${fmt(l.total)}`).join('\n');
-
-  if(lang==='es'){
-    return{
-      subject:`Cotización de Servicios #${qNum} – FR-Logistics | ${c.clientName||'Cliente'}`,
-      textBody:
-`Estimado/a ${c.contactName||'Cliente'},
-
-Gracias por su interés en los servicios de FR-Logistics. Adjunto encontrará la propuesta comercial preparada para ${c.clientName||'su empresa'}.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RESUMEN DE COTIZACIÓN
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Cotización #:      ${qNum}
-Fecha:             ${fmtD(c.quoteDate)}
-Válida hasta:      ${validUntil}
-Canal de venta:    ${c.channel} · ${c.opType}
-Volumen mensual:   ${c.orders.toLocaleString()} órdenes / ${c.pallets} pallets / ${c.units.toLocaleString()} unidades
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SERVICIOS SELECCIONADOS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${svcLines}
-
-Subtotal estimado:              ${fmt(q.sub)}
-Facturación mínima mensual:     ${fmt(c.minBill||0)}
-FACTURACIÓN MENSUAL SUGERIDA:   ${fmt(q.sug)}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PRÓXIMOS PASOS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Para proceder, responda este correo o agende una llamada:
-👉 https://calendly.com/fr-logistics
-
-Nota: Los precios finales pueden ajustarse tras revisar la complejidad de SKUs y requerimientos de flujo de trabajo. Esta cotización es válida por ${c.validity}.${c.notes?'\n\nNotas adicionales: '+c.notes:''}
-
-¡Esperamos apoyar sus operaciones logísticas!
-
-Saludos,
-${c.prepBy||'Jose Fuentes – Operations Manager'}
-FR-Logistics · 10893 NW 17th St, Unit 121, Miami, FL 33172
-📞 (786) 300-1443 | ✉️ info@fr-logistics.net | 🌐 www.fr-logistics.net`
-    };
-  }
-
-  return{
-    subject:`Service Quote #${qNum} – FR-Logistics | ${c.clientName||'Client'}`,
-    textBody:
-`Hi ${c.contactName||'there'},
-
-Thank you for your interest in FR-Logistics! Please find the attached proposal prepared for ${c.clientName||'your company'}.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-QUOTE SUMMARY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Quote #:           ${qNum}
-Date:              ${fmtD(c.quoteDate)}
-Valid Until:       ${validUntil}
-Sales Channel:     ${c.channel} · ${c.opType}
-Monthly Volume:    ${c.orders.toLocaleString()} orders / ${c.pallets} pallets / ${c.units.toLocaleString()} units
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SELECTED SERVICES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${svcLines}
-
-Estimated Subtotal:             ${fmt(q.sub)}
-Min. Monthly Billing:           ${fmt(c.minBill||0)}
-SUGGESTED MONTHLY BILLING:      ${fmt(q.sug)}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-NEXT STEPS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-To move forward, simply reply to this email or schedule a discovery call:
-👉 https://calendly.com/fr-logistics
-
-Note: Final pricing may be adjusted after reviewing SKU complexity and workflow requirements. This quote is valid for ${c.validity}.${c.notes?'\n\nAdditional notes: '+c.notes:''}
-
-We look forward to supporting your logistics operations!
-
-Best regards,
-${c.prepBy||'Jose Fuentes – Operations Manager'}
-FR-Logistics · 10893 NW 17th St, Unit 121, Miami, FL 33172
-📞 (786) 300-1443 | ✉️ info@fr-logistics.net | 🌐 www.fr-logistics.net`
-  };
-}
-
+/* ── HELPERS ── */
 function getQNum(c){
   return(c.clientName||'CLIENT').replace(/\s+/g,'_').toUpperCase().slice(0,8)
         +'-'+(c.quoteDate||today()).replace(/-/g,'').slice(2);
@@ -788,6 +714,250 @@ function getValidUntil(c){
   return fmtD(new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,10));
 }
 
+/* ── BUILD HTML EMAIL (for clipboard — renders in Gmail when pasted) ── */
+function buildEmailHTML(q,lang){
+  const c=q.c;
+  const qNum=getQNum(c);
+  const validUntil=getValidUntil(c);
+  // Only services with total > 0
+  const billableLines=q.L.filter(l=>l.total>0);
+  const es=lang==='es';
+
+  const svcRows=billableLines.map((l,i)=>`
+    <tr style="background:${i%2===0?'#f8fafc':'#ffffff'}">
+      <td style="padding:9px 14px;font-size:13px;color:#1e293b;border-bottom:1px solid #e2e8f0">
+        <strong>${l.service}</strong><br>
+        <span style="font-size:11px;color:#64748b">${l.desc}</span>
+      </td>
+      <td style="padding:9px 14px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0;white-space:nowrap">
+        ${l.qty} ${l.unit} × ${fmt(l.rate)}
+      </td>
+      <td style="padding:9px 14px;font-size:13px;font-weight:700;color:#16a34a;border-bottom:1px solid #e2e8f0;text-align:right;white-space:nowrap">
+        ${fmt(l.total)}
+      </td>
+    </tr>`).join('');
+
+  const greeting    = es?`Estimado/a ${c.contactName||'Cliente'},`:`Hi ${c.contactName||'there'},`;
+  const intro       = es
+    ? `Gracias por su interés en los servicios de <strong>FR-Logistics</strong>. Adjunto encontrará la propuesta comercial preparada para <strong>${c.clientName||'su empresa'}</strong>.`
+    : `Thank you for your interest in <strong>FR-Logistics</strong>! Please find the attached proposal prepared for <strong>${c.clientName||'your company'}</strong>.`;
+  const svcLabel    = es?'Servicios Seleccionados':'Selected Services';
+  const qLabel      = es?'Cotización #':'Quote #';
+  const dateLabel   = es?'Fecha:':'Date:';
+  const validLabel  = es?'Válida hasta:':'Valid Until:';
+  const chanLabel   = es?'Canal:':'Channel:';
+  const volLabel    = es?'Volumen:':'Volume:';
+  const subLabel    = es?'Subtotal estimado':'Estimated Subtotal';
+  const sugLabel    = es?'FACTURACIÓN MENSUAL SUGERIDA':'SUGGESTED MONTHLY BILLING';
+  const ctaHead     = es?'¿Listo para avanzar?':'Ready to move forward?';
+  const ctaBody     = es
+    ? 'Responda este correo o agende una llamada de descubrimiento con nuestro equipo.'
+    : 'Reply to this email or schedule a discovery call with our team.';
+  const ctaBtn      = es?'📅 Agendar Llamada':'📅 Schedule a Call';
+  const noteText    = es
+    ? `<em>Nota comercial: Los precios finales pueden ajustarse tras revisar la complejidad de SKUs, empaque, frecuencia de inbounds e integraciones. Esta cotización es válida por ${c.validity}.</em>`
+    : `<em>Commercial note: Final pricing may be adjusted after reviewing SKU complexity, packaging requirements, and workflow details. This quote is valid for ${c.validity}.</em>`;
+  const signoff     = es?'Saludos cordiales,':'Best regards,';
+  const volStr      = `${c.orders.toLocaleString()} ${es?'órdenes':'orders'} / ${c.pallets} pallets / ${c.units.toLocaleString()} ${es?'unidades':'units'}`;
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head><body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 0">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%">
+
+  <!-- HEADER -->
+  <tr><td style="background:linear-gradient(135deg,#065f46,#16a34a);border-radius:12px 12px 0 0;padding:28px 32px">
+    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td>
+        <div style="display:inline-block;background:rgba(255,255,255,.2);border-radius:10px;padding:8px 14px;font-size:20px;font-weight:900;color:#fff;letter-spacing:1px">FR</div>
+        <div style="margin-top:8px;font-size:20px;font-weight:700;color:#fff">FR-Logistics</div>
+        <div style="margin-top:3px;font-size:11px;color:rgba(209,250,229,.9)">3PL Fulfillment · Amazon FBA Prep · E-Commerce Logistics</div>
+      </td>
+      <td align="right" style="vertical-align:top">
+        <div style="font-size:10px;color:rgba(209,250,229,.8);text-transform:uppercase;letter-spacing:1px">Service Quote</div>
+        <div style="font-size:18px;font-weight:700;color:#fff;margin-top:4px">#${qNum}</div>
+      </td>
+    </tr></table>
+  </td></tr>
+
+  <!-- BODY -->
+  <tr><td style="background:#ffffff;padding:32px">
+
+    <!-- GREETING -->
+    <p style="margin:0 0 6px;font-size:15px;font-weight:600;color:#0f172a">${greeting}</p>
+    <p style="margin:0 0 24px;font-size:14px;color:#475569;line-height:1.6">${intro}</p>
+
+    <!-- INFO PILLS -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
+    <tr>
+      <td width="50%" style="padding-right:6px">
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#059669">${qLabel}</div>
+          <div style="font-size:14px;font-weight:700;color:#065f46;margin-top:3px">${qNum}</div>
+        </div>
+      </td>
+      <td width="50%" style="padding-left:6px">
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#059669">${validLabel}</div>
+          <div style="font-size:14px;font-weight:700;color:#065f46;margin-top:3px">${validUntil}</div>
+        </div>
+      </td>
+    </tr>
+    </table>
+
+    <!-- QUOTE META -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:24px">
+    <tr><td style="padding:14px 16px;font-size:12.5px;color:#475569;line-height:1.8">
+      <strong style="color:#0f172a">${dateLabel}</strong> ${fmtD(c.quoteDate)}&nbsp;&nbsp;
+      <strong style="color:#0f172a">${chanLabel}</strong> ${c.channel} · ${c.opType}&nbsp;&nbsp;
+      <strong style="color:#0f172a">${volLabel}</strong> ${volStr}
+    </td></tr>
+    </table>
+
+    <!-- SERVICES TABLE -->
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#059669;border-bottom:2px solid #d1fae5;padding-bottom:6px;margin-bottom:10px">${svcLabel}</div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:20px">
+      ${svcRows}
+    </table>
+
+    <!-- TOTALS -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
+    <tr><td style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px 10px 0 0;padding:10px 16px">
+      <table width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td style="font-size:13px;color:#475569">${subLabel}</td>
+        <td align="right" style="font-size:13px;font-weight:600;color:#0f172a">${fmt(q.sub)}</td>
+      </tr></table>
+    </td></tr>
+    <tr><td style="background:linear-gradient(135deg,#065f46,#0f766e);border-radius:0 0 10px 10px;padding:14px 16px">
+      <table width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td style="font-size:13px;font-weight:700;color:#d1fae5">${sugLabel}</td>
+        <td align="right" style="font-size:20px;font-weight:800;color:#ffffff">${fmt(q.sug)}</td>
+      </tr></table>
+    </td></tr>
+    </table>
+
+    <!-- CTA BLOCK -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid #bfdbfe;border-radius:12px;margin-bottom:20px">
+    <tr><td style="padding:20px;text-align:center">
+      <div style="font-size:15px;font-weight:700;color:#1e40af;margin-bottom:6px">${ctaHead}</div>
+      <p style="margin:0 0 14px;font-size:13px;color:#3b82f6">${ctaBody}</p>
+      <a href="https://calendly.com/fr-logistics" style="display:inline-block;background:linear-gradient(135deg,#0ea55f,#16a34a);color:#ffffff;text-decoration:none;padding:11px 28px;border-radius:8px;font-size:13px;font-weight:700;letter-spacing:.3px">${ctaBtn}</a>
+    </td></tr>
+    </table>
+
+    ${c.notes?`<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12.5px;color:#475569"><strong style="color:#0f172a">${es?'Notas:':'Notes:'}</strong> ${c.notes}</div>`:''}
+
+    <!-- NOTE -->
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 14px;font-size:11.5px;color:#92400e">${noteText}</div>
+
+  </td></tr>
+
+  <!-- FOOTER -->
+  <tr><td style="background:#1e293b;border-radius:0 0 12px 12px;padding:20px 32px">
+    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td style="vertical-align:top">
+        <div style="font-size:13px;font-weight:700;color:#f1f5f9">${c.prepBy||'Jose Fuentes – Operations Manager'}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:3px">FR-Logistics · Miami, FL 33172</div>
+      </td>
+      <td align="right" style="vertical-align:top;font-size:11px;color:#94a3b8;line-height:1.7">
+        📞 (786) 300-1443<br>
+        ✉️ info@fr-logistics.net<br>
+        🌐 www.fr-logistics.net
+      </td>
+    </tr></table>
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body></html>`;
+}
+
+/* ── BUILD PLAIN TEXT (fallback body for Gmail URL) ── */
+function buildEmailText(q,lang){
+  const c=q.c;
+  const qNum=getQNum(c);
+  const validUntil=getValidUntil(c);
+  const es=lang==='es';
+  // Only billable lines
+  const svcLines=q.L.filter(l=>l.total>0).map(l=>`  • ${l.service}: ${l.qty} ${l.unit} × ${fmt(l.rate)} = ${fmt(l.total)}`).join('\n');
+
+  if(es){
+    return{
+      subject:`Cotización de Servicios #${qNum} – FR-Logistics | ${c.clientName||'Cliente'}`,
+      textBody:
+`Estimado/a ${c.contactName||'Cliente'},
+
+Gracias por su interés en FR-Logistics. Adjunto encontrará la propuesta preparada para ${c.clientName||'su empresa'}.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RESUMEN DE COTIZACIÓN #${qNum}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Fecha:          ${fmtD(c.quoteDate)}
+Válida hasta:   ${validUntil}
+Canal:          ${c.channel} · ${c.opType}
+Volumen/mes:    ${c.orders.toLocaleString()} órdenes / ${c.pallets} pallets / ${c.units.toLocaleString()} unidades
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SERVICIOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${svcLines}
+
+Subtotal estimado:              ${fmt(q.sub)}
+FACTURACIÓN MENSUAL SUGERIDA:   ${fmt(q.sug)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRÓXIMOS PASOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Para avanzar, responda este correo o agende una llamada:
+👉 https://calendly.com/fr-logistics
+
+Los precios finales pueden ajustarse tras revisar la operación. Válida por ${c.validity}.${c.notes?'\n\nNotas: '+c.notes:''}
+
+¡Esperamos apoyar sus operaciones!
+
+${c.prepBy||'Jose Fuentes – Operations Manager'}
+FR-Logistics · (786) 300-1443 · info@fr-logistics.net`
+    };
+  }
+
+  return{
+    subject:`Service Quote #${qNum} – FR-Logistics | ${c.clientName||'Client'}`,
+    textBody:
+`Hi ${c.contactName||'there'},
+
+Thank you for your interest in FR-Logistics! Please find the attached proposal for ${c.clientName||'your company'}.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+QUOTE SUMMARY #${qNum}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Date:           ${fmtD(c.quoteDate)}
+Valid Until:    ${validUntil}
+Channel:        ${c.channel} · ${c.opType}
+Volume/mo:      ${c.orders.toLocaleString()} orders / ${c.pallets} pallets / ${c.units.toLocaleString()} units
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SERVICES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${svcLines}
+
+Estimated Subtotal:           ${fmt(q.sub)}
+SUGGESTED MONTHLY BILLING:    ${fmt(q.sug)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NEXT STEPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Reply to this email or schedule a discovery call:
+👉 https://calendly.com/fr-logistics
+
+Final pricing may be adjusted after reviewing operational details. Valid for ${c.validity}.${c.notes?'\n\nNotes: '+c.notes:''}
+
+Best regards,
+${c.prepBy||'Jose Fuentes – Operations Manager'}
+FR-Logistics · (786) 300-1443 · info@fr-logistics.net`
+  };
+}
+
 /* Renders the branded HTML preview inside the modal */
 function renderEmailPreview(){
   if(!CQ)return;
@@ -796,13 +966,16 @@ function renderEmailPreview(){
   const validUntil=getValidUntil(c);
   const {subject, textBody}=buildEmailText(q,lang);
   _emailTextBody=textBody;
+  _emailHtmlBody=buildEmailHTML(q,lang);
+
+  const es=lang==='es';
 
   // meta bar
   $('emailSubject').textContent=subject;
   $('emailToDisplay').textContent=c.contactEmail||'(no recipient email set)';
   $('emailHeaderSub').textContent=c.clientName
-    ? (lang==='es'?`Para: ${c.clientName}`:`To: ${c.clientName}`)
-    : (lang==='es'?'Vista previa de cotización':'Quote preview');
+    ? (es?`Para: ${c.clientName}`:`To: ${c.clientName}`)
+    : (es?'Vista previa':'Quote preview');
 
   // quote number + validity
   $('ep_qnum').textContent='#'+qNum;
@@ -810,33 +983,32 @@ function renderEmailPreview(){
   $('ep_valid').textContent=validUntil;
 
   // greeting + intro
-  if(lang==='es'){
+  if(es){
     $('ep_greeting').textContent=`Estimado/a ${c.contactName||'Cliente'},`;
-    $('ep_intro').textContent=`Gracias por su interés en FR-Logistics. Adjunto encontrará la propuesta comercial preparada para ${c.clientName||'su empresa'}.`;
-    $('ep_svc_label').textContent='Servicios seleccionados';
+    $('ep_intro').textContent=`Gracias por su interés en FR-Logistics. Adjunto la propuesta para ${c.clientName||'su empresa'}.`;
+    $('ep_svc_label').textContent='Servicios Seleccionados';
     $('ep_sub_label').textContent='Subtotal estimado';
     $('ep_sug_label').textContent='FACTURACIÓN MENSUAL SUGERIDA';
-    $('ep_cta_text').textContent='Para proceder, responda este correo o agende una llamada de descubrimiento:';
-    $('ep_note').textContent=`Nota comercial: Los precios finales pueden ajustarse tras revisar la complejidad de SKUs, empaque e integraciones. Esta cotización es válida por ${c.validity}.`;
-    $('pdfNoteText').textContent='El PDF se descargará automáticamente al abrir Gmail — adjúntalo al correo.';
+    $('ep_cta_text').textContent='Responda este correo o agende una llamada de descubrimiento:';
+    $('ep_note').textContent=`Nota: Los precios finales pueden ajustarse. Cotización válida por ${c.validity}.`;
+    $('pdfNoteText').innerHTML='📎 <strong>PDF se descarga automáticamente.</strong> El email HTML se copia al clipboard — <strong>pega (Ctrl+V) en el cuerpo de Gmail</strong> para el diseño completo.';
   } else {
     $('ep_greeting').textContent=`Hi ${c.contactName||'there'},`;
-    $('ep_intro').textContent=`Thank you for your interest in FR-Logistics! Please find the attached proposal prepared for ${c.clientName||'your company'}.`;
+    $('ep_intro').textContent=`Thank you for your interest in FR-Logistics! Please find the attached proposal for ${c.clientName||'your company'}.`;
     $('ep_svc_label').textContent='Selected Services';
     $('ep_sub_label').textContent='Estimated Subtotal';
     $('ep_sug_label').textContent='SUGGESTED MONTHLY BILLING';
-    $('ep_cta_text').textContent='To move forward, simply reply to this email or schedule a discovery call:';
-    $('ep_note').textContent=`Commercial note: Final pricing may be adjusted after reviewing SKU complexity, packaging requirements, and workflow details. This quote is valid for ${c.validity}.`;
-    $('pdfNoteText').textContent='PDF will download automatically when you click "Open in Gmail" — attach it to the email.';
+    $('ep_cta_text').textContent='Reply to this email or schedule a discovery call:';
+    $('ep_note').textContent=`Commercial note: Final pricing may be adjusted. This quote is valid for ${c.validity}.`;
+    $('pdfNoteText').innerHTML='📎 <strong>PDF downloads automatically.</strong> HTML email is copied to clipboard — <strong>paste (Ctrl+V) in Gmail body</strong> for full branded design.';
   }
 
-  // subtotal + suggested
   $('ep_sub_val').textContent=fmt(q.sub);
   $('ep_sug_val').textContent=fmt(q.sug);
   $('ep_prepby').textContent=c.prepBy||'Jose Fuentes – Operations Manager';
 
-  // service rows
-  $('ep_services').innerHTML=q.L.map((l,i)=>`
+  // service rows — only billable
+  $('ep_services').innerHTML=q.L.filter(l=>l.total>0).map((l,i)=>`
     <div class="em-svc-row" style="display:grid;grid-template-columns:1fr auto;gap:8px;
          align-items:start;padding:8px 12px;border-radius:8px;
          background:${i%2===0?'#f8fafc':'#fff'};border:1px solid #e2e8f0">
@@ -849,36 +1021,60 @@ function renderEmailPreview(){
     </div>`).join('');
 }
 
-/* Opens Gmail Compose with josefuentes@fr-logistics.net + auto-downloads PDF */
+/* ── OPEN IN GMAIL — FIX v3 ──
+   1. Gmail opens in josefuentes@fr-logistics.net (authuser)
+   2. HTML email copied to clipboard (paste in Gmail body for rich design)
+   3. PDF downloads AFTER Gmail opens (avoids popup blocker)
+*/
 function openGmailCompose(){
   if(!CQ)return;
-  // 1. Download PDF first
-  dlPDF();
-  // 2. Short delay so PDF initiates before tab opens
-  setTimeout(()=>{
-    const{subject}=buildEmailText(CQ,_emailLang);
-    const to=CQ.c.contactEmail||'';
-    // Force josefuentes@fr-logistics.net account
-    const url='https://mail.google.com/mail/u/'+encodeURIComponent(FR_GMAIL)+'/?view=cm'
-      +'&to='+encodeURIComponent(to)
-      +'&su='+encodeURIComponent(subject)
-      +'&body='+encodeURIComponent(_emailTextBody);
-    window.open(url,'_blank');
-  },400);
+  const{subject, textBody}=buildEmailText(CQ,_emailLang);
+  const to=CQ.c.contactEmail||'';
+  const es=_emailLang==='es';
+
+  // 1. Open Gmail FIRST (synchronous — from direct user click, no blocker)
+  const url='https://mail.google.com/mail/?authuser='+encodeURIComponent(FR_GMAIL)+'&view=cm'
+    +'&to='+encodeURIComponent(to)
+    +'&su='+encodeURIComponent(subject)
+    +'&body='+encodeURIComponent(textBody);
+  window.open(url,'_blank');
+
+  // 2. Copy HTML email to clipboard
+  try{
+    const htmlBlob=new Blob([_emailHtmlBody],{type:'text/html'});
+    const textBlob=new Blob([textBody],{type:'text/plain'});
+    navigator.clipboard.write([new ClipboardItem({'text/html':htmlBlob,'text/plain':textBlob})]).then(()=>{
+      showToast(es
+        ? '✅ PDF descargado · Email HTML copiado — pega en el cuerpo de Gmail (Ctrl+V)'
+        : '✅ PDF downloading · HTML email copied — paste in Gmail body (Ctrl+V)', 6000);
+    }).catch(()=>copyFallback(textBody,es));
+  }catch(e){copyFallback(textBody,es);}
+
+  // 3. PDF download with delay (after Gmail tab initiated)
+  setTimeout(()=>dlPDF(), 600);
+}
+
+function copyFallback(text,es){
+  const ta=document.createElement('textarea');
+  ta.value=text; document.body.appendChild(ta);
+  ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+  showToast(es?'📋 Texto copiado al clipboard':'📋 Text copied to clipboard', 3000);
 }
 
 function copyEmailBody(){
   const btn=$('copyBtn');
-  navigator.clipboard.writeText(_emailTextBody).then(()=>{
-    btn.textContent='✅ Copied!';
-    setTimeout(()=>btn.textContent='📋 Copy Text',2000);
-  }).catch(()=>{
-    const ta=document.createElement('textarea');
-    ta.value=_emailTextBody; document.body.appendChild(ta);
-    ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-    btn.textContent='✅ Copied!';
-    setTimeout(()=>btn.textContent='📋 Copy Text',2000);
-  });
+  const es=_emailLang==='es';
+  try{
+    const htmlBlob=new Blob([_emailHtmlBody],{type:'text/html'});
+    const textBlob=new Blob([_emailTextBody],{type:'text/plain'});
+    navigator.clipboard.write([new ClipboardItem({'text/html':htmlBlob,'text/plain':textBlob})]).then(()=>{
+      btn.textContent=es?'✅ Copiado!':'✅ Copied!';
+      showToast(es
+        ? '📋 HTML copiado — pega en Gmail para el diseño completo (Ctrl+V)'
+        : '📋 HTML copied — paste in Gmail for full branded design (Ctrl+V)', 4000);
+      setTimeout(()=>btn.textContent=es?'📋 Copiar HTML':'📋 Copy HTML',2500);
+    }).catch(()=>{copyFallback(_emailTextBody,es);btn.textContent=es?'✅ Copiado!':'✅ Copied!';setTimeout(()=>btn.textContent=es?'📋 Copiar HTML':'📋 Copy HTML',2500);});
+  }catch(e){copyFallback(_emailTextBody,es);}
 }
 
 /* ── EXCEL ── */
