@@ -3,7 +3,7 @@
 // Accepts multiple attachments: [{base64, name, mimeType}]
 
 const APPS_SCRIPT_URL =
-  'https://script.google.com/macros/s/AKfycbwcifgUyf_qlxgNtJwuCschB3xxgxyww7G-ql7oV8yV4_qrIFZN4cqNcsFFmXgR_hyeMw/exec';
+  'https://script.google.com/macros/s/AKfycbwnaHp2828BuXKkxPMCG8CsWG5eTjPPlYWx6RI4HevUZdpfA5TaDz13vHOHtkRrUM8rDw/exec';
 
 exports.handler = async (event) => {
   const headers = {
