@@ -113,6 +113,43 @@
     .footer{text-align:center;padding:22px 0 10px;font-size:11px;color:#94a3b8}
     ::-webkit-scrollbar{width:4px}
     ::-webkit-scrollbar-thumb{background:#bbf7d0;border-radius:99px}
+
+    /* EMAIL MODAL ANIMATIONS */
+    @keyframes overlayIn{from{opacity:0}to{opacity:1}}
+    @keyframes modalSlideUp{from{opacity:0;transform:translateY(28px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+    @keyframes shimmer{0%{background-position:200% center}100%{background-position:-200% center}}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+
+    #emailModal{animation:overlayIn .18s ease}
+    #emailModalCard{animation:modalSlideUp .22s cubic-bezier(.34,1.28,.64,1)}
+
+    .em-lang-btn{transition:all .18s cubic-bezier(.34,1.28,.64,1)!important;font-family:'DM Sans',sans-serif;
+                 border:none;cursor:pointer;border-radius:999px;padding:6px 20px;font-size:12px;font-weight:700}
+    .em-lang-btn.active{background:linear-gradient(135deg,#0ea55f,#16a34a)!important;color:#fff!important;
+                        box-shadow:0 3px 12px rgba(14,165,95,.35);transform:scale(1.05)}
+    .em-lang-btn.inactive{background:#f1f5f9!important;color:#64748b!important}
+
+    .em-svc-row{transition:background .12s}
+    .em-svc-row:hover{background:#f0fdf4!important}
+
+    .em-gmail-btn{background:linear-gradient(135deg,#0ea55f,#16a34a);color:#fff;border:none;
+                  cursor:pointer;border-radius:10px;padding:10px 22px;font-size:13px;font-weight:700;
+                  font-family:'DM Sans',sans-serif;box-shadow:0 4px 14px rgba(14,165,95,.35);
+                  display:inline-flex;align-items:center;gap:7px;transition:all .15s ease}
+    .em-gmail-btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(14,165,95,.45);filter:brightness(1.07)}
+    .em-gmail-btn:active{transform:scale(.97)}
+
+    .em-copy-btn{background:#fff;color:#334155;border:1.5px solid #e2e8f0;cursor:pointer;
+                 border-radius:10px;padding:10px 18px;font-size:13px;font-weight:600;
+                 font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:6px;transition:all .15s}
+    .em-copy-btn:hover{border-color:#86efac;background:#f0fdf4;color:#15803d}
+
+    .em-pdf-note{background:linear-gradient(135deg,#fffbeb,#fef9c3);border:1px solid #fde68a;
+                 border-radius:8px;padding:9px 14px;font-size:11.5px;color:#92400e;
+                 display:flex;align-items:center;gap:8px;margin-top:2px}
+
+    .em-total-bar{background:linear-gradient(135deg,#065f46,#0f766e);border-radius:10px;padding:12px 16px;
+                  display:flex;justify-content:space-between;align-items:center;margin-top:4px}
   </style>
 </head>
 <body>
@@ -239,64 +276,169 @@
 </div>
 
 <!-- ═══════════════════════════════════════════════
-     EMAIL DRAFT MODAL
+     EMAIL DRAFT MODAL — FR-Logistics Branded
 ═══════════════════════════════════════════════ -->
-<div id="emailModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);
-     z-index:9999;align-items:center;justify-content:center;padding:16px">
-  <div style="background:#fff;border-radius:16px;width:100%;max-width:640px;
-              box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden;max-height:90vh;
-              display:flex;flex-direction:column">
-    <!-- Header -->
-    <div style="padding:16px 20px;background:linear-gradient(135deg,#3b82f6,#2563eb);
-                display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-      <div style="color:#fff;font-family:'Syne',sans-serif;font-weight:700;font-size:15px">📧 Email Quote Draft</div>
-      <button onclick="closeEmailModal()" style="background:rgba(255,255,255,.2);color:#fff;
-              padding:4px 10px;font-size:13px;border-radius:8px;transform:none;filter:none">✕ Close</button>
-    </div>
-    <!-- Lang + To -->
-    <div style="padding:12px 20px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:12px;flex-shrink:0;background:#f8fafc">
-      <span style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.4px">Language:</span>
-      <div style="display:flex;gap:6px">
-        <button id="langEN" onclick="setEmailLang('en')"
-                style="padding:5px 16px;font-size:12px;font-weight:700;border-radius:8px;
-                       background:#2563eb;color:#fff;border:1px solid #2563eb;transition:all .12s">🇺🇸 EN</button>
-        <button id="langES" onclick="setEmailLang('es')"
-                style="padding:5px 16px;font-size:12px;font-weight:700;border-radius:8px;
-                       background:#f1f5f9;color:#334155;border:1px solid #e2e8f0;transition:all .12s">🇪🇸 ES</button>
+<div id="emailModal" style="display:none;position:fixed;inset:0;background:rgba(10,20,35,.6);
+     backdrop-filter:blur(4px);z-index:9999;align-items:center;justify-content:center;padding:16px">
+  <div id="emailModalCard" style="background:#fff;border-radius:20px;width:100%;max-width:660px;
+       box-shadow:0 30px 80px rgba(0,0,0,.3);overflow:hidden;max-height:92vh;display:flex;flex-direction:column">
+
+    <!-- ── HEADER ── -->
+    <div style="background:linear-gradient(135deg,#065f46 0%,#0ea55f 60%,#22c55e 100%);
+                padding:18px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
+                position:relative;overflow:hidden">
+      <!-- decorative rings -->
+      <div style="position:absolute;right:-30px;top:-30px;width:120px;height:120px;border-radius:50%;
+                  border:1px solid rgba(255,255,255,.15)"></div>
+      <div style="position:absolute;right:10px;top:10px;width:60px;height:60px;border-radius:50%;
+                  border:1px solid rgba(255,255,255,.1)"></div>
+      <div style="display:flex;align-items:center;gap:12px;z-index:1">
+        <div style="width:36px;height:36px;background:rgba(255,255,255,.2);border-radius:10px;
+                    display:flex;align-items:center;justify-content:center;
+                    font-family:'Syne',sans-serif;font-weight:800;font-size:14px;color:#fff">FR</div>
+        <div>
+          <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:15px;color:#fff">Email Quote Draft</div>
+          <div style="font-size:11px;color:rgba(209,250,229,.85);margin-top:1px" id="emailHeaderSub">Select language to preview</div>
+        </div>
       </div>
-      <span id="emailTo" style="margin-left:auto;font-size:11px;color:#64748b;font-style:italic"></span>
+      <div style="display:flex;align-items:center;gap:8px;z-index:1">
+        <!-- Lang toggle -->
+        <div style="background:rgba(0,0,0,.2);border-radius:999px;padding:3px;display:flex;gap:3px">
+          <button id="langEN" class="em-lang-btn active" onclick="setEmailLang('en')">🇺🇸 EN</button>
+          <button id="langES" class="em-lang-btn inactive" onclick="setEmailLang('es')">🇪🇸 ES</button>
+        </div>
+        <button onclick="closeEmailModal()" style="background:rgba(255,255,255,.15);color:#fff;border:none;
+                cursor:pointer;border-radius:8px;padding:6px 11px;font-size:12px;font-weight:600;
+                font-family:'DM Sans',sans-serif;transition:background .12s"
+                onmouseover="this.style.background='rgba(255,255,255,.25)'"
+                onmouseout="this.style.background='rgba(255,255,255,.15)'">✕</button>
+      </div>
     </div>
-    <!-- Subject -->
-    <div style="padding:10px 20px;border-bottom:1px solid #e2e8f0;background:#eff6ff;flex-shrink:0">
-      <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#3b82f6">Subject: </span>
-      <span id="emailSubject" style="font-size:12.5px;font-weight:600;color:#1e3a8a"></span>
+
+    <!-- ── META BAR (To / Subject) ── -->
+    <div style="padding:10px 20px;border-bottom:1px solid #e2e8f0;background:#f8fafc;
+                display:grid;gap:4px;flex-shrink:0">
+      <div style="display:flex;align-items:center;gap:8px;font-size:11.5px">
+        <span style="font-weight:700;color:#64748b;width:50px;flex-shrink:0">To:</span>
+        <span id="emailToDisplay" style="color:#0f172a;font-weight:500"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:11.5px">
+        <span style="font-weight:700;color:#64748b;width:50px;flex-shrink:0">Subject:</span>
+        <span id="emailSubject" style="color:#0f172a;font-weight:600"></span>
+      </div>
     </div>
-    <!-- Body -->
-    <div style="flex:1;overflow-y:auto;padding:16px 20px;background:#fff">
-      <pre id="emailBody" style="font-family:'DM Sans',sans-serif;font-size:12px;line-height:1.75;
-           color:#334155;white-space:pre-wrap;margin:0"></pre>
+
+    <!-- ── EMAIL PREVIEW (HTML rendered) ── -->
+    <div style="flex:1;overflow-y:auto;background:#f1f5f9;padding:16px">
+      <div id="emailPreview" style="background:#fff;border-radius:12px;overflow:hidden;
+           box-shadow:0 2px 16px rgba(0,0,0,.08);border:1px solid #e2e8f0;font-family:'DM Sans',sans-serif">
+
+        <!-- email header banner -->
+        <div style="background:linear-gradient(135deg,#065f46,#16a34a);padding:20px 24px;
+                    display:flex;align-items:center;gap:14px">
+          <div style="width:42px;height:42px;background:rgba(255,255,255,.2);border-radius:10px;
+                      display:flex;align-items:center;justify-content:center;
+                      font-family:'Syne',sans-serif;font-weight:800;font-size:17px;color:#fff;flex-shrink:0">FR</div>
+          <div>
+            <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:16px;color:#fff">FR-Logistics</div>
+            <div style="font-size:10px;color:rgba(209,250,229,.9);margin-top:1px">3PL Fulfillment · Amazon FBA Prep · E-Commerce Logistics</div>
+          </div>
+          <div style="margin-left:auto;text-align:right">
+            <div style="font-size:9px;color:rgba(209,250,229,.8);letter-spacing:.5px;text-transform:uppercase">Service Quote</div>
+            <div id="ep_qnum" style="font-family:'Syne',sans-serif;font-weight:800;font-size:14px;color:#fff;margin-top:1px">—</div>
+          </div>
+        </div>
+
+        <!-- greeting + intro -->
+        <div style="padding:22px 24px 0">
+          <p id="ep_greeting" style="font-size:14px;font-weight:600;color:#0f172a;margin:0 0 6px"></p>
+          <p id="ep_intro" style="font-size:13px;color:#475569;margin:0 0 18px;line-height:1.6"></p>
+
+          <!-- info pills -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px">
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 13px">
+              <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#059669">Quote #</div>
+              <div id="ep_qnum2" style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;color:#065f46;margin-top:2px">—</div>
+            </div>
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 13px">
+              <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#059669">Valid Until</div>
+              <div id="ep_valid" style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;color:#065f46;margin-top:2px">—</div>
+            </div>
+          </div>
+
+          <!-- section label -->
+          <div id="ep_svc_label" style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;
+               color:#059669;border-bottom:1px solid #d1fae5;padding-bottom:6px;margin-bottom:10px"></div>
+
+          <!-- service rows -->
+          <div id="ep_services" style="display:grid;gap:6px;margin-bottom:14px"></div>
+
+          <!-- totals -->
+          <div style="border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:18px">
+            <div style="display:flex;justify-content:space-between;padding:9px 14px;font-size:12.5px;
+                        background:#f8fafc;border-bottom:1px solid #e2e8f0">
+              <span id="ep_sub_label" style="color:#475569"></span>
+              <span id="ep_sub_val" style="font-weight:600;color:#0f172a"></span>
+            </div>
+            <div class="em-total-bar">
+              <span id="ep_sug_label" style="font-family:'Syne',sans-serif;font-weight:700;font-size:12px;color:#d1fae5"></span>
+              <span id="ep_sug_val" style="font-family:'Syne',sans-serif;font-weight:800;font-size:17px;color:#fff"></span>
+            </div>
+          </div>
+
+          <!-- CTA -->
+          <div id="ep_cta_box" style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid #bfdbfe;
+               border-radius:12px;padding:16px;text-align:center;margin-bottom:18px">
+            <p id="ep_cta_text" style="font-size:13px;color:#1e40af;margin:0 0 10px;font-weight:500"></p>
+            <a href="https://calendly.com/fr-logistics" target="_blank"
+               style="display:inline-block;background:linear-gradient(135deg,#0ea55f,#16a34a);color:#fff;
+                      text-decoration:none;padding:9px 22px;border-radius:8px;font-size:12.5px;font-weight:700;
+                      box-shadow:0 3px 10px rgba(14,165,95,.3)">📅 Schedule Discovery Call</a>
+          </div>
+
+          <!-- commercial note -->
+          <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;
+               padding:10px 13px;margin-bottom:20px">
+            <p id="ep_note" style="font-size:11px;color:#92400e;margin:0;line-height:1.5;font-style:italic"></p>
+          </div>
+        </div>
+
+        <!-- email footer -->
+        <div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:14px 24px;
+                    display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div>
+            <div id="ep_prepby" style="font-size:12px;font-weight:700;color:#1e293b"></div>
+            <div style="font-size:10.5px;color:#64748b;margin-top:1px">FR-Logistics · Miami, FL 33172</div>
+          </div>
+          <div style="text-align:right;font-size:10px;color:#94a3b8;line-height:1.6">
+            (786) 300-1443<br>info@fr-logistics.net<br>www.fr-logistics.net
+          </div>
+        </div>
+
+      </div><!-- /email preview card -->
     </div>
-    <!-- Actions -->
-    <div style="padding:14px 20px;border-top:1px solid #e2e8f0;background:#f8fafc;
-                display:flex;gap:9px;flex-wrap:wrap;flex-shrink:0">
-      <button onclick="openGmailCompose()"
-              style="background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;
-                     padding:9px 20px;font-size:13px;font-weight:600;border-radius:10px;
-                     box-shadow:0 3px 10px rgba(59,130,246,.3)">
-        ✉️ Open in Gmail
-      </button>
-      <button onclick="copyEmailBody()" id="copyBtn"
-              style="background:#f1f5f9;color:#334155;border:1px solid #e2e8f0;
-                     padding:9px 18px;font-size:13px;font-weight:600;border-radius:10px">
-        📋 Copy Body
-      </button>
-      <button onclick="closeEmailModal()"
-              style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;
-                     padding:9px 16px;font-size:13px;font-weight:600;border-radius:10px;margin-left:auto">
-        ✕ Cancel
-      </button>
+
+    <!-- ── ACTIONS ── -->
+    <div style="padding:14px 20px;border-top:1px solid #e2e8f0;background:#f8fafc;flex-shrink:0">
+      <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+        <button class="em-gmail-btn" onclick="openGmailCompose()">
+          ✉️ Open in Gmail
+        </button>
+        <button class="em-copy-btn" id="copyBtn" onclick="copyEmailBody()">
+          📋 Copy Text
+        </button>
+        <button onclick="closeEmailModal()" style="background:transparent;color:#94a3b8;border:none;
+                cursor:pointer;font-family:'DM Sans',sans-serif;font-size:12.5px;font-weight:600;
+                padding:8px 12px;border-radius:8px;margin-left:auto;transition:color .12s"
+                onmouseover="this.style.color='#dc2626'" onmouseout="this.style.color='#94a3b8'">Cancel</button>
+      </div>
+      <div class="em-pdf-note" style="margin-top:10px">
+        <span style="font-size:16px">📎</span>
+        <span id="pdfNoteText">PDF will download automatically when you click "Open in Gmail" — attach it to the email.</span>
+      </div>
     </div>
-  </div>
+
+  </div><!-- /modal card -->
 </div>
 
 <script>
@@ -517,15 +659,20 @@ function clearQ(){
 function ensureQ(){if(!CQ)genQuote();return CQ?.L?.length>0;}
 
 /* ═══════════════════════════════════════════════
-   EMAIL DRAFT — Bilingual EN/ES + Gmail Compose
+   EMAIL DRAFT v2 — Branded HTML Preview + Gmail
+   Account: josefuentes@fr-logistics.net
+   PDF: auto-download on Gmail open
 ═══════════════════════════════════════════════ */
-let _emailLang='en';
+const FR_GMAIL = 'josefuentes@fr-logistics.net';
+let _emailLang = 'en';
+let _emailTextBody = ''; // plain-text version for Gmail compose URL
 
 function openEmailModal(){
   if(!ensureQ()){alert('Generate a quote with at least one service first.');return;}
   _emailLang='en';
+  const m=$('emailModal');
+  m.style.display='flex';
   setEmailLang('en');
-  const m=$('emailModal'); m.style.display='flex';
 }
 
 function closeEmailModal(){
@@ -534,30 +681,25 @@ function closeEmailModal(){
 
 function setEmailLang(lang){
   _emailLang=lang;
-  $('langEN').style.background = lang==='en'?'#2563eb':'#f1f5f9';
-  $('langEN').style.color      = lang==='en'?'#fff':'#334155';
-  $('langEN').style.border     = lang==='en'?'1px solid #2563eb':'1px solid #e2e8f0';
-  $('langES').style.background = lang==='es'?'#2563eb':'#f1f5f9';
-  $('langES').style.color      = lang==='es'?'#fff':'#334155';
-  $('langES').style.border     = lang==='es'?'1px solid #2563eb':'1px solid #e2e8f0';
+  $('langEN').className='em-lang-btn '+(lang==='en'?'active':'inactive');
+  $('langES').className='em-lang-btn '+(lang==='es'?'active':'inactive');
   renderEmailPreview();
 }
 
-function buildEmailContent(q,lang){
+/* Returns { subject, textBody } — used for Gmail Compose URL */
+function buildEmailText(q,lang){
   const c=q.c;
-  const qNum=(c.clientName||'CLIENT').replace(/\s+/g,'_').toUpperCase().slice(0,8)
-            +'-'+(c.quoteDate||today()).replace(/-/g,'').slice(2);
-  const addDays=(iso,n)=>{const d=new Date(iso||today());d.setDate(d.getDate()+n);return new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,10)};
-  const validUntil=fmtD(addDays(c.quoteDate,parseInt(c.validity)||30));
-  const serviceLines=q.L.map(l=>`  • ${l.service}: ${l.qty} ${l.unit} × ${fmt(l.rate)} = ${fmt(l.total)}`).join('\n');
+  const qNum=getQNum(c);
+  const validUntil=getValidUntil(c);
+  const svcLines=q.L.map(l=>`  • ${l.service}: ${l.qty} ${l.unit} × ${fmt(l.rate)} = ${fmt(l.total)}`).join('\n');
 
   if(lang==='es'){
     return{
       subject:`Cotización de Servicios #${qNum} – FR-Logistics | ${c.clientName||'Cliente'}`,
-      body:
+      textBody:
 `Estimado/a ${c.contactName||'Cliente'},
 
-Gracias por su interés en los servicios de FR-Logistics. A continuación encontrará la cotización preparada para ${c.clientName||'su empresa'}.
+Gracias por su interés en los servicios de FR-Logistics. Adjunto encontrará la propuesta comercial preparada para ${c.clientName||'su empresa'}.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RESUMEN DE COTIZACIÓN
@@ -571,7 +713,7 @@ Volumen mensual:   ${c.orders.toLocaleString()} órdenes / ${c.pallets} pallets 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SERVICIOS SELECCIONADOS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${serviceLines}
+${svcLines}
 
 Subtotal estimado:              ${fmt(q.sub)}
 Facturación mínima mensual:     ${fmt(c.minBill||0)}
@@ -580,26 +722,26 @@ FACTURACIÓN MENSUAL SUGERIDA:   ${fmt(q.sug)}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PRÓXIMOS PASOS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Para proceder, responda este correo o agende una llamada de descubrimiento:
+Para proceder, responda este correo o agende una llamada:
 👉 https://calendly.com/fr-logistics
 
-Nota comercial: Los precios finales pueden ajustarse tras revisar la complejidad de SKUs, empaque, frecuencia de inbounds e integraciones de plataforma. Esta cotización es válida por ${c.validity}.${c.notes?'\n\nNotas adicionales: '+c.notes:''}
+Nota: Los precios finales pueden ajustarse tras revisar la complejidad de SKUs y requerimientos de flujo de trabajo. Esta cotización es válida por ${c.validity}.${c.notes?'\n\nNotas adicionales: '+c.notes:''}
 
-Quedamos a su disposición para cualquier consulta. ¡Esperamos apoyar sus operaciones logísticas!
+¡Esperamos apoyar sus operaciones logísticas!
 
 Saludos,
 ${c.prepBy||'Jose Fuentes – Operations Manager'}
-FR-Logistics · Miami, FL 33172
-📞 (786) 300-1443  |  ✉️ info@fr-logistics.net  |  🌐 www.fr-logistics.net`
+FR-Logistics · 10893 NW 17th St, Unit 121, Miami, FL 33172
+📞 (786) 300-1443 | ✉️ info@fr-logistics.net | 🌐 www.fr-logistics.net`
     };
   }
 
   return{
     subject:`Service Quote #${qNum} – FR-Logistics | ${c.clientName||'Client'}`,
-    body:
+    textBody:
 `Hi ${c.contactName||'there'},
 
-Thank you for your interest in FR-Logistics! Please find below the service quote prepared for ${c.clientName||'your company'}.
+Thank you for your interest in FR-Logistics! Please find the attached proposal prepared for ${c.clientName||'your company'}.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 QUOTE SUMMARY
@@ -613,7 +755,7 @@ Monthly Volume:    ${c.orders.toLocaleString()} orders / ${c.pallets} pallets / 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SELECTED SERVICES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${serviceLines}
+${svcLines}
 
 Estimated Subtotal:             ${fmt(q.sub)}
 Min. Monthly Billing:           ${fmt(c.minBill||0)}
@@ -625,50 +767,117 @@ NEXT STEPS
 To move forward, simply reply to this email or schedule a discovery call:
 👉 https://calendly.com/fr-logistics
 
-Commercial note: Final pricing may be adjusted after reviewing SKU complexity, packaging requirements, inbound frequency, and workflow details. This quote is valid for ${c.validity}.${c.notes?'\n\nAdditional notes: '+c.notes:''}
+Note: Final pricing may be adjusted after reviewing SKU complexity and workflow requirements. This quote is valid for ${c.validity}.${c.notes?'\n\nAdditional notes: '+c.notes:''}
 
 We look forward to supporting your logistics operations!
 
 Best regards,
 ${c.prepBy||'Jose Fuentes – Operations Manager'}
-FR-Logistics · Miami, FL 33172
-📞 (786) 300-1443  |  ✉️ info@fr-logistics.net  |  🌐 www.fr-logistics.net`
+FR-Logistics · 10893 NW 17th St, Unit 121, Miami, FL 33172
+📞 (786) 300-1443 | ✉️ info@fr-logistics.net | 🌐 www.fr-logistics.net`
   };
 }
 
-function renderEmailPreview(){
-  if(!CQ)return;
-  const{subject,body}=buildEmailContent(CQ,_emailLang);
-  $('emailSubject').textContent=subject;
-  $('emailBody').textContent=body;
-  $('emailTo').textContent=CQ.c.contactEmail?`To: ${CQ.c.contactEmail}`:'No recipient email set';
+function getQNum(c){
+  return(c.clientName||'CLIENT').replace(/\s+/g,'_').toUpperCase().slice(0,8)
+        +'-'+(c.quoteDate||today()).replace(/-/g,'').slice(2);
+}
+function getValidUntil(c){
+  const d=new Date(c.quoteDate||today());
+  d.setDate(d.getDate()+(parseInt(c.validity)||30));
+  return fmtD(new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,10));
 }
 
+/* Renders the branded HTML preview inside the modal */
+function renderEmailPreview(){
+  if(!CQ)return;
+  const q=CQ, c=q.c, lang=_emailLang;
+  const qNum=getQNum(c);
+  const validUntil=getValidUntil(c);
+  const {subject, textBody}=buildEmailText(q,lang);
+  _emailTextBody=textBody;
+
+  // meta bar
+  $('emailSubject').textContent=subject;
+  $('emailToDisplay').textContent=c.contactEmail||'(no recipient email set)';
+  $('emailHeaderSub').textContent=c.clientName
+    ? (lang==='es'?`Para: ${c.clientName}`:`To: ${c.clientName}`)
+    : (lang==='es'?'Vista previa de cotización':'Quote preview');
+
+  // quote number + validity
+  $('ep_qnum').textContent='#'+qNum;
+  $('ep_qnum2').textContent=qNum;
+  $('ep_valid').textContent=validUntil;
+
+  // greeting + intro
+  if(lang==='es'){
+    $('ep_greeting').textContent=`Estimado/a ${c.contactName||'Cliente'},`;
+    $('ep_intro').textContent=`Gracias por su interés en FR-Logistics. Adjunto encontrará la propuesta comercial preparada para ${c.clientName||'su empresa'}.`;
+    $('ep_svc_label').textContent='Servicios seleccionados';
+    $('ep_sub_label').textContent='Subtotal estimado';
+    $('ep_sug_label').textContent='FACTURACIÓN MENSUAL SUGERIDA';
+    $('ep_cta_text').textContent='Para proceder, responda este correo o agende una llamada de descubrimiento:';
+    $('ep_note').textContent=`Nota comercial: Los precios finales pueden ajustarse tras revisar la complejidad de SKUs, empaque e integraciones. Esta cotización es válida por ${c.validity}.`;
+    $('pdfNoteText').textContent='El PDF se descargará automáticamente al abrir Gmail — adjúntalo al correo.';
+  } else {
+    $('ep_greeting').textContent=`Hi ${c.contactName||'there'},`;
+    $('ep_intro').textContent=`Thank you for your interest in FR-Logistics! Please find the attached proposal prepared for ${c.clientName||'your company'}.`;
+    $('ep_svc_label').textContent='Selected Services';
+    $('ep_sub_label').textContent='Estimated Subtotal';
+    $('ep_sug_label').textContent='SUGGESTED MONTHLY BILLING';
+    $('ep_cta_text').textContent='To move forward, simply reply to this email or schedule a discovery call:';
+    $('ep_note').textContent=`Commercial note: Final pricing may be adjusted after reviewing SKU complexity, packaging requirements, and workflow details. This quote is valid for ${c.validity}.`;
+    $('pdfNoteText').textContent='PDF will download automatically when you click "Open in Gmail" — attach it to the email.';
+  }
+
+  // subtotal + suggested
+  $('ep_sub_val').textContent=fmt(q.sub);
+  $('ep_sug_val').textContent=fmt(q.sug);
+  $('ep_prepby').textContent=c.prepBy||'Jose Fuentes – Operations Manager';
+
+  // service rows
+  $('ep_services').innerHTML=q.L.map((l,i)=>`
+    <div class="em-svc-row" style="display:grid;grid-template-columns:1fr auto;gap:8px;
+         align-items:start;padding:8px 12px;border-radius:8px;
+         background:${i%2===0?'#f8fafc':'#fff'};border:1px solid #e2e8f0">
+      <div>
+        <div style="font-size:12.5px;font-weight:600;color:#1e293b">${l.service}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:1px">${l.qty} ${l.unit} × ${fmt(l.rate)}</div>
+      </div>
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;color:#16a34a;
+                  white-space:nowrap;padding-top:1px">${fmt(l.total)}</div>
+    </div>`).join('');
+}
+
+/* Opens Gmail Compose with josefuentes@fr-logistics.net + auto-downloads PDF */
 function openGmailCompose(){
   if(!CQ)return;
-  const{subject,body}=buildEmailContent(CQ,_emailLang);
-  const to=CQ.c.contactEmail||'';
-  const url='https://mail.google.com/mail/?view=cm'
-    +'&to='+encodeURIComponent(to)
-    +'&su='+encodeURIComponent(subject)
-    +'&body='+encodeURIComponent(body);
-  window.open(url,'_blank');
+  // 1. Download PDF first
+  dlPDF();
+  // 2. Short delay so PDF initiates before tab opens
+  setTimeout(()=>{
+    const{subject}=buildEmailText(CQ,_emailLang);
+    const to=CQ.c.contactEmail||'';
+    // Force josefuentes@fr-logistics.net account
+    const url='https://mail.google.com/mail/u/'+encodeURIComponent(FR_GMAIL)+'/?view=cm'
+      +'&to='+encodeURIComponent(to)
+      +'&su='+encodeURIComponent(subject)
+      +'&body='+encodeURIComponent(_emailTextBody);
+    window.open(url,'_blank');
+  },400);
 }
 
 function copyEmailBody(){
-  const body=$('emailBody').textContent;
   const btn=$('copyBtn');
-  navigator.clipboard.writeText(body).then(()=>{
+  navigator.clipboard.writeText(_emailTextBody).then(()=>{
     btn.textContent='✅ Copied!';
-    setTimeout(()=>btn.textContent='📋 Copy Body',2000);
+    setTimeout(()=>btn.textContent='📋 Copy Text',2000);
   }).catch(()=>{
-    // fallback
     const ta=document.createElement('textarea');
-    ta.value=body; document.body.appendChild(ta);
-    ta.select(); document.execCommand('copy');
-    document.body.removeChild(ta);
+    ta.value=_emailTextBody; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
     btn.textContent='✅ Copied!';
-    setTimeout(()=>btn.textContent='📋 Copy Body',2000);
+    setTimeout(()=>btn.textContent='📋 Copy Text',2000);
   });
 }
 
