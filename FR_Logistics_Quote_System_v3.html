@@ -19,8 +19,6 @@
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
     .wrap{max-width:1640px;margin:0 auto;padding:20px 24px}
-
-    /* HEADER */
     .hdr{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;
          padding:16px 24px;background:#fff;border:1px solid var(--border);border-top:4px solid var(--g1);
          border-radius:12px;margin-bottom:20px;box-shadow:var(--shadow)}
@@ -34,8 +32,6 @@
     .qbadge{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:.8px;
             padding:5px 14px;border:1px solid #bbf7d0;border-radius:999px;
             color:var(--g3);background:var(--glt)}
-
-    /* BUTTONS */
     button{font-family:'DM Sans',sans-serif;border:0;cursor:pointer;border-radius:10px;
            padding:9px 18px;font-size:13px;font-weight:600;transition:all .12s ease;white-space:nowrap;
            display:inline-flex;align-items:center;gap:5px}
@@ -46,13 +42,9 @@
     .bd{background:#fef2f2;color:var(--danger);border:1px solid #fecaca}
     .bg{background:transparent;color:var(--muted);padding:6px 10px}
     .sm{padding:6px 11px;font-size:12px}
-
-    /* LAYOUT */
     .layout{display:grid;grid-template-columns:1.1fr 1.55fr 1fr;gap:18px;align-items:start}
     @media(max-width:1200px){.layout{grid-template-columns:1fr 1fr}.cr{grid-column:1/-1}}
     @media(max-width:740px){.layout{grid-template-columns:1fr}}
-
-    /* CARDS */
     .card{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
     .ch{padding:13px 18px;border-bottom:1px solid var(--border);background:var(--panel);
         display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -60,8 +52,6 @@
     .si{width:24px;height:24px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;
         font-size:12px;margin-right:5px;background:var(--gmd);vertical-align:middle}
     .cb{padding:18px;display:grid;gap:13px}
-
-    /* FORM */
     .f{display:grid;gap:5px}
     .fr{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     .fr3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px}
@@ -72,14 +62,10 @@
     input:focus,select:focus,textarea:focus{border-color:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.1)}
     input::placeholder{color:#94a3b8}
     textarea{resize:vertical;min-height:76px}
-
-    /* TIER PILLS */
     .tr2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
     .tp{background:var(--glt);border:1px solid #bbf7d0;border-radius:9px;padding:9px 12px}
     .tp .tpl{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#059669}
     .tp .tpv{font-size:12.5px;font-weight:700;color:var(--gdk);margin-top:3px}
-
-    /* SERVICE LIST */
     .sl{display:grid;gap:8px;max-height:1020px;overflow-y:auto;padding-right:2px;scrollbar-width:thin;scrollbar-color:#bbf7d0 transparent}
     .cat{font-family:'Syne',sans-serif;font-size:10px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;
          color:#059669;padding:5px 2px 2px;border-bottom:1px solid #d1fae5;margin-top:4px}
@@ -95,8 +81,6 @@
     .scfg{display:grid;grid-template-columns:1fr 90px 90px;gap:7px;margin-top:10px}
     .scfg label{font-size:9.5px}
     .scfg input{padding:6px 9px;font-size:11.5px}
-
-    /* KPI */
     .kg{display:grid;grid-template-columns:1fr 1fr;gap:9px}
     .kp{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:11px 13px}
     .kp.full{grid-column:1/-1}
@@ -104,8 +88,6 @@
     .kl{font-size:10px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--muted)}
     .kv{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:#0f172a;margin-top:3px}
     .kp.hi .kv{color:var(--g3)}
-
-    /* QUOTE LINES */
     .ql{display:grid;gap:7px;max-height:420px;overflow-y:auto;padding-right:2px;scrollbar-width:thin;scrollbar-color:#bbf7d0 transparent}
     .ql-i{background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:10px 12px}
     .ql-t{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;font-weight:600;gap:8px}
@@ -114,29 +96,20 @@
     .ql-tot{background:var(--glt);border:1px solid #86efac;border-radius:9px;padding:10px 13px}
     .ql-tot .row{display:flex;justify-content:space-between;padding:3px 0;font-size:12.5px;color:#1e293b}
     .ql-tot .row.big{font-size:14px;font-weight:700;color:#15803d;padding-top:8px;border-top:1px solid #86efac;margin-top:4px}
-
-    /* DETAIL */
     .dg{display:grid;gap:0}
     .dr{display:grid;grid-template-columns:100px 1fr;gap:8px;font-size:12px;border-bottom:1px solid var(--border);padding:7px 0}
     .dr:last-child{border:0}
     .dk{color:var(--muted);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;padding-top:1px}
     .dv{color:#1e293b;font-weight:500}
-
-    /* ACTIONS */
     .ab{display:flex;gap:9px;flex-wrap:wrap;padding:13px 18px;border-top:1px solid var(--border);background:var(--panel)}
-
-    /* NOTICES */
     .ni{border-radius:8px;padding:9px 13px;font-size:12px;line-height:1.5}
     .ni-i{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
     .ni-w{background:#fffbeb;border:1px solid #fde68a;color:#92400e}
-
-    /* TIER TABLE */
     .tt{width:100%;border-collapse:collapse;font-size:11.5px}
     .tt th,.tt td{padding:6px 9px;border-bottom:1px solid var(--border);text-align:left}
     .tt th{color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.4px;background:var(--panel)}
     .tt tr.at td{background:var(--glt);color:var(--gdk);font-weight:700}
     .tt td:last-child{text-align:right}
-
     .footer{text-align:center;padding:22px 0 10px;font-size:11px;color:#94a3b8}
     ::-webkit-scrollbar{width:4px}
     ::-webkit-scrollbar-thumb{background:#bbf7d0;border-radius:99px}
@@ -226,6 +199,7 @@
           <button class="bp" onclick="genQuote()">⚡ Generate Quote</button>
           <button class="bs" onclick="dlExcel()">📊 Excel</button>
           <button class="bs" onclick="dlPDF()">📄 PDF</button>
+          <button class="bs" onclick="openEmailModal()" id="btnEmail" style="display:none;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;box-shadow:0 3px 10px rgba(59,130,246,.3)">📧 Email</button>
           <button class="bd sm" onclick="clearQ()" style="margin-left:auto">✕ Reset</button>
         </div>
       </div>
@@ -261,10 +235,71 @@
     </div>
   </div>
 
-  <div class="footer">FR-Logistics &nbsp;·&nbsp; 10893 NW 17th Street, Unit 121, Miami, FL 33172 &nbsp;·&nbsp; (786) 300-1443 &nbsp;·&nbsp; <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="dbb2b5bdb49bbda9f6b7b4bcb2a8afb2b8a8f5b5beaf">[email&#160;protected]</a> &nbsp;·&nbsp; www.fr-logistics.net</div>
+  <div class="footer">FR-Logistics &nbsp;·&nbsp; 10893 NW 17th Street, Unit 121, Miami, FL 33172 &nbsp;·&nbsp; (786) 300-1443 &nbsp;·&nbsp; info@fr-logistics.net &nbsp;·&nbsp; www.fr-logistics.net</div>
 </div>
 
-<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+<!-- ═══════════════════════════════════════════════
+     EMAIL DRAFT MODAL
+═══════════════════════════════════════════════ -->
+<div id="emailModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);
+     z-index:9999;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:16px;width:100%;max-width:640px;
+              box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden;max-height:90vh;
+              display:flex;flex-direction:column">
+    <!-- Header -->
+    <div style="padding:16px 20px;background:linear-gradient(135deg,#3b82f6,#2563eb);
+                display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div style="color:#fff;font-family:'Syne',sans-serif;font-weight:700;font-size:15px">📧 Email Quote Draft</div>
+      <button onclick="closeEmailModal()" style="background:rgba(255,255,255,.2);color:#fff;
+              padding:4px 10px;font-size:13px;border-radius:8px;transform:none;filter:none">✕ Close</button>
+    </div>
+    <!-- Lang + To -->
+    <div style="padding:12px 20px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:12px;flex-shrink:0;background:#f8fafc">
+      <span style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.4px">Language:</span>
+      <div style="display:flex;gap:6px">
+        <button id="langEN" onclick="setEmailLang('en')"
+                style="padding:5px 16px;font-size:12px;font-weight:700;border-radius:8px;
+                       background:#2563eb;color:#fff;border:1px solid #2563eb;transition:all .12s">🇺🇸 EN</button>
+        <button id="langES" onclick="setEmailLang('es')"
+                style="padding:5px 16px;font-size:12px;font-weight:700;border-radius:8px;
+                       background:#f1f5f9;color:#334155;border:1px solid #e2e8f0;transition:all .12s">🇪🇸 ES</button>
+      </div>
+      <span id="emailTo" style="margin-left:auto;font-size:11px;color:#64748b;font-style:italic"></span>
+    </div>
+    <!-- Subject -->
+    <div style="padding:10px 20px;border-bottom:1px solid #e2e8f0;background:#eff6ff;flex-shrink:0">
+      <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#3b82f6">Subject: </span>
+      <span id="emailSubject" style="font-size:12.5px;font-weight:600;color:#1e3a8a"></span>
+    </div>
+    <!-- Body -->
+    <div style="flex:1;overflow-y:auto;padding:16px 20px;background:#fff">
+      <pre id="emailBody" style="font-family:'DM Sans',sans-serif;font-size:12px;line-height:1.75;
+           color:#334155;white-space:pre-wrap;margin:0"></pre>
+    </div>
+    <!-- Actions -->
+    <div style="padding:14px 20px;border-top:1px solid #e2e8f0;background:#f8fafc;
+                display:flex;gap:9px;flex-wrap:wrap;flex-shrink:0">
+      <button onclick="openGmailCompose()"
+              style="background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;
+                     padding:9px 20px;font-size:13px;font-weight:600;border-radius:10px;
+                     box-shadow:0 3px 10px rgba(59,130,246,.3)">
+        ✉️ Open in Gmail
+      </button>
+      <button onclick="copyEmailBody()" id="copyBtn"
+              style="background:#f1f5f9;color:#334155;border:1px solid #e2e8f0;
+                     padding:9px 18px;font-size:13px;font-weight:600;border-radius:10px">
+        📋 Copy Body
+      </button>
+      <button onclick="closeEmailModal()"
+              style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;
+                     padding:9px 16px;font-size:13px;font-weight:600;border-radius:10px;margin-left:auto">
+        ✕ Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
 const SK='fr_q_v3';
 const CO={name:'FR-Logistics',address:'10893 NW 17th Street, Unit 121, Miami, FL 33172',
           phone:'(786) 300-1443',email:'info@fr-logistics.net',website:'www.fr-logistics.net',
@@ -292,7 +327,6 @@ const SVCS=[
   {id:'WZ_CART',     name:'Outbound Carton Fee',          cat:'Wizard Driver',         unit:'per carton',          rate:1.00,   auto:false,src:null,           dq:0,note:'Edit rate as needed'},
   {id:'IN_CART',     name:'Inbound Carton Fee',           cat:'Wizard Driver',         unit:'per carton',          rate:2.50,   auto:false,src:null,           dq:0,note:'Edit rate as needed'},
 ];
-// fill missing desc
 SVCS.forEach(s=>{ if(!s.desc) s.desc=s.name+' — '+s.unit; if(!s.note) s.note=''; });
 
 const FT=[{l:'Beginner',mn:1,mx:500,r:2.50},{l:'Standard',mn:501,mx:1000,r:2.25},{l:'Advanced',mn:1001,mx:2500,r:2.00},{l:'Expert',mn:2501,mx:5000,r:1.75},{l:'Pro',mn:5001,mx:10000,r:1.50},{l:'Mastery',mn:10001,mx:999999,r:0.0}];
@@ -414,7 +448,7 @@ function genQuote(){
   $('dAuto').textContent=`${CQ.fTier}@${fmt(CQ.fRate)} | ${CQ.lTier}@${fmt(CQ.lRate)}`;
   $('dNotes').textContent=c.notes||'—';
   const ql=$('qLines');
-  if(!L.length){ql.innerHTML='<div style="color:var(--muted);text-align:center;padding:16px 0;font-size:13px">No services selected.</div>';syncSummary();return;}
+  if(!L.length){ql.innerHTML='<div style="color:var(--muted);text-align:center;padding:16px 0;font-size:13px">No services selected.</div>';syncSummary();checkEmailBtn();return;}
   ql.innerHTML=L.map(l=>`
     <div class="ql-i">
       <div class="ql-t"><span>${l.service}</span><span class="ql-v">${fmt(l.total)}</span></div>
@@ -426,7 +460,12 @@ function genQuote(){
       <div class="row"><span>Min. Monthly Billing</span><span>${fmt(c.minBill)}</span></div>
       <div class="row big"><span>Suggested Monthly Billing</span><span>${fmt(sug)}</span></div>
     </div>`;
-  syncSummary(); saveDraft();
+  syncSummary(); saveDraft(); checkEmailBtn();
+}
+
+function checkEmailBtn(){
+  const btn=$('btnEmail');
+  if(btn) btn.style.display=(CQ&&CQ.L&&CQ.L.length>0)?'':'none';
 }
 
 function toggleAll(f){
@@ -470,7 +509,7 @@ function clearQ(){
   $('qDate').value=today(); $('channel').value='Amazon FBA'; $('opType').value='Startup';
   $('prepBy').value='Jose Fuentes – Operations Manager';
   $('orders').value=500; $('pallets').value=8; $('units').value=1200; $('minBill').value=0;
-  $('validity').value='30 days'; CQ=null; updateQID(); renderSvcs();
+  $('validity').value='30 days'; CQ=null; updateQID(); renderSvcs(); checkEmailBtn();
   $('qLines').innerHTML='<div style="color:var(--muted);text-align:center;padding:20px 0;font-size:13px">Press <strong>⚡ Generate Quote</strong> to see breakdown.</div>';
   ['dClient','dChannel','dVol','dAuto','dNotes'].forEach(id=>$(id).textContent='—');
 }
@@ -478,17 +517,166 @@ function clearQ(){
 function ensureQ(){if(!CQ)genQuote();return CQ?.L?.length>0;}
 
 /* ═══════════════════════════════════════════════
-   EXCEL — openpyxl-level styling via SheetJS
-   (SheetJS community doesn't support cell styles,
-    so we build a styled XML workbook manually)
+   EMAIL DRAFT — Bilingual EN/ES + Gmail Compose
 ═══════════════════════════════════════════════ */
+let _emailLang='en';
+
+function openEmailModal(){
+  if(!ensureQ()){alert('Generate a quote with at least one service first.');return;}
+  _emailLang='en';
+  setEmailLang('en');
+  const m=$('emailModal'); m.style.display='flex';
+}
+
+function closeEmailModal(){
+  $('emailModal').style.display='none';
+}
+
+function setEmailLang(lang){
+  _emailLang=lang;
+  $('langEN').style.background = lang==='en'?'#2563eb':'#f1f5f9';
+  $('langEN').style.color      = lang==='en'?'#fff':'#334155';
+  $('langEN').style.border     = lang==='en'?'1px solid #2563eb':'1px solid #e2e8f0';
+  $('langES').style.background = lang==='es'?'#2563eb':'#f1f5f9';
+  $('langES').style.color      = lang==='es'?'#fff':'#334155';
+  $('langES').style.border     = lang==='es'?'1px solid #2563eb':'1px solid #e2e8f0';
+  renderEmailPreview();
+}
+
+function buildEmailContent(q,lang){
+  const c=q.c;
+  const qNum=(c.clientName||'CLIENT').replace(/\s+/g,'_').toUpperCase().slice(0,8)
+            +'-'+(c.quoteDate||today()).replace(/-/g,'').slice(2);
+  const addDays=(iso,n)=>{const d=new Date(iso||today());d.setDate(d.getDate()+n);return new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,10)};
+  const validUntil=fmtD(addDays(c.quoteDate,parseInt(c.validity)||30));
+  const serviceLines=q.L.map(l=>`  • ${l.service}: ${l.qty} ${l.unit} × ${fmt(l.rate)} = ${fmt(l.total)}`).join('\n');
+
+  if(lang==='es'){
+    return{
+      subject:`Cotización de Servicios #${qNum} – FR-Logistics | ${c.clientName||'Cliente'}`,
+      body:
+`Estimado/a ${c.contactName||'Cliente'},
+
+Gracias por su interés en los servicios de FR-Logistics. A continuación encontrará la cotización preparada para ${c.clientName||'su empresa'}.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RESUMEN DE COTIZACIÓN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Cotización #:      ${qNum}
+Fecha:             ${fmtD(c.quoteDate)}
+Válida hasta:      ${validUntil}
+Canal de venta:    ${c.channel} · ${c.opType}
+Volumen mensual:   ${c.orders.toLocaleString()} órdenes / ${c.pallets} pallets / ${c.units.toLocaleString()} unidades
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SERVICIOS SELECCIONADOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${serviceLines}
+
+Subtotal estimado:              ${fmt(q.sub)}
+Facturación mínima mensual:     ${fmt(c.minBill||0)}
+FACTURACIÓN MENSUAL SUGERIDA:   ${fmt(q.sug)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRÓXIMOS PASOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Para proceder, responda este correo o agende una llamada de descubrimiento:
+👉 https://calendly.com/fr-logistics
+
+Nota comercial: Los precios finales pueden ajustarse tras revisar la complejidad de SKUs, empaque, frecuencia de inbounds e integraciones de plataforma. Esta cotización es válida por ${c.validity}.${c.notes?'\n\nNotas adicionales: '+c.notes:''}
+
+Quedamos a su disposición para cualquier consulta. ¡Esperamos apoyar sus operaciones logísticas!
+
+Saludos,
+${c.prepBy||'Jose Fuentes – Operations Manager'}
+FR-Logistics · Miami, FL 33172
+📞 (786) 300-1443  |  ✉️ info@fr-logistics.net  |  🌐 www.fr-logistics.net`
+    };
+  }
+
+  return{
+    subject:`Service Quote #${qNum} – FR-Logistics | ${c.clientName||'Client'}`,
+    body:
+`Hi ${c.contactName||'there'},
+
+Thank you for your interest in FR-Logistics! Please find below the service quote prepared for ${c.clientName||'your company'}.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+QUOTE SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Quote #:           ${qNum}
+Date:              ${fmtD(c.quoteDate)}
+Valid Until:       ${validUntil}
+Sales Channel:     ${c.channel} · ${c.opType}
+Monthly Volume:    ${c.orders.toLocaleString()} orders / ${c.pallets} pallets / ${c.units.toLocaleString()} units
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SELECTED SERVICES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${serviceLines}
+
+Estimated Subtotal:             ${fmt(q.sub)}
+Min. Monthly Billing:           ${fmt(c.minBill||0)}
+SUGGESTED MONTHLY BILLING:      ${fmt(q.sug)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NEXT STEPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+To move forward, simply reply to this email or schedule a discovery call:
+👉 https://calendly.com/fr-logistics
+
+Commercial note: Final pricing may be adjusted after reviewing SKU complexity, packaging requirements, inbound frequency, and workflow details. This quote is valid for ${c.validity}.${c.notes?'\n\nAdditional notes: '+c.notes:''}
+
+We look forward to supporting your logistics operations!
+
+Best regards,
+${c.prepBy||'Jose Fuentes – Operations Manager'}
+FR-Logistics · Miami, FL 33172
+📞 (786) 300-1443  |  ✉️ info@fr-logistics.net  |  🌐 www.fr-logistics.net`
+  };
+}
+
+function renderEmailPreview(){
+  if(!CQ)return;
+  const{subject,body}=buildEmailContent(CQ,_emailLang);
+  $('emailSubject').textContent=subject;
+  $('emailBody').textContent=body;
+  $('emailTo').textContent=CQ.c.contactEmail?`To: ${CQ.c.contactEmail}`:'No recipient email set';
+}
+
+function openGmailCompose(){
+  if(!CQ)return;
+  const{subject,body}=buildEmailContent(CQ,_emailLang);
+  const to=CQ.c.contactEmail||'';
+  const url='https://mail.google.com/mail/?view=cm'
+    +'&to='+encodeURIComponent(to)
+    +'&su='+encodeURIComponent(subject)
+    +'&body='+encodeURIComponent(body);
+  window.open(url,'_blank');
+}
+
+function copyEmailBody(){
+  const body=$('emailBody').textContent;
+  const btn=$('copyBtn');
+  navigator.clipboard.writeText(body).then(()=>{
+    btn.textContent='✅ Copied!';
+    setTimeout(()=>btn.textContent='📋 Copy Body',2000);
+  }).catch(()=>{
+    // fallback
+    const ta=document.createElement('textarea');
+    ta.value=body; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+    btn.textContent='✅ Copied!';
+    setTimeout(()=>btn.textContent='📋 Copy Body',2000);
+  });
+}
+
+/* ── EXCEL ── */
 function dlExcel(){
   if(!ensureQ()){alert('Generate a quote with at least one selected service first.');return;}
   const q=CQ,c=q.c;
-
   const wb=XLSX.utils.book_new();
-
-  /* ── Helper to build AOA with rich data ── */
   function addSheet(wb,name,aoaRows,colWidths,printLandscape){
     const ws=XLSX.utils.aoa_to_sheet(aoaRows);
     ws['!cols']=colWidths.map(w=>({wch:w}));
@@ -501,151 +689,80 @@ function dlExcel(){
     };
     XLSX.utils.book_append_sheet(wb,ws,name);
   }
-
-  /* ── SHEET 1: Quote Summary ── */
   const rows1=[
-    // Row 1: Company header
     ['FR-Logistics','','',`${CO.address}  ·  ${CO.phone}`,''],
     [CO.tagline,'','',CO.email+'  ·  '+CO.website,''],
-    ['','','','',''],  // spacer
-    // Row 4: Title bar
+    ['','','','',''],
     ['SERVICE QUOTE','','','',`Date: ${fmtD(c.quoteDate)}   |   Valid: ${c.validity}`],
-    ['','','','',''],  // spacer
-    // Row 6: Section labels
+    ['','','','',''],
     ['BILL TO','','','OPERATION SNAPSHOT',''],
-    // Row 7-12: Client + Operation data
     ['Company:',c.clientName||'—','','Channel:',`${c.channel} · ${c.opType}`],
     ['Contact:',c.contactName||'—','','Monthly Orders:',c.orders],
     ['Email:',c.contactEmail||'—','','Monthly Pallets:',c.pallets],
     ['Prepared By:',c.prepBy||'—','','Label Units:',c.units],
     ['','','','Fulfillment Tier:',`${q.fTier} @ ${fmt(q.fRate)}/order`],
     ['','','','Labeling Tier:',`${q.lTier} @ ${fmt(q.lRate)}/unit`],
-    ['','','','',''],  // spacer
-    // Row 14: Table header
+    ['','','','',''],
     ['SERVICE','CATEGORY','DESCRIPTION','QTY','UNIT RATE','LINE TOTAL'],
   ];
-
-  // Services rows
-  q.L.forEach(l=>{
-    rows1.push([l.service,l.cat,l.desc,l.qty,l.rate,l.total]);
-  });
-
-  // Spacer + totals
+  q.L.forEach(l=>{rows1.push([l.service,l.cat,l.desc,l.qty,l.rate,l.total]);});
   rows1.push(['','','','','','']);
   rows1.push(['','','','Estimated Subtotal','',q.sub]);
   rows1.push(['','','','Min. Monthly Billing','',c.minBill||0]);
   rows1.push(['','','','SUGGESTED MONTHLY BILLING','',q.sug]);
-
-  if(c.notes){
-    rows1.push(['','','','','','']);
-    rows1.push(['SCOPE / NOTES:','','','','','']);
-    rows1.push([c.notes,'','','','','']);
-  }
+  if(c.notes){rows1.push(['','','','','','']);rows1.push(['SCOPE / NOTES:','','','','','']);rows1.push([c.notes,'','','','','']);}
   rows1.push(['','','','','','']);
   rows1.push([`Commercial Note: Final pricing may be adjusted after reviewing SKU complexity, packaging requirements, inbound frequency, storage profile, platform integrations, and workflow requirements. This quote is valid for ${c.validity}.`,'','','','','']);
-
   addSheet(wb,'Quote Summary',rows1,[28,20,38,20,18,16],false);
-
-  // Apply number formats to data cells in sheet 1
   const ws1=wb.Sheets['Quote Summary'];
-  const dataStart=15; // 1-indexed row where service data begins (row 14 = header, 15+ = data)
-  const numRows=q.L.length;
-  for(let i=0;i<numRows;i++){
-    const r=dataStart+i;
-    const d=`D${r}`,e=`E${r}`,f=`F${r}`;
-    if(ws1[e]){ws1[e].t='n';ws1[e].z='"$"#,##0.00';}
-    if(ws1[f]){ws1[f].t='n';ws1[f].z='"$"#,##0.00';}
-  }
-  // Format total rows
+  const dataStart=15;const numRows=q.L.length;
+  for(let i=0;i<numRows;i++){const r=dataStart+i;const e=`E${r}`,f=`F${r}`;if(ws1[e]){ws1[e].t='n';ws1[e].z='"$"#,##0.00';}if(ws1[f]){ws1[f].t='n';ws1[f].z='"$"#,##0.00';}}
   const totStart=dataStart+numRows+2;
   if(ws1[`F${totStart}`]){ws1[`F${totStart}`].t='n';ws1[`F${totStart}`].z='"$"#,##0.00';}
   if(ws1[`F${totStart+1}`]){ws1[`F${totStart+1}`].t='n';ws1[`F${totStart+1}`].z='"$"#,##0.00';}
   if(ws1[`F${totStart+2}`]){ws1[`F${totStart+2}`].t='n';ws1[`F${totStart+2}`].z='"$"#,##0.00';}
-
-  /* ── SHEET 2: Service Breakdown ── */
   const rows2=[['Service Code','Service','Category','Description','Quantity','Unit','Rate (USD)','Line Total (USD)','Auto-Priced']];
   q.L.forEach(l=>rows2.push([l.id,l.service,l.cat,l.desc,l.qty,l.unit,l.rate,l.total,l.auto]));
   addSheet(wb,'Service Breakdown',rows2,[14,26,22,42,10,20,12,16,12],true);
-
-  /* ── SHEET 3: Volume Pricing ── */
   const rows3=[['Type','Tier','Min Units','Max Units','Rate (USD)'],
     ...FT.map(t=>['Fulfillment (Pick & Pack)',t.l,t.mn,t.mx===999999?'Unlimited':t.mx,t.r]),
     ...LT.map(t=>['Labeling (Amazon SPN)',t.l,t.mn,t.mx===999999?'Unlimited':t.mx,t.r]),
   ];
   addSheet(wb,'Volume Pricing',rows3,[26,16,12,12,12],false);
-
   XLSX.writeFile(wb,`FR_Quote_${safe(c.clientName)}_${c.quoteDate}.xlsx`);
 }
 
-/* ═══════════════════════════════════════════════
-   PDF — jsPDF programmatic render (NO html2canvas)
-   Full commercial layout drawn directly
-═══════════════════════════════════════════════ */
+/* ── PDF ── */
 function dlPDF(){
   if(!ensureQ()){alert('Generate a quote with at least one selected service first.');return;}
-
-  const {jsPDF}=window.jspdf;
+  const{jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'portrait',unit:'pt',format:'letter'});
   const q=CQ,c=q.c;
-  const PW=612,PH=792,ML=36,MR=36,MT=0,usableW=PW-ML-MR;
+  const PW=612,PH=792,ML=36,MR=36,usableW=PW-ML-MR;
   const G1=[14,165,95],G2=[6,95,70],G3=[209,250,229];
   const W=[248,55,248],S1=[248,250,252],S2=[226,232,240],S5=[100,116,139],S7=[51,65,85],S9=[15,23,42];
-
   const qNum=(c.clientName||'CLIENT').replace(/\s+/g,'_').toUpperCase().slice(0,8)+'-'+c.quoteDate.replace(/-/g,'').slice(2);
-
   let y=0;
-
-  // ── GREEN TOPBAR ──
-  doc.setFillColor(...G2);
-  doc.rect(0,0,PW,78,'F');
-  // slight gradient overlay
-  doc.setFillColor(10,110,70,0.4);
-  doc.rect(PW/2,0,PW/2,78,'F');
-
-  // Logo box
-  doc.setFillColor(255,255,255,0.2);
-  doc.roundedRect(ML,14,48,48,6,6,'F');
-  doc.setTextColor(255,255,255);
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(20);
+  doc.setFillColor(...G2);doc.rect(0,0,PW,78,'F');
+  doc.setFillColor(10,110,70,0.4);doc.rect(PW/2,0,PW/2,78,'F');
+  doc.setFillColor(255,255,255,0.2);doc.roundedRect(ML,14,48,48,6,6,'F');
+  doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(20);
   doc.text('FR',ML+24,14+28,{align:'center',baseline:'middle'});
-
-  // Company name
-  doc.setFontSize(22);
-  doc.setFont('helvetica','bold');
-  doc.setTextColor(255,255,255);
+  doc.setFontSize(22);doc.setFont('helvetica','bold');doc.setTextColor(255,255,255);
   doc.text('FR-Logistics',ML+58,30);
-  doc.setFontSize(10);
-  doc.setFont('helvetica','normal');
-  doc.setTextColor(167,243,208);
+  doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(167,243,208);
   doc.text(CO.tagline,ML+58,46);
-
-  // Quote info (right side)
-  doc.setFontSize(9);
-  doc.setFont('helvetica','normal');
-  doc.setTextColor(167,243,208);
+  doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(167,243,208);
   doc.text('SERVICE QUOTE',PW-MR,22,{align:'right'});
-  doc.setFontSize(17);
-  doc.setFont('helvetica','bold');
-  doc.setTextColor(255,255,255);
+  doc.setFontSize(17);doc.setFont('helvetica','bold');doc.setTextColor(255,255,255);
   doc.text('#'+qNum,PW-MR,40,{align:'right'});
-  doc.setFontSize(9);
-  doc.setFont('helvetica','normal');
-  doc.setTextColor(167,243,208);
+  doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(167,243,208);
   doc.text(`Date: ${fmtD(c.quoteDate)}   Valid: ${c.validity}`,PW-MR,56,{align:'right'});
-
   y=78;
-
-  // ── INFO STRIP (3 columns) ──
-  const colW3=usableW/3;
-  const stripH=60;
-  doc.setFillColor(255,255,255);
-  doc.rect(0,y,PW,stripH,'F');
-
+  const colW3=usableW/3;const stripH=60;
+  doc.setFillColor(255,255,255);doc.rect(0,y,PW,stripH,'F');
   function infoCell(x,cy,label,main,sub){
-    doc.setFillColor(...G3);
-    doc.setTextColor(5,150,105);
-    doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+    doc.setFillColor(...G3);doc.setTextColor(5,150,105);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
     doc.text(label.toUpperCase(),x+12,cy+14);
     doc.setTextColor(...S9);doc.setFontSize(12);doc.setFont('helvetica','bold');
     doc.text(main||'—',x+12,cy+28,{maxWidth:colW3-20});
@@ -658,14 +775,10 @@ function dlPDF(){
   infoCell(ML+colW3,y,'OPERATION',c.channel,`${c.opType}  ·  ${c.prepBy}`);
   doc.line(ML+colW3*2,y+8,ML+colW3*2,y+stripH-8);
   infoCell(ML+colW3*2,y,'MONTHLY VOLUME',`${c.orders.toLocaleString()} Orders / Mo`,`${c.pallets.toLocaleString()} pallets  ·  ${c.units.toLocaleString()} label units`);
-  doc.setDrawColor(...S2);doc.setLineWidth(1.5);
-  doc.line(0,y+stripH,PW,y+stripH);
+  doc.setDrawColor(...S2);doc.setLineWidth(1.5);doc.line(0,y+stripH,PW,y+stripH);
   y+=stripH+14;
-
-  // ── PRICING SNAPSHOT ──
   doc.setTextColor(5,150,105);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
-  doc.text('PRICING SNAPSHOT',ML,y);
-  y+=8;
+  doc.text('PRICING SNAPSHOT',ML,y);y+=8;
   const snapW=(usableW-16)/3;
   [[`Fulfillment Tier`,q.fTier],[`Fulfillment Rate`,`${fmt(q.fRate)} / order`],[`Labeling Tier / Rate`,`${q.lTier} @ ${fmt(q.lRate)}/unit`]].forEach((item,i)=>{
     const sx=ML+i*(snapW+8);
@@ -677,19 +790,13 @@ function dlPDF(){
     doc.text(String(item[1]),sx+10,y+28);
   });
   y+=52;
-
-  // ── SERVICES TABLE ──
   doc.setTextColor(5,150,105);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
-  doc.text('SELECTED SERVICES',ML,y);
-  y+=8;
-
-  // Header row
+  doc.text('SELECTED SERVICES',ML,y);y+=8;
   const tCols=[usableW*0.22,usableW*0.14,usableW*0.32,usableW*0.08,usableW*0.12,usableW*0.12];
   const tHeaders=['SERVICE','CATEGORY','DESCRIPTION','QTY','RATE','TOTAL'];
   const tAlign=['left','left','left','right','right','right'];
   const rowH=22;
-  doc.setFillColor(...G2);
-  doc.rect(ML,y,usableW,rowH,'F');
+  doc.setFillColor(...G2);doc.rect(ML,y,usableW,rowH,'F');
   let cx=ML;
   tHeaders.forEach((h,i)=>{
     doc.setTextColor(255,255,255);doc.setFontSize(8);doc.setFont('helvetica','bold');
@@ -698,100 +805,58 @@ function dlPDF(){
     cx+=tCols[i];
   });
   y+=rowH;
-
-  // Data rows — only show lines with qty > 0
   const pdfLines=q.L.filter(l=>l.qty>0);
   pdfLines.forEach((l,i)=>{
-    const rh=Math.max(rowH, doc.getTextDimensions(l.desc,{maxWidth:tCols[2]-10,fontSize:8.5}).h+16);
+    const rh=Math.max(rowH,doc.getTextDimensions(l.desc,{maxWidth:tCols[2]-10,fontSize:8.5}).h+16);
     if(y+rh>PH-60){doc.addPage();y=40;}
-    doc.setFillColor(...(i%2===0?[255,255,255]:S1));
-    doc.rect(ML,y,usableW,rh,'F');
-    doc.setDrawColor(...S2);doc.setLineWidth(0.3);
-    doc.line(ML,y+rh,ML+usableW,y+rh);
-
+    doc.setFillColor(...(i%2===0?[255,255,255]:S1));doc.rect(ML,y,usableW,rh,'F');
+    doc.setDrawColor(...S2);doc.setLineWidth(0.3);doc.line(ML,y+rh,ML+usableW,y+rh);
     let rx=ML;
-    // Service name
     doc.setTextColor(...S9);doc.setFontSize(9.5);doc.setFont('helvetica','bold');
-    doc.text(l.service+(l.auto==='Yes'?' [AUTO]':''),rx+6,y+14,{maxWidth:tCols[0]-10});
-    rx+=tCols[0];
-    // Category
+    doc.text(l.service+(l.auto==='Yes'?' [AUTO]':''),rx+6,y+14,{maxWidth:tCols[0]-10});rx+=tCols[0];
     doc.setTextColor(...S5);doc.setFontSize(8.5);doc.setFont('helvetica','normal');
-    doc.text(l.cat,rx+6,y+14,{maxWidth:tCols[1]-8});
-    rx+=tCols[1];
-    // Description
+    doc.text(l.cat,rx+6,y+14,{maxWidth:tCols[1]-8});rx+=tCols[1];
     doc.setTextColor(...S7);
     const descLines=doc.splitTextToSize(l.desc,tCols[2]-10);
-    doc.text(descLines,rx+6,y+13);
-    rx+=tCols[2];
-    // Qty
+    doc.text(descLines,rx+6,y+13);rx+=tCols[2];
     doc.setTextColor(...S9);doc.setFontSize(9.5);doc.setFont('helvetica','normal');
-    doc.text(l.qty.toLocaleString(),rx+tCols[3]-6,y+14,{align:'right'});
-    rx+=tCols[3];
-    // Rate
-    doc.text(fmt(l.rate),rx+tCols[4]-6,y+14,{align:'right'});
-    rx+=tCols[4];
-    // Total
+    doc.text(l.qty.toLocaleString(),rx+tCols[3]-6,y+14,{align:'right'});rx+=tCols[3];
+    doc.text(fmt(l.rate),rx+tCols[4]-6,y+14,{align:'right'});rx+=tCols[4];
     doc.setTextColor(...G2);doc.setFont('helvetica','bold');
     doc.text(fmt(l.total),rx+tCols[5]-6,y+14,{align:'right'});
-
     y+=rh;
   });
-
   y+=12;
-
-  // ── TOTALS BLOCK ──
   const totW=280,totX=ML+usableW-totW;
-  // Subtotal row
   doc.setFillColor(255,255,255);doc.setDrawColor(...S2);doc.setLineWidth(0.5);
   doc.rect(totX,y,totW,26,'FD');
   doc.setTextColor(...S7);doc.setFontSize(10);doc.setFont('helvetica','normal');
   doc.text('Estimated Subtotal',totX+12,y+16);
-  doc.text(fmt(q.sub),totX+totW-10,y+16,{align:'right'});
-  y+=26;
-
-  // Min billing
-  doc.setFillColor(...S1);
-  doc.rect(totX,y,totW,24,'FD');
+  doc.text(fmt(q.sub),totX+totW-10,y+16,{align:'right'});y+=26;
+  doc.setFillColor(...S1);doc.rect(totX,y,totW,24,'FD');
   doc.setTextColor(...S5);doc.setFontSize(9);
   doc.text('Min. Monthly Billing',totX+12,y+15);
-  doc.text(fmt(c.minBill||0),totX+totW-10,y+15,{align:'right'});
-  y+=24;
-
-  // Suggested (dark green)
-  doc.setFillColor(...G2);
-  doc.rect(totX,y,totW,30,'F');
+  doc.text(fmt(c.minBill||0),totX+totW-10,y+15,{align:'right'});y+=24;
+  doc.setFillColor(...G2);doc.rect(totX,y,totW,30,'F');
   doc.setTextColor(255,255,255);doc.setFontSize(11);doc.setFont('helvetica','bold');
   doc.text('SUGGESTED MONTHLY BILLING',totX+12,y+18);
-  doc.setFontSize(13);
-  doc.text(fmt(q.sug),totX+totW-10,y+19,{align:'right'});
-  y+=42;
-
-  // ── VALIDITY ──
+  doc.setFontSize(13);doc.text(fmt(q.sug),totX+totW-10,y+19,{align:'right'});y+=42;
   if(y+35>PH-60){doc.addPage();y=40;}
   doc.setFillColor(255,251,235);doc.setDrawColor(253,230,138);doc.setLineWidth(0.5);
   doc.roundedRect(ML,y,usableW,28,4,4,'FD');
   doc.setTextColor(146,64,14);doc.setFontSize(9);doc.setFont('helvetica','bold');
-  doc.setFont('helvetica','bold');
-  doc.text('Quote Validity: ',ML+10,y+17);
-  doc.setFont('helvetica','normal');
-  doc.text(`Valid for ${c.validity} from ${fmtD(c.quoteDate)}.`,ML+10+doc.getTextWidth('Quote Validity: '),y+17);
-  y+=38;
-
-  // ── NOTES ──
+  doc.text('Quote Validity: ',ML+10,y+17);doc.setFont('helvetica','normal');
+  doc.text(`Valid for ${c.validity} from ${fmtD(c.quoteDate)}.`,ML+10+doc.getTextWidth('Quote Validity: '),y+17);y+=38;
   if(c.notes){
     const notesH=Math.min(60,doc.getTextDimensions(c.notes,{maxWidth:usableW-20,fontSize:9}).h+22);
     if(y+notesH>PH-60){doc.addPage();y=40;}
     doc.setFillColor(...S1);doc.setDrawColor(...S2);doc.setLineWidth(0.5);
     doc.roundedRect(ML,y,usableW,notesH,4,4,'FD');
     doc.setTextColor(...S7);doc.setFontSize(9);doc.setFont('helvetica','bold');
-    doc.text('Scope / Notes:',ML+10,y+13);
-    doc.setFont('helvetica','normal');
+    doc.text('Scope / Notes:',ML+10,y+13);doc.setFont('helvetica','normal');
     const noteLines=doc.splitTextToSize(c.notes,usableW-20);
-    doc.text(noteLines,ML+10,y+24);
-    y+=notesH+8;
+    doc.text(noteLines,ML+10,y+24);y+=notesH+8;
   }
-
-  // ── COMMERCIAL NOTE ──
   const commNote='Commercial Note: Final pricing may be adjusted after reviewing SKU complexity, packaging requirements, inbound frequency, storage profile, platform integrations, and workflow requirements.';
   const commH=doc.getTextDimensions(commNote,{maxWidth:usableW-20,fontSize:8}).h+18;
   if(y+commH>PH-60){doc.addPage();y=40;}
@@ -799,22 +864,16 @@ function dlPDF(){
   doc.roundedRect(ML,y,usableW,commH,4,4,'FD');
   doc.setTextColor(...S5);doc.setFontSize(8);doc.setFont('helvetica','oblique');
   doc.text(doc.splitTextToSize(commNote,usableW-20),ML+10,y+12);
-
-  // ── FOOTER (each page) ──
   const pageCount=doc.internal.getNumberOfPages();
   for(let i=1;i<=pageCount;i++){
     doc.setPage(i);
-    doc.setFillColor(...S1);
-    doc.rect(0,PH-36,PW,36,'F');
-    doc.setDrawColor(...S2);doc.setLineWidth(1);
-    doc.line(0,PH-36,PW,PH-36);
+    doc.setFillColor(...S1);doc.rect(0,PH-36,PW,36,'F');
+    doc.setDrawColor(...S2);doc.setLineWidth(1);doc.line(0,PH-36,PW,PH-36);
     doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...S7);
-    doc.text(CO.name,ML,PH-20);
-    doc.setFont('helvetica','normal');doc.setTextColor(...S5);
+    doc.text(CO.name,ML,PH-20);doc.setFont('helvetica','normal');doc.setTextColor(...S5);
     doc.text(`  ·  ${CO.address}`,ML+doc.getTextWidth(CO.name),PH-20);
     doc.text(`${CO.phone}  ·  ${CO.email}  ·  ${CO.website}`,PW-MR,PH-20,{align:'right'});
   }
-
   doc.save(`FR_Quote_${safe(c.clientName)}_${c.quoteDate}.pdf`);
 }
 
