@@ -422,7 +422,7 @@
     <div style="padding:14px 20px;border-top:1px solid #e2e8f0;background:#f8fafc;flex-shrink:0">
       <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
         <button class="em-gmail-btn" onclick="openGmailCompose()">
-          ✉️ Open in Gmail
+          ✉️ Create Gmail Draft
         </button>
         <button class="em-copy-btn" id="copyBtn" onclick="copyEmailBody()">
           📋 Copy HTML
@@ -434,7 +434,7 @@
       </div>
       <div class="em-pdf-note" style="margin-top:10px">
         <span style="font-size:16px">📎</span>
-        <span id="pdfNoteText">PDF will download automatically when you click "Open in Gmail" — attach it to the email.</span>
+        <span id="pdfNoteText">Draft will be created in josefuentes@fr-logistics.net with the PDF attached — check Drafts in Gmail.</span>
       </div>
     </div>
 
@@ -663,6 +663,7 @@ function ensureQ(){if(!CQ)genQuote();return CQ?.L?.length>0;}
    Account: josefuentes@fr-logistics.net
 ═══════════════════════════════════════════════ */
 const FR_GMAIL = 'josefuentes@fr-logistics.net';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwcifgUyf_qlxgNtJwuCschB3xxgxyww7G-ql7oV8yV4_qrIFZN4cqNcsFFmXgR_hyeMw/exec';
 let _emailLang = 'en';
 let _emailTextBody = '';
 let _emailHtmlBody = '';
@@ -1021,37 +1022,218 @@ function renderEmailPreview(){
     </div>`).join('');
 }
 
-/* ── OPEN IN GMAIL — FIX v3 ──
-   1. Gmail opens in josefuentes@fr-logistics.net (authuser)
-   2. HTML email copied to clipboard (paste in Gmail body for rich design)
-   3. PDF downloads AFTER Gmail opens (avoids popup blocker)
+/* ── CREATE GMAIL DRAFT via Apps Script ──
+   1. Generate PDF as base64 (jsPDF)
+   2. POST to Apps Script: {to, subject, htmlBody, textBody, pdfBase64, pdfName}
+   3. Apps Script creates draft in josefuentes@fr-logistics.net with PDF attached
+   4. Show success toast with link to drafts
 */
 function openGmailCompose(){
   if(!CQ)return;
   const{subject, textBody}=buildEmailText(CQ,_emailLang);
   const to=CQ.c.contactEmail||'';
   const es=_emailLang==='es';
+  const c=CQ.c;
+  const pdfName=`FR_Quote_${(c.clientName||'Quote').replace(/[^a-z0-9]+/gi,'_')}_${c.quoteDate||today()}.pdf`;
 
-  // 1. Open Gmail FIRST (synchronous — from direct user click, no blocker)
-  const url='https://mail.google.com/mail/?authuser='+encodeURIComponent(FR_GMAIL)+'&view=cm'
-    +'&to='+encodeURIComponent(to)
-    +'&su='+encodeURIComponent(subject)
-    +'&body='+encodeURIComponent(textBody);
-  window.open(url,'_blank');
+  // Update button to loading state
+  const btn=document.querySelector('.em-gmail-btn');
+  const origText=btn.innerHTML;
+  btn.innerHTML=es?'⏳ Creando borrador...':'⏳ Creating draft...';
+  btn.disabled=true;
+  btn.style.opacity='0.7';
 
-  // 2. Copy HTML email to clipboard
+  // Generate PDF as base64
+  let pdfBase64='';
   try{
-    const htmlBlob=new Blob([_emailHtmlBody],{type:'text/html'});
-    const textBlob=new Blob([textBody],{type:'text/plain'});
-    navigator.clipboard.write([new ClipboardItem({'text/html':htmlBlob,'text/plain':textBlob})]).then(()=>{
-      showToast(es
-        ? '✅ PDF descargado · Email HTML copiado — pega en el cuerpo de Gmail (Ctrl+V)'
-        : '✅ PDF downloading · HTML email copied — paste in Gmail body (Ctrl+V)', 6000);
-    }).catch(()=>copyFallback(textBody,es));
-  }catch(e){copyFallback(textBody,es);}
+    const{jsPDF}=window.jspdf;
+    const doc=buildPDFDoc(); // reuse existing PDF logic
+    pdfBase64=doc.output('datauristring').split(',')[1]; // strip data:...;base64,
+  }catch(err){
+    console.warn('PDF generation failed:',err);
+  }
 
-  // 3. PDF download with delay (after Gmail tab initiated)
-  setTimeout(()=>dlPDF(), 600);
+  const payload={
+    to, subject,
+    htmlBody: _emailHtmlBody,
+    textBody,
+    pdfBase64: pdfBase64||null,
+    pdfName
+  };
+
+  fetch(APPS_SCRIPT_URL,{
+    method:'POST',
+    redirect:'follow',
+    headers:{'Content-Type':'text/plain'}, // text/plain avoids preflight CORS
+    body:JSON.stringify(payload)
+  })
+  .then(r=>r.json())
+  .then(data=>{
+    btn.innerHTML=origText; btn.disabled=false; btn.style.opacity='1';
+    if(data.success){
+      closeEmailModal();
+      showToast(es
+        ? '✅ Borrador creado en josefuentes@fr-logistics.net — revisa Borradores'
+        : '✅ Draft created in josefuentes@fr-logistics.net — check Drafts', 7000);
+    } else {
+      showToast(es?'❌ Error: '+data.error:'❌ Error: '+data.error, 6000);
+    }
+  })
+  .catch(err=>{
+    btn.innerHTML=origText; btn.disabled=false; btn.style.opacity='1';
+    // CORS fallback: Apps Script may block cross-origin reads but draft was created
+    // Check if it's a CORS read error (draft likely created anyway)
+    if(err.message&&err.message.includes('Failed to fetch')){
+      closeEmailModal();
+      showToast(es
+        ? '📨 Solicitud enviada — revisa Borradores en josefuentes@fr-logistics.net'
+        : '📨 Request sent — check Drafts in josefuentes@fr-logistics.net', 7000);
+    } else {
+      showToast(es?'❌ Error al crear borrador':'❌ Error creating draft', 5000);
+    }
+  });
+}
+
+/* ── BUILD PDF DOC (shared logic, returns jsPDF doc object) ── */
+function buildPDFDoc(){
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'pt',format:'letter'});
+  const q=CQ,c=q.c;
+  const PW=612,PH=792,ML=36,MR=36,usableW=PW-ML-MR;
+  const G2=[6,95,70],G3=[209,250,229];
+  const S1=[248,250,252],S2=[226,232,240],S5=[100,116,139],S7=[51,65,85],S9=[15,23,42];
+  const qNum=getQNum(c);
+  let y=0;
+  doc.setFillColor(...G2);doc.rect(0,0,PW,78,'F');
+  doc.setFillColor(10,110,70,0.4);doc.rect(PW/2,0,PW/2,78,'F');
+  doc.setFillColor(255,255,255,0.2);doc.roundedRect(ML,14,48,48,6,6,'F');
+  doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(20);
+  doc.text('FR',ML+24,14+28,{align:'center',baseline:'middle'});
+  doc.setFontSize(22);doc.setFont('helvetica','bold');doc.setTextColor(255,255,255);
+  doc.text('FR-Logistics',ML+58,30);
+  doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(167,243,208);
+  doc.text(CO.tagline,ML+58,46);
+  doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(167,243,208);
+  doc.text('SERVICE QUOTE',PW-MR,22,{align:'right'});
+  doc.setFontSize(17);doc.setFont('helvetica','bold');doc.setTextColor(255,255,255);
+  doc.text('#'+qNum,PW-MR,40,{align:'right'});
+  doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(167,243,208);
+  doc.text(`Date: ${fmtD(c.quoteDate)}   Valid: ${c.validity}`,PW-MR,56,{align:'right'});
+  y=78;
+  const colW3=usableW/3,stripH=60;
+  doc.setFillColor(255,255,255);doc.rect(0,y,PW,stripH,'F');
+  function infoCell(x,cy,label,main,sub){
+    doc.setTextColor(5,150,105);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+    doc.text(label.toUpperCase(),x+12,cy+14);
+    doc.setTextColor(...S9);doc.setFontSize(12);doc.setFont('helvetica','bold');
+    doc.text(main||'—',x+12,cy+28,{maxWidth:colW3-20});
+    doc.setTextColor(...S5);doc.setFontSize(8.5);doc.setFont('helvetica','normal');
+    doc.text(sub||'',x+12,cy+41,{maxWidth:colW3-20});
+  }
+  infoCell(ML,y,'BILL TO',c.clientName,`${c.contactName}  ·  ${c.contactEmail}`);
+  doc.setDrawColor(...S2);doc.setLineWidth(0.5);
+  doc.line(ML+colW3,y+8,ML+colW3,y+stripH-8);
+  infoCell(ML+colW3,y,'OPERATION',c.channel,`${c.opType}  ·  ${c.prepBy}`);
+  doc.line(ML+colW3*2,y+8,ML+colW3*2,y+stripH-8);
+  infoCell(ML+colW3*2,y,'MONTHLY VOLUME',`${c.orders.toLocaleString()} Orders / Mo`,`${c.pallets.toLocaleString()} pallets  ·  ${c.units.toLocaleString()} label units`);
+  doc.setDrawColor(...S2);doc.setLineWidth(1.5);doc.line(0,y+stripH,PW,y+stripH);
+  y+=stripH+14;
+  doc.setTextColor(5,150,105);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+  doc.text('PRICING SNAPSHOT',ML,y);y+=8;
+  const snapW=(usableW-16)/3;
+  [[`Fulfillment Tier`,q.fTier],[`Fulfillment Rate`,`${fmt(q.fRate)} / order`],[`Labeling Tier / Rate`,`${q.lTier} @ ${fmt(q.lRate)}/unit`]].forEach((item,i)=>{
+    const sx=ML+i*(snapW+8);
+    doc.setFillColor(...G3);doc.roundedRect(sx,y,snapW,38,4,4,'F');
+    doc.setDrawColor(167,243,208);doc.setLineWidth(0.5);doc.roundedRect(sx,y,snapW,38,4,4,'S');
+    doc.setTextColor(...S5);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+    doc.text(item[0].toUpperCase(),sx+10,y+14);
+    doc.setTextColor(...G2);doc.setFontSize(11.5);doc.setFont('helvetica','bold');
+    doc.text(String(item[1]),sx+10,y+28);
+  });
+  y+=52;
+  doc.setTextColor(5,150,105);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+  doc.text('SELECTED SERVICES',ML,y);y+=8;
+  const tCols=[usableW*0.22,usableW*0.14,usableW*0.32,usableW*0.08,usableW*0.12,usableW*0.12];
+  const tHeaders=['SERVICE','CATEGORY','DESCRIPTION','QTY','RATE','TOTAL'];
+  const tAlign=['left','left','left','right','right','right'];
+  const rowH=22;
+  doc.setFillColor(...G2);doc.rect(ML,y,usableW,rowH,'F');
+  let cx=ML;
+  tHeaders.forEach((h,i)=>{
+    doc.setTextColor(255,255,255);doc.setFontSize(8);doc.setFont('helvetica','bold');
+    const tx=tAlign[i]==='right'?cx+tCols[i]-6:cx+6;
+    doc.text(h,tx,y+14,{align:tAlign[i]==='right'?'right':'left'});
+    cx+=tCols[i];
+  });
+  y+=rowH;
+  const pdfLines=q.L.filter(l=>l.qty>0);
+  pdfLines.forEach((l,i)=>{
+    const rh=Math.max(rowH,doc.getTextDimensions(l.desc,{maxWidth:tCols[2]-10,fontSize:8.5}).h+16);
+    if(y+rh>PH-60){doc.addPage();y=40;}
+    doc.setFillColor(...(i%2===0?[255,255,255]:S1));doc.rect(ML,y,usableW,rh,'F');
+    doc.setDrawColor(...S2);doc.setLineWidth(0.3);doc.line(ML,y+rh,ML+usableW,y+rh);
+    let rx=ML;
+    doc.setTextColor(...S9);doc.setFontSize(9.5);doc.setFont('helvetica','bold');
+    doc.text(l.service+(l.auto==='Yes'?' [AUTO]':''),rx+6,y+14,{maxWidth:tCols[0]-10});rx+=tCols[0];
+    doc.setTextColor(...S5);doc.setFontSize(8.5);doc.setFont('helvetica','normal');
+    doc.text(l.cat,rx+6,y+14,{maxWidth:tCols[1]-8});rx+=tCols[1];
+    doc.setTextColor(...S7);
+    doc.text(doc.splitTextToSize(l.desc,tCols[2]-10),rx+6,y+13);rx+=tCols[2];
+    doc.setTextColor(...S9);doc.setFontSize(9.5);doc.setFont('helvetica','normal');
+    doc.text(l.qty.toLocaleString(),rx+tCols[3]-6,y+14,{align:'right'});rx+=tCols[3];
+    doc.text(fmt(l.rate),rx+tCols[4]-6,y+14,{align:'right'});rx+=tCols[4];
+    doc.setTextColor(...G2);doc.setFont('helvetica','bold');
+    doc.text(fmt(l.total),rx+tCols[5]-6,y+14,{align:'right'});
+    y+=rh;
+  });
+  y+=12;
+  const totW=280,totX=ML+usableW-totW;
+  doc.setFillColor(255,255,255);doc.setDrawColor(...S2);doc.setLineWidth(0.5);
+  doc.rect(totX,y,totW,26,'FD');
+  doc.setTextColor(...S7);doc.setFontSize(10);doc.setFont('helvetica','normal');
+  doc.text('Estimated Subtotal',totX+12,y+16);
+  doc.text(fmt(q.sub),totX+totW-10,y+16,{align:'right'});y+=26;
+  doc.setFillColor(...S1);doc.rect(totX,y,totW,24,'FD');
+  doc.setTextColor(...S5);doc.setFontSize(9);
+  doc.text('Min. Monthly Billing',totX+12,y+15);
+  doc.text(fmt(c.minBill||0),totX+totW-10,y+15,{align:'right'});y+=24;
+  doc.setFillColor(...G2);doc.rect(totX,y,totW,30,'F');
+  doc.setTextColor(255,255,255);doc.setFontSize(11);doc.setFont('helvetica','bold');
+  doc.text('SUGGESTED MONTHLY BILLING',totX+12,y+18);
+  doc.setFontSize(13);doc.text(fmt(q.sug),totX+totW-10,y+19,{align:'right'});y+=42;
+  if(y+35>PH-60){doc.addPage();y=40;}
+  doc.setFillColor(255,251,235);doc.setDrawColor(253,230,138);doc.setLineWidth(0.5);
+  doc.roundedRect(ML,y,usableW,28,4,4,'FD');
+  doc.setTextColor(146,64,14);doc.setFontSize(9);doc.setFont('helvetica','bold');
+  doc.text('Quote Validity: ',ML+10,y+17);doc.setFont('helvetica','normal');
+  doc.text(`Valid for ${c.validity} from ${fmtD(c.quoteDate)}.`,ML+10+doc.getTextWidth('Quote Validity: '),y+17);y+=38;
+  if(c.notes){
+    const notesH=Math.min(60,doc.getTextDimensions(c.notes,{maxWidth:usableW-20,fontSize:9}).h+22);
+    if(y+notesH>PH-60){doc.addPage();y=40;}
+    doc.setFillColor(...S1);doc.setDrawColor(...S2);doc.setLineWidth(0.5);
+    doc.roundedRect(ML,y,usableW,notesH,4,4,'FD');
+    doc.setTextColor(...S7);doc.setFontSize(9);doc.setFont('helvetica','bold');
+    doc.text('Scope / Notes:',ML+10,y+13);doc.setFont('helvetica','normal');
+    doc.text(doc.splitTextToSize(c.notes,usableW-20),ML+10,y+24);y+=notesH+8;
+  }
+  const commNote='Commercial Note: Final pricing may be adjusted after reviewing SKU complexity, packaging requirements, inbound frequency, storage profile, platform integrations, and workflow requirements.';
+  const commH=doc.getTextDimensions(commNote,{maxWidth:usableW-20,fontSize:8}).h+18;
+  if(y+commH>PH-60){doc.addPage();y=40;}
+  doc.setFillColor(...S1);doc.setDrawColor(...S2);doc.setLineWidth(0.3);
+  doc.roundedRect(ML,y,usableW,commH,4,4,'FD');
+  doc.setTextColor(...S5);doc.setFontSize(8);doc.setFont('helvetica','oblique');
+  doc.text(doc.splitTextToSize(commNote,usableW-20),ML+10,y+12);
+  const pageCount=doc.internal.getNumberOfPages();
+  for(let i=1;i<=pageCount;i++){
+    doc.setPage(i);
+    doc.setFillColor(...S1);doc.rect(0,PH-36,PW,36,'F');
+    doc.setDrawColor(...S2);doc.setLineWidth(1);doc.line(0,PH-36,PW,PH-36);
+    doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...S7);
+    doc.text(CO.name,ML,PH-20);doc.setFont('helvetica','normal');doc.setTextColor(...S5);
+    doc.text(`  ·  ${CO.address}`,ML+doc.getTextWidth(CO.name),PH-20);
+    doc.text(`${CO.phone}  ·  ${CO.email}  ·  ${CO.website}`,PW-MR,PH-20,{align:'right'});
+  }
+  return doc;
 }
 
 function copyFallback(text,es){
@@ -1140,8 +1322,10 @@ function dlExcel(){
 /* ── PDF ── */
 function dlPDF(){
   if(!ensureQ()){alert('Generate a quote with at least one selected service first.');return;}
-  const{jsPDF}=window.jspdf;
-  const doc=new jsPDF({orientation:'portrait',unit:'pt',format:'letter'});
+  const doc=buildPDFDoc();
+  const c=CQ.c;
+  doc.save(`FR_Quote_${safe(c.clientName)}_${c.quoteDate}.pdf`);
+}
   const q=CQ,c=q.c;
   const PW=612,PH=792,ML=36,MR=36,usableW=PW-ML-MR;
   const G1=[14,165,95],G2=[6,95,70],G3=[209,250,229];
@@ -1268,19 +1452,6 @@ function dlPDF(){
   doc.setFillColor(...S1);doc.setDrawColor(...S2);doc.setLineWidth(0.3);
   doc.roundedRect(ML,y,usableW,commH,4,4,'FD');
   doc.setTextColor(...S5);doc.setFontSize(8);doc.setFont('helvetica','oblique');
-  doc.text(doc.splitTextToSize(commNote,usableW-20),ML+10,y+12);
-  const pageCount=doc.internal.getNumberOfPages();
-  for(let i=1;i<=pageCount;i++){
-    doc.setPage(i);
-    doc.setFillColor(...S1);doc.rect(0,PH-36,PW,36,'F');
-    doc.setDrawColor(...S2);doc.setLineWidth(1);doc.line(0,PH-36,PW,PH-36);
-    doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...S7);
-    doc.text(CO.name,ML,PH-20);doc.setFont('helvetica','normal');doc.setTextColor(...S5);
-    doc.text(`  ·  ${CO.address}`,ML+doc.getTextWidth(CO.name),PH-20);
-    doc.text(`${CO.phone}  ·  ${CO.email}  ·  ${CO.website}`,PW-MR,PH-20,{align:'right'});
-  }
-  doc.save(`FR_Quote_${safe(c.clientName)}_${c.quoteDate}.pdf`);
-}
 
 /* ── INIT ── */
 $('qDate').value=today();
