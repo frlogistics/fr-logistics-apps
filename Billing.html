@@ -559,6 +559,7 @@ async function loadBilling() {
   let ordersCount = 0;
   let inboundCount = 0;
   let dropShipCount = 0;
+  _ssCarrierCost = 0; // always reset before loading new client
 
   try {
     // ── 1. ShipStation: dual mode (integrated store OR Custom Field 1) ──────
@@ -573,6 +574,8 @@ async function loadBilling() {
       if (billingSource === 'portal') {
         setStatus(`&#9432; Portal-only client — ShipStation does not apply. Loading portal data...`, 'info');
         ordersCount = 0;
+        _ssCarrierCost = 0;
+        g('shippingMarkupRow').style.display = 'none'; // hide shipping label fee panel
         throw null; // skip to inbound section
       } else if (billingSource === 'ss_store' || _client.ssStore) {
         url = `${SS_PROXY}?start=${start}&end=${end}&store=${encodeURIComponent(_client.ssStore)}`;
@@ -672,9 +675,12 @@ async function loadBilling() {
       // Shipping Label Fee: total charge = carrier cost × (1 + markup%)
       // rate = total charge (not per-unit), qty = 1
       if (l.id === 'shipping_label_fee') {
-        l.rate = shippingCharge;
-        l.qty  = shippingCharge > 0 ? 1 : 0;
-        l.tip  = `Carrier cost ${fc(_ssCarrierCost)} × (1 + ${markup}% markup) = ${fc(shippingCharge)}`;
+        const isPortal = (billingSource === 'portal');
+        l.rate = isPortal ? 0 : shippingCharge;
+        l.qty  = (!isPortal && shippingCharge > 0) ? 1 : 0;
+        l.tip  = isPortal
+          ? 'Not applicable — portal-only client (no ShipStation)'
+          : `Carrier cost ${fc(_ssCarrierCost)} × (1 + ${markup}% markup) = ${fc(shippingCharge)}`;
       }
     });
 
