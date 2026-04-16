@@ -104,10 +104,10 @@ exports.handler = async (event) => {
     // MODE 2 — Manual orders: filter by Custom Field 1, cross-ref shipments
     // ══════════════════════════════════════════════════════════════════════════
     if (customField1) {
-      // Step A: Get orders tagged with CF1 filtered by orderDate (actual order date, not modifyDate)
-      // orderDate = when the order was CREATED — never changes when tagging
-      // This correctly isolates orders placed in the billing period
-      const ordersUrl = `${SS_BASE}/orders?customField1=${encodeURIComponent(customField1)}&orderStatus=shipped&orderDateStart=${start}&orderDateEnd=${end}`;
+      // Step A: Get ALL shipped orders with this CF1 tag
+      // No date filter on orders — we use shipDate (from shipments) as the billing gate
+      // This avoids issues with orderDate vs modifyDate inconsistencies
+      const ordersUrl = `${SS_BASE}/orders?customField1=${encodeURIComponent(customField1)}&orderStatus=shipped`;
       const orders = await fetchAllPages(ordersUrl);
       const orderCount = orders.length;
 
