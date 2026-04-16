@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>FR-Logistics | Billing Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --g1:#0ea55f;--g2:#065f46;--g3:#16a34a;--glt:#ecfdf5;--gmd:#d1fae5;
+  --text:#0f172a;--muted:#64748b;--border:#e2e8f0;--danger:#dc2626;
+  --amber:#fffbeb;--amber-bd:#fde68a;--navy:#1e293b;
+  --shadow:0 1px 3px rgba(0,0,0,.07),0 4px 14px rgba(0,0,0,.05)
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"DM Sans",sans-serif;background:#f1f5f9;color:var(--text);min-height:100vh}
+.wrap{max-width:1100px;margin:0 auto;padding:20px 16px}
+/* HEADER */
+.hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+     padding:14px 20px;background:#fff;border:1px solid var(--border);border-top:4px solid var(--g1);
+     border-radius:12px;margin-bottom:16px;box-shadow:var(--shadow)}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:42px;height:42px;background:linear-gradient(135deg,#0ea55f,#22c55e);border-radius:10px;
+      display:flex;align-items:center;justify-content:center;font-family:"Syne",sans-serif;
+      font-weight:800;font-size:16px;color:#fff;flex-shrink:0}
+.brand h1{font-family:"Syne",sans-serif;font-size:16px;font-weight:800}
+.brand p{font-size:11px;color:var(--muted);margin-top:1px}
+.badge{font-size:10px;font-weight:700;letter-spacing:.6px;padding:4px 12px;
+       border:1px solid #bbf7d0;border-radius:999px;color:var(--g2);background:var(--glt)}
+/* CARD */
+.card{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden;
+      box-shadow:var(--shadow);margin-bottom:14px}
+.ch{padding:12px 16px;border-bottom:1px solid var(--border);background:#f8fafc;
+    display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ch h3{font-family:"Syne",sans-serif;font-size:12.5px;font-weight:700;color:#1e293b;
+       display:flex;align-items:center;gap:6px}
+.cb{padding:16px}
+/* GRID */
+.fr2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fr3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.fr4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px}
+.f{display:grid;gap:4px}
+label{font-size:10px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:#475569}
+input,select{font-family:"DM Sans",sans-serif;width:100%;background:#fff;
+  border:1px solid #cbd5e1;color:#0f172a;border-radius:8px;padding:8px 11px;font-size:13px;outline:none;
+  transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus{border-color:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.1)}
+/* BILLING TABLE */
+.btable{width:100%;border-collapse:collapse;font-size:12.5px}
+.btable thead tr{background:var(--g2)}
+.btable thead th{padding:9px 10px;color:#fff;font-weight:700;font-size:10px;
+                  text-transform:uppercase;letter-spacing:.4px;text-align:left}
+.btable thead th:last-child,.btable thead th:nth-last-child(2){text-align:right}
+.btable tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+.btable tbody tr:hover{background:#f8fafc}
+.btable tbody tr.cat-hdr td{background:var(--glt);color:var(--g2);font-weight:700;
+                              font-size:10px;text-transform:uppercase;letter-spacing:.5px;
+                              padding:5px 10px}
+.btable td{padding:8px 10px;vertical-align:middle}
+.btable td:last-child,.btable td:nth-last-child(2){text-align:right}
+.svc-name{font-weight:600;color:#1e293b}
+.svc-sub{font-size:10px;color:var(--muted);margin-top:1px}
+.source-badge{display:inline-block;font-size:9px;font-weight:700;padding:1px 6px;
+              border-radius:4px;text-transform:uppercase;letter-spacing:.3px}
+.src-auto{background:#dcfce7;color:#166534}
+.src-manual{background:#fef9c3;color:#854d0e}
+.qty-cell{width:100px}
+.qty-inp{width:90px;padding:5px 8px;font-size:12px;text-align:right;border:1px solid #cbd5e1;
+         border-radius:6px;background:#fffde7;font-family:"DM Sans",sans-serif;font-weight:700}
+.qty-inp:focus{border-color:var(--g1);outline:none;box-shadow:0 0 0 2px rgba(14,165,95,.15)}
+.qty-inp[readonly]{background:#f0fdf4;color:var(--g2);border-color:#bbf7d0;cursor:default}
+.rate-cell{color:var(--g2);font-weight:700}
+.total-cell{font-weight:700;color:var(--text)}
+/* TOTALS */
+.totals-box{background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-top:12px}
+.total-row{display:flex;justify-content:space-between;align-items:center;
+           padding:5px 0;font-size:13px;border-bottom:1px solid var(--border)}
+.total-row:last-child{border:0}
+.total-row.big{font-size:15px;font-weight:700;color:var(--g2);padding-top:10px;margin-top:4px;
+               border-top:2px solid var(--g2)}
+.total-row.mmb{color:var(--muted);font-size:12px;font-style:italic}
+/* ACTIONS */
+.ab{display:flex;gap:8px;flex-wrap:wrap;padding:12px 16px;
+    border-top:1px solid var(--border);background:#f8fafc;align-items:center}
+button{font-family:"DM Sans",sans-serif;border:0;cursor:pointer;border-radius:9px;
+       padding:9px 18px;font-size:13px;font-weight:600;transition:all .12s;white-space:nowrap;
+       display:inline-flex;align-items:center;gap:6px}
+button:hover{transform:translateY(-1px)}
+button:active{transform:scale(.97)}
+.bp{background:linear-gradient(135deg,#0ea55f,#16a34a);color:#fff;box-shadow:0 3px 10px rgba(14,165,95,.3)}
+.bs{background:#f1f5f9;color:#334155;border:1px solid var(--border)}
+.bb{background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;box-shadow:0 3px 10px rgba(59,130,246,.3)}
+.bcsv{background:linear-gradient(135deg,#8b5cf6,#7c3aed);color:#fff;box-shadow:0 3px 10px rgba(139,92,246,.3)}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);
+      border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* STATUS */
+.status-bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px}
+.status-info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+.status-ok{background:var(--glt);border:1px solid #bbf7d0;color:var(--g2)}
+.status-warn{background:var(--amber);border:1px solid var(--amber-bd);color:#92400e}
+.status-err{background:#fef2f2;border:1px solid #fecaca;color:var(--danger)}
+/* KPI PILLS */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.kpi{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.kpi-label{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+.kpi-val{font-family:"Syne",sans-serif;font-size:22px;font-weight:800;color:var(--text);margin-top:3px}
+.kpi.hi{background:var(--glt);border-color:#bbf7d0}
+.kpi.hi .kpi-val{color:var(--g2)}
+@media(max-width:700px){.fr2,.fr3,.fr4{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hdr">
+    <div class="brand">
+      <div class="logo">FR</div>
+      <div>
+        <h1>FR-Logistics</h1>
+        <p>Miami, FL &nbsp;&middot;&nbsp; 3PL Fulfillment &nbsp;&middot;&nbsp; Amazon FBA Prep</p>
+      </div>
+    </div>
+    <span class="badge">BILLING GENERATOR</span>
+  </header>
+
+  <!-- CONTROLS -->
+  <div class="card">
+    <div class="ch"><h3>&#9881; Billing Parameters</h3></div>
+    <div class="cb">
+      <div class="fr4">
+        <div class="f">
+          <label>Client</label>
+          <select id="selClient" onchange="onClientChange()">
+            <option value="">— Select client —</option>
+            <option value="milano">Milano Brands LLC (Daizzy Gear)</option>
+            <option value="mxs">MXS Overseas Ltd</option>
+            <option value="lnstore">LN STORE, LLC</option>
+            <option value="lre">LRE Holding (Route of Heroes)</option>
+            <option value="unode50">UNOde50</option>
+            <option value="kmat">KMAT Supply LLC</option>
+          </select>
+        </div>
+        <div class="f">
+          <label>Billing Period — Start</label>
+          <input id="dateStart" type="date"/>
+        </div>
+        <div class="f">
+          <label>Billing Period — End</label>
+          <input id="dateEnd" type="date"/>
+        </div>
+        <div class="f">
+          <label>Invoice #</label>
+          <input id="invNum" placeholder="INV-2026-001"/>
+        </div>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="bp" onclick="loadBilling()">
+          <span id="loadSpinWrap"></span>
+          &#128200; Load Data from ShipStation
+        </button>
+        <button class="bs" onclick="resetAll()">&#10005; Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS -->
+  <div id="statusBar" style="display:none"></div>
+
+  <!-- KPI SUMMARY -->
+  <div class="kpis" id="kpiSection" style="display:none">
+    <div class="kpi hi">
+      <div class="kpi-label">Orders Shipped</div>
+      <div class="kpi-val" id="kpiOrders">—</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Cartons Inbound</div>
+      <div class="kpi-val" id="kpiCartons">—</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Subtotal</div>
+      <div class="kpi-val" id="kpiSubtotal">—</div>
+    </div>
+    <div class="kpi hi">
+      <div class="kpi-label">Invoice Total</div>
+      <div class="kpi-val" id="kpiTotal">—</div>
+    </div>
+  </div>
+
+  <!-- BILLING TABLE -->
+  <div class="card" id="billingCard" style="display:none">
+    <div class="ch">
+      <h3>&#128176; Billing Detail — <span id="billingPeriodLabel"></span></h3>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span style="font-size:10px;color:var(--muted)">
+          <span class="source-badge src-auto">AUTO</span> = from ShipStation &nbsp;
+          <span class="source-badge src-manual">MANUAL</span> = enter manually
+        </span>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="btable">
+        <thead><tr>
+          <th style="width:32%">Service</th>
+          <th style="width:14%">QBO SKU</th>
+          <th style="width:10%">Unit</th>
+          <th style="width:10%" class="qty-cell">Qty</th>
+          <th style="width:10%">Rate</th>
+          <th style="width:12%">Total</th>
+          <th style="width:12%">Source</th>
+        </tr></thead>
+        <tbody id="billingBody"></tbody>
+      </table>
+    </div>
+
+    <!-- TOTALS -->
+    <div class="cb">
+      <div class="totals-box">
+        <div class="total-row">
+          <span>Subtotal</span>
+          <span id="totSubtotal">$0.00</span>
+        </div>
+        <div class="total-row mmb" id="mmbRow" style="display:none">
+          <span>Min. Monthly Billing (MMB)</span>
+          <span id="totMMB">$0.00</span>
+        </div>
+        <div class="total-row big">
+          <span>INVOICE TOTAL</span>
+          <span id="totInvoice">$0.00</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ab">
+      <button class="bp" onclick="genPDF()">&#128196; Download PDF</button>
+      <button class="bcsv" onclick="genCSV()">&#128202; Export QBO CSV</button>
+      <button class="bb" onclick="sendDraft()">
+        <span id="draftSpinWrap"></span>
+        &#9993;&#65039; Create Gmail Draft
+      </button>
+      <span style="margin-left:auto;font-size:11px;color:var(--muted)" id="draftStatus"></span>
+    </div>
+  </div>
+
+</div><!-- /wrap -->
+
+<script>
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+const SS_PROXY   = '/.netlify/functions/shipstation';
+const NETLIFY_EMAIL = 'https://apps.fr-logistics.net/.netlify/functions/send-onboard-email';
+
+// ─── CLIENT RATE CARDS ───────────────────────────────────────────────────────
+const CLIENTS = {
+  milano: {
+    name:'Milano Brands LLC',
+    qboName:'Milano Brands LLC',
+    email:'julieta@milanobrands.us',
+    mmb:0,
+    ssStore:'Milano Brands',   // match ShipStation store name (partial)
+    rates:{
+      inbound_carton:2.50, inbound_pallet:20.00,
+      storage_rack:45.00, wms:99.99,
+      pick_pack:3.00, boxing:0.15, qc:45.00,
+      labeling:1.00, poly_bag:1.00, kitting:0.75,
+      return_proc:5.00, outbound_carton:2.00,
+    }
+  },
+  mxs:{
+    name:'MXS Overseas Ltd',
+    qboName:'MXS Overseas Ltd',
+    email:'mxsoverseas@gmail.com',
+    mmb:0,
+    ssStore:'MXS',
+    rates:{
+      inbound_carton:2.50, inbound_pallet:20.00,
+      storage_rack:45.00, wms:0,
+      pick_pack:3.00, boxing:0.15, qc:50.00,
+      labeling:1.00, poly_bag:1.00, kitting:0.75,
+      return_proc:5.00, outbound_carton:2.00,
+    }
+  },
+  lnstore:{
+    name:'LN STORE, LLC',
+    qboName:'LN STORE, LLC',
+    email:'tisseraobras@gmail.com',
+    mmb:0,
+    ssStore:'LN Store',
+    rates:{
+      inbound_carton:2.50, inbound_pallet:20.00,
+      storage_rack:45.00, wms:99.99,
+      pick_pack:3.00, boxing:0.15, qc:50.00,
+      labeling:1.00, poly_bag:1.00, kitting:0.75,
+      return_proc:5.00, outbound_carton:2.00,
+    }
+  },
+  lre:{
+    name:'LRE Holding (Route of Heroes)',
+    qboName:'LRE Holding',
+    email:'',
+    mmb:3250,
+    ssStore:'LRE',
+    rates:{
+      inbound_carton:2.50, inbound_pallet:15.00,
+      storage_rack:18.00, wms:0,
+      pick_pack:0.90, boxing:0.15, qc:50.00,
+      labeling:1.00, poly_bag:1.00, kitting:0.75,
+      return_proc:2.50, outbound_carton:2.00,
+    }
+  },
+  unode50:{
+    name:'UNOde50',
+    qboName:'UNOde50',
+    email:'joseph.cercado@unode50.com',
+    mmb:5250,
+    ssStore:'UNOde50',
+    rates:{
+      inbound_carton:2.50, inbound_pallet:20.00,
+      storage_rack:45.00, wms:0,
+      pick_pack:10.50, boxing:0.15, qc:50.00,
+      labeling:1.00, poly_bag:1.00, kitting:0.75,
+      return_proc:5.00, outbound_carton:2.00,
+    }
+  },
+  kmat:{
+    name:'KMAT Supply LLC',
+    qboName:'KMAT Supply LLC',
+    email:'',
+    mmb:0,
+    ssStore:'KMAT',
+    rates:{
+      inbound_carton:2.50, inbound_pallet:20.00,
+      storage_rack:45.00, wms:99.99,
+      pick_pack:3.00, boxing:0.15, qc:50.00,
+      labeling:1.00, poly_bag:1.00, kitting:0.75,
+      return_proc:5.00, outbound_carton:2.00,
+    }
+  },
+};
+
+// ─── BILLING LINES DEFINITION ────────────────────────────────────────────────
+function getBillingLines(clientKey) {
+  const cl = CLIENTS[clientKey];
+  const r  = cl.rates;
+  return [
+    {cat:'Inbound', id:'inbound_carton',  name:'Inbound — Cartons',         sku:'Inbound Package',      unit:'cartons',    rate:r.inbound_carton,  qty:0, auto:false, tip:'Enter total cartons received this period (from Inbound/Outbound portal)'},
+    {cat:'Inbound', id:'inbound_pallet',  name:'Inbound — Pallets',         sku:'Inbound Pallet',        unit:'pallets',    rate:r.inbound_pallet,  qty:0, auto:false, tip:'Enter total pallets received'},
+    {cat:'Storage', id:'storage_rack',    name:'Storage — Rack Positions',  sku:'SFRP',                  unit:'racks/mo',   rate:r.storage_rack,    qty:0, auto:false, tip:'Enter occupied rack positions at end of period'},
+    {cat:'Fulfillment',id:'pick_pack',    name:'Pick & Pack (Orders)',      sku:'FP',                    unit:'orders',     rate:r.pick_pack,       qty:0, auto:true,  tip:'Auto-loaded from ShipStation shipped orders'},
+    {cat:'Fulfillment',id:'boxing',       name:'Boxing / Collating',        sku:'BCUIB',                 unit:'units',      rate:r.boxing,          qty:0, auto:false, tip:'Enter total units boxed/collated this period'},
+    {cat:'Prep',    id:'labeling',        name:'Amazon SPN Labeling',       sku:'Label ASIN or UPC',     unit:'units',      rate:r.labeling,        qty:0, auto:false, tip:'Enter total units labeled (Amazon FBA)'},
+    {cat:'Prep',    id:'qc',              name:'QC / Product Inspection',   sku:'PIF',                   unit:'hours',      rate:r.qc,              qty:0, auto:false, tip:'Enter total QC inspection hours'},
+    {cat:'Prep',    id:'poly_bag',        name:'Poly Bagging',              sku:'PBF',                   unit:'units',      rate:r.poly_bag,        qty:0, auto:false, tip:'Enter units poly-bagged'},
+    {cat:'Prep',    id:'kitting',         name:'Kitting & Bundling',        sku:'KIT',                   unit:'units',      rate:r.kitting,         qty:0, auto:false, tip:'Enter units kitted/bundled'},
+    {cat:'Returns', id:'return_proc',     name:'Return Processing',         sku:'RPF',                   unit:'units',      rate:r.return_proc,     qty:0, auto:false, tip:'Enter return units processed'},
+    {cat:'Outbound',id:'outbound_carton', name:'Outbound — Cartons',        sku:'OFPackage',             unit:'cartons',    rate:r.outbound_carton, qty:0, auto:false, tip:'Enter outbound cartons shipped'},
+    {cat:'Technology',id:'wms',           name:'WMS / Automated Fee',       sku:'WMS',                   unit:'month',      rate:r.wms,             qty:r.wms>0?1:0, auto:true, tip:'Fixed monthly fee'},
+    {cat:'Other',   id:'custom',          name:'Custom / Other Charges',    sku:'CP',                    unit:'—',          rate:0,                 qty:0, auto:false, tip:'Enter any custom charges (rate × qty)'},
+  ];
+}
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let _lines   = [];
+let _client  = null;
+let _ssOrders = 0;
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+const g   = id => document.getElementById(id);
+const fc  = v  => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(+v||0);
+const fD  = iso => { if(!iso)return'—'; const[y,m,d]=iso.split('-'); return`${m}/${d}/${y}`; };
+
+function setStatus(msg, type='info') {
+  const bar = g('statusBar');
+  bar.style.display = 'block';
+  bar.className = 'status-bar status-'+type;
+  bar.innerHTML = msg;
+}
+
+function onClientChange() {
+  const k = g('selClient').value;
+  if (!k) return;
+  _client = CLIENTS[k];
+  // Auto-generate invoice number
+  const now = new Date();
+  g('invNum').value = `INV-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${_client.name.replace(/[^A-Z]/gi,'').slice(0,3).toUpperCase()}`;
+  setStatus(`&#128100; Client: <b>${_client.name}</b> — Set billing period then click "Load Data from ShipStation"`, 'info');
+}
+
+// ─── INIT DATES ───────────────────────────────────────────────────────────────
+(function initDates(){
+  const now  = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const firstOfMonth = new Date(y, m, 1);
+  const lastOfMonth  = new Date(y, m+1, 0);
+  g('dateStart').value = firstOfMonth.toISOString().slice(0,10);
+  g('dateEnd').value   = lastOfMonth.toISOString().slice(0,10);
+})();
+
+// ─── LOAD DATA FROM SHIPSTATION ───────────────────────────────────────────────
+async function loadBilling() {
+  const clientKey = g('selClient').value;
+  if (!clientKey) { alert('Please select a client first.'); return; }
+  if (!g('dateStart').value || !g('dateEnd').value) { alert('Please set billing period dates.'); return; }
+
+  _client = CLIENTS[clientKey];
+  const start = g('dateStart').value;
+  const end   = g('dateEnd').value;
+
+  // Show spinner
+  g('loadSpinWrap').innerHTML = '<span class="spin"></span>';
+  setStatus('&#9656; Connecting to ShipStation API...', 'info');
+
+  try {
+    // Call ShipStation proxy for shipped orders in period
+    const url = `${SS_PROXY}?path=/orders&orderStatus=shipped&modifyDateStart=${start}&modifyDateEnd=${end}&pageSize=500`;
+    let ordersCount = 0;
+
+    try {
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const data = await resp.json();
+        const orders = data.orders || [];
+        // Filter by store name matching client (if possible)
+        const storePattern = _client.ssStore.toLowerCase();
+        const filtered = orders.filter(o =>
+          (o.orderSource||'').toLowerCase().includes(storePattern) ||
+          (o.storeName||'').toLowerCase().includes(storePattern) ||
+          storePattern === '' // show all if no pattern
+        );
+        ordersCount = filtered.length > 0 ? filtered.length : orders.length;
+        setStatus(`&#9989; ShipStation: found <b>${orders.length} shipped orders</b> in period (${orders.length} total across all stores). Filtered for ${_client.name}: <b>${ordersCount}</b>.`, 'ok');
+      } else {
+        throw new Error(`ShipStation API returned ${resp.status}`);
+      }
+    } catch(ssErr) {
+      setStatus(`&#9888;&#65039; ShipStation API unavailable (${ssErr.message}). You can still fill in quantities manually.`, 'warn');
+      ordersCount = 0;
+    }
+
+    _ssOrders = ordersCount;
+
+    // Build billing lines
+    _lines = getBillingLines(clientKey);
+    // Set auto quantities
+    _lines.forEach(l => {
+      if (l.id === 'pick_pack') l.qty = ordersCount;
+      if (l.id === 'wms' && l.rate > 0) l.qty = 1;
+    });
+
+    renderBillingTable();
+    g('billingCard').style.display = 'block';
+    g('kpiSection').style.display = 'grid';
+
+    // Update KPIs
+    g('kpiOrders').textContent = ordersCount;
+    g('billingPeriodLabel').textContent = `${_client.name} · ${fD(start)} – ${fD(end)}`;
+    recalc();
+
+  } finally {
+    g('loadSpinWrap').innerHTML = '';
+  }
+}
+
+// ─── RENDER TABLE ─────────────────────────────────────────────────────────────
+function renderBillingTable() {
+  const tb = g('billingBody');
+  tb.innerHTML = '';
+  let lastCat = '';
+
+  _lines.forEach((l, idx) => {
+    if (l.cat !== lastCat) {
+      const tr = document.createElement('tr');
+      tr.className = 'cat-hdr';
+      tr.innerHTML = `<td colspan="7">${l.cat}</td>`;
+      tb.appendChild(tr);
+      lastCat = l.cat;
+    }
+    const tr = document.createElement('tr');
+    const srcBadge = l.auto
+      ? '<span class="source-badge src-auto">AUTO</span>'
+      : '<span class="source-badge src-manual">MANUAL</span>';
+    const readOnly = (l.id === 'wms' && l.rate > 0) ? 'readonly' : '';
+    const rateDisp = l.rate > 0 ? fc(l.rate) : '<input type="number" min="0" step="0.01" class="qty-inp" style="width:90px" placeholder="rate" oninput="updateCustomRate('+idx+',this.value)" title="Enter rate"/>';
+    tr.innerHTML = `
+      <td>
+        <div class="svc-name">${l.name}</div>
+        <div class="svc-sub">${l.tip}</div>
+      </td>
+      <td style="color:var(--muted);font-size:11px">${l.sku}</td>
+      <td style="color:var(--muted);font-size:11px">${l.unit}</td>
+      <td class="qty-cell">
+        <input type="number" min="0" step="0.01" class="qty-inp" ${readOnly}
+               id="qty_${l.id}" value="${l.qty||''}" placeholder="0"
+               oninput="updateQty('${l.id}',this.value)" title="${l.tip}"/>
+      </td>
+      <td class="rate-cell">${l.rate > 0 ? fc(l.rate) : rateDisp}</td>
+      <td class="total-cell" id="tot_${l.id}">${fc(l.qty * l.rate)}</td>
+      <td>${srcBadge}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+function updateQty(id, val) {
+  const l = _lines.find(x => x.id === id);
+  if (l) { l.qty = +val || 0; recalc(); }
+}
+function updateCustomRate(idx, val) {
+  _lines[idx].rate = +val || 0;
+  recalc();
+}
+
+// ─── RECALC ───────────────────────────────────────────────────────────────────
+function recalc() {
+  let sub = 0;
+  _lines.forEach(l => {
+    const tot = l.qty * l.rate;
+    sub += tot;
+    const el = g('tot_'+l.id);
+    if (el) el.textContent = tot > 0 ? fc(tot) : '—';
+  });
+
+  const mmb  = _client?.mmb || 0;
+  const total = Math.max(sub, mmb);
+
+  g('totSubtotal').textContent = fc(sub);
+  g('totInvoice').textContent  = fc(total);
+  g('kpiSubtotal').textContent = fc(sub);
+  g('kpiTotal').textContent    = fc(total);
+
+  const mmbRow = g('mmbRow');
+  if (mmb > 0) {
+    mmbRow.style.display = 'flex';
+    g('totMMB').textContent = fc(mmb);
+  } else {
+    mmbRow.style.display = 'none';
+  }
+
+  // Cartons = inbound_carton qty
+  const cl = _lines.find(x => x.id === 'inbound_carton');
+  g('kpiCartons').textContent = cl ? (cl.qty || '—') : '—';
+}
+
+// ─── PDF GENERATION ───────────────────────────────────────────────────────────
+function genPDF() {
+  if (!_client) return;
+  const {jsPDF} = window.jspdf;
+  const doc = new jsPDF({unit:'pt',format:'letter'});
+  const PW=612, ML=36, W=540;
+  const DG=[6,95,70], MG=[14,165,95], LG=[236,253,245], DN=[15,23,42], MT=[100,116,139], WH=[255,255,255], BD=[209,250,229];
+  let y=0;
+
+  // Header
+  doc.setFillColor(...DG); doc.rect(0,0,PW,54,'F');
+  doc.setFillColor(...MG); doc.rect(PW*0.72,0,PW*0.28,54,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(...WH);
+  doc.text('FR-Logistics',ML,22);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+  doc.text('3PL Fulfillment  |  Amazon FBA Prep  |  E-Commerce Logistics',ML,33);
+  doc.setFontSize(7.5); doc.text('BILLING SUMMARY',PW-ML,17,{align:'right'});
+  doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  doc.text(g('invNum').value||'INVOICE',PW-ML,29,{align:'right'});
+  y=54;
+
+  // Client + period info
+  doc.setFillColor(...WH); doc.rect(0,y,PW,44,'F');
+  const info=[['Client',_client.name],['Contact Email',_client.email||'—'],
+              ['Billing Period',`${fD(g('dateStart').value)} – ${fD(g('dateEnd').value)}`],
+              ['Prepared By','Jose Fuentes - Operations Manager']];
+  const cw2=W/2;
+  info.forEach(([lbl,val],i)=>{
+    const xi=ML+(i%2)*cw2, yi=y+3+(Math.floor(i/2))*18;
+    doc.setFillColor(...LG); doc.setDrawColor(...BD); doc.setLineWidth(.4);
+    doc.roundedRect(xi,yi,cw2-4,14,2,2,'FD');
+    doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...DG);
+    doc.text(lbl.toUpperCase(),xi+4,yi+6);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...DN);
+    doc.text(String(val),xi+4,yi+12);
+  });
+  y+=48;
+
+  // Table
+  doc.setFillColor(...DG); doc.rect(ML,y,W,10,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...WH);
+  doc.text('SERVICE',ML+3,y+7);
+  doc.text('QBO SKU',ML+W*0.42,y+7);
+  doc.text('QTY',ML+W*0.58,y+7,{align:'right'});
+  doc.text('RATE',ML+W*0.72,y+7,{align:'right'});
+  doc.text('TOTAL',PW-ML,y+7,{align:'right'});
+  y+=10;
+
+  let lastCat='';
+  let sub=0;
+  _lines.forEach((l,i)=>{
+    if(!l.qty && !l.rate) return;
+    const tot=l.qty*l.rate;
+    if(l.cat!==lastCat){
+      doc.setFillColor(...LG); doc.setDrawColor(...BD); doc.setLineWidth(.2);
+      doc.rect(ML,y,W,6,'FD');
+      doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...DG);
+      doc.text(l.cat.toUpperCase(),ML+3,y+4.5); y+=6; lastCat=l.cat;
+    }
+    const rh=9;
+    doc.setFillColor(...(i%2===0?WH:[248,250,252]));
+    doc.setDrawColor(...BD); doc.setLineWidth(.15);
+    doc.rect(ML,y,W,rh,'FD');
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...DN);
+    doc.text(l.name,ML+3,y+6.5);
+    doc.setTextColor(...MT); doc.setFontSize(7.5);
+    doc.text(l.sku,ML+W*0.42,y+6.5);
+    doc.text(String(l.qty||0),ML+W*0.58,y+6.5,{align:'right'});
+    doc.text(fc(l.rate),ML+W*0.72,y+6.5,{align:'right'});
+    if(tot>0){doc.setFont('helvetica','bold'); doc.setTextColor(...DG);}
+    doc.text(tot>0?fc(tot):'—',PW-ML,y+6.5,{align:'right'});
+    sub+=tot; y+=rh;
+  });
+
+  y+=10;
+  const mmb=_client.mmb||0;
+  const total=Math.max(sub,mmb);
+  const totW=260, totX=ML+W-totW;
+
+  // Subtotal
+  doc.setFillColor(...WH); doc.setDrawColor(...BD); doc.setLineWidth(.4);
+  doc.rect(totX,y,totW,22,'FD');
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...MT);
+  doc.text('Estimated Subtotal',totX+8,y+14);
+  doc.setFont('helvetica','bold'); doc.setTextColor(...DN);
+  doc.text(fc(sub),PW-ML,y+14,{align:'right'}); y+=22;
+
+  if(mmb>0){
+    doc.setFillColor(255,251,235); doc.setDrawColor(253,230,138);
+    doc.rect(totX,y,totW,20,'FD');
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(146,64,14);
+    doc.text('Min. Monthly Billing (MMB)',totX+8,y+13);
+    doc.setFont('helvetica','bold');
+    doc.text(fc(mmb),PW-ML,y+13,{align:'right'}); y+=20;
+  }
+
+  doc.setFillColor(...DG); doc.rect(totX,y,totW,28,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...WH);
+  doc.text('INVOICE TOTAL',totX+8,y+17);
+  doc.setFontSize(13); doc.text(fc(total),PW-ML,y+18,{align:'right'});
+  y+=36;
+
+  // Note
+  doc.setFillColor(255,251,235); doc.setDrawColor(253,230,138); doc.setLineWidth(.4);
+  doc.rect(ML,y,W,14,'FD');
+  doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(146,64,14);
+  doc.text('Pricing per Operations Agreement. All amounts in USD. Due upon receipt unless otherwise agreed.',ML+6,y+9);
+
+  // Footer
+  const PH=doc.internal.pageSize.getHeight();
+  doc.setFillColor(15,23,42); doc.rect(0,PH-22,PW,22,'F');
+  doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(100,116,139);
+  doc.text('FR-Logistics  |  10893 NW 17th St, Unit 121, Miami, FL 33172  |  (786) 300-1443  |  info@fr-logistics.net  |  www.fr-logistics.net',PW/2,PH-9,{align:'center'});
+
+  const fname = `FR_Billing_${(_client.name||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.pdf`;
+  doc.save(fname);
+}
+
+// ─── QBO CSV EXPORT ───────────────────────────────────────────────────────────
+function genCSV() {
+  if (!_client || !_lines.length) { alert('Load billing data first.'); return; }
+  const invNo  = g('invNum').value || 'INV-001';
+  const invDate= fD(g('dateEnd').value);
+  // Due date = 15 days after end
+  const dueD   = new Date(g('dateEnd').value);
+  dueD.setDate(dueD.getDate()+15);
+  const dueDate= fD(dueD.toISOString().slice(0,10));
+  const period = `${fD(g('dateStart').value)} - ${fD(g('dateEnd').value)}`;
+
+  const rows = [['InvoiceNo','Customer','InvoiceDate','DueDate','Terms',
+                 'ItemName','ItemDescription','Qty','Rate','Amount','Memo']];
+
+  let firstLine = true;
+  _lines.forEach(l => {
+    if (!l.qty || l.qty === 0) return;
+    const tot = l.qty * l.rate;
+    rows.push([
+      firstLine ? invNo : '',
+      firstLine ? _client.qboName : '',
+      firstLine ? invDate : '',
+      firstLine ? dueDate : '',
+      firstLine ? 'Net 15' : '',
+      l.sku,
+      `${l.name} — ${period}`,
+      l.qty,
+      l.rate.toFixed(2),
+      tot.toFixed(2),
+      firstLine ? `FR-Logistics Billing ${period}` : '',
+    ]);
+    firstLine = false;
+  });
+
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `QBO_Import_${(_client.name||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.csv`;
+  a.click();
+}
+
+// ─── GMAIL DRAFT ──────────────────────────────────────────────────────────────
+async function sendDraft() {
+  if (!_client || !_lines.length) { alert('Load billing data first.'); return; }
+  if (!window.jspdf) { alert('PDF library loading, wait a moment.'); return; }
+
+  g('draftSpinWrap').innerHTML = '<span class="spin"></span>';
+  g('draftStatus').textContent = 'Creating draft...';
+
+  try {
+    const {jsPDF} = window.jspdf;
+    genPDF(); // downloads PDF locally
+
+    // Also send via Netlify
+    const period  = `${fD(g('dateStart').value)} – ${fD(g('dateEnd').value)}`;
+    const invNo   = g('invNum').value || 'INV-001';
+    const sub     = _lines.reduce((a,l)=>a+l.qty*l.rate,0);
+    const mmb     = _client.mmb||0;
+    const total   = Math.max(sub,mmb);
+
+    const lineRows = _lines.filter(l=>l.qty>0).map(l=>`
+      <tr style="border-bottom:1px solid #e2e8f0">
+        <td style="padding:6px 10px;font-size:12px">${l.name}</td>
+        <td style="padding:6px 10px;font-size:12px;color:#64748b">${l.qty} ${l.unit}</td>
+        <td style="padding:6px 10px;font-size:12px;color:#065f46;text-align:right;font-weight:700">${fc(l.qty*l.rate)}</td>
+      </tr>`).join('');
+
+    const htmlBody = `<!DOCTYPE html><html><body style="margin:0;padding:28px 12px;font-family:Arial,sans-serif;background:#f1f5f9">
+<table width="600" cellpadding="0" cellspacing="0" style="margin:0 auto;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0">
+<tr><td style="background:linear-gradient(135deg,#065f46,#16a34a);padding:22px 30px">
+  <b style="font-size:17px;color:#fff">FR-Logistics</b>
+  <span style="font-size:10px;color:rgba(209,250,229,.9);margin-left:10px">Billing Summary</span>
+  <div style="font-size:9px;color:rgba(209,250,229,.8);margin-top:3px;text-transform:uppercase">${invNo} &nbsp;&middot;&nbsp; ${period}</div>
+</td></tr>
+<tr><td style="background:#fff;padding:24px 30px">
+  <p style="font-size:14px;color:#0f172a;margin:0 0 6px">Dear ${_client.name},</p>
+  <p style="font-size:12.5px;color:#475569;margin:0 0 18px;line-height:1.5">Please find below your billing summary for the period <b>${period}</b>. The PDF is attached for your records.</p>
+  <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px">
+    <tr style="background:#f8fafc"><th style="padding:8px 10px;font-size:10px;text-align:left;color:#64748b;text-transform:uppercase">Service</th><th style="padding:8px 10px;font-size:10px;text-align:left;color:#64748b;text-transform:uppercase">Qty</th><th style="padding:8px 10px;font-size:10px;text-align:right;color:#64748b;text-transform:uppercase">Amount</th></tr>
+    ${lineRows}
+    <tr style="background:#f0fdf4"><td colspan="2" style="padding:10px;font-size:13px;font-weight:700;color:#065f46">INVOICE TOTAL</td><td style="padding:10px;font-size:15px;font-weight:800;color:#065f46;text-align:right">${fc(total)}</td></tr>
+  </table>
+  ${mmb>0?`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:11.5px;color:#92400e">Min. Monthly Billing (MMB) of ${fc(mmb)} applied. Subtotal: ${fc(sub)}.</div>`:''}
+  <p style="font-size:11.5px;color:#475569;margin:0">Questions? Reply to this email or call (786) 300-1443.</p>
+</td></tr>
+<tr><td style="background:#1e293b;padding:13px 30px">
+  <table width="100%" cellpadding="0" cellspacing="0"><tr>
+    <td style="font-size:11px;font-weight:700;color:#f1f5f9">Jose Fuentes - Operations Manager<br><span style="font-weight:400;color:#94a3b8;font-size:10px">FR-Logistics &middot; Miami, FL 33172</span></td>
+    <td align="right" style="font-size:10px;color:#94a3b8;line-height:1.7">(786) 300-1443<br>info@fr-logistics.net</td>
+  </tr></table>
+</td></tr>
+</table></body></html>`;
+
+    const textBody = `Dear ${_client.name},\n\nPlease find your billing summary for ${period}.\n\nInvoice Total: ${fc(total)}\n\nPDF attached.\n\nBest regards,\nJose Fuentes - Operations Manager\nFR-Logistics | (786) 300-1443`;
+
+    const resp = await fetch(NETLIFY_EMAIL, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        to:      _client.email || 'josefuentes@fr-logistics.net',
+        subject: `Billing Summary ${invNo} — ${_client.name} | ${period}`,
+        htmlBody, textBody,
+        attachments:[]  // PDF already downloaded locally
+      })
+    });
+    const data = await resp.json().catch(()=>({success:true}));
+    g('draftStatus').textContent = data.success ? '✅ Draft created in Gmail' : '⚠️ Check Gmail Drafts';
+  } catch(e) {
+    g('draftStatus').textContent = '⚠️ Check Gmail Drafts';
+  } finally {
+    g('draftSpinWrap').innerHTML = '';
+  }
+}
+
+function resetAll() {
+  g('selClient').value = '';
+  g('invNum').value = '';
+  g('billingCard').style.display = 'none';
+  g('kpiSection').style.display = 'none';
+  g('statusBar').style.display = 'none';
+  _lines = []; _client = null; _ssOrders = 0;
+}
+</script>
+</body>
+</html>
