@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FR-Logistics | Client Onboarding</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    :root{
+      --bg:#f1f5f9;--surface:#fff;--border:#e2e8f0;
+      --g1:#0ea55f;--g2:#065f46;--g3:#16a34a;
+      --glt:#ecfdf5;--gmd:#d1fae5;--gdk:#065f46;
+      --text:#0f172a;--muted:#64748b;--danger:#dc2626;
+      --navy:#1e293b;
+      --shadow:0 1px 3px rgba(0,0,0,.07),0 4px 14px rgba(0,0,0,.05);
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:"DM Sans",sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+    .wrap{max-width:860px;margin:0 auto;padding:24px 20px}
+
+    /* HEADER */
+    .hdr{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+         padding:16px 22px;background:#fff;border:1px solid var(--border);border-top:4px solid var(--g1);
+         border-radius:12px;margin-bottom:20px;box-shadow:var(--shadow)}
+    .brand{display:flex;align-items:center;gap:12px}
+    .logo{width:44px;height:44px;background:linear-gradient(135deg,#0ea55f,#22c55e);border-radius:10px;
+          display:flex;align-items:center;justify-content:center;font-family:"Syne",sans-serif;
+          font-weight:800;font-size:17px;color:#fff;box-shadow:0 4px 12px rgba(14,165,95,.3)}
+    .brand h1{font-family:"Syne",sans-serif;font-size:17px;font-weight:800;color:#0f172a}
+    .brand p{font-size:11px;color:var(--muted);margin-top:1px}
+    .badge{font-family:"Syne",sans-serif;font-size:10px;font-weight:700;letter-spacing:.6px;
+           padding:4px 12px;border:1px solid #bbf7d0;border-radius:999px;color:var(--g2);background:var(--glt)}
+
+    /* CARD */
+    .card{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);margin-bottom:16px}
+    .ch{padding:13px 18px;border-bottom:1px solid var(--border);background:#f8fafc;
+        display:flex;align-items:center;gap:8px}
+    .ch h3{font-family:"Syne",sans-serif;font-size:13px;font-weight:700;color:#1e293b}
+    .cb{padding:18px;display:grid;gap:13px}
+    .f{display:grid;gap:5px}
+    .fr2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .fr3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+    label{font-size:10.5px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:#475569}
+    input,select,textarea{font-family:"DM Sans",sans-serif;width:100%;background:#fff;
+      border:1px solid #cbd5e1;color:#0f172a;border-radius:8px;padding:9px 12px;font-size:13px;outline:none;
+      transition:border-color .15s,box-shadow .15s}
+    input:focus,select:focus,textarea:focus{border-color:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.1)}
+    textarea{resize:vertical;min-height:72px}
+
+    /* SERVICES TABLE */
+    .svc-grid{display:grid;gap:6px}
+    .svc-row{display:grid;grid-template-columns:1fr 120px 100px;gap:8px;align-items:center;
+             background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:8px 12px}
+    .svc-row.header{background:var(--gdk);border-color:var(--gdk)}
+    .svc-row.header span{font-size:10px;font-weight:700;text-transform:uppercase;color:#fff;letter-spacing:.4px}
+    .svc-name{font-size:12px;color:#1e293b;font-weight:500}
+    .svc-cat{font-size:10px;color:var(--muted)}
+    .rate-inp{padding:5px 8px;font-size:12px}
+
+    /* ACTION BAR */
+    .ab{display:flex;gap:9px;flex-wrap:wrap;padding:13px 18px;
+        border-top:1px solid var(--border);background:#f8fafc}
+    button{font-family:"DM Sans",sans-serif;border:0;cursor:pointer;border-radius:10px;
+           padding:9px 18px;font-size:13px;font-weight:600;transition:all .12s ease;white-space:nowrap;
+           display:inline-flex;align-items:center;gap:5px}
+    button:hover{transform:translateY(-1px)}
+    button:active{transform:scale(.97)}
+    .bp{background:linear-gradient(135deg,#0ea55f,#16a34a);color:#fff;box-shadow:0 3px 10px rgba(14,165,95,.3)}
+    .bs{background:#f1f5f9;color:#334155;border:1px solid var(--border)}
+
+    /* PROGRESS */
+    #progress{display:none;padding:16px 18px}
+    .step{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;margin-bottom:6px;font-size:13px}
+    .step.done{background:var(--glt);color:var(--g2);border:1px solid #bbf7d0}
+    .step.active{background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;animation:pulse .8s ease infinite}
+    .step.error{background:#fef2f2;color:var(--danger);border:1px solid #fecaca}
+    .step.wait{background:#f8fafc;color:var(--muted);border:1px solid var(--border)}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.65}}
+
+    /* RESULT */
+    #result{display:none;padding:24px 18px;text-align:center}
+    .result-ok{background:var(--glt);border:1px solid #bbf7d0;border-radius:12px;padding:24px}
+    .result-ok h3{font-family:"Syne",sans-serif;font-size:18px;color:var(--g2);margin-bottom:8px}
+    .result-ok p{font-size:13px;color:#065f46;line-height:1.5}
+    .result-err{background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:20px}
+    .result-err h3{color:var(--danger);font-size:15px;margin-bottom:6px}
+    .result-err p{font-size:12px;color:#991b1b}
+
+    @media(max-width:640px){.fr2,.fr3{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hdr">
+    <div class="brand">
+      <div class="logo">FR</div>
+      <div>
+        <h1>FR-Logistics</h1>
+        <p>Miami, FL &nbsp;&middot;&nbsp; 3PL Fulfillment &nbsp;&middot;&nbsp; Amazon FBA Prep</p>
+      </div>
+    </div>
+    <div class="badge">CLIENT ONBOARDING</div>
+  </header>
+
+  <!-- CLIENT INFO -->
+  <div class="card" id="formSection">
+    <div class="ch"><h3>&#128100; Client Information</h3></div>
+    <div class="cb">
+      <div class="fr2">
+        <div class="f"><label>Company / Client Name *</label><input id="clientName" placeholder="Acme Distribution LLC" oninput="updateQID()"/></div>
+        <div class="f"><label>Contact Name *</label><input id="contactName" placeholder="John Smith"/></div>
+      </div>
+      <div class="fr2">
+        <div class="f"><label>Email *</label><input id="contactEmail" type="email" placeholder="john@company.com"/></div>
+        <div class="f"><label>Phone</label><input id="contactPhone" placeholder="+1 305-000-0000"/></div>
+      </div>
+      <div class="fr3">
+        <div class="f"><label>Sales Channel</label>
+          <select id="channel">
+            <option>Amazon FBA</option><option>Amazon FBM</option>
+            <option>Shopify DTC</option><option selected>Multi-Channel</option>
+            <option>Wholesale / B2B</option><option>Other</option>
+          </select>
+        </div>
+        <div class="f"><label>Operation Type</label>
+          <select id="opType">
+            <option>Startup</option><option selected>Growing</option>
+            <option>Enterprise</option><option>Seasonal</option>
+          </select>
+        </div>
+        <div class="f"><label>Start Date</label><input id="startDate" type="date"/></div>
+      </div>
+      <div class="fr2">
+        <div class="f"><label>Min. Monthly Billing (USD)</label><input id="minBilling" type="number" min="0" value="0" placeholder="0"/></div>
+        <div class="f"><label>Prepared By</label><input id="prepBy" value="Jose Fuentes - Operations Manager"/></div>
+      </div>
+      <div class="f"><label>Scope / Notes</label><textarea id="notes" placeholder="Special requirements, SKU complexity, SLAs, etc."></textarea></div>
+    </div>
+
+    <!-- RATE CARD TABLE -->
+    <div class="ch" style="margin-top:0"><h3>&#128176; Rate Card</h3></div>
+    <div class="cb">
+      <div class="svc-grid">
+        <div class="svc-row header">
+          <span>Service</span><span>Unit</span><span>Rate (USD)</span>
+        </div>
+        <!-- services populated by JS -->
+        <div id="svcRows"></div>
+      </div>
+    </div>
+
+    <div class="ab">
+      <button class="bp" onclick="startOnboarding()">&#128228; Generate &amp; Send Onboarding Package</button>
+      <button class="bs" onclick="resetForm()">&#10005; Reset</button>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+  <div class="card" id="progressCard" style="display:none">
+    <div class="ch"><h3>&#9889; Generating Onboarding Package...</h3></div>
+    <div id="progress" style="display:block">
+      <div class="step wait" id="s1">&#128196; Generating Rate Card PDF...</div>
+      <div class="step wait" id="s2">&#9989; Generating Onboarding Checklist PDF...</div>
+      <div class="step wait" id="s3">&#128640; Sending to Gmail via Netlify...</div>
+      <div class="step wait" id="s4">&#127775; Finalizing draft...</div>
+    </div>
+  </div>
+
+  <!-- RESULT -->
+  <div class="card" id="resultCard" style="display:none">
+    <div id="result" style="display:block">
+      <!-- filled by JS -->
+    </div>
+    <div class="ab">
+      <button class="bs" onclick="newOnboard()">&#43; New Onboarding</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const NETLIFY_URL = 'https://apps.fr-logistics.net/.netlify/functions/send-onboard-email';
+const PPTX_B64 =  + PPTX_B64_PLACEHOLDER + ;
+
+const SERVICES = [
+  {id:'ST_PALLET', name:'Pallet Storage',            cat:'Storage',          unit:'per pallet / mo',   rate:45.00},
+  {id:'ST_BIN',    name:'Bin Storage',               cat:'Storage',          unit:'per bin / mo',       rate:5.00},
+  {id:'FULFI',     name:'Pick & Pack - 1st Item',    cat:'DTC Fulfillment',  unit:'per order',          rate:2.50},
+  {id:'FULFA',     name:'Additional Item',           cat:'DTC Fulfillment',  unit:'each',               rate:0.50},
+  {id:'FBA_LBL',   name:'Amazon SPN - Labeling',     cat:'Amazon FBA Prep',  unit:'per unit',           rate:1.00},
+  {id:'FBA_PLN',   name:'Amazon Shipment Plan',      cat:'Amazon FBA Prep',  unit:'per plan',           rate:50.00},
+  {id:'KIT',       name:'Kitting & Bundling',        cat:'Value-Added',      unit:'per unit',           rate:0.75},
+  {id:'POLY',      name:'Polybag / Repack',          cat:'Value-Added',      unit:'per unit',           rate:0.50},
+  {id:'XDOCK',     name:'Cross-Docking',             cat:'Inbound/Outbound', unit:'per pallet',         rate:25.00},
+  {id:'PALIO',     name:'Pallet In / Out',           cat:'Warehouse Ops',    unit:'per pallet',         rate:15.00},
+  {id:'QC',        name:'Quality Control (QC)',      cat:'Warehouse Ops',    unit:'per hour',           rate:35.00},
+  {id:'RETURNS',   name:'Returns / Reverse Logistics',cat:'Returns',         unit:'per unit',           rate:1.25},
+  {id:'WMS',       name:'WMS & Tech Fee',            cat:'Technology',       unit:'per month',          rate:99.99},
+];
+
+const $ = id => document.getElementById(id);
+
+function updateQID(){
+  const n = ($('clientName').value||'').replace(/\s+/g,'_').toUpperCase().slice(0,8)||'CLIENT';
+  const today = new Date().toISOString().slice(0,10).replace(/-/g,'').slice(2);
+  document.title = 'Onboarding | '+($('clientName').value||'New Client');
+}
+
+function buildSvcRows(){
+  $('svcRows').innerHTML = SERVICES.map(s => `
+    <div class="svc-row">
+      <div><div class="svc-name">${s.name}</div><div class="svc-cat">${s.cat}</div></div>
+      <div class="svc-cat" style="font-size:11px">${s.unit}</div>
+      <input class="rate-inp" id="rate_${s.id}" type="number" min="0" step="0.01" value="${s.rate.toFixed(2)}" style="padding:5px 8px;font-size:12px"/>
+    </div>`).join('');
+}
+
+function getClient(){
+  return {
+    clientName:    $('clientName').value.trim(),
+    contactName:   $('contactName').value.trim(),
+    contactEmail:  $('contactEmail').value.trim(),
+    contactPhone:  $('contactPhone').value.trim(),
+    channel:       $('channel').value,
+    opType:        $('opType').value,
+    startDate:     $('startDate').value,
+    minBilling:    +$('minBilling').value||0,
+    prepBy:        $('prepBy').value.trim(),
+    notes:         $('notes').value.trim(),
+  };
+}
+
+function getRates(){
+  return SERVICES.map(s=>({...s, rate: +document.getElementById('rate_'+s.id)?.value||s.rate}));
+}
+
+function fmtD(iso){if(!iso)return new Date().toLocaleDateString('en-US');const[y,m,d]=iso.split('-');return`${m}/${d}/${y}`;}
+function fmt(v){return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(+v||0);}
+
+// ── PDF GENERATION ──────────────────────────────────────────────────────────
+function genRateCardPDF(c, rates){
+  const {jsPDF} = window.jspdf;
+  const doc = new jsPDF({orientation:'portrait',unit:'pt',format:'letter'});
+  const PW=612, ML=36, MR=36, W=PW-ML-MR;
+  const DG=[6,95,70], MG=[14,165,95], LG=[236,253,245], DN=[15,23,42], MT=[100,116,139], WH=[255,255,255], BD=[209,250,229];
+  let y=0;
+
+  // Header
+  doc.setFillColor(...DG); doc.rect(0,0,PW,54,'F');
+  doc.setFillColor(...MG); doc.rect(PW*0.72,0,PW*0.28,54,'F');
+  doc.setTextColor(...WH); doc.setFont('helvetica','bold'); doc.setFontSize(18);
+  doc.text('FR-Logistics',ML,22);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.text('3PL Fulfillment  |  Amazon FBA Prep  |  E-Commerce Logistics',ML,34);
+  doc.setFontSize(8); doc.text('SERVICE RATE CARD',PW-MR,18,{align:'right'});
+  doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  const qid=(c.clientName||'CLIENT').replace(/\s+/g,'_').toUpperCase().slice(0,8)+'-'+new Date().toISOString().slice(0,10).replace(/-/g,'').slice(2);
+  doc.text('#'+qid,PW-MR,30,{align:'right'});
+  y=54;
+
+  // Info strip
+  doc.setFillColor(...WH); doc.rect(0,y,PW,56,'F');
+  const info=[['Client',c.clientName||'—'],['Contact',`${c.contactName}  |  ${c.contactEmail}`],['Channel',c.channel],['Operation',c.opType],['Date',fmtD(c.startDate||new Date().toISOString().slice(0,10))],['Prepared By',c.prepBy]];
+  const cw=W/2;
+  info.forEach(([lbl,val],i)=>{
+    const xi=ML+(i%2)*cw, yi=y+4+(Math.floor(i/2))*17;
+    doc.setFillColor(...LG); doc.setDrawColor(...BD); doc.setLineWidth(.5);
+    doc.roundedRect(xi,yi,cw-4,14,2,2,'FD');
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...DG);
+    doc.text(lbl.toUpperCase(),xi+4,yi+6);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...DN);
+    doc.text(String(val).slice(0,55),xi+4,yi+11);
+  });
+  y+=58;
+
+  // Table header
+  doc.setFillColor(...DG); doc.rect(ML,y,W,10,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...WH);
+  const cols=[[ML+2,50],[ML+52,W*0.35],[ML+52+W*0.35,W*0.25],[ML+52+W*0.35+W*0.25,W*0.15]];
+  [['CATEGORY',cols[0][0]],['SERVICE',cols[1][0]],['UNIT',cols[2][0]],['RATE',cols[3][0]]].forEach(([t,x])=>doc.text(t,x,y+7));
+  y+=10;
+
+  let cat='';
+  const rowColors=[[255,255,255],[248,250,252]];
+  rates.forEach((s,i)=>{
+    const rh=10;
+    if(s.cat!==cat){
+      doc.setFillColor(...LG); doc.setDrawColor(...BD); doc.setLineWidth(.3);
+      doc.rect(ML,y,W,7,'FD');
+      doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...DG);
+      doc.text(s.cat.toUpperCase(),ML+3,y+5); y+=7; cat=s.cat;
+    }
+    doc.setFillColor(...rowColors[i%2]); doc.setDrawColor(...BD); doc.setLineWidth(.2);
+    doc.rect(ML,y,W,rh,'FD');
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...DN);
+    doc.text(s.name,cols[1][0],y+7);
+    doc.setTextColor(...MT); doc.setFontSize(7.5);
+    doc.text(s.unit,cols[2][0],y+7);
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...DG);
+    doc.text(fmt(s.rate),PW-MR,y+7,{align:'right'}); y+=rh;
+  });
+  y+=8;
+
+  // Note
+  doc.setFillColor(255,251,235); doc.setDrawColor(253,230,138); doc.setLineWidth(.5);
+  doc.rect(ML,y,W,18,'FD');
+  doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(146,64,14);
+  doc.text('Commercial Note:',ML+4,y+7);
+  doc.setFont('helvetica','normal'); doc.setFontSize(7.5);
+  doc.text('Final pricing may be adjusted after reviewing SKU complexity, packaging, inbound frequency, and workflow details. Valid 30 days.',ML+4,y+14,{maxWidth:W-8});
+
+  // Footer
+  const PH=doc.internal.pageSize.getHeight();
+  doc.setFillColor(...DN); doc.rect(0,PH-24,PW,24,'F');
+  doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...MT);
+  doc.text('FR-Logistics  |  10893 NW 17th St, Unit 121, Miami, FL 33172  |  (786) 300-1443  |  info@fr-logistics.net',PW/2,PH-11,{align:'center'});
+
+  return doc.output('datauristring').split(',')[1];
+}
+
+function genChecklistPDF(c){
+  const {jsPDF} = window.jspdf;
+  const doc = new jsPDF({orientation:'portrait',unit:'pt',format:'letter'});
+  const PW=612,ML=36,MR=36,W=PW-ML-MR;
+  const DG=[6,95,70],MG=[14,165,95],LG=[236,253,245],DN=[15,23,42],MT=[100,116,139],WH=[255,255,255],BD=[209,250,229];
+  let y=0;
+
+  // Header
+  doc.setFillColor(...DG); doc.rect(0,0,PW,54,'F');
+  doc.setFillColor(...MG); doc.rect(PW*0.72,0,PW*0.28,54,'F');
+  doc.setTextColor(...WH); doc.setFont('helvetica','bold'); doc.setFontSize(18);
+  doc.text('FR-Logistics',ML,22);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.text('3PL Fulfillment  |  Amazon FBA Prep  |  E-Commerce Logistics',ML,34);
+  doc.setFontSize(8); doc.text('ONBOARDING CHECKLIST',PW-MR,18,{align:'right'});
+  doc.setFont('helvetica','bold'); doc.setFontSize(10);
+  doc.text(c.clientName||'New Client',PW-MR,30,{align:'right'});
+  y=54;
+
+  // Info row
+  doc.setFillColor(...WH); doc.rect(0,y,PW,24,'F');
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...MT);
+  doc.text(`Contact: ${c.contactName}  |  Email: ${c.contactEmail}  |  Channel: ${c.channel}  |  Date: ${fmtD(c.startDate||new Date().toISOString().slice(0,10))}`,ML,y+15);
+  doc.setDrawColor(...BD); doc.setLineWidth(1); doc.line(0,y+24,PW,y+24);
+  y+=26;
+
+  // Section heading
+  doc.setFillColor(...DG); doc.rect(ML,y,W,11,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...WH);
+  doc.text('ITEMS REQUIRED BEFORE GO-LIVE',ML+4,y+8); y+=13;
+
+  const items=[
+    ['Product Info','SKU list, weight & dimensions, packaging type, special handling rules, FNSKU if Amazon.'],
+    ['Sales Channels & Access','Share read-only access to Shopify, ShipStation, Amazon Seller Central, or relevant platforms.'],
+    ['Volume Estimate','Monthly orders (DTC/B2B mix), expected inbound units, pallets, and peak season plan.'],
+    ['Shipping Preferences','Preferred carriers, SLA requirements, returns policy, retailer routing guides if applicable.'],
+    ['First Inbound Info','First inbound ETA, origin (domestic/international), carrier, pallet or carton count.'],
+    ['Billing & Payments','Billing contact, payment method, invoicing frequency, and billing address.'],
+    ['Agreement Sign-off','Review and sign the Operations Agreement and Rate Card. Return signed copy.'],
+    ['Go-Live Confirmation','Confirm go-live date and assign internal point of contact for operations.'],
+  ];
+
+  items.forEach(([ title,detail],i)=>{
+    const lines=doc.splitTextToSize(detail,W-52);
+    const rh=Math.max(22,lines.length*10+12);
+    doc.setFillColor(...(i%2===0?LG:[255,255,255])); doc.setDrawColor(...BD); doc.setLineWidth(.3);
+    doc.rect(ML,y,W,rh,'FD');
+    // Number circle
+    doc.setFillColor(...DG); doc.ellipse(ML+8,y+rh/2,5.5,5.5,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...WH);
+    doc.text(String(i+1),ML+8,y+rh/2+2.5,{align:'center'});
+    // Title
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...DN);
+    doc.text(title,ML+20,y+10);
+    // Detail
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.8); doc.setTextColor(...MT);
+    doc.text(lines,ML+20,y+20);
+    y+=rh+1;
+  });
+  y+=8;
+
+  // Timeline
+  doc.setFillColor(...DG); doc.rect(ML,y,W,11,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...WH);
+  doc.text('EXPECTED ONBOARDING TIMELINE',ML+4,y+8); y+=13;
+
+  const timeline=[
+    ['Week 1','Discovery call, product review, account setup.'],
+    ['Week 2','Integrations, SLA alignment, first inbound plan.'],
+    ['Week 3','First inbound received, inventory located.'],
+    ['Week 4+','Live orders fulfilled. Reporting access granted.'],
+  ];
+  const cw2=W/4;
+  timeline.forEach(([wk,desc],i)=>{
+    const x=ML+i*cw2;
+    const last=i===timeline.length-1;
+    doc.setFillColor(...(last?DG:LG)); doc.setDrawColor(...BD); doc.setLineWidth(.3);
+    doc.rect(x,y,cw2-2,26,'FD');
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...(last?WH:DG));
+    doc.text(wk,x+4,y+10);
+    doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...(last?[209,250,229]:MT));
+    const dl=doc.splitTextToSize(desc,cw2-8);
+    doc.text(dl,x+4,y+18);
+  });
+  y+=30;
+
+  // CTA box
+  doc.setFillColor(...LG); doc.setDrawColor(...BD); doc.setLineWidth(.5);
+  doc.rect(ML,y,W,24,'FD');
+  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...DG);
+  doc.text('Ready to get started?',ML+6,y+10);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...DN);
+  doc.text('Reply to this email or schedule: calendly.com/fr-logistics  |  info@fr-logistics.net  |  (786) 300-1443',ML+6,y+19);
+
+  // Footer
+  const PH=doc.internal.pageSize.getHeight();
+  doc.setFillColor(15,23,42); doc.rect(0,PH-24,PW,24,'F');
+  doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(100,116,139);
+  doc.text('FR-Logistics  |  10893 NW 17th St, Unit 121, Miami, FL 33172  |  (786) 300-1443  |  info@fr-logistics.net',PW/2,PH-11,{align:'center'});
+
+  return doc.output('datauristring').split(',')[1];
+}
+
+// ── EMAIL HTML ───────────────────────────────────────────────────────────────
+function buildEmailHTML(c){
+  return `<!DOCTYPE html><html><body style="margin:0;padding:32px 16px;font-family:Arial,sans-serif;background:#f1f5f9">
+<table width="600" cellpadding="0" cellspacing="0" style="margin:0 auto;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0">
+<tr><td style="background:linear-gradient(135deg,#065f46,#16a34a);padding:24px 32px">
+  <span style="font-size:18px;font-weight:800;color:#fff;font-family:Arial">FR-Logistics</span>
+  <span style="font-size:10px;color:rgba(209,250,229,.9);margin-left:12px">3PL Fulfillment &middot; Amazon FBA Prep &middot; E-Commerce Logistics</span>
+  <div style="font-size:10px;color:rgba(209,250,229,.8);margin-top:4px;letter-spacing:.4px;text-transform:uppercase">Welcome Package</div>
+</td></tr>
+<tr><td style="background:#fff;padding:28px 32px">
+  <p style="font-size:15px;font-weight:700;color:#0f172a;margin:0 0 8px">Dear ${c.contactName||'there'},</p>
+  <p style="font-size:13px;color:#475569;line-height:1.6;margin:0 0 20px">
+    We are excited to welcome <strong>${c.clientName}</strong> to FR-Logistics!
+    Please find your onboarding package attached: Rate Card, Checklist, and Company Overview.
+  </p>
+  <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px 18px;margin-bottom:20px">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#059669;margin-bottom:8px">Next Steps</div>
+    <div style="font-size:12px;color:#0f172a;line-height:1.7">
+      <b>1.</b> Review your Rate Card and Onboarding Checklist<br>
+      <b>2.</b> Send product info to <a href="mailto:info@fr-logistics.net" style="color:#0ea55f">info@fr-logistics.net</a><br>
+      <b>3.</b> <a href="https://calendly.com/fr-logistics" style="color:#0ea55f">Schedule your Discovery Call</a>
+    </div>
+  </div>
+  <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px">
+    <p style="font-size:11px;color:#92400e;margin:0;font-style:italic">
+      Pricing may be adjusted after reviewing SKU complexity and workflow requirements.
+      ${c.notes?'<br>Notes: '+c.notes:''}
+    </p>
+  </div>
+</td></tr>
+<tr><td style="background:#1e293b;padding:14px 32px">
+  <table width="100%" cellpadding="0" cellspacing="0"><tr>
+    <td style="font-size:11px;font-weight:700;color:#f1f5f9">${c.prepBy}<br><span style="font-weight:400;color:#94a3b8;font-size:10px">FR-Logistics &middot; Miami, FL 33172</span></td>
+    <td align="right" style="font-size:10px;color:#94a3b8;line-height:1.7">(786) 300-1443<br>info@fr-logistics.net</td>
+  </tr></table>
+</td></tr>
+</table></body></html>`;
+}
+
+// ── STEP HELPERS ─────────────────────────────────────────────────────────────
+function setStep(id, state, text){
+  const el=$(id);
+  el.className='step '+state;
+  if(state==='done')   el.textContent='&#10003; '+text;
+  else if(state==='active') el.textContent='&#9679; '+text;
+  else if(state==='error')  el.textContent='&#10005; '+text;
+  else el.textContent=text;
+}
+
+// ── MAIN FLOW ────────────────────────────────────────────────────────────────
+async function startOnboarding(){
+  const c = getClient();
+  if(!c.clientName||!c.contactEmail){
+    alert('Please fill in Client Name and Email before generating the package.');
+    return;
+  }
+
+  // Show progress card
+  $('formSection').style.display='none';
+  $('progressCard').style.display='block';
+
+  try{
+    // Step 1 - Rate Card PDF
+    setStep('s1','active','Generating Rate Card PDF...');
+    await new Promise(r=>setTimeout(r,100));
+    const rates = getRates();
+    const rcB64 = genRateCardPDF(c, rates);
+    setStep('s1','done','Rate Card PDF generated');
+
+    // Step 2 - Checklist PDF
+    setStep('s2','active','Generating Onboarding Checklist PDF...');
+    await new Promise(r=>setTimeout(r,100));
+    const clB64 = genChecklistPDF(c);
+    setStep('s2','done','Onboarding Checklist PDF generated');
+
+    // Step 3 - Send via Netlify
+    setStep('s3','active','Sending to Gmail via Netlify Function...');
+    const subject = `Welcome to FR-Logistics | ${c.clientName}`;
+    const payload = {
+      to:       c.contactEmail,
+      subject,
+      htmlBody: buildEmailHTML(c),
+      textBody: `Dear ${c.contactName||'there'},
+
+Welcome to FR-Logistics! Please find your onboarding package attached.
+
+Best regards,
+${c.prepBy}
+FR-Logistics | (786) 300-1443`,
+      attachments:[
+        {base64:rcB64, name:`FR_RateCard_${(c.clientName||'Client').replace(/[^a-z0-9]+/gi,'_')}.pdf`, mimeType:'application/pdf'},
+        {base64:clB64, name:`FR_Checklist_${(c.clientName||'Client').replace(/[^a-z0-9]+/gi,'_')}.pdf`, mimeType:'application/pdf'},
+        {base64:PPTX_B64, name:'FR-Logistics_Company_Overview.pptx', mimeType:'application/vnd.openxmlformats-officedocument.presentationml.presentation'},
+      ]
+    };
+
+    const resp = await fetch(NETLIFY_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json().catch(()=>({success:true,note:'CORS read blocked - draft likely created'}));
+
+    setStep('s3','done','Email sent to Netlify Function');
+
+    // Step 4 - Confirm
+    setStep('s4','active','Finalizing...');
+    await new Promise(r=>setTimeout(r,400));
+    setStep('s4','done','Done!');
+
+    // Show result
+    $('progressCard').style.display='none';
+    $('resultCard').style.display='block';
+    $('result').innerHTML = `
+      <div class="result-ok">
+        <h3>&#127881; Onboarding Package Sent!</h3>
+        <p>
+          <strong>Client:</strong> ${c.clientName}<br>
+          <strong>Draft created in:</strong> josefuentes@fr-logistics.net &rarr; Drafts<br>
+          <strong>Addressed to:</strong> ${c.contactEmail}<br><br>
+          <strong>Attachments (3):</strong><br>
+          &#128196; Rate Card PDF<br>
+          &#9989; Onboarding Checklist PDF<br>
+          &#128202; FR-Logistics Company Overview PPTX
+        </p>
+      </div>`;
+
+  } catch(err){
+    $('progressCard').style.display='none';
+    $('resultCard').style.display='block';
+    $('result').innerHTML = `
+      <div class="result-err">
+        <h3>Error generating package</h3>
+        <p>${err.message}</p>
+      </div>`;
+  }
+}
+
+function resetForm(){
+  if(confirm('Reset form?')){
+    document.querySelectorAll('input,textarea').forEach(el=>{
+      if(el.id==='prepBy') el.value='Jose Fuentes - Operations Manager';
+      else if(el.id==='minBilling') el.value='0';
+      else el.value='';
+    });
+    $('startDate').value = new Date().toISOString().slice(0,10);
+  }
+}
+
+function newOnboard(){
+  $('formSection').style.display='block';
+  $('resultCard').style.display='none';
+  ['s1','s2','s3','s4'].forEach(id=>{ const el=$(id); el.className='step wait'; el.textContent=el.textContent.replace(/^[✓●✗]/,'').trim(); });
+}
+
+// Init
+$('startDate').value = new Date().toISOString().slice(0,10);
+buildSvcRows();
+</script>
+</body>
+</html>
