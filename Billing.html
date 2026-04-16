@@ -269,7 +269,7 @@ button:active{transform:scale(.97)}
 
 <script>
 // ─── CONFIG ─────────────────────────────────────────────────────────────────
-const SS_PROXY      = '/.netlify/functions/shipstation';
+const SS_PROXY      = '/.netlify/functions/billing-shipstation';
 const NETLIFY_EMAIL = 'https://apps.fr-logistics.net/.netlify/functions/send-onboard-email';
 const CLIENTS_API   = '/.netlify/functions/clients-list';
 
@@ -328,9 +328,9 @@ const CUSTOM_RATES = {
 
 // ─── STATE ───────────────────────────────────────────────────────────────
 let _clients = []; // loaded from API
-let _lines   = [];
-let _client  = null;
-let _ssOrders = 0;
+let _lines        = [];
+let _client       = null;
+let _ssOrders     = 0;
 let _ssCarrierCost = 0;
 
 function getClientRates(clientName) {
@@ -339,28 +339,57 @@ function getClientRates(clientName) {
 }
 
 // ─── LOAD CLIENTS FROM API ──────────────────────────────────────────────
+// Normalize a client record regardless of source (Supabase or seed)
+function normalizeClient(c) {
+  return {
+    ...c,
+    // Map Supabase snake_case → camelCase
+    ssStore:        c.ssStore        || c.store_name   || '',
+    shippingMarkup: c.shippingMarkup ?? c.shipping_markup ?? 10,
+    mmb:            c.mmb            ?? 0,
+    // Determine group: use explicit field or infer from name/status
+    group: c.group || (
+      ['Milano Brands LLC','MXS Overseas Ltd','LN Store, LLC',
+       'LRE Holding (Route of Heroes)','UNOde50','KMAT Supply LLC',
+       'Soluciones Mas X Menos','The Product Bar LLC'].includes(c.name)
+        ? 'active'
+        : (c.name||'').toLowerCase().includes('jdk') ? 'internal' : 'other'
+    ),
+    inboundClient: c.inboundClient || c.store_name || '',
+  };
+}
+
 async function loadClients() {
   const sel = g('selClient');
+  sel.innerHTML = '<option value="">⏳ Loading clients...</option>';
+
   try {
     const resp = await fetch(CLIENTS_API);
     if (resp.ok) {
-      _clients = await resp.json();
+      const raw = await resp.json();
+      // Merge API data with seed: API is source of truth, seed fills gaps
+      const apiNames = new Set(raw.map(c => c.name));
+      const seedOnly = CLIENT_SEED.filter(c => !apiNames.has(c.name));
+      _clients = [...raw, ...seedOnly].map(normalizeClient);
+    } else {
+      throw new Error('API ' + resp.status);
     }
   } catch(e) {
-    // Fallback to seed data
-    _clients = CLIENT_SEED;
+    _clients = CLIENT_SEED.map(normalizeClient);
   }
-  if (!_clients || !_clients.length) _clients = CLIENT_SEED;
 
-  // Sort alphabetically
+  if (!_clients.length) _clients = CLIENT_SEED.map(normalizeClient);
+
+  // Sort alphabetically, case-insensitive
   _clients.sort((a,b) => (a.name||'').localeCompare(b.name||''));
 
-  // Build grouped select
-  const active   = _clients.filter(c => (c.group||c.type||'') === 'active'   || ['Milano Brands LLC','MXS Overseas Ltd','LN Store, LLC','LRE Holding (Route of Heroes)','UNOde50','KMAT Supply LLC','Soluciones Mas X Menos','The Product Bar LLC'].includes(c.name));
-  const internal = _clients.filter(c => (c.group||'') === 'internal' || (c.name||'').toLowerCase().includes('jdk'));
-  const others   = _clients.filter(c => !active.includes(c) && !internal.includes(c));
+  // Group
+  const active   = _clients.filter(c => c.group === 'active');
+  const internal = _clients.filter(c => c.group === 'internal');
+  const others   = _clients.filter(c => c.group === 'other' || (!['active','internal'].includes(c.group)));
 
   let html = '<option value="">— Select client —</option>';
+
   if (active.length) {
     html += '<optgroup label="── Active 3PL Clients ──">';
     active.forEach(c => { html += `<option value="${c.name}">${c.name}</option>`; });
@@ -376,7 +405,9 @@ async function loadClients() {
     others.forEach(c => { html += `<option value="${c.name}">${c.name}</option>`; });
     html += '</optgroup>';
   }
+
   sel.innerHTML = html;
+  sel.disabled = false;
 }
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
@@ -400,7 +431,11 @@ function onClientChange() {
   const k = g('selClient').value;
   if (!k) return;
   // Find client in loaded list
-  _client = _clients.find(c => c.name === k) || CLIENT_SEED.find(c => c.name === k) || {name:k,mmb:0,shippingMarkup:10,email:'',ssStore:'',inboundClient:''};
+  _client = normalizeClient(
+    _clients.find(c => c.name === k) ||
+    CLIENT_SEED.find(c => c.name === k) ||
+    {name:k, mmb:0, shippingMarkup:10, email:'', ssStore:'', inboundClient:'', group:'other'}
+  );
 
   // Auto invoice number
   const now = new Date();
@@ -442,26 +477,23 @@ async function loadBilling() {
   let inboundCount = 0;
 
   try {
-    // ── 1. ShipStation: use /shipments endpoint with shipDate range ──────
+    // ── 1. ShipStation: use billing-shipstation function ─────────────────
     try {
-      // Use /shipments endpoint — correct for billing (shipped in period)
-      const url = `${SS_PROXY}?path=/shipments&shipDateStart=${start}&shipDateEnd=${end}&pageSize=500`;
+      const ssStore = encodeURIComponent(_client.ssStore || '');
+      const url = `${SS_PROXY}?start=${start}&end=${end}&store=${ssStore}`;
       const resp = await fetch(url);
       if (resp.ok) {
         const data = await resp.json();
-        const shipments = data.shipments || [];
-        // Filter by store name
-        const pat = (_client.ssStore||'').toLowerCase();
-        const filtered = pat
-          ? shipments.filter(s =>
-              (s.storeName||'').toLowerCase().includes(pat) ||
-              (s.serviceCode||'').toLowerCase().includes(pat))
-          : shipments;
-        ordersCount = filtered.length > 0 ? filtered.length : shipments.length;
-        setStatus(`&#9989; ShipStation: <b>${shipments.length} shipments</b> in period · Filtered "${_client.ssStore}": <b>${ordersCount}</b>`, 'ok');
+        ordersCount     = data.count         || 0;
+        _ssCarrierCost  = data.carrierCost   || 0;
+        const totalAll  = data.totalCount    || 0;
+        setStatus(
+          `&#9989; ShipStation: <b>${ordersCount} shipments</b> for "${_client.ssStore || 'all stores'}" · Total period: ${totalAll} · Carrier cost: <b>$${_ssCarrierCost.toFixed(2)}</b>`,
+          ordersCount > 0 ? 'ok' : 'warn'
+        );
       } else {
         const errText = await resp.text();
-        throw new Error(`HTTP ${resp.status}: ${errText.slice(0,100)}`);
+        throw new Error(`HTTP ${resp.status}: ${errText.slice(0,120)}`);
       }
     } catch(ssErr) {
       setStatus(`&#9888;&#65039; ShipStation: ${ssErr.message} — enter orders manually`, 'warn');
