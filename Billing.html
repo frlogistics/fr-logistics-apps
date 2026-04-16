@@ -272,6 +272,7 @@ button:active{transform:scale(.97)}
 const SS_PROXY      = '/.netlify/functions/billing-shipstation';
 const NETLIFY_EMAIL = 'https://apps.fr-logistics.net/.netlify/functions/send-onboard-email';
 const CLIENTS_API   = '/.netlify/functions/clients-list';
+const RATES_API     = '/.netlify/functions/billing-rates';
 
 // ─── CLIENT SEED (fallback if API unavailable) ───────────────────────────
 const CLIENT_SEED = [
@@ -328,12 +329,18 @@ const CUSTOM_RATES = {
 
 // ─── STATE ───────────────────────────────────────────────────────────────
 let _clients = []; // loaded from API
+let _rates   = {}; // loaded from billing-rates per client
 let _lines        = [];
 let _client       = null;
 let _ssOrders     = 0;
 let _ssCarrierCost = 0;
 
 function getClientRates(clientName) {
+  // If Supabase rates are loaded (_rates), use them
+  // Otherwise fall back to hardcoded STD_RATES + CUSTOM_RATES
+  if (_rates && Object.keys(_rates).length > 0) {
+    return {...STD_RATES, ..._rates};
+  }
   const custom = CUSTOM_RATES[clientName] || {};
   return Object.assign({...STD_RATES}, custom);
 }
@@ -366,7 +373,7 @@ function getBillingLines(clientName, clientObj) {
     {cat:'Shipping', id:'shipping_label_fee', name:'Shipping Label Fee', sku:'SLF', unit:'period total', rate:0, qty:1, auto:true, tip:'Carrier cost from ShipStation + markup %. Edit markup % above.'},
     {cat:'Shipping', id:'shipping_label_app', name:'Shipping Label Application', sku:'SLA', unit:'labels', rate:r.shipping_label_app, qty:0, auto:false, tip:'Enter labels applied (not via ShipStation)'},
     // RETURNS
-    {cat:'Returns', id:'return_proc', name:'Return Processing', sku:'RPF', unit:'units', rate:r.return_proc, qty:0, auto:false, tip:'Enter return units received and processed'},
+    {cat:'Returns', id:'return_proc', name:'Return Processing', sku:'RPF', unit:'units', rate:r.return_proc, qty:0, auto:true, tip:'Auto from Inbound/Outbound portal (RMA records only)'},
     {cat:'Returns', id:'refurb', name:'Refurbishing & Repackaging', sku:'R&R', unit:'units', rate:r.refurb, qty:0, auto:false, tip:'Enter units refurbished/repackaged'},
     {cat:'Returns', id:'disposal', name:'Disposal & Recycling', sku:'D&R', unit:'units', rate:r.disposal, qty:0, auto:false, tip:'Enter units disposed/recycled'},
     // OUTBOUND
@@ -500,7 +507,23 @@ function onClientChange() {
   const markup = _client.shippingMarkup ?? _client.shipping_markup ?? 10;
   g('shippingMarkupPct').value = markup;
 
-  setStatus(`&#128100; <b>${_client.name}</b> loaded — ${_client.group==='active'||_client.status==='Onboarding'?'<span style="color:var(--g2);font-weight:700">Active 3PL client</span>':'Other QBO client'} · MMB: ${_client.mmb>0?'$'+_client.mmb:'None'} · Shipping markup: ${markup}%`, 'info');
+  setStatus(`&#128100; <b>${_client.name}</b> — loading rates...`, 'info');
+
+  // Load rate card from Supabase
+  fetch(`${RATES_API}?client=${encodeURIComponent(k)}`)
+    .then(r => r.json())
+    .then(data => {
+      _rates = data.rates || {};
+      const src = data.hasCustomRates ? 'Custom rate card' : 'Default rates';
+      setStatus(
+        `&#128100; <b>${_client.name}</b> · ${src} · MMB: ${_client.mmb>0?'$'+_client.mmb:'None'} · Markup: ${markup}%`,
+        'info'
+      );
+    })
+    .catch(() => {
+      _rates = {}; // fallback to hardcoded STD_RATES
+      setStatus(`&#128100; <b>${_client.name}</b> · Using default rates (Supabase unavailable)`, 'warn');
+    });
 }
 
 // ─── INIT DATES ───────────────────────────────────────────────────────────────
@@ -589,6 +612,7 @@ async function loadBilling() {
     }
 
     // ── 2. Inbound/Outbound: from Supabase (ilike partial match) ─────────────
+    let rmaCount = 0;
     try {
       // Use ssStore first (most specific), then ssCustomField1, then name
       const searchTerm = _client.ssStore || _client.ssCustomField1 || _client.name;
@@ -597,19 +621,20 @@ async function loadBilling() {
       );
       if (iResp.ok) {
         const iData = await iResp.json();
-        inboundCount = iData.count || 0;
+        inboundCount = iData.count    || 0;  // Inbound (General) only
+        rmaCount     = iData.rmaCount || 0;  // RMA / Returns — separate billing line
       }
     } catch(ibErr) {
       // Inbound not critical — user can fill manually
     }
 
     // Update combined status (only override if SS call didn't already set a message)
-    if (ordersCount > 0) {
+    if (ordersCount > 0 || inboundCount > 0 || rmaCount > 0) {
       const wmsStatus = (_client.wmsIntegration || _client.wms_integration)
         ? ' · WMS: <b>$99.99</b>'
         : ' · WMS: <i>N/A</i>';
       setStatus(
-        `&#9989; ShipStation: <b>${ordersCount} orders</b> · Inbound: <b>${inboundCount} cartons</b>${wmsStatus}`,
+        `&#9989; Orders: <b>${ordersCount}</b> · Inbound: <b>${inboundCount}</b> · RMA: <b>${rmaCount}</b>${wmsStatus}`,
         'ok'
       );
     }
@@ -625,7 +650,8 @@ async function loadBilling() {
 
     _lines.forEach(l => {
       if (l.id === 'pick_pack')          l.qty  = ordersCount;
-      if (l.id === 'inbound_carton')     l.qty  = inboundCount;
+      if (l.id === 'inbound_carton')     l.qty  = inboundCount;  // Inbound (General) only
+      if (l.id === 'return_proc')        l.qty  = rmaCount;      // RMA auto from portal
       if (l.id === 'wms') l.qty = (_client.wmsIntegration || _client.wms_integration) && l.rate > 0 ? 1 : 0;
       // Shipping Label Fee: total charge = carrier cost × (1 + markup%)
       // rate = total charge (not per-unit), qty = 1
