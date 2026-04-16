@@ -1,136 +1,109 @@
-// wa-clients.js — FR-Logistics WhatsApp Client Manager
-// CRUD for fr_clients table in Supabase
+// netlify/functions/wa-clients.js
+// FR-Logistics — Client CRUD (GET / POST / PATCH / DELETE)
+// select=* returns ALL fr_clients columns including billing config fields:
+//   billing_source, shipping_markup, mmb, wms_integration, ss_custom_field_1
+
+import Netlify from "@netlify/functions";
 
 const SUPABASE_URL = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY = Netlify.env.get("SUPABASE_SERVICE_KEY");
-const PHONE_ID     = Netlify.env.get("WHATSAPP_PHONE_ID");
-const TOKEN        = Netlify.env.get("WHATSAPP_TOKEN");
 
-const headers = {
+const sbHeaders = {
   "apikey":        SUPABASE_KEY,
   "Authorization": `Bearer ${SUPABASE_KEY}`,
   "Content-Type":  "application/json",
-  "Prefer":        "return=representation"
+  "Prefer":        "return=representation",
 };
 
-const SELECT_COLS = [
-  "id","name","company","store_id","store_name",
-  "wa_number","wa_notifications","daily_inbound","daily_outbound",
-  "email","phone","country","lang","type",
-  "status","active","wa_consent","services","notes","created_at"
-].join(",");
+const cors = {
+  "Access-Control-Allow-Origin":  "*",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Content-Type":                 "application/json",
+};
 
-async function sendTemplate(to, templateName, params) {
-  const res = await fetch(`https://graph.facebook.com/v20.0/${PHONE_ID}/messages`, {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to,
-      type: "template",
-      template: {
-        name: templateName,
-        language: { code: "en_US" },
-        components: params.length > 0 ? [{
-          type: "body",
-          parameters: params.map(text => ({ type: "text", text: String(text) }))
-        }] : []
-      }
-    })
-  });
-  return res.json();
-}
+// select=* returns all columns — no need to update this file when new columns are added
+const SELECT_COLS = "*";
 
 export default async (req) => {
+  if (req.method === "OPTIONS")
+    return new Response("", { status: 200, headers: cors });
+
   const method = req.method;
   const url    = new URL(req.url);
   const action = url.searchParams.get("action");
 
+  // ── GET — fetch all active clients ────────────────────────────────────────
   if (method === "GET" && !action) {
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/fr_clients?select=${SELECT_COLS}&order=name.asc`,
-      { headers }
+      { headers: sbHeaders }
     );
     const data = await res.json();
-    // Clean services array — remove extra quotes stored in Supabase
-    const clean = Array.isArray(data) ? data.map(c => ({
-      ...c,
-      services: Array.isArray(c.services)
-        ? c.services.map(s => String(s).replace(/"/g, '').trim())
-        : []
-    })) : data;
-    return new Response(JSON.stringify(clean), {
-      status: 200, headers: { "Content-Type": "application/json" }
-    });
+
+    // Normalize services array — strip any extra quotes stored in Supabase
+    const clean = Array.isArray(data)
+      ? data.map(c => ({
+          ...c,
+          services: Array.isArray(c.services)
+            ? c.services.map(s => String(s).replace(/"/g, "").trim())
+            : typeof c.services === "string"
+              ? c.services.split(",").map(s => s.replace(/"/g, "").trim()).filter(Boolean)
+              : [],
+        }))
+      : data;
+
+    return new Response(JSON.stringify(clean), { status: 200, headers: cors });
   }
 
-  if (method === "POST" && !action) {
+  // ── POST — create new client ───────────────────────────────────────────────
+  if (method === "POST") {
     const body = await req.json();
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/fr_clients`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        name:             body.name,
-        company:          body.company          || null,
-        store_id:         body.store_id         || null,
-        store_name:       body.store_name       || null,
-        wa_number:        body.wa_number        || null,
-        wa_notifications: body.wa_notifications || false,
-        daily_inbound:    body.daily_inbound    || 0,
-        daily_outbound:   body.daily_outbound   || 0,
-        email:            body.email            || null,
-        phone:            body.phone            || null,
-        country:          body.country          || "US",
-        lang:             body.lang             || "EN",
-        type:             body.type             || "Business",
-        status:           body.status           || "Active",
-        active:           true,
-        wa_consent:       body.wa_consent       || "Pending",
-        services:         body.services         || [],
-        notes:            body.notes            || null
-      })
-    });
+    const res  = await fetch(
+      `${SUPABASE_URL}/rest/v1/fr_clients`,
+      { method: "POST", headers: sbHeaders, body: JSON.stringify(body) }
+    );
     const data = await res.json();
-    return new Response(JSON.stringify(data), {
-      status: 201, headers: { "Content-Type": "application/json" }
-    });
+    return new Response(JSON.stringify(data), { status: res.status, headers: cors });
   }
 
+  // ── PATCH — update existing client (passes through ALL fields) ─────────────
   if (method === "PATCH") {
-    const body = await req.json();
-    const { id, ...updates } = body;
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/fr_clients?id=eq.${id}`, {
-      method: "PATCH",
-      headers,
-      body: JSON.stringify(updates)
-    });
+    const body       = await req.json();
+    const { id, ...fields } = body;  // dynamic — works with any new columns
+
+    if (!id)
+      return new Response(
+        JSON.stringify({ error: "id required for PATCH" }),
+        { status: 400, headers: cors }
+      );
+
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/fr_clients?id=eq.${id}`,
+      { method: "PATCH", headers: sbHeaders, body: JSON.stringify(fields) }
+    );
     const data = await res.json();
-    return new Response(JSON.stringify(data), {
-      status: 200, headers: { "Content-Type": "application/json" }
-    });
+    return new Response(JSON.stringify(data), { status: res.status, headers: cors });
   }
 
+  // ── DELETE — remove client ─────────────────────────────────────────────────
   if (method === "DELETE") {
-    const body = await req.json();
-    await fetch(`${SUPABASE_URL}/rest/v1/fr_clients?id=eq.${body.id}`, {
-      method: "DELETE", headers
-    });
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200, headers: { "Content-Type": "application/json" }
-    });
+    const { id } = await req.json();
+
+    if (!id)
+      return new Response(
+        JSON.stringify({ error: "id required for DELETE" }),
+        { status: 400, headers: cors }
+      );
+
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/fr_clients?id=eq.${id}`,
+      { method: "DELETE", headers: sbHeaders }
+    );
+    return new Response(JSON.stringify({ deleted: true }), { status: 200, headers: cors });
   }
 
-  if (method === "POST" && action === "send") {
-    const body = await req.json();
-    const { wa_number, template, params = [] } = body;
-    if (!wa_number || !template) {
-      return new Response(JSON.stringify({ error: "wa_number and template required" }), { status: 400 });
-    }
-    const result = await sendTemplate(wa_number, template, params);
-    return new Response(JSON.stringify(result), {
-      status: 200, headers: { "Content-Type": "application/json" }
-    });
-  }
-
-  return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
+  return new Response(
+    JSON.stringify({ error: "Method not allowed" }),
+    { status: 405, headers: cors }
+  );
 };
