@@ -561,6 +561,9 @@ async function loadBilling() {
   let dropShipCount = 0;
   _ssCarrierCost = 0; // always reset before loading new client
 
+  // Declare at function level so it's accessible in all blocks including forEach
+  const billingSource = _client.billingSource || _client.billing_source || 'ss_cf1';
+
   try {
     // ── 1. ShipStation: dual mode (integrated store OR Custom Field 1) ──────
     try {
@@ -569,8 +572,6 @@ async function loadBilling() {
       // ss_store → integrated store filter (e.g. Milano / Daizzy Gear)
       // ss_cf1   → manual orders tagged with Custom Field 1
       // portal   → no ShipStation (Drop-Ship, EcoPack+ clients)
-      const billingSource = _client.billingSource || _client.billing_source;
-
       if (billingSource === 'portal') {
         setStatus(`&#9432; Portal-only client — ShipStation does not apply. Loading portal data...`, 'info');
         ordersCount = 0;
