@@ -411,10 +411,6 @@ async function loadClients() {
 }
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
-let _lines   = [];
-let _client  = null;
-let _ssOrders = 0;
-
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const g   = id => document.getElementById(id);
 const fc  = v  => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(+v||0);
