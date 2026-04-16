@@ -1,12 +1,10 @@
 // netlify/functions/wa-clients.js
 // FR-Logistics — Client CRUD (GET / POST / PATCH / DELETE)
-// select=* returns ALL fr_clients columns including billing config fields:
-//   billing_source, shipping_markup, mmb, wms_integration, ss_custom_field_1
+// Uses CommonJS (exports.handler) to match original file format
+// select=* returns ALL fr_clients columns including new billing fields
 
-import Netlify from "@netlify/functions";
-
-const SUPABASE_URL = Netlify.env.get("SUPABASE_URL");
-const SUPABASE_KEY = Netlify.env.get("SUPABASE_SERVICE_KEY");
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 const sbHeaders = {
   "apikey":        SUPABASE_KEY,
@@ -21,18 +19,18 @@ const cors = {
   "Content-Type":                 "application/json",
 };
 
-// select=* returns all columns — no need to update this file when new columns are added
+// select=* returns ALL columns — no need to update when new columns are added to fr_clients
 const SELECT_COLS = "*";
 
-export default async (req) => {
-  if (req.method === "OPTIONS")
-    return new Response("", { status: 200, headers: cors });
+exports.handler = async (event) => {
+  if (event.httpMethod === "OPTIONS")
+    return { statusCode: 200, headers: cors, body: "" };
 
-  const method = req.method;
-  const url    = new URL(req.url);
-  const action = url.searchParams.get("action");
+  const method = event.httpMethod;
+  const params = event.queryStringParameters || {};
+  const action = params.action;
 
-  // ── GET — fetch all active clients ────────────────────────────────────────
+  // ── GET — fetch all clients ────────────────────────────────────────────────
   if (method === "GET" && !action) {
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/fr_clients?select=${SELECT_COLS}&order=name.asc`,
@@ -40,7 +38,7 @@ export default async (req) => {
     );
     const data = await res.json();
 
-    // Normalize services array — strip any extra quotes stored in Supabase
+    // Normalize services array — strip extra quotes stored in Supabase
     const clean = Array.isArray(data)
       ? data.map(c => ({
           ...c,
@@ -52,58 +50,49 @@ export default async (req) => {
         }))
       : data;
 
-    return new Response(JSON.stringify(clean), { status: 200, headers: cors });
+    return { statusCode: 200, headers: cors, body: JSON.stringify(clean) };
   }
 
   // ── POST — create new client ───────────────────────────────────────────────
   if (method === "POST") {
-    const body = await req.json();
+    const body = JSON.parse(event.body || "{}");
     const res  = await fetch(
       `${SUPABASE_URL}/rest/v1/fr_clients`,
       { method: "POST", headers: sbHeaders, body: JSON.stringify(body) }
     );
     const data = await res.json();
-    return new Response(JSON.stringify(data), { status: res.status, headers: cors });
+    return { statusCode: res.status, headers: cors, body: JSON.stringify(data) };
   }
 
-  // ── PATCH — update existing client (passes through ALL fields) ─────────────
+  // ── PATCH — update existing client (dynamic — passes ALL fields through) ───
   if (method === "PATCH") {
-    const body       = await req.json();
-    const { id, ...fields } = body;  // dynamic — works with any new columns
+    const body = JSON.parse(event.body || "{}");
+    const { id, ...fields } = body;
 
     if (!id)
-      return new Response(
-        JSON.stringify({ error: "id required for PATCH" }),
-        { status: 400, headers: cors }
-      );
+      return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "id required for PATCH" }) };
 
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/fr_clients?id=eq.${id}`,
       { method: "PATCH", headers: sbHeaders, body: JSON.stringify(fields) }
     );
     const data = await res.json();
-    return new Response(JSON.stringify(data), { status: res.status, headers: cors });
+    return { statusCode: res.status, headers: cors, body: JSON.stringify(data) };
   }
 
   // ── DELETE — remove client ─────────────────────────────────────────────────
   if (method === "DELETE") {
-    const { id } = await req.json();
+    const { id } = JSON.parse(event.body || "{}");
 
     if (!id)
-      return new Response(
-        JSON.stringify({ error: "id required for DELETE" }),
-        { status: 400, headers: cors }
-      );
+      return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "id required for DELETE" }) };
 
     await fetch(
       `${SUPABASE_URL}/rest/v1/fr_clients?id=eq.${id}`,
       { method: "DELETE", headers: sbHeaders }
     );
-    return new Response(JSON.stringify({ deleted: true }), { status: 200, headers: cors });
+    return { statusCode: 200, headers: cors, body: JSON.stringify({ deleted: true }) };
   }
 
-  return new Response(
-    JSON.stringify({ error: "Method not allowed" }),
-    { status: 405, headers: cors }
-  );
+  return { statusCode: 405, headers: cors, body: JSON.stringify({ error: "Method not allowed" }) };
 };
