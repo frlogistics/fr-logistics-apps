@@ -104,9 +104,10 @@ exports.handler = async (event) => {
     // MODE 2 — Manual orders: filter by Custom Field 1, cross-ref shipments
     // ══════════════════════════════════════════════════════════════════════════
     if (customField1) {
-      // Step A: Get orders tagged with this client's Custom Field 1
-      // Use modifyDate range so shipped orders in the period are captured
-      const ordersUrl = `${SS_BASE}/orders?customField1=${encodeURIComponent(customField1)}&orderStatus=shipped&modifyDateStart=${start}&modifyDateEnd=${end}`;
+      // Step A: Get orders tagged with CF1 filtered by orderDate (actual order date, not modifyDate)
+      // orderDate = when the order was CREATED — never changes when tagging
+      // This correctly isolates orders placed in the billing period
+      const ordersUrl = `${SS_BASE}/orders?customField1=${encodeURIComponent(customField1)}&orderStatus=shipped&orderDateStart=${start}&orderDateEnd=${end}`;
       const orders = await fetchAllPages(ordersUrl);
       const orderCount = orders.length;
 
@@ -117,16 +118,19 @@ exports.handler = async (event) => {
           body: JSON.stringify({
             mode:         'customField1',
             count:         0,
+            ordersTagged:  0,
             totalCount:    0,
             carrierCost:   0,
             customField1,
-            note:          `No shipped orders found with Custom Field 1 = "${customField1}" in this period. Make sure orders are tagged in ShipStation.`,
+            note:          `No orders found with Custom Field 1 = "${customField1}". Make sure orders are tagged in ShipStation.`,
             start, end,
           })
         };
       }
 
-      // Step B: Get all shipments in the period and cross-reference by orderId
+      // Step B: Get all shipments in period, cross-reference by orderId
+      // This correctly captures only orders that SHIPPED in the billing period
+      // (even if the order was modified/tagged outside the period)
       const orderIdSet    = new Set(orders.map(o => o.orderId));
       const allShipments  = await fetchAllPages(
         `${SS_BASE}/shipments?shipDateStart=${start}&shipDateEnd=${end}`
@@ -139,7 +143,8 @@ exports.handler = async (event) => {
         headers,
         body: JSON.stringify({
           mode:              'customField1',
-          count:             orderCount,
+          count:             matchedShipments.length,  // orders that SHIPPED in this period
+          ordersTagged:      orderCount,               // total orders with this tag (may include historical)
           totalCount:        allShipments.length,
           carrierCost:       Math.round(carrierCost * 100) / 100,
           matchedShipments:  matchedShipments.length,
