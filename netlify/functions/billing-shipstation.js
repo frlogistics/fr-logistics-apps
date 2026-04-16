@@ -1,6 +1,8 @@
 // netlify/functions/billing-shipstation.js
-// Returns shipped orders + carrier costs from ShipStation for a billing period
-// Filters by store name — returns 0 if no match (no fallback to all stores)
+// FR-Logistics Billing — ShipStation data fetcher
+// TWO MODES:
+//   Mode 1 (integrated): store param → filter shipments by storeName
+//   Mode 2 (manual):     customField1 param → orders by CF1, cross-ref shipments for carrier cost
 
 const SS_BASE = 'https://ssapi.shipstation.com';
 
@@ -14,86 +16,162 @@ exports.handler = async (event) => {
 
   const apiKey    = process.env.SS_API_KEY;
   const apiSecret = process.env.SS_API_SECRET;
-  if (!apiKey || !apiSecret) {
+  if (!apiKey || !apiSecret)
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'ShipStation credentials not configured' }) };
-  }
 
-  const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
+  const auth      = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
   const ssHeaders = { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json' };
 
-  const p     = event.queryStringParameters || {};
-  const start = p.start || '';
-  const end   = p.end   || '';
-  const store = (p.store || '').trim();
+  const p            = event.queryStringParameters || {};
+  const start        = p.start        || '';
+  const end          = p.end          || '';
+  const store        = (p.store        || '').trim();
+  const customField1 = (p.customField1 || '').trim();
 
-  if (!start || !end) {
+  if (!start || !end)
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'start and end required (YYYY-MM-DD)' }) };
+
+  // ─── Helper: paginated fetch ────────────────────────────────────────────────
+  async function fetchAllPages(urlBase) {
+    let page = 1, totalPages = 1, results = [];
+    do {
+      const sep = urlBase.includes('?') ? '&' : '?';
+      const resp = await fetch(`${urlBase}${sep}pageSize=500&page=${page}`, { headers: ssHeaders });
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(`ShipStation ${resp.status}: ${txt.slice(0, 200)}`);
+      }
+      const data = await resp.json();
+      // Orders endpoint returns data.orders, shipments returns data.shipments
+      results = results.concat(data.orders || data.shipments || []);
+      totalPages = data.pages || 1;
+      page++;
+    } while (page <= totalPages && page <= 10); // max 5000 records
+    return results;
   }
 
   try {
-    // Fetch all shipments in period (paginated)
-    let page = 1, totalPages = 1;
-    let allShipments = [];
-    do {
-      const url = `${SS_BASE}/shipments?shipDateStart=${start}&shipDateEnd=${end}&pageSize=500&page=${page}`;
-      const resp = await fetch(url, { headers: ssHeaders });
-      if (!resp.ok) {
-        const txt = await resp.text();
-        return { statusCode: resp.status, headers, body: txt };
-      }
-      const data = await resp.json();
-      allShipments = allShipments.concat(data.shipments || []);
-      totalPages = data.pages || 1;
-      page++;
-    } while (page <= totalPages && page <= 5);
-
-    // Get store list for storeId → storeName mapping
-    let storeMap = {};
-    try {
-      const stResp = await fetch(`${SS_BASE}/stores?showInactive=false`, { headers: ssHeaders });
-      if (stResp.ok) {
-        const stores = await stResp.json();
-        (Array.isArray(stores) ? stores : []).forEach(s => {
-          storeMap[String(s.storeId)] = (s.storeName || '').toLowerCase();
-        });
-      }
-    } catch(_) {}
-
-    // All unique store names in this period — helps diagnose filter issues
-    const storeNames = [...new Set(allShipments.map(s => s.storeName || 'Unknown'))].sort();
-
-    // Filter by store — NO fallback. If no match → count = 0, user enters manually
-    let filtered = allShipments;
-    let storeMatched = !store; // if no store requested, all match
-
+    // ══════════════════════════════════════════════════════════════════════════
+    // MODE 1 — Integrated store: filter by storeName
+    // ══════════════════════════════════════════════════════════════════════════
     if (store) {
-      const pat = store.toLowerCase().trim();
-      filtered = allShipments.filter(s => {
+      // Get all shipments in period
+      const allShipments = await fetchAllPages(
+        `${SS_BASE}/shipments?shipDateStart=${start}&shipDateEnd=${end}`
+      );
+
+      // Get store list for ID → name mapping
+      let storeMap = {};
+      try {
+        const stResp = await fetch(`${SS_BASE}/stores?showInactive=false`, { headers: ssHeaders });
+        if (stResp.ok) {
+          const stores = await stResp.json();
+          (Array.isArray(stores) ? stores : []).forEach(s => {
+            storeMap[String(s.storeId)] = (s.storeName || '').toLowerCase();
+          });
+        }
+      } catch(_) {}
+
+      const allStoreNames = [...new Set(allShipments.map(s => s.storeName || 'Unknown'))].sort();
+
+      const pat = store.toLowerCase();
+      const filtered = allShipments.filter(s => {
         const sName   = (s.storeName || '').toLowerCase();
         const sId     = String(s.advancedOptions?.storeId || '');
         const sIdName = storeMap[sId] || '';
         return sName.includes(pat) || sIdName.includes(pat);
       });
-      storeMatched = filtered.length > 0;
-      // If no match: filtered stays empty — count = 0, no fallback
+
+      const storeMatched  = filtered.length > 0;
+      const carrierCost   = filtered.reduce((sum, s) => sum + (s.shipmentCost || 0), 0);
+
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          mode:             'store',
+          count:            filtered.length,
+          totalCount:       allShipments.length,
+          carrierCost:      Math.round(carrierCost * 100) / 100,
+          storeMatched,
+          storeNames:       allStoreNames,
+          start, end, store,
+        })
+      };
     }
 
-    const carrierCost      = filtered.reduce((sum, s) => sum + (s.shipmentCost || 0), 0);
-    const totalCarrierCost = allShipments.reduce((sum, s) => sum + (s.shipmentCost || 0), 0);
+    // ══════════════════════════════════════════════════════════════════════════
+    // MODE 2 — Manual orders: filter by Custom Field 1, cross-ref shipments
+    // ══════════════════════════════════════════════════════════════════════════
+    if (customField1) {
+      // Step A: Get orders tagged with this client's Custom Field 1
+      // Use modifyDate range so shipped orders in the period are captured
+      const ordersUrl = `${SS_BASE}/orders?customField1=${encodeURIComponent(customField1)}&orderStatus=shipped&modifyDateStart=${start}&modifyDateEnd=${end}`;
+      const orders = await fetchAllPages(ordersUrl);
+      const orderCount = orders.length;
+
+      if (orderCount === 0) {
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({
+            mode:         'customField1',
+            count:         0,
+            totalCount:    0,
+            carrierCost:   0,
+            customField1,
+            note:          `No shipped orders found with Custom Field 1 = "${customField1}" in this period. Make sure orders are tagged in ShipStation.`,
+            start, end,
+          })
+        };
+      }
+
+      // Step B: Get all shipments in the period and cross-reference by orderId
+      const orderIdSet    = new Set(orders.map(o => o.orderId));
+      const allShipments  = await fetchAllPages(
+        `${SS_BASE}/shipments?shipDateStart=${start}&shipDateEnd=${end}`
+      );
+      const matchedShipments = allShipments.filter(s => orderIdSet.has(s.orderId));
+      const carrierCost      = matchedShipments.reduce((sum, s) => sum + (s.shipmentCost || 0), 0);
+
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          mode:              'customField1',
+          count:             orderCount,
+          totalCount:        allShipments.length,
+          carrierCost:       Math.round(carrierCost * 100) / 100,
+          matchedShipments:  matchedShipments.length,
+          customField1,
+          start, end,
+        })
+      };
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // NO FILTER — return summary only (no client filter applied)
+    // ══════════════════════════════════════════════════════════════════════════
+    const allShipments  = await fetchAllPages(
+      `${SS_BASE}/shipments?shipDateStart=${start}&shipDateEnd=${end}`
+    );
+    const allStoreNames = [...new Set(allShipments.map(s => s.storeName || 'Unknown'))].sort();
+    const totalCost     = allShipments.reduce((sum, s) => sum + (s.shipmentCost || 0), 0);
 
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
-        count:            filtered.length,
-        totalCount:       allShipments.length,
-        carrierCost:      Math.round(carrierCost * 100) / 100,
-        totalCarrierCost: Math.round(totalCarrierCost * 100) / 100,
-        storeMatched,
-        storeNames,
-        start, end, store,
+        mode:        'unfiltered',
+        count:        allShipments.length,
+        totalCount:   allShipments.length,
+        carrierCost:  Math.round(totalCost * 100) / 100,
+        storeNames:   allStoreNames,
+        note:         'No store or customField1 filter applied. Configure ssStore or ssCustomField1 in client settings.',
+        start, end,
       })
     };
+
   } catch (err) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
   }
