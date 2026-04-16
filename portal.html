@@ -399,6 +399,35 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
       <div class="formField full">
         <label class="checkLabel"><input type="checkbox" id="cm_waNotif"/> Enable WhatsApp Notifications (daily summary &amp; order updates)</label>
       </div>
+
+      <div class="formField full" style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px">
+        <div style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">💰 Billing Configuration</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="formField" style="margin:0">
+            <label>Billing Source</label>
+            <select id="cm_billingSource">
+              <option value="ss_cf1">ShipStation — Custom Field 1</option>
+              <option value="ss_store">ShipStation — Store Name</option>
+              <option value="portal">Portal Only (Drop-Ship / EcoPack+)</option>
+            </select>
+          </div>
+          <div class="formField" style="margin:0">
+            <label>SS Custom Field 1 Tag</label>
+            <input id="cm_ssCustomField1" placeholder="e.g. MXS Overseas Ltd"/>
+          </div>
+          <div class="formField" style="margin:0">
+            <label>Shipping Markup %</label>
+            <input id="cm_shippingMarkup" type="number" min="0" max="100" step="1" placeholder="10"/>
+          </div>
+          <div class="formField" style="margin:0">
+            <label>Min. Monthly Billing ($)</label>
+            <input id="cm_mmb" type="number" min="0" step="50" placeholder="0"/>
+          </div>
+        </div>
+        <div style="margin-top:10px">
+          <label class="checkLabel"><input type="checkbox" id="cm_wmsIntegration"/> WMS Integration Active (direct ShipStation store)</label>
+        </div>
+      </div>
     </div>
     <div class="modalFooter">
       <button class="btnSecondary" onclick="closeClientModal()">Cancel</button>
@@ -610,6 +639,12 @@ function openClientModal(mode,id){
     if(c){
       editId=id;
       document.getElementById('cm_name').value=c.name||'';document.getElementById('cm_company').value=c.company||'';document.getElementById('cm_storeId').value=c.store_id||'';document.getElementById('cm_storeName').value=c.store_name||'';document.getElementById('cm_waNumber').value=c.wa_number||'';document.getElementById('cm_email').value=c.email||'';document.getElementById('cm_phone').value=c.phone||'';document.getElementById('cm_country').value=c.country||'US';document.getElementById('cm_lang').value=c.lang||'EN';document.getElementById('cm_type').value=c.type||'Business';document.getElementById('cm_status').value=c.status||'Active';document.getElementById('cm_waConsent').value=c.wa_consent||'Pending';document.getElementById('cm_waNotif').checked=c.wa_notifications||false;document.getElementById('cm_notes').value=c.notes||'';
+      // Billing config fields
+      document.getElementById('cm_billingSource').value=c.billing_source||'ss_cf1';
+      document.getElementById('cm_ssCustomField1').value=c.ss_custom_field_1||'';
+      document.getElementById('cm_shippingMarkup').value=c.shipping_markup??10;
+      document.getElementById('cm_mmb').value=c.mmb||0;
+      document.getElementById('cm_wmsIntegration').checked=c.wms_integration||false;
       const svcs=Array.isArray(c.services)?c.services.map(s=>s.replace(/"/g,'').trim()):(c.services?String(c.services).split(',').map(s=>s.trim()):[]);
       document.querySelectorAll('[name=svc]').forEach(cb=>{cb.checked=svcs.includes(cb.value);});
     }
@@ -622,7 +657,29 @@ function saveClientModal(){
   const name=document.getElementById('cm_name').value.trim();
   if(!name){alert('Contact Name is required');return;}
   const services=Array.from(document.querySelectorAll('[name=svc]:checked')).map(cb=>cb.value);
-  const payload={name,company:document.getElementById('cm_company').value.trim(),store_id:document.getElementById('cm_storeId').value.trim(),store_name:document.getElementById('cm_storeName').value.trim(),country:document.getElementById('cm_country').value,lang:document.getElementById('cm_lang').value,type:document.getElementById('cm_type').value,wa_number:document.getElementById('cm_waNumber').value.trim(),email:document.getElementById('cm_email').value.trim(),phone:document.getElementById('cm_phone').value.trim(),status:document.getElementById('cm_status').value,active:true,wa_consent:document.getElementById('cm_waConsent').value,wa_notifications:document.getElementById('cm_waNotif').checked,services,notes:document.getElementById('cm_notes').value.trim()};
+  const payload={name,
+      company:document.getElementById('cm_company').value.trim(),
+      store_id:document.getElementById('cm_storeId').value.trim(),
+      store_name:document.getElementById('cm_storeName').value.trim(),
+      country:document.getElementById('cm_country').value,
+      lang:document.getElementById('cm_lang').value,
+      type:document.getElementById('cm_type').value,
+      wa_number:document.getElementById('cm_waNumber').value.trim(),
+      email:document.getElementById('cm_email').value.trim(),
+      phone:document.getElementById('cm_phone').value.trim(),
+      status:document.getElementById('cm_status').value,
+      active:true,
+      wa_consent:document.getElementById('cm_waConsent').value,
+      wa_notifications:document.getElementById('cm_waNotif').checked,
+      services,
+      notes:document.getElementById('cm_notes').value.trim(),
+      // Billing config — propagates to all apps
+      billing_source:document.getElementById('cm_billingSource').value,
+      ss_custom_field_1:document.getElementById('cm_ssCustomField1').value.trim(),
+      shipping_markup:parseFloat(document.getElementById('cm_shippingMarkup').value)||10,
+      mmb:parseFloat(document.getElementById('cm_mmb').value)||0,
+      wms_integration:document.getElementById('cm_wmsIntegration').checked,
+    };
   if(editId)payload.id=editId;
   const btn=document.getElementById('saveClientBtn');btn.textContent='Saving...';btn.disabled=true;
   fetch('/.netlify/functions/wa-clients',{method:editId?'PATCH':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json()).then(res=>{if(res.error)throw new Error(res.error);closeClientModal();loadClients();}).catch(e=>alert('Error saving: '+e.message)).finally(()=>{btn.textContent='Save Client';btn.disabled=false;});
