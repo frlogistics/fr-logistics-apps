@@ -530,13 +530,22 @@ async function loadBilling() {
       const resp = await fetch(url);
       if (resp.ok) {
         const data = await resp.json();
-        ordersCount     = data.count         || 0;
-        _ssCarrierCost  = data.carrierCost   || 0;
-        const totalAll  = data.totalCount    || 0;
-        setStatus(
-          `&#9989; ShipStation: <b>${ordersCount} shipments</b> for "${_client.ssStore || 'all stores'}" · Total period: ${totalAll} · Carrier cost: <b>$${_ssCarrierCost.toFixed(2)}</b>`,
-          ordersCount > 0 ? 'ok' : 'warn'
-        );
+        ordersCount    = data.count        || 0;
+        _ssCarrierCost = data.carrierCost  || 0;
+        const totalAll = data.totalCount   || 0;
+
+        // Build status — show store names if no match to help diagnose
+        let statusMsg = '';
+        if (!_client.ssStore) {
+          statusMsg = `&#9989; ShipStation: <b>${ordersCount} shipments</b> (all stores) · Carrier cost: <b>${fc(_ssCarrierCost)}</b>`;
+        } else if (data.storeMatched) {
+          statusMsg = `&#9989; ShipStation: <b>${ordersCount} shipments</b> for "<b>${_client.ssStore}</b>" · Total all stores: ${totalAll} · Carrier cost: <b>${fc(_ssCarrierCost)}</b>`;
+        } else {
+          const found = (data.storeNames||[]).join(', ');
+          statusMsg = `&#9888;&#65039; ShipStation: Store "<b>${_client.ssStore}</b>" not found in this period. Stores found: [${found}] — enter orders manually or update ssStore in client config`;
+          ordersCount = 0; _ssCarrierCost = 0;
+        }
+        setStatus(statusMsg, data.storeMatched ? 'ok' : 'warn');
       } else {
         const errText = await resp.text();
         throw new Error(`HTTP ${resp.status}: ${errText.slice(0,120)}`);
@@ -571,11 +580,30 @@ async function loadBilling() {
 
     // Build billing lines with auto-populated values
     _lines = getBillingLines(_client.name);
+    const markup = +g('shippingMarkupPct').value || _client.shippingMarkup || 10;
+    const shippingCharge = _ssCarrierCost > 0
+      ? Math.round(_ssCarrierCost * (1 + markup / 100) * 100) / 100
+      : 0;
+
     _lines.forEach(l => {
-      if (l.id === 'pick_pack')       l.qty = ordersCount;
-      if (l.id === 'inbound_carton')  l.qty = inboundCount;
-      if (l.id === 'wms' && l.rate > 0) l.qty = 1;
+      if (l.id === 'pick_pack')          l.qty  = ordersCount;
+      if (l.id === 'inbound_carton')     l.qty  = inboundCount;
+      if (l.id === 'wms' && l.rate > 0)  l.qty  = 1;
+      // Shipping Label Fee: total charge = carrier cost × (1 + markup%)
+      // rate = total charge (not per-unit), qty = 1
+      if (l.id === 'shipping_label_fee') {
+        l.rate = shippingCharge;
+        l.qty  = shippingCharge > 0 ? 1 : 0;
+        l.tip  = `Carrier cost ${fc(_ssCarrierCost)} × (1 + ${markup}% markup) = ${fc(shippingCharge)}`;
+      }
     });
+
+    // Update shipping markup UI panel
+    g('ssCarrierCost').textContent    = fc(_ssCarrierCost);
+    g('ssShippingCharge').textContent = fc(shippingCharge);
+    if (_ssCarrierCost > 0) {
+      g('shippingMarkupRow').style.display = 'flex';
+    }
 
     renderBillingTable();
     g('billingCard').style.display    = 'block';
@@ -632,6 +660,28 @@ function renderBillingTable() {
 function updateQty(id, val) {
   const l = _lines.find(x => x.id === id);
   if (l) { l.qty = +val || 0; recalc(); }
+}
+
+function updateShippingLine() {
+  if (!_lines.length || _ssCarrierCost <= 0) return;
+  const markup = +g('shippingMarkupPct').value || 0;
+  const charge = Math.round(_ssCarrierCost * (1 + markup / 100) * 100) / 100;
+  const l = _lines.find(x => x.id === 'shipping_label_fee');
+  if (l) {
+    l.rate = charge;
+    l.qty  = charge > 0 ? 1 : 0;
+    l.tip  = `Carrier cost ${fc(_ssCarrierCost)} × (1 + ${markup}% markup) = ${fc(charge)}`;
+    // Update cell directly without re-rendering full table
+    const totEl = document.getElementById('tot_shipping_label_fee');
+    const qtyEl = document.getElementById('qty_shipping_label_fee');
+    const tipEl = document.querySelector('[data-tip="shipping_label_fee"]');
+    if (totEl) totEl.textContent = charge > 0 ? fc(charge) : '—';
+    if (qtyEl) qtyEl.value = charge > 0 ? 1 : '';
+    if (tipEl) tipEl.textContent = l.tip;
+    g('ssCarrierCost').textContent    = fc(_ssCarrierCost);
+    g('ssShippingCharge').textContent = fc(charge);
+  }
+  recalc();
 }
 function updateCustomRate(idx, val) {
   _lines[idx].rate = +val || 0;
