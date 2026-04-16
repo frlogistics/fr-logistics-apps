@@ -289,7 +289,7 @@ const CLIENT_SEED = [
   {name:"KMAT Supply LLC",company:"KMAT Supply LLC",qboName:"KMAT Supply LLC",group:"active",ssStore:"",email:"",phone:"",mmb:0,shippingMarkup:10,status:"Onboarding",wmsIntegration:false,ssCustomField1:"KMAT Supply LLC"},
   {name:"Klear Protein",company:"Klear Protein",qboName:"Klear Protein",group:"other",ssStore:"",email:"kyle@klearprotein.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
   {name:"Koriledge Construction, Inc",company:"Koriledge Construction, Inc",qboName:"Koriledge Construction, Inc",group:"other",ssStore:"",email:"gwoodruff@koriledge.com",phone:"(800) 316-0565",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"LN Store, LLC",company:"LN Store, LLC",qboName:"LN STORE, LLC",group:"active",ssStore:"",email:"tisseraobras@gmail.com",phone:"+5492644538942",mmb:0,shippingMarkup:10,status:"Active",wmsIntegration:false,ssCustomField1:"LN Store, LLC"},
+  {name:"LN Store, LLC",company:"LN Store, LLC",qboName:"LN STORE, LLC",group:"active",ssStore:"",email:"tisseraobras@gmail.com",phone:"+5492644538942",mmb:0,shippingMarkup:10,status:"Active",wmsIntegration:false,ssCustomField1:""},
   {name:"LRE Holding (Route of Heroes)",company:"LRE Holding",qboName:"LRE Holding",group:"active",ssStore:"",email:"",phone:"",mmb:3250,shippingMarkup:10,status:"Onboarding",wmsIntegration:false,ssCustomField1:"LRE Holding"},
   {name:"Maquillaje Al Por Mayor Inc",company:"Maquillaje Al Por Mayor Inc",qboName:"MAQUILLAJE AL POR MAYOR INC",group:"other",ssStore:"",email:"info@maquillajealpormayor.pe",phone:"(786) 707-5677",mmb:0,shippingMarkup:10,status:"Active"},
   {name:"Milano Brands LLC",company:"Milano Brands LLC",qboName:"Milano Brands LLC",group:"active",ssStore:"Daizzy Gear",email:"julieta@milanobrands.us",phone:"",mmb:0,shippingMarkup:10,status:"Active",wmsIntegration:true,ssCustomField1:""},
@@ -377,6 +377,9 @@ function getBillingLines(clientName, clientObj) {
     {cat:'Returns', id:'refurb', name:'Refurbishing & Repackaging', sku:'R&R', unit:'units', rate:r.refurb, qty:0, auto:false, tip:'Enter units refurbished/repackaged'},
     {cat:'Returns', id:'disposal', name:'Disposal & Recycling', sku:'D&R', unit:'units', rate:r.disposal, qty:0, auto:false, tip:'Enter units disposed/recycled'},
     // OUTBOUND
+    {cat:'Outbound', id:'drop_shipment', name:'Drop-Shipment Service', sku:'Inbound-Dropshipment', unit:'packages',
+     rate:r.drop_shipment || 6.00, qty:0, auto:true,
+     tip:'Auto from Inbound/Outbound portal (Outbound Drop-Shipment records)'},
     {cat:'Outbound', id:'outbound_carton', name:'Outbound — Cartons', sku:'OFPackage', unit:'cartons', rate:r.outbound_carton, qty:0, auto:false, tip:'Enter outbound cartons shipped'},
     {cat:'Outbound', id:'outbound_pallet', name:'Outbound — Pallets', sku:'OFP', unit:'pallets', rate:r.outbound_pallet, qty:0, auto:false, tip:'Enter outbound pallets shipped'},
     {cat:'Outbound', id:'oversized_pallet', name:'Oversized Pallet', sku:'OPR', unit:'pallets', rate:r.oversized_pallet, qty:0, auto:false, tip:'Exceeds 40x48", >70" ht, or >1500 lbs'},
@@ -411,6 +414,7 @@ function normalizeClient(c) {
     wmsIntegration:  c.wmsIntegration  ?? c.wms_integration     ?? false,
     // Custom Field 1 tag: used in ShipStation for manual order identification
     ssCustomField1:  c.ssCustomField1  || c.ss_custom_field_1   || '',
+    billingSource:   c.billingSource   || c.billing_source     || '',
     // Inbound client name for portal search
     inboundClient:   c.inboundClient   || c.store_name          || name,
     // Determine group
@@ -506,6 +510,8 @@ function onClientChange() {
   // Set shipping markup from client config
   const markup = _client.shippingMarkup ?? _client.shipping_markup ?? 10;
   g('shippingMarkupPct').value = markup;
+  // Auto-set MMB from client data
+  const mmb = _client.mmb || 0;
 
   setStatus(`&#128100; <b>${_client.name}</b> — loading rates...`, 'info');
 
@@ -552,24 +558,32 @@ async function loadBilling() {
 
   let ordersCount = 0;
   let inboundCount = 0;
+  let dropShipCount = 0;
 
   try {
     // ── 1. ShipStation: dual mode (integrated store OR Custom Field 1) ──────
     try {
       let url, modeName;
-      if (_client.ssStore) {
-        // Mode 1: Integrated store — filter by storeName
+      // billing_source from fr_clients drives the ShipStation query mode:
+      // ss_store → integrated store filter (e.g. Milano / Daizzy Gear)
+      // ss_cf1   → manual orders tagged with Custom Field 1
+      // portal   → no ShipStation (Drop-Ship, EcoPack+ clients)
+      const billingSource = _client.billingSource || _client.billing_source;
+
+      if (billingSource === 'portal') {
+        setStatus(`&#9432; Portal-only client — ShipStation does not apply. Loading portal data...`, 'info');
+        ordersCount = 0;
+        throw null; // skip to inbound section
+      } else if (billingSource === 'ss_store' || _client.ssStore) {
         url = `${SS_PROXY}?start=${start}&end=${end}&store=${encodeURIComponent(_client.ssStore)}`;
-        modeName = `store filter "${_client.ssStore}"`;
-      } else if (_client.ssCustomField1) {
-        // Mode 2: Manual orders — filter by Custom Field 1
+        modeName = `store "${_client.ssStore}"`;
+      } else if (billingSource === 'ss_cf1' || _client.ssCustomField1) {
         url = `${SS_PROXY}?start=${start}&end=${end}&customField1=${encodeURIComponent(_client.ssCustomField1)}`;
         modeName = `Custom Field 1 = "${_client.ssCustomField1}"`;
       } else {
-        // No filter configured — skip ShipStation, require manual entry
-        setStatus(`&#9888;&#65039; ShipStation: No store or Custom Field 1 configured for this client — enter orders manually`, 'warn');
+        setStatus(`&#9888;&#65039; Billing source not configured for this client — enter orders manually.<br>Go to <b>Clients app → Edit → Billing Configuration</b> to set it up.`, 'warn');
         ordersCount = 0;
-        throw null; // skip to inbound
+        throw null;
       }
 
       const resp = await fetch(url);
@@ -621,8 +635,9 @@ async function loadBilling() {
       );
       if (iResp.ok) {
         const iData = await iResp.json();
-        inboundCount = iData.count    || 0;  // Inbound (General) only
-        rmaCount     = iData.rmaCount || 0;  // RMA / Returns — separate billing line
+        inboundCount  = iData.count         || 0;  // Inbound (General) only
+        rmaCount      = iData.rmaCount      || 0;  // RMA / Returns — separate billing line
+        dropShipCount = iData.dropShipCount || 0;  // Outbound Drop-Shipment count
       }
     } catch(ibErr) {
       // Inbound not critical — user can fill manually
@@ -634,7 +649,7 @@ async function loadBilling() {
         ? ' · WMS: <b>$99.99</b>'
         : ' · WMS: <i>N/A</i>';
       setStatus(
-        `&#9989; Orders: <b>${ordersCount}</b> · Inbound: <b>${inboundCount}</b> · RMA: <b>${rmaCount}</b>${wmsStatus}`,
+        `&#9989; Orders: <b>${ordersCount}</b> · Inbound: <b>${inboundCount}</b> · RMA: <b>${rmaCount}</b> · Drop-Ship: <b>${dropShipCount}</b>${wmsStatus}`,
         'ok'
       );
     }
@@ -643,7 +658,7 @@ async function loadBilling() {
 
     // Build billing lines with auto-populated values
     _lines = getBillingLines(_client.name, _client);
-    const markup = +g('shippingMarkupPct').value || _client.shippingMarkup || 10;
+    const markup = +g('shippingMarkupPct').value || _client.shippingMarkup || _client.shipping_markup || 10;
     const shippingCharge = _ssCarrierCost > 0
       ? Math.round(_ssCarrierCost * (1 + markup / 100) * 100) / 100
       : 0;
@@ -652,6 +667,7 @@ async function loadBilling() {
       if (l.id === 'pick_pack')          l.qty  = ordersCount;
       if (l.id === 'inbound_carton')     l.qty  = inboundCount;  // Inbound (General) only
       if (l.id === 'return_proc')        l.qty  = rmaCount;      // RMA auto from portal
+      if (l.id === 'drop_shipment')      l.qty  = dropShipCount; // Outbound Drop-Shipment auto
       if (l.id === 'wms') l.qty = (_client.wmsIntegration || _client.wms_integration) && l.rate > 0 ? 1 : 0;
       // Shipping Label Fee: total charge = carrier cost × (1 + markup%)
       // rate = total charge (not per-unit), qty = 1
