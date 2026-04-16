@@ -141,12 +141,11 @@
     <!-- RATE CARD TABLE -->
     <div class="ch" style="margin-top:0"><h3>&#128176; Rate Card</h3></div>
     <div class="cb">
-      <div class="svc-grid">
+      <div class="svc-grid" id="svcGrid">
         <div class="svc-row header">
           <span>Service</span><span>Unit</span><span>Rate (USD)</span>
         </div>
         <!-- services populated by JS -->
-        <div id="svcRows"></div>
       </div>
     </div>
 
@@ -208,12 +207,18 @@ function updateQID(){
 }
 
 function buildSvcRows(){
-  $('svcRows').innerHTML = SERVICES.map(s => `
-    <div class="svc-row">
+  const grid = document.getElementById('svcGrid');
+  // Remove old rows (keep header)
+  Array.from(grid.querySelectorAll('.svc-row:not(.header)')).forEach(el=>el.remove());
+  SERVICES.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'svc-row';
+    row.innerHTML = `
       <div><div class="svc-name">${s.name}</div><div class="svc-cat">${s.cat}</div></div>
       <div class="svc-cat" style="font-size:11px">${s.unit}</div>
-      <input class="rate-inp" id="rate_${s.id}" type="number" min="0" step="0.01" value="${s.rate.toFixed(2)}" style="padding:5px 8px;font-size:12px"/>
-    </div>`).join('');
+      <input class="rate-inp" id="rate_${s.id}" type="number" min="0" step="0.01" value="${s.rate.toFixed(2)}"/>`;
+    grid.appendChild(row);
+  });
 }
 
 function getClient(){
@@ -479,9 +484,16 @@ async function startOnboarding(){
     return;
   }
 
-  // Show progress card
+  // Check jsPDF is loaded
+  if(!window.jspdf){
+    alert('PDF library is still loading. Please wait a moment and try again.');
+    return;
+  }
+
+  // Show progress immediately
   $('formSection').style.display='none';
   $('progressCard').style.display='block';
+  window.scrollTo(0,0);
 
   try{
     // Step 1 - Rate Card PDF
@@ -578,8 +590,10 @@ function newOnboard(){
 }
 
 // Init
-$('startDate').value = new Date().toISOString().slice(0,10);
-buildSvcRows();
+document.addEventListener('DOMContentLoaded', function(){
+  $('startDate').value = new Date().toISOString().slice(0,10);
+  buildSvcRows();
+});
 </script>
 </body>
 </html>
