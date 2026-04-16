@@ -133,13 +133,7 @@ button:active{transform:scale(.97)}
         <div class="f">
           <label>Client</label>
           <select id="selClient" onchange="onClientChange()">
-            <option value="">— Select client —</option>
-            <option value="milano">Milano Brands LLC (Daizzy Gear)</option>
-            <option value="mxs">MXS Overseas Ltd</option>
-            <option value="lnstore">LN STORE, LLC</option>
-            <option value="lre">LRE Holding (Route of Heroes)</option>
-            <option value="unode50">UNOde50</option>
-            <option value="kmat">KMAT Supply LLC</option>
+            <option value="">— Loading clients... —</option>
           </select>
         </div>
         <div class="f">
@@ -153,6 +147,34 @@ button:active{transform:scale(.97)}
         <div class="f">
           <label>Invoice #</label>
           <input id="invNum" placeholder="INV-2026-001"/>
+        </div>
+      </div>
+      <!-- Shipping markup row -->
+      <div id="shippingMarkupRow" style="display:none;margin-top:10px;padding:10px 14px;
+           background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;
+           display:none;align-items:center;gap:16px;flex-wrap:wrap">
+        <div style="font-size:12px;font-weight:700;color:#1e40af">&#128230; Shipping Label Fee</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label style="font-size:10px;color:#475569;text-transform:uppercase;letter-spacing:.4px">
+            Carrier Cost (from ShipStation)
+          </label>
+          <span id="ssCarrierCost" style="font-size:13px;font-weight:700;color:#1e40af">$0.00</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label style="font-size:10px;color:#475569;text-transform:uppercase;letter-spacing:.4px">
+            Markup %
+          </label>
+          <input id="shippingMarkupPct" type="number" min="0" max="100" step="1"
+                 style="width:70px;padding:5px 8px;font-size:13px;font-weight:700;
+                        border:1px solid #bfdbfe;border-radius:6px;text-align:center"
+                 value="10" oninput="updateShippingLine()"/>
+          <span style="font-size:11px;color:var(--muted)">%</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label style="font-size:10px;color:#475569;text-transform:uppercase;letter-spacing:.4px">
+            Charge to Client
+          </label>
+          <span id="ssShippingCharge" style="font-size:14px;font-weight:800;color:var(--g2)">$0.00</span>
         </div>
       </div>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
@@ -246,119 +268,115 @@ button:active{transform:scale(.97)}
 </div><!-- /wrap -->
 
 <script>
-// ─── CONFIG ──────────────────────────────────────────────────────────────────
-const SS_PROXY   = '/.netlify/functions/shipstation';
+// ─── CONFIG ─────────────────────────────────────────────────────────────────
+const SS_PROXY      = '/.netlify/functions/shipstation';
 const NETLIFY_EMAIL = 'https://apps.fr-logistics.net/.netlify/functions/send-onboard-email';
+const CLIENTS_API   = '/.netlify/functions/clients-list';
 
-// ─── CLIENT RATE CARDS ───────────────────────────────────────────────────────
-const CLIENTS = {
-  milano: {
-    name:'Milano Brands LLC',
-    qboName:'Milano Brands LLC',
-    email:'julieta@milanobrands.us',
-    mmb:0,
-    ssStore:'Daizzy Gear',   // ShipStation store name
-    inboundClient:'Daizzy Gear', // Inbound/Outbound portal client name
-    rates:{
-      inbound_carton:2.50, inbound_pallet:20.00,
-      storage_rack:45.00, wms:99.99,
-      pick_pack:3.00, boxing:0.15, qc:45.00,
-      labeling:1.00, poly_bag:1.00, kitting:0.75,
-      return_proc:5.00, outbound_carton:2.00,
-    }
-  },
-  mxs:{
-    name:'MXS Overseas Ltd',
-    qboName:'MXS Overseas Ltd',
-    email:'mxsoverseas@gmail.com',
-    mmb:0,
-    ssStore:'MXS',
-    inboundClient:'MXS',
-    rates:{
-      inbound_carton:2.50, inbound_pallet:20.00,
-      storage_rack:45.00, wms:0,
-      pick_pack:3.00, boxing:0.15, qc:50.00,
-      labeling:1.00, poly_bag:1.00, kitting:0.75,
-      return_proc:5.00, outbound_carton:2.00,
-    }
-  },
-  lnstore:{
-    name:'LN STORE, LLC',
-    qboName:'LN STORE, LLC',
-    email:'tisseraobras@gmail.com',
-    mmb:0,
-    ssStore:'LN Store',
-    rates:{
-      inbound_carton:2.50, inbound_pallet:20.00,
-      storage_rack:45.00, wms:99.99,
-      pick_pack:3.00, boxing:0.15, qc:50.00,
-      labeling:1.00, poly_bag:1.00, kitting:0.75,
-      return_proc:5.00, outbound_carton:2.00,
-    }
-  },
-  lre:{
-    name:'LRE Holding (Route of Heroes)',
-    qboName:'LRE Holding',
-    email:'',
-    mmb:3250,
-    ssStore:'LRE',
-    rates:{
-      inbound_carton:2.50, inbound_pallet:15.00,
-      storage_rack:18.00, wms:0,
-      pick_pack:0.90, boxing:0.15, qc:50.00,
-      labeling:1.00, poly_bag:1.00, kitting:0.75,
-      return_proc:2.50, outbound_carton:2.00,
-    }
-  },
-  unode50:{
-    name:'UNOde50',
-    qboName:'UNOde50',
-    email:'joseph.cercado@unode50.com',
-    mmb:5250,
-    ssStore:'UNOde50',
-    rates:{
-      inbound_carton:2.50, inbound_pallet:20.00,
-      storage_rack:45.00, wms:0,
-      pick_pack:10.50, boxing:0.15, qc:50.00,
-      labeling:1.00, poly_bag:1.00, kitting:0.75,
-      return_proc:5.00, outbound_carton:2.00,
-    }
-  },
-  kmat:{
-    name:'KMAT Supply LLC',
-    qboName:'KMAT Supply LLC',
-    email:'',
-    mmb:0,
-    ssStore:'KMAT',
-    rates:{
-      inbound_carton:2.50, inbound_pallet:20.00,
-      storage_rack:45.00, wms:99.99,
-      pick_pack:3.00, boxing:0.15, qc:50.00,
-      labeling:1.00, poly_bag:1.00, kitting:0.75,
-      return_proc:5.00, outbound_carton:2.00,
-    }
-  },
+// ─── CLIENT SEED (fallback if API unavailable) ───────────────────────────
+const CLIENT_SEED = [
+  {name:"A&V Products Corp",company:"A&V Products Corp",qboName:"A&V PRODUCTS CORP",group:"other",ssStore:"",email:"avproductsusa@gmail.com",phone:"(786) 775-7331",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Altis Wholesale LLC",company:"Altis Wholesale LLC",qboName:"Marcelo Caceres",group:"other",ssStore:"",email:"marcelo@altiswholesale.com",phone:"(307) 317-3251",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Ape Beverages, Inc",company:"Ape Beverages, Inc",qboName:"Ape Beverages, INC",group:"other",ssStore:"",email:"jay@apebeverages.com",phone:"+63 961 405 3953",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Arkansas Transload, LLC",company:"Arkansas Transload, LLC",qboName:"Arkansas Transload, LLC.",group:"other",ssStore:"",email:"genny.goens@arkansastransloads.com",phone:"(501) 306-0278",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Brainoa LLC",company:"Brainoa LLC",qboName:"Brainoa LLC",group:"other",ssStore:"",email:"hamilton@brainoa.com",phone:"(510) 890-9664",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Curly Lovers by Susi",company:"Curly Lovers by Susi",qboName:"Curly Lovers by Susi",group:"other",ssStore:"",email:"Susi@curlylovers.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Dosistea, LLC",company:"Dosistea, LLC",qboName:"Dosistea, LLC",group:"other",ssStore:"",email:"hello@dosistea.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Drinks Chef Ltd",company:"Drinks Chef Ltd",qboName:"Drinks Chef Ltd",group:"other",ssStore:"",email:"sarah@drinkschef.com",phone:"(+256) 7714496196",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Greywolfe Investing LLC",company:"Greywolfe Investing LLC",qboName:"Greywolfe Investing LLC",group:"other",ssStore:"",email:"heilinb@greywolfeinvesting.com",phone:"(293) 653-8858",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"JDK Network, LLC",company:"JDK Network, LLC",qboName:"JDK NETWORK, LLC",group:"internal",ssStore:"",email:"info@jdknetwork.store",phone:"(786) 775-7331",mmb:0,shippingMarkup:0,status:"Active"},
+  {name:"KMAT Supply LLC",company:"KMAT Supply LLC",qboName:"KMAT Supply LLC",group:"active",ssStore:"KMAT",email:"",phone:"",mmb:0,shippingMarkup:10,status:"Onboarding"},
+  {name:"Klear Protein",company:"Klear Protein",qboName:"Klear Protein",group:"other",ssStore:"",email:"kyle@klearprotein.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Koriledge Construction, Inc",company:"Koriledge Construction, Inc",qboName:"Koriledge Construction, Inc",group:"other",ssStore:"",email:"gwoodruff@koriledge.com",phone:"(800) 316-0565",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"LN Store, LLC",company:"LN Store, LLC",qboName:"LN STORE, LLC",group:"active",ssStore:"LN Store",email:"tisseraobras@gmail.com",phone:"+5492644538942",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"LRE Holding (Route of Heroes)",company:"LRE Holding",qboName:"LRE Holding",group:"active",ssStore:"LRE",email:"",phone:"",mmb:3250,shippingMarkup:10,status:"Onboarding"},
+  {name:"Maquillaje Al Por Mayor Inc",company:"Maquillaje Al Por Mayor Inc",qboName:"MAQUILLAJE AL POR MAYOR INC",group:"other",ssStore:"",email:"info@maquillajealpormayor.pe",phone:"(786) 707-5677",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Milano Brands LLC",company:"Milano Brands LLC",qboName:"Milano Brands LLC",group:"active",ssStore:"Daizzy Gear",email:"julieta@milanobrands.us",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Mouratoglou Apparel USA",company:"Mouratoglou Apparel USA",qboName:"Mouratoglou Apparel USA",group:"other",ssStore:"",email:"flavien.raveau@mouratoglou.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"MXS Overseas Ltd",company:"MXS Overseas Ltd",qboName:"MXS Overseas Ltd",group:"active",ssStore:"MXS",email:"mxsoverseas@gmail.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Pacific Horizon Investments",company:"Pacific Horizon Investments",qboName:"PACIFIC HORIZON INVESTMENTS LLC",group:"other",ssStore:"",email:"trade.logistics@fdmperu.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Simplex",company:"Simplex",qboName:"Simplex",group:"other",ssStore:"",email:"fc@simplexvili.com.ar",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Soluciones Mas X Menos",company:"Soluciones Mas X Menos",qboName:"Soluciones Mas X Menos",group:"active",ssStore:"",email:"solucionesmasxmenos23@gmail.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Streamlined Efficiency",company:"Streamlined Efficiency",qboName:"Streamlined Efficiency",group:"other",ssStore:"",email:"cristina@1streamline.com",phone:"(203) 717-5056",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"The Product Bar LLC",company:"The Product Bar LLC",qboName:"THE PRODUCT BAR LLC",group:"active",ssStore:"",email:"adolfoalamo@gmail.com",phone:"(786) 633-1807",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"Tome Dog Toys",company:"Tome Dog Toys",qboName:"Tome Dog Toys",group:"other",ssStore:"",email:"info@tomedogtoys.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
+  {name:"UNOde50",company:"UNOde50",qboName:"UNOde50",group:"active",ssStore:"UNOde50",email:"",phone:"",mmb:5250,shippingMarkup:0,status:"Active"},
+  {name:"WeKeep Travel Services LLC",company:"WeKeep Travel Services LLC",qboName:"WeKeep Travel Services, LLC",group:"other",ssStore:"",email:"sofia.gaggi@wekeep.app",phone:"+541132884589",mmb:0,shippingMarkup:10,status:"Active"}
+];
+
+// Standard rates — used for clients without custom rate cards
+const STD_RATES = {
+  inbound_carton:2.50, inbound_pallet:20.00, storage_rack:45.00, storage_lbin:5.00,
+  storage_sbin:3.00,   storage_lt:60.00,     pick_pack:3.00,     boxing:0.15,
+  labeling:1.00,       qc:50.00,             poly_bag:1.00,      kitting:0.75,
+  palletizing:5.00,    stretch_wrap:4.00,    label_removal:1.00, refurb:4.00,
+  disposal:3.00,       return_proc:5.00,     outbound_carton:2.00,outbound_pallet:25.00,
+  oversized_pallet:60.00, xdock_pkg:2.50,   xdock_pal:20.00,    order_consol:2.00,
+  pal_repack:25.00,    carrier_pickup:14.99, retail_dist:10.00,  sorting:1.00,
+  shipping_label_app:0.50, wms:0,            marketplace:150.00, custom:50.00
 };
 
-// ─── BILLING LINES DEFINITION ────────────────────────────────────────────────
-function getBillingLines(clientKey) {
-  const cl = CLIENTS[clientKey];
-  const r  = cl.rates;
-  return [
-    {cat:'Inbound', id:'inbound_carton',  name:'Inbound — Cartons',         sku:'Inbound Package',      unit:'cartons',    rate:r.inbound_carton,  qty:0, auto:false, tip:'Enter total cartons received this period (from Inbound/Outbound portal)'},
-    {cat:'Inbound', id:'inbound_pallet',  name:'Inbound — Pallets',         sku:'Inbound Pallet',        unit:'pallets',    rate:r.inbound_pallet,  qty:0, auto:false, tip:'Enter total pallets received'},
-    {cat:'Storage', id:'storage_rack',    name:'Storage — Rack Positions',  sku:'SFRP',                  unit:'racks/mo',   rate:r.storage_rack,    qty:0, auto:false, tip:'Enter occupied rack positions at end of period'},
-    {cat:'Fulfillment',id:'pick_pack',    name:'Pick & Pack (Orders)',      sku:'FP',                    unit:'orders',     rate:r.pick_pack,       qty:0, auto:true,  tip:'Auto-loaded from ShipStation shipped orders'},
-    {cat:'Fulfillment',id:'boxing',       name:'Boxing / Collating',        sku:'BCUIB',                 unit:'units',      rate:r.boxing,          qty:0, auto:false, tip:'Enter total units boxed/collated this period'},
-    {cat:'Prep',    id:'labeling',        name:'Amazon SPN Labeling',       sku:'Label ASIN or UPC',     unit:'units',      rate:r.labeling,        qty:0, auto:false, tip:'Enter total units labeled (Amazon FBA)'},
-    {cat:'Prep',    id:'qc',              name:'QC / Product Inspection',   sku:'PIF',                   unit:'hours',      rate:r.qc,              qty:0, auto:false, tip:'Enter total QC inspection hours'},
-    {cat:'Prep',    id:'poly_bag',        name:'Poly Bagging',              sku:'PBF',                   unit:'units',      rate:r.poly_bag,        qty:0, auto:false, tip:'Enter units poly-bagged'},
-    {cat:'Prep',    id:'kitting',         name:'Kitting & Bundling',        sku:'KIT',                   unit:'units',      rate:r.kitting,         qty:0, auto:false, tip:'Enter units kitted/bundled'},
-    {cat:'Returns', id:'return_proc',     name:'Return Processing',         sku:'RPF',                   unit:'units',      rate:r.return_proc,     qty:0, auto:false, tip:'Enter return units processed'},
-    {cat:'Outbound',id:'outbound_carton', name:'Outbound — Cartons',        sku:'OFPackage',             unit:'cartons',    rate:r.outbound_carton, qty:0, auto:false, tip:'Enter outbound cartons shipped'},
-    {cat:'Technology',id:'wms',           name:'WMS / Automated Fee',       sku:'WMS',                   unit:'month',      rate:r.wms,             qty:r.wms>0?1:0, auto:true, tip:'Fixed monthly fee'},
-    {cat:'Other',   id:'custom',          name:'Custom / Other Charges',    sku:'CP',                    unit:'—',          rate:0,                 qty:0, auto:false, tip:'Enter any custom charges (rate × qty)'},
-  ];
+// Per-client custom rates (overrides STD_RATES)
+const CUSTOM_RATES = {
+  'Milano Brands LLC':            {pick_pack:3.00,qc:45.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:99.99},
+  'LN Store, LLC':                {pick_pack:3.00,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:99.99},
+  'MXS Overseas Ltd':             {pick_pack:3.00,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:0},
+  'LRE Holding (Route of Heroes)':{pick_pack:0.90,qc:50.00,inbound_pallet:15.00,storage_rack:18.00,return_proc:2.50,outbound_pallet:5.00,wms:0},
+  'UNOde50':                      {pick_pack:10.50,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:0},
+  'KMAT Supply LLC':               {pick_pack:3.00,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:99.99},
+};
+
+// ─── STATE ───────────────────────────────────────────────────────────────
+let _clients = []; // loaded from API
+let _lines   = [];
+let _client  = null;
+let _ssOrders = 0;
+let _ssCarrierCost = 0;
+
+function getClientRates(clientName) {
+  const custom = CUSTOM_RATES[clientName] || {};
+  return Object.assign({...STD_RATES}, custom);
+}
+
+// ─── LOAD CLIENTS FROM API ──────────────────────────────────────────────
+async function loadClients() {
+  const sel = g('selClient');
+  try {
+    const resp = await fetch(CLIENTS_API);
+    if (resp.ok) {
+      _clients = await resp.json();
+    }
+  } catch(e) {
+    // Fallback to seed data
+    _clients = CLIENT_SEED;
+  }
+  if (!_clients || !_clients.length) _clients = CLIENT_SEED;
+
+  // Sort alphabetically
+  _clients.sort((a,b) => (a.name||'').localeCompare(b.name||''));
+
+  // Build grouped select
+  const active   = _clients.filter(c => (c.group||c.type||'') === 'active'   || ['Milano Brands LLC','MXS Overseas Ltd','LN Store, LLC','LRE Holding (Route of Heroes)','UNOde50','KMAT Supply LLC','Soluciones Mas X Menos','The Product Bar LLC'].includes(c.name));
+  const internal = _clients.filter(c => (c.group||'') === 'internal' || (c.name||'').toLowerCase().includes('jdk'));
+  const others   = _clients.filter(c => !active.includes(c) && !internal.includes(c));
+
+  let html = '<option value="">— Select client —</option>';
+  if (active.length) {
+    html += '<optgroup label="── Active 3PL Clients ──">';
+    active.forEach(c => { html += `<option value="${c.name}">${c.name}</option>`; });
+    html += '</optgroup>';
+  }
+  if (internal.length) {
+    html += '<optgroup label="── Internal ──">';
+    internal.forEach(c => { html += `<option value="${c.name}">${c.name}</option>`; });
+    html += '</optgroup>';
+  }
+  if (others.length) {
+    html += '<optgroup label="── Other Clients ──">';
+    others.forEach(c => { html += `<option value="${c.name}">${c.name}</option>`; });
+    html += '</optgroup>';
+  }
+  sel.innerHTML = html;
 }
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
@@ -381,22 +399,31 @@ function setStatus(msg, type='info') {
 function onClientChange() {
   const k = g('selClient').value;
   if (!k) return;
-  _client = CLIENTS[k];
-  // Auto-generate invoice number
+  // Find client in loaded list
+  _client = _clients.find(c => c.name === k) || CLIENT_SEED.find(c => c.name === k) || {name:k,mmb:0,shippingMarkup:10,email:'',ssStore:'',inboundClient:''};
+
+  // Auto invoice number
   const now = new Date();
-  g('invNum').value = `INV-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${_client.name.replace(/[^A-Z]/gi,'').slice(0,3).toUpperCase()}`;
-  setStatus(`&#128100; Client: <b>${_client.name}</b> — Set billing period then click "Load Data from ShipStation"`, 'info');
+  const initials = (k.replace(/[^A-Za-z ]/g,'').trim().split(' ').map(w=>w[0]||'').join('').toUpperCase()).slice(0,3);
+  g('invNum').value = `INV-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${initials}`;
+
+  // Set shipping markup from client config
+  const markup = _client.shippingMarkup ?? _client.shipping_markup ?? 10;
+  g('shippingMarkupPct').value = markup;
+
+  setStatus(`&#128100; <b>${_client.name}</b> loaded — ${_client.group==='active'||_client.status==='Onboarding'?'<span style="color:var(--g2);font-weight:700">Active 3PL client</span>':'Other QBO client'} · MMB: ${_client.mmb>0?'$'+_client.mmb:'None'} · Shipping markup: ${markup}%`, 'info');
 }
 
 // ─── INIT DATES ───────────────────────────────────────────────────────────────
-(function initDates(){
-  const now  = new Date();
-  const y = now.getFullYear(), m = now.getMonth();
-  const firstOfMonth = new Date(y, m, 1);
-  const lastOfMonth  = new Date(y, m+1, 0);
-  g('dateStart').value = firstOfMonth.toISOString().slice(0,10);
-  g('dateEnd').value   = lastOfMonth.toISOString().slice(0,10);
+(function init(){
+  loadClients();
+  const now=new Date();
+  const y=now.getFullYear(),m=now.getMonth();
+  g('dateStart').value=new Date(y,m,1).toISOString().slice(0,10);
+  g('dateEnd').value=new Date(y,m+1,0).toISOString().slice(0,10);
 })();
+// Legacy stub
+
 
 // ─── LOAD DATA FROM SHIPSTATION ───────────────────────────────────────────────
 async function loadBilling() {
@@ -404,7 +431,7 @@ async function loadBilling() {
   if (!clientKey) { alert('Please select a client first.'); return; }
   if (!g('dateStart').value || !g('dateEnd').value) { alert('Please set billing period dates.'); return; }
 
-  _client = CLIENTS[clientKey];
+  if (!_client || _client.name !== g('selClient').value) onClientChange();
   const start = g('dateStart').value;
   const end   = g('dateEnd').value;
 
@@ -441,33 +468,31 @@ async function loadBilling() {
       ordersCount = 0;
     }
 
-    // ── 2. Inbound/Outbound: read from shipments-proxy (Supabase) ────────
+    // ── 2. Inbound/Outbound: read from billing-inbound function (Supabase) ──
     try {
       const clientName = encodeURIComponent(_client.inboundClient || _client.ssStore || _client.name);
-      const iResp = await fetch(`/.netlify/functions/shipments-proxy?client=${clientName}`);
+      const iResp = await fetch(
+        `/.netlify/functions/billing-inbound?client=${clientName}&start=${start}&end=${end}&direction=Inbound`
+      );
       if (iResp.ok) {
         const iData = await iResp.json();
-        const records = Array.isArray(iData) ? iData : (iData.data || []);
-        // Filter by date range and direction = Inbound
-        const startTs = new Date(start + 'T00:00:00').getTime();
-        const endTs   = new Date(end   + 'T23:59:59').getTime();
-        const inbounds = records.filter(r => {
-          const ts = new Date(r.timestamp || r.created_at || 0).getTime();
-          const isInbound = (r.direction||r.dir||r.type||'').toLowerCase().includes('inbound');
-          return ts >= startTs && ts <= endTs && isInbound;
-        });
-        inboundCount = inbounds.length;
-        const statusMsg = `&#9989; ShipStation: <b>${ordersCount} orders</b> · Inbound portal: <b>${inboundCount} records</b> for "${_client.inboundClient||_client.ssStore}"`;
-        setStatus(statusMsg, ordersCount > 0 ? 'ok' : 'warn');
+        inboundCount = iData.count || 0;
       }
     } catch(ibErr) {
       // Inbound not critical — user can fill manually
     }
 
+    // Update combined status
+    const ssOk = ordersCount > 0;
+    setStatus(
+      `&#9989; ShipStation: <b>${ordersCount} orders shipped</b> &nbsp;·&nbsp; Inbound portal: <b>${inboundCount} cartons</b>`,
+      ssOk ? 'ok' : 'warn'
+    );
+
     _ssOrders = ordersCount;
 
     // Build billing lines with auto-populated values
-    _lines = getBillingLines(clientKey);
+    _lines = getBillingLines(_client.name);
     _lines.forEach(l => {
       if (l.id === 'pick_pack')       l.qty = ordersCount;
       if (l.id === 'inbound_carton')  l.qty = inboundCount;
