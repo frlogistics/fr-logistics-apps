@@ -257,7 +257,8 @@ const CLIENTS = {
     qboName:'Milano Brands LLC',
     email:'julieta@milanobrands.us',
     mmb:0,
-    ssStore:'Milano Brands',   // match ShipStation store name (partial)
+    ssStore:'Daizzy Gear',   // ShipStation store name
+    inboundClient:'Daizzy Gear', // Inbound/Outbound portal client name
     rates:{
       inbound_carton:2.50, inbound_pallet:20.00,
       storage_rack:45.00, wms:99.99,
@@ -272,6 +273,7 @@ const CLIENTS = {
     email:'mxsoverseas@gmail.com',
     mmb:0,
     ssStore:'MXS',
+    inboundClient:'MXS',
     rates:{
       inbound_carton:2.50, inbound_pallet:20.00,
       storage_rack:45.00, wms:0,
@@ -406,53 +408,77 @@ async function loadBilling() {
   const start = g('dateStart').value;
   const end   = g('dateEnd').value;
 
-  // Show spinner
   g('loadSpinWrap').innerHTML = '<span class="spin"></span>';
   setStatus('&#9656; Connecting to ShipStation API...', 'info');
 
-  try {
-    // Call ShipStation proxy for shipped orders in period
-    const url = `${SS_PROXY}?path=/orders&orderStatus=shipped&modifyDateStart=${start}&modifyDateEnd=${end}&pageSize=500`;
-    let ordersCount = 0;
+  let ordersCount = 0;
+  let inboundCount = 0;
 
+  try {
+    // ── 1. ShipStation: use /shipments endpoint with shipDate range ──────
     try {
+      // Use /shipments endpoint — correct for billing (shipped in period)
+      const url = `${SS_PROXY}?path=/shipments&shipDateStart=${start}&shipDateEnd=${end}&pageSize=500`;
       const resp = await fetch(url);
       if (resp.ok) {
         const data = await resp.json();
-        const orders = data.orders || [];
-        // Filter by store name matching client (if possible)
-        const storePattern = _client.ssStore.toLowerCase();
-        const filtered = orders.filter(o =>
-          (o.orderSource||'').toLowerCase().includes(storePattern) ||
-          (o.storeName||'').toLowerCase().includes(storePattern) ||
-          storePattern === '' // show all if no pattern
-        );
-        ordersCount = filtered.length > 0 ? filtered.length : orders.length;
-        setStatus(`&#9989; ShipStation: found <b>${orders.length} shipped orders</b> in period (${orders.length} total across all stores). Filtered for ${_client.name}: <b>${ordersCount}</b>.`, 'ok');
+        const shipments = data.shipments || [];
+        // Filter by store name
+        const pat = (_client.ssStore||'').toLowerCase();
+        const filtered = pat
+          ? shipments.filter(s =>
+              (s.storeName||'').toLowerCase().includes(pat) ||
+              (s.serviceCode||'').toLowerCase().includes(pat))
+          : shipments;
+        ordersCount = filtered.length > 0 ? filtered.length : shipments.length;
+        setStatus(`&#9989; ShipStation: <b>${shipments.length} shipments</b> in period · Filtered "${_client.ssStore}": <b>${ordersCount}</b>`, 'ok');
       } else {
-        throw new Error(`ShipStation API returned ${resp.status}`);
+        const errText = await resp.text();
+        throw new Error(`HTTP ${resp.status}: ${errText.slice(0,100)}`);
       }
     } catch(ssErr) {
-      setStatus(`&#9888;&#65039; ShipStation API unavailable (${ssErr.message}). You can still fill in quantities manually.`, 'warn');
+      setStatus(`&#9888;&#65039; ShipStation: ${ssErr.message} — enter orders manually`, 'warn');
       ordersCount = 0;
+    }
+
+    // ── 2. Inbound/Outbound: read from shipments-proxy (Supabase) ────────
+    try {
+      const clientName = encodeURIComponent(_client.inboundClient || _client.ssStore || _client.name);
+      const iResp = await fetch(`/.netlify/functions/shipments-proxy?client=${clientName}`);
+      if (iResp.ok) {
+        const iData = await iResp.json();
+        const records = Array.isArray(iData) ? iData : (iData.data || []);
+        // Filter by date range and direction = Inbound
+        const startTs = new Date(start + 'T00:00:00').getTime();
+        const endTs   = new Date(end   + 'T23:59:59').getTime();
+        const inbounds = records.filter(r => {
+          const ts = new Date(r.timestamp || r.created_at || 0).getTime();
+          const isInbound = (r.direction||r.dir||r.type||'').toLowerCase().includes('inbound');
+          return ts >= startTs && ts <= endTs && isInbound;
+        });
+        inboundCount = inbounds.length;
+        const statusMsg = `&#9989; ShipStation: <b>${ordersCount} orders</b> · Inbound portal: <b>${inboundCount} records</b> for "${_client.inboundClient||_client.ssStore}"`;
+        setStatus(statusMsg, ordersCount > 0 ? 'ok' : 'warn');
+      }
+    } catch(ibErr) {
+      // Inbound not critical — user can fill manually
     }
 
     _ssOrders = ordersCount;
 
-    // Build billing lines
+    // Build billing lines with auto-populated values
     _lines = getBillingLines(clientKey);
-    // Set auto quantities
     _lines.forEach(l => {
-      if (l.id === 'pick_pack') l.qty = ordersCount;
+      if (l.id === 'pick_pack')       l.qty = ordersCount;
+      if (l.id === 'inbound_carton')  l.qty = inboundCount;
       if (l.id === 'wms' && l.rate > 0) l.qty = 1;
     });
 
     renderBillingTable();
-    g('billingCard').style.display = 'block';
-    g('kpiSection').style.display = 'grid';
-
-    // Update KPIs
-    g('kpiOrders').textContent = ordersCount;
+    g('billingCard').style.display    = 'block';
+    g('kpiSection').style.display     = 'grid';
+    g('kpiOrders').textContent        = ordersCount;
+    g('kpiCartons').textContent       = inboundCount || '—';
     g('billingPeriodLabel').textContent = `${_client.name} · ${fD(start)} – ${fD(end)}`;
     recalc();
 
