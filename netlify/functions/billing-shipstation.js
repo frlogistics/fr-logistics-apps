@@ -155,24 +155,17 @@ exports.handler = async (event) => {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // NO FILTER — return summary only (no client filter applied)
+    // NO FILTER — should not reach here from billing.html (validation prevents it)
+    // Return error so billing.html shows a clear message instead of wrong data
     // ══════════════════════════════════════════════════════════════════════════
-    const allShipments  = await fetchAllPages(
-      `${SS_BASE}/shipments?shipDateStart=${start}&shipDateEnd=${end}`
-    );
-    const allStoreNames = [...new Set(allShipments.map(s => s.storeName || 'Unknown'))].sort();
-    const totalCost     = allShipments.reduce((sum, s) => sum + (s.shipmentCost || 0), 0);
-
     return {
-      statusCode: 200,
+      statusCode: 400,
       headers,
       body: JSON.stringify({
-        mode:        'unfiltered',
-        count:        allShipments.length,
-        totalCount:   allShipments.length,
-        carrierCost:  Math.round(totalCost * 100) / 100,
-        storeNames:   allStoreNames,
-        note:         'No store or customField1 filter applied. Configure ssStore or ssCustomField1 in client settings.',
+        mode:  'no_filter',
+        error: 'No store or customField1 filter provided. Configure billing source in Clients app.',
+        count: 0,
+        carrierCost: 0,
         start, end,
       })
     };
