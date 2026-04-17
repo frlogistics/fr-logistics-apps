@@ -851,7 +851,8 @@ td,th{white-space:nowrap}
         <td class="mono">${item.tracking}</td>
         <td><span class="pill">${item.type}</span></td>
         <td>${item.carrier}</td>
-        <td><button data-print="${item.tracking}">Print</button></td>
+        <td><button data-print="${item.tracking}" style="font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid rgba(14,165,233,.40);background:rgba(14,165,233,.10);color:#0c4a6e;cursor:pointer;font-weight:950">Print</button>
+          <button data-del="${item.tracking}" style="font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid rgba(239,68,68,.40);background:rgba(239,68,68,.08);color:#7f1d1d;cursor:pointer;font-weight:950" title="Delete">&#x2715;</button></td>
       `;
       inTbody.appendChild(tr);
     }
@@ -864,7 +865,8 @@ td,th{white-space:nowrap}
         <td class="mono">${item.tracking}</td>
         <td><span class="pill">${item.type}</span></td>
         <td>${item.carrier}</td>
-        <td><button data-print="${item.tracking}">Print</button></td>
+        <td><button data-print="${item.tracking}" style="font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid rgba(14,165,233,.40);background:rgba(14,165,233,.10);color:#0c4a6e;cursor:pointer;font-weight:950">Print</button>
+          <button data-del="${item.tracking}" style="font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid rgba(239,68,68,.40);background:rgba(239,68,68,.08);color:#7f1d1d;cursor:pointer;font-weight:950" title="Delete">&#x2715;</button></td>
       `;
       outTbody.appendChild(tr);
     }
@@ -874,6 +876,14 @@ td,th{white-space:nowrap}
       btn.addEventListener("click", async ()=>{
         const trk = btn.getAttribute("data-print");
         await openLabel(trk);
+      });
+    });
+
+    // Bind delete buttons
+    [...inTbody.querySelectorAll("button[data-del]"), ...outTbody.querySelectorAll("button[data-del]")].forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const trk = btn.getAttribute("data-del");
+        await deleteShipment(trk);
       });
     });
 
@@ -1030,10 +1040,8 @@ td,th{white-space:nowrap}
         setLastSaved(tracking);
         setBoxStatus("inStatus","Inbound saved successfully.","ok");
 
-        $("inTracking").value = "";
-        $("inNotes").value = "";
-        $("inCarrier").value = "Other";
-        $("inType").value = "Inbound (Prep Service)";
+        $("inTracking").value = "";  // only clear tracking + notes
+        $("inNotes").value = "";     // carrier + type stay sticky
 
         await renderTables();
         $("inTracking").focus();
@@ -1071,9 +1079,8 @@ td,th{white-space:nowrap}
         setLastSaved(tracking);
         setBoxStatus("outStatus","Outbound saved successfully.","ok");
 
-        $("outTracking").value = "";
-        $("outNotes").value = "";
-        $("outType").value = "Outbound (Shipment)";
+        $("outTracking").value = "";  // only clear tracking
+        $("outNotes").value = "";     // type stays sticky
 
         await renderTables();
         $("outTracking").focus();
