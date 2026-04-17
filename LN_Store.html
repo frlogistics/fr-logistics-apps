@@ -394,7 +394,7 @@ td,th{white-space:nowrap}
       <img src="fr_logo.png" alt="fr Logo" onerror="this.style.display='none'">
       <div>
         <h1>FR-LOGISTICS • Inbound & Outbound • Drop-Shipment</h1>
-        <div class="sub">Client: <b>LN-Store</b> • Outbound Carrier: <b>Mail de las Americas</b> </div>
+        <div class="sub">Client: <b>LN Store, LLC</b> • Outbound Carrier: <b>Mail de las Americas</b> </div>
       </div>
     </div>
     <div style="font-size:12px; color:var(--muted); font-weight:900;">
@@ -589,7 +589,7 @@ td,th{white-space:nowrap}
             <div><b>Time</b><span id="L_time">—</span></div>
 
             <div style="grid-column:1 / span 2;">
-              <b>Client</b><div class="client" id="L_client">LN-Store</div>
+              <b>Client</b><div class="client" id="L_client">LN Store, LLC</div>
             </div>
 
             <div style="grid-column:1 / span 2;">
@@ -642,7 +642,7 @@ td,th{white-space:nowrap}
   /***********************
    * Config
    ***********************/
-  const FIXED_CLIENT = "LN-Store";
+  const FIXED_CLIENT = "LN Store, LLC";
   const OUTBOUND_FIXED_CARRIER = "Mail de las Americas";
 
   const IN_CARRIERS = ["Amazon","USPS","UPS","FedEx","Walmart", "Target", "Other"];
@@ -653,78 +653,70 @@ td,th{white-space:nowrap}
   /***********************
    * IndexedDB (LN-Store app)
    ***********************/
-    /***********************
-   * Supabase Config
-   ***********************/
-  const SUPA_URL = "https://rijbschnchjiuggrhfrx.supabase.co";
-  const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpamJzY2huY2hqaXVnZ3JoZnJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMTQwOTQsImV4cCI6MjA4ODg5MDA5NH0.s3T4CStjWqOvz7qDpYtjt0yVJ0iyOMAKKwxkADSEs4s";
-  const TABLE = "shipments_ln";
-
-  async function sbFetch(method, path, body){
-    const res = await fetch(SUPA_URL + path, {
+    /* ── Shipments via Netlify proxy (secure, RLS compatible) ── */
+  async function proxyFetch(method, params = {}, body = null) {
+    const url = new URL("/.netlify/functions/shipments-proxy", location.origin);
+    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    const res = await fetch(url.toString(), {
       method,
-      headers: {
-        "apikey": SUPA_KEY,
-        "Authorization": "Bearer " + SUPA_KEY,
-        "Content-Type": "application/json",
-        "Prefer": method === "POST" ? "return=representation" : ""
-      },
+      headers: body ? { "Content-Type": "application/json" } : {},
       body: body ? JSON.stringify(body) : undefined
     });
-    if(!res.ok){ const err = await res.text(); throw new Error(err); }
+    if (!res.ok) throw new Error(await res.text());
     const text = await res.text();
     return text ? JSON.parse(text) : [];
   }
 
-  async function openDB(){ /* no-op */ }
+  async function openDB() {}
 
-  async function addInbound(item){
-    const rec = {
-      tracking: item.tracking,
-      direction: item.direction,
-      received_at: item.receivedAt || item.createdAt,
-      carrier: item.carrier,
-      type: item.type,
-      client: item.client,
-      notes: item.notes || ""
-    };
-    await sbFetch("POST", `/rest/v1/${TABLE}`, rec);
+  async function addShipment(item) {
+    await proxyFetch("POST", {}, {
+      tracking:    item.tracking,
+      direction:   item.direction,
+      received_at: item.createdAt,
+      carrier:     item.carrier,
+      type:        item.type,
+      client:      item.client,
+      notes:       item.notes || ""
+    });
     return true;
   }
 
-  async function addShipment(item){
-    return addInbound(item);
-  }
-
-  async function getInbound(tracking){
-    const data = await sbFetch("GET", `/rest/v1/${TABLE}?tracking=eq.${encodeURIComponent(tracking)}&limit=1`);
-    if(!data || data.length === 0) return null;
+  async function getShipment(tracking) {
+    const data = await proxyFetch("GET", { tracking });
+    if (!data || !data.length) return null;
     const r = data[0];
-    return { tracking: r.tracking,
-      direction: r.direction, receivedAt: r.received_at || r.created_at, createdAt: r.received_at || r.created_at, carrier: r.carrier, type: r.type, client: r.client, notes: r.notes };
+    return { id: r.id, tracking: r.tracking, direction: r.direction, createdAt: r.received_at || r.created_at, carrier: r.carrier, type: r.type, client: r.client, notes: r.notes };
   }
 
-  async function getShipment(tracking){
-    return getInbound(tracking);
+  async function getAllShipments() {
+    // Filter by client to only show LN Store, LLC records
+    const data = await proxyFetch("GET", { client: FIXED_CLIENT });
+    return (data || []).map(r => ({
+      id: r.id,
+      tracking: r.tracking, direction: r.direction,
+      createdAt: r.received_at || r.created_at,
+      carrier: r.carrier, type: r.type, client: r.client, notes: r.notes
+    }));
   }
 
-  async function getAllInbounds(){
-    const data = await sbFetch("GET", `/rest/v1/${TABLE}?order=received_at.desc&limit=2000`);
-    return (data||[]).map(r => ({ tracking: r.tracking,
-      direction: r.direction, receivedAt: r.received_at || r.created_at, createdAt: r.received_at || r.created_at, carrier: r.carrier, type: r.type, client: r.client, notes: r.notes }));
-  }
-
-  async function getAllShipments(){
-    return getAllInbounds();
-  }
-
-  async function clearAll(){
-    if(!confirm("DELETE ALL records from cloud database? This cannot be undone.")) return false;
-    await sbFetch("DELETE", `/rest/v1/${TABLE}?id=neq.00000000-0000-0000-0000-000000000000`);
+  async function clearAll() {
+    if (!confirm("DELETE ALL records from cloud database? This cannot be undone.")) return false;
+    await proxyFetch("DELETE", { client: FIXED_CLIENT });
     return true;
   }
 
-  /***********************
+  async function deleteShipment(tracking) {
+    if (!confirm(`Delete record:\n${tracking}\n\nThis cannot be undone.`)) return;
+    try {
+      await proxyFetch("DELETE", { tracking });
+      await renderTables();
+    } catch(e) {
+      alert("Error deleting record. Check connection.");
+    }
+  }
+
+    /***********************
    * Helpers
    ***********************/
   const $ = (id)=>document.getElementById(id);
@@ -938,7 +930,7 @@ td,th{white-space:nowrap}
     const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `LNStore_InOut_${new Date().toISOString().slice(0,10)}.csv`;
+    a.download = `LNStore_LLC_InOut_${new Date().toISOString().slice(0,10)}.csv`;
     a.click();
   }
 
@@ -965,7 +957,7 @@ td,th{white-space:nowrap}
     }
     XLSX.utils.book_append_sheet(wb, makeSheet(outRows), "Outbound_Log");
 
-    XLSX.writeFile(wb, `LNStore_InOut_${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.writeFile(wb, `LNStore_LLC_InOut_${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
   /***********************
@@ -1104,7 +1096,7 @@ td,th{white-space:nowrap}
 
     // Wipe local
     $("wipeBtn").addEventListener("click", async ()=>{
-      if(confirm("This will delete ALL local inbound/outbound records for LN-Store on this PC. Continue?")){
+      if(confirm("This will delete ALL local inbound/outbound records for LN Store, LLC on this PC. Continue?")){
         await clearAll();
         setLastSaved("");
         setBoxStatus("inStatus","Local data wiped.","ok");
