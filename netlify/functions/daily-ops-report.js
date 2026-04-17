@@ -215,7 +215,7 @@ async function sendEmail(html, text, label) {
     headers: { "Authorization": `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       from:    FROM_EMAIL,
-      to:      [TO_EMAIL],
+      to:      [TO_EMAIL, "warehouse@fr-logistics.net"],
       subject: `📦 FR-Logistics Ops Report — ${label}`,
       html,
       text
