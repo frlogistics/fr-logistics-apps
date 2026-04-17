@@ -502,6 +502,16 @@ function onClientChange() {
     {name:k, mmb:0, shippingMarkup:10, email:'', ssStore:'', inboundClient:'', group:'other'}
   );
 
+  // ── Reset all visual state from previous client ───────────────────────────
+  _ssCarrierCost = 0;
+  _lines = [];
+  g('billingCard').style.display        = 'none';
+  g('kpiSection').style.display         = 'none';
+  g('shippingMarkupRow').style.display  = 'none';
+  g('ssCarrierCost').textContent        = '$0.00';
+  g('ssShippingCharge').textContent     = '$0.00';
+  g('statusBar').style.display          = 'none';
+
   // Auto invoice number
   const now = new Date();
   const initials = (k.replace(/[^A-Za-z ]/g,'').trim().split(' ').map(w=>w[0]||'').join('').toUpperCase()).slice(0,3);
@@ -510,7 +520,6 @@ function onClientChange() {
   // Set shipping markup from client config
   const markup = _client.shippingMarkup ?? _client.shipping_markup ?? 10;
   g('shippingMarkupPct').value = markup;
-  // Auto-set MMB from client data
   const mmb = _client.mmb || 0;
 
   setStatus(`&#128100; <b>${_client.name}</b> — loading rates...`, 'info');
@@ -527,7 +536,7 @@ function onClientChange() {
       );
     })
     .catch(() => {
-      _rates = {}; // fallback to hardcoded STD_RATES
+      _rates = {};
       setStatus(`&#128100; <b>${_client.name}</b> · Using default rates (Supabase unavailable)`, 'warn');
     });
 }
