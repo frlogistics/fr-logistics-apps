@@ -591,8 +591,19 @@ async function loadBilling() {
         url = `${SS_PROXY}?start=${start}&end=${end}&store=${encodeURIComponent(_client.ssStore)}`;
         modeName = `store "${_client.ssStore}"`;
       } else if (billingSource === 'ss_cf1' || _client.ssCustomField1) {
-        url = `${SS_PROXY}?start=${start}&end=${end}&customField1=${encodeURIComponent(_client.ssCustomField1)}`;
-        modeName = `Custom Field 1 = "${_client.ssCustomField1}"`;
+        // Validate CF1 is non-empty — empty CF1 would return ALL shipments (no filter)
+        const cf1 = (_client.ssCustomField1 || '').trim();
+        if (!cf1) {
+          setStatus(
+            `&#9888;&#65039; <b>${_client.name}</b>: Custom Field 1 tag is empty.<br>` +
+            `Go to <b>Clients app → Edit → Billing Configuration → SS Custom Field 1 Tag</b> and enter the exact tag used in ShipStation.`,
+            'warn'
+          );
+          ordersCount = 0;
+          throw null;
+        }
+        url = `${SS_PROXY}?start=${start}&end=${end}&customField1=${encodeURIComponent(cf1)}`;
+        modeName = `Custom Field 1 = "${cf1}"`;
       } else {
         setStatus(`&#9888;&#65039; Billing source not configured for this client — enter orders manually.<br>Go to <b>Clients app → Edit → Billing Configuration</b> to set it up.`, 'warn');
         ordersCount = 0;
