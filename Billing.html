@@ -273,6 +273,7 @@ button:active{transform:scale(.97)}
 
 
 
+
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const CLIENTS_API  = '/.netlify/functions/clients-list';
 const RATES_API    = '/.netlify/functions/billing-rates';
@@ -1043,9 +1044,9 @@ async function sendDraft() {
   <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px">
     <tr>
       <td style="background:#f0fdf4;border:2px dashed #16a34a;border-radius:10px;padding:14px 18px;text-align:center">
-        <div style="font-size:10px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">📄 Invoice Online — QBO</div>
-        <div style="font-size:13px;color:#166534;font-weight:600">[ PASTE QBO INVOICE LINK HERE BEFORE SENDING ]</div>
-        <div style="font-size:10px;color:#4ade80;margin-top:4px">Go to QBO → Invoice → Copy link → Replace this line</div>
+        <div style="font-size:10px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">View Invoice Online — QBO</div>
+        <div style="font-size:14px;color:#166534;font-weight:700">&rarr; Paste QBO invoice link here &larr;</div>
+        <div style="font-size:11px;color:#166534;margin-top:4px">Open invoice in QBO &rarr; copy URL from browser &rarr; paste &amp; replace this line</div>
       </td>
     </tr>
   </table>
@@ -1053,8 +1054,8 @@ async function sendDraft() {
 </td></tr>
 <tr><td style="background:#1e293b;padding:13px 30px">
   <table width="100%" cellpadding="0" cellspacing="0"><tr>
-    <td style="font-size:11px;font-weight:700;color:#f1f5f9">Jose Fuentes - Operations Manager<br><span style="font-weight:400;color:#94a3b8;font-size:10px">FR-Logistics &middot; Miami, FL 33172</span></td>
-    <td align="right" style="font-size:10px;color:#94a3b8;line-height:1.7">(786) 300-1443<br>info@fr-logistics.net</td>
+    <td style="font-size:11px;font-weight:700;color:#ffffff">Jose Fuentes - Operations Manager<br><span style="font-weight:400;color:#ffffff;font-size:10px">FR-Logistics &middot; Miami, FL 33172</span></td>
+    <td align="right" style="font-size:10px;color:#ffffff;line-height:1.7">(786) 300-1443<br><a href="mailto:info@fr-logistics.net" style="color:#ffffff;text-decoration:none">info@fr-logistics.net</a></td>
   </tr></table>
 </td></tr>
 </table></body></html>`;
@@ -1101,6 +1102,7 @@ function resetAll() {
   g('dateStart').value = new Date(y, m, 1).toISOString().slice(0, 10);
   g('dateEnd').value   = new Date(y, m+1, 0).toISOString().slice(0, 10);
 })();
+
 
 
 
