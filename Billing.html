@@ -268,6 +268,8 @@ button:active{transform:scale(.97)}
 </div><!-- /wrap -->
 
 <script>
+
+
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const CLIENTS_API  = '/.netlify/functions/clients-list';
 const RATES_API    = '/.netlify/functions/billing-rates';
@@ -776,8 +778,8 @@ function updateShippingLine() {
   recalc();
 }
 
-function genPDF() {
-  if (!_client) return;
+function buildPDFDoc() {
+  if (!_client) return null;
   const {jsPDF} = window.jspdf;
   const doc = new jsPDF({unit:'pt',format:'letter'});
   const PW=612, ML=36, W=540;
@@ -826,7 +828,7 @@ function genPDF() {
   let lastCat='';
   let sub=0;
   _lines.forEach((l,i)=>{
-    if(!l.qty && !l.rate) return;
+    if(!l.qty || l.qty === 0) return;  // skip zero-qty lines
     const tot=l.qty*l.rate;
     if(l.cat!==lastCat){
       doc.setFillColor(...LG); doc.setDrawColor(...BD); doc.setLineWidth(.2);
@@ -890,47 +892,98 @@ function genPDF() {
   doc.text('FR-Logistics  |  10893 NW 17th St, Unit 121, Miami, FL 33172  |  (786) 300-1443  |  info@fr-logistics.net  |  www.fr-logistics.net',PW/2,PH-9,{align:'center'});
 
   const fname = `FR_Billing_${(_client.name||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.pdf`;
+  return doc;
+}
+
+function genPDF() {
+  const doc = buildPDFDoc();
+  if (!doc) return;
+  const fname = `FR_Billing_${(_client.name||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.pdf`;
   doc.save(fname);
 }
 
 function genCSV() {
   if (!_client || !_lines.length) { alert('Load billing data first.'); return; }
-  const invNo  = g('invNum').value || 'INV-001';
-  const invDate= fD(g('dateEnd').value);
-  // Due date = 15 days after end
-  const dueD   = new Date(g('dateEnd').value);
-  dueD.setDate(dueD.getDate()+15);
-  const dueDate= fD(dueD.toISOString().slice(0,10));
-  const period = `${fD(g('dateStart').value)} - ${fD(g('dateEnd').value)}`;
+  const invNo   = g('invNum').value || 'INV-001';
+  const invDate = fD(g('dateEnd').value);
+  const dueD    = new Date(g('dateEnd').value);
+  dueD.setDate(dueD.getDate() + 15);
+  const dueDate = fD(dueD.toISOString().slice(0, 10));
+  const period  = `${fD(g('dateStart').value)} - ${fD(g('dateEnd').value)}`;
+  const customer = (_client.qboName || _client.name || '').trim();
 
-  const rows = [['InvoiceNo','Customer','InvoiceDate','DueDate','Terms',
-                 'ItemName','ItemDescription','Qty','Rate','Amount','Memo']];
+  // QBO service name map: SKU → exact name as it appears in QBO
+  const QBO_NAMES = {
+    'Inbound Package':   'Inbound Fees Packages',
+    'Inbound Pallet':    'Inbound Fees Pallets',
+    'SFRP':              'Storage Fees Rack Position',
+    'STLB':              'Storage Fees Large Bin',
+    'SFSB':              'Storage Fees Small Bin',
+    'LTSF':              'Long-Term Storage Fees',
+    'FP':                'Fulfillment Process (Pick & Pack)',
+    'BCUIB':             'Boxing / collating units into boxes',
+    'S&C_Per_Box':       'Sorting and Categorizing',
+    'Label ASIN or UPC': 'Labeling Fees',
+    'PIF':               'Product Inspection Fees',
+    'PBF':               'Poly Bagging Fees',
+    'KIT':               'Kitting & Bundling',
+    'PL01':              'Palletizing Labor',
+    'SW01':              'Stretch Wrapping',
+    'ROL':               'Removal of Old Labels',
+    'SLF':               'Shipping Label Fee',
+    'SLA':               'Shipping Label Application',
+    'RPF':               'Return Processing Fees',
+    'R&R':               'Refurbishing & Repackaging',
+    'D&R':               'Disposal & Recycling',
+    'OFPackage':         'Outbound Fees Package',
+    'OFP':               'Outbound Fees Pallets',
+    'OPR':               'Oversized Pallet',
+    'CD-Inbound Package':'CD-Inbound Fees Packages',
+    'CD-Inbound Pallet': 'CD-Inbound Fees Pallets',
+    'O&C':               'Order Consolidation',
+    'PR&L':              'Pallet Repacking  & Labeling',
+    'CFP':               'Carrier Facility Pickup',
+    'RD':                'Retail Distribution',
+    'WMS':               'Automated WMS',
+    'MI':                'Marketplace Integration',
+    'In&Out-Eco':        'EcoPack+',
+    'Inbound-Dropshipment': 'Inbound-Dropshipment',
+    'CP':                'Custom Projects',
+  };
 
-  let firstLine = true;
-  _lines.forEach(l => {
-    if (!l.qty || l.qty === 0) return;
-    const tot = l.qty * l.rate;
+  // QBO-compliant headers — exact names required by QBO invoice import
+  const rows = [[
+    '*InvoiceNo', '*Customer', '*InvoiceDate', '*DueDate', 'Terms',
+    'Memo', 'Item(Product/Service)', 'ItemDescription', 'ItemQuantity',
+    'ItemRate', '*ItemAmount'
+  ]];
+
+  // Only export lines with qty > 0
+  const activeLines = _lines.filter(l => l.qty > 0);
+
+  activeLines.forEach((l, i) => {
+    const serviceName = QBO_NAMES[l.sku] || l.sku || l.name;
+    const amount      = (l.qty * l.rate).toFixed(2);
     rows.push([
-      firstLine ? invNo : '',
-      firstLine ? _client.qboName : '',
-      firstLine ? invDate : '',
-      firstLine ? dueDate : '',
-      firstLine ? 'Net 15' : '',
-      l.sku,
-      `${l.name} — ${period}`,
-      l.qty,
-      l.rate.toFixed(2),
-      tot.toFixed(2),
-      firstLine ? `FR-Logistics Billing ${period}` : '',
+      invNo,                                    // *InvoiceNo — repeat on every row
+      i === 0 ? customer : '',                  // *Customer — only on first row
+      i === 0 ? invDate  : '',                  // *InvoiceDate — only on first row
+      i === 0 ? dueDate  : '',                  // *DueDate — only on first row
+      i === 0 ? 'Net 15' : '',                  // Terms — only on first row
+      i === 0 ? `FR-Logistics Billing ${period}` : '', // Memo — only on first row
+      serviceName,                              // Item(Product/Service) — QBO service name
+      `${l.name} — ${period}`,                  // ItemDescription
+      l.qty,                                    // ItemQuantity
+      l.rate.toFixed(2),                        // ItemRate
+      amount,                                   // *ItemAmount
     ]);
-    firstLine = false;
   });
 
-  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], {type:'text/csv'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `QBO_Import_${(_client.name||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.csv`;
+  const csv  = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `QBO_Import_${(customer || 'Client').replace(/[^a-z0-9]+/gi, '_')}_${g('dateStart').value}.csv`;
   a.click();
 }
 
@@ -943,7 +996,13 @@ async function sendDraft() {
 
   try {
     const {jsPDF} = window.jspdf;
-    genPDF(); // downloads PDF locally
+
+    // Generate PDF in memory as base64 (for email attachment)
+    // Also triggers local download for user's records
+    const doc = buildPDFDoc();  // shared helper — see genPDF
+    const pdfBase64 = doc.output('datauristring').split(',')[1];
+    const pdfFilename = `FR_Billing_${(_client.name||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.pdf`;
+    doc.save(pdfFilename);  // download locally
 
     // Also send via Netlify
     const period  = `${fD(g('dateStart').value)} – ${fD(g('dateEnd').value)}`;
@@ -994,7 +1053,12 @@ async function sendDraft() {
         to:      _client.email || 'josefuentes@fr-logistics.net',
         subject: `Billing Summary ${invNo} — ${_client.name} | ${period}`,
         htmlBody, textBody,
-        attachments:[]  // PDF already downloaded locally
+        attachments: [{
+          filename: pdfFilename,
+          content:  pdfBase64,
+          encoding: 'base64',
+          type:     'application/pdf',
+        }]
       })
     });
     const data = await resp.json().catch(()=>({success:true}));
@@ -1023,6 +1087,8 @@ function resetAll() {
   g('dateStart').value = new Date(y, m, 1).toISOString().slice(0, 10);
   g('dateEnd').value   = new Date(y, m+1, 0).toISOString().slice(0, 10);
 })();
+
+
 
 </script>
 </body>
