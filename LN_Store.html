@@ -7,374 +7,102 @@
 
   <style>
     :root{
-      /* ✅ Light gray background (LN-Store) */
-      --bg:#f1f5f9;              /* slate-100 */
-      --card:#ffffff;
-      --line: rgba(15,23,42,.12);
-      --text:#0f172a;
-      --muted:#475569;
-
-      --accent:#0ea5e9;          /* blue accent */
-      --accent2:#22c55e;         /* green */
-      --bad:#ef4444;
-      --ok:#16a34a;
-
-      --radius:14px;
-      --shadow: 0 14px 40px rgba(2,6,23,.10);
+      --bg:#f6f7fb;--card:#ffffff;--line:rgba(15,23,42,.12);--text:#0f172a;--muted:#475569;
+      --fr-green:#1fa463;--fr-teal:#16a3b5;
+      --tag-in-bg:rgba(31,164,99,.12);--tag-in-bd:rgba(31,164,99,.35);--tag-in-tx:#0f5132;
+      --tag-out-bg:rgba(245,158,11,.18);--tag-out-bd:rgba(245,158,11,.45);--tag-out-tx:#7a4b00;
+      --bad:#ef4444;--ok:#16a34a;--radius:16px;--shadow:0 18px 40px rgba(2,6,23,.10);
     }
-
     *{box-sizing:border-box}
-    body{
-      margin:0;
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;
-      background: var(--bg);
-      color: var(--text);
-      min-height:100vh;
-      display:flex;
-      flex-direction:column;
-    }
-
-    header{
-      padding:14px 18px;
-      border-bottom:1px solid var(--line);
-      background: rgba(255,255,255,.92);
-      position:sticky; top:0;
-      backdrop-filter: blur(10px);
-      z-index: 5;
-    }
-    .headRow{
-      max-width:100%;max-width:1200px;
-      margin:0 auto;
-      display:flex;
-      gap:12px;
-      align-items:center;
-      justify-content:space-between;
-    }
-    .brand{
-      display:flex; align-items:center; gap:12px;
-    }
-    .brand img{
-      height:34px; width:auto; display:block;
-      border-radius:10px;
-      border:1px solid var(--line);
-      background:#fff;
-      padding:6px;
-    }
-    header h1{margin:0; font-size:15px; font-weight:950; letter-spacing:.2px}
-    header .sub{margin-top:4px; color:var(--muted); font-size:12px}
-
-    .wrap{
-      max-width:100%;max-width:1200px;
-      width:100%;
-      margin:0 auto;
-      padding:16px;
-      flex:1;
-    }
-
-    .grid{
-      display:grid;
-      grid-template-columns: 1.05fr .95fr;
-      gap:14px;
-      align-items:start;
-    }
-
-    .card{
-      background:var(--card);
-      border:1px solid var(--line);
-      border-radius:var(--radius);
-      padding:14px;
-      box-shadow:var(--shadow);
-    }
-    .card h2{margin:0 0 10px; font-size:14px}
-    .card h3{margin:12px 0 8px; font-size:13px; color:#334155}
-
-    label{
-      display:block;
-      font-size:12px;
-      color:var(--muted);
-      margin:10px 0 6px;
-    }
-
-    input, select, textarea{
-      width:100%;
-      background:#fff;
-      color:var(--text);
-      border:1px solid rgba(15,23,42,.18);
-      border-radius:12px;
-      padding:10px 10px;
-      outline:none;
-    }
-    input:focus, select:focus, textarea:focus{
-      border-color: rgba(14,165,233,.75);
-      box-shadow: 0 0 0 3px rgba(14,165,233,.16);
-    }
-
-    textarea{min-height:70px; resize:vertical}
-
-    .row{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
-    .row3{display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px;}
-    .btns{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;}
-
-    button{
-      border:1px solid rgba(15,23,42,.16);
-      border-radius:12px;
-      padding:10px 12px;
-      background:rgba(2,6,23,.04);
-      color:var(--text);
-      cursor:pointer;
-      font-weight:950;
-    }
-    button.primary{
-      background: linear-gradient(135deg, rgba(14,165,233,.18), rgba(34,197,94,.12));
-      border-color: rgba(14,165,233,.50);
-    }
-    button.danger{
-      background:rgba(239,68,68,.08);
-      border-color:rgba(239,68,68,.40);
-    }
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      background:radial-gradient(900px 520px at 18% 6%,rgba(31,164,99,.12),transparent 60%),
+        radial-gradient(900px 520px at 82% 6%,rgba(22,163,181,.10),transparent 60%),var(--bg);
+      color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+    header{padding:14px 18px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.82);
+      position:sticky;top:0;backdrop-filter:blur(10px);z-index:5}
+    .headRow{max-width:100%;max-width:1500px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .brand{display:flex;align-items:center;gap:12px}
+    .brand img{height:34px;width:auto;border-radius:12px;border:1px solid var(--line);background:#fff;padding:6px}
+    header h1{margin:0;font-size:15px;font-weight:950;letter-spacing:.2px}
+    header .sub{margin-top:4px;color:var(--muted);font-size:12px}
+    .wrap{max-width:100%;max-width:1500px;width:100%;margin:0 auto;padding:16px;flex:1}
+    .grid3{display:grid;grid-template-columns:1fr 1fr 1.1fr;gap:14px;align-items:start}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow)}
+    .card h2{margin:0 0 10px;font-size:18px}
+    .card h3{margin:12px 0 8px;font-size:13px;color:#334155}
+    label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px}
+    input,select,textarea{width:100%;background:#fff;color:var(--text);border:1px solid rgba(15,23,42,.18);border-radius:12px;padding:10px;outline:none}
+    input:focus,select:focus,textarea:focus{border-color:rgba(31,164,99,.55);box-shadow:0 0 0 3px rgba(31,164,99,.14)}
+    textarea{min-height:70px;resize:vertical}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+    button{border:1px solid rgba(15,23,42,.14);border-radius:12px;padding:10px 12px;background:rgba(2,6,23,.04);color:var(--text);cursor:pointer;font-weight:950}
+    button.primary{background:linear-gradient(135deg,rgba(31,164,99,.16),rgba(22,163,181,.10));border-color:rgba(31,164,99,.40)}
+    button.danger{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.40)}
     button:hover{filter:brightness(1.03)}
-
-    .hint{margin-top:8px; font-size:12px; color:var(--muted)}
-
-    .status{
-      margin-top:10px;
-      font-size:12px;
-      padding:9px 10px;
-      border-radius:12px;
-      border:1px solid rgba(15,23,42,.14);
-      background: rgba(2,6,23,.03);
-    }
-    .status.ok{
-      border-color:rgba(22,163,74,.40);
-      background:rgba(22,163,74,.07);
-      color:#14532d;
-      font-weight:900;
-    }
-    .status.bad{
-      border-color:rgba(239,68,68,.55);
-      background:rgba(239,68,68,.08);
-      color:#7f1d1d;
-      font-weight:950;
-    }
-
-    .mono{
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    }
-
-    table{width:100%; border-collapse:collapse; margin-top:10px; font-size:12px;}
-    th, td{padding:8px 8px; border-bottom:1px solid rgba(15,23,42,.10); text-align:left; vertical-align:top}
-    th{
-      color:#0f172a; font-weight:950;
-      background:rgba(2,6,23,.03);
-      position:sticky; top:0;
-    }
-    .tableWrap{
-      max-height:420px;
-      overflow:auto;
-      border:1px solid rgba(15,23,42,.12);
-      border-radius:12px;
-    }
-
-    .pill{
-      display:inline-block;
-      padding:3px 8px;
-      border-radius:999px;
-      border:1px solid rgba(14,165,233,.35);
-      background:rgba(14,165,233,.10);
-      color:#0c4a6e;
-      font-weight:950;
-      white-space:nowrap;
-    }
-    .pill.green{
-      border-color: rgba(34,197,94,.35);
-      background: rgba(34,197,94,.10);
-      color:#14532d;
-    }
-
-    .split{
-      display:grid;
-      grid-template-columns: 1fr;
-      gap:14px;
-    }
-
-    /* Query results box */
-    .qBox{
-      border:1px solid rgba(15,23,42,.12);
-      background:rgba(2,6,23,.02);
-      border-radius:12px;
-      padding:10px;
-      margin-top:10px;
-    }
-    .qGrid{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap:10px;
-      font-size:12px;
-    }
-    .qItem b{
-      display:block;
-      font-size:11px;
-      color:var(--muted);
-      margin-bottom:3px;
-      text-transform:uppercase;
-      letter-spacing:.35px;
-      font-weight:950;
-    }
+    .hint{margin-top:8px;font-size:12px;color:var(--muted)}
+    .status{margin-top:10px;font-size:12px;padding:9px 10px;border-radius:12px;border:1px solid rgba(15,23,42,.12);background:rgba(2,6,23,.02)}
+    .status.ok{border-color:rgba(22,163,74,.40);background:rgba(22,163,74,.07);color:#14532d;font-weight:900}
+    .status.bad{border-color:rgba(239,68,68,.55);background:rgba(239,68,68,.08);color:#7f1d1d;font-weight:950}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+    .pill{display:inline-block;padding:3px 8px;border-radius:999px;font-weight:950;white-space:nowrap}
+    .pill.in{border:1px solid var(--tag-in-bd);background:var(--tag-in-bg);color:var(--tag-in-tx)}
+    .pill.out{border:1px solid var(--tag-out-bd);background:var(--tag-out-bg);color:var(--tag-out-tx)}
+    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px}
+    th,td{padding:8px;border-bottom:1px solid rgba(15,23,42,.10);text-align:left;vertical-align:top}
+    th{color:#0f172a;font-weight:950;background:rgba(2,6,23,.03);position:sticky;top:0;z-index:1}
+    .tableWrap{max-height:260px;overflow:auto;border:1px solid rgba(15,23,42,.12);border-radius:12px}
+    .qBox{border:1px solid rgba(15,23,42,.12);background:rgba(2,6,23,.02);border-radius:12px;padding:10px;margin-top:10px}
+    .qGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px}
+    .qItem b{display:block;font-size:11px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.35px;font-weight:950}
     .qVal{font-weight:950}
-    .qNotFound{
-      font-weight:950;
-      color:#7f1d1d;
-      border:1px solid rgba(239,68,68,.55);
-      background:rgba(239,68,68,.08);
-      padding:10px;
-      border-radius:12px;
-      margin-top:10px;
-      text-align:center;
-    }
-
-    /* Modal */
-    dialog{border:none; border-radius:16px; padding:0; background:transparent;}
-    .modal{
-      width:min(920px, 96vw);
-      background:#fff;
-      border:1px solid rgba(15,23,42,.12);
-      border-radius:16px; overflow:hidden;
-      box-shadow:var(--shadow);
-    }
-    .modalHead{
-      display:flex; justify-content:space-between; align-items:center;
-      padding:12px 14px; border-bottom:1px solid rgba(15,23,42,.10);
-      background:rgba(2,6,23,.02);
-    }
+    .qNotFound{font-weight:950;color:#7f1d1d;border:1px solid rgba(239,68,68,.55);background:rgba(239,68,68,.08);padding:10px;border-radius:12px;margin-top:10px;text-align:center}
+    dialog{border:none;border-radius:16px;padding:0;background:transparent}
+    .modal{width:min(980px,96vw);background:#fff;border:1px solid rgba(15,23,42,.12);border-radius:16px;overflow:hidden;box-shadow:var(--shadow)}
+    .modalHead{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(15,23,42,.10);background:rgba(2,6,23,.02)}
     .modalHead b{font-size:13px}
     .modalBody{padding:14px}
-    .modalBtns{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;}
+    .modalBtns{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+    .label{width:4in;height:6in;background:#fff;color:#000;border:1px solid #ddd;padding:0.15in;box-sizing:border-box;border-radius:10px;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+    .label .track{font-size:30px;font-weight:950;letter-spacing:.2px;word-break:break-all}
+    .label .meta{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:14px}
+    .label .meta div b{display:block;font-size:11px;color:#444;margin-bottom:2px;font-weight:950;text-transform:uppercase;letter-spacing:.4px}
+    .label .client{font-size:20px;font-weight:950}
+    .label .type{font-size:18px;font-weight:950}
+    .label .qrWrap{margin-top:auto;display:flex;justify-content:center;align-items:center;padding-top:6px}
+    .label .qrHint{font-size:10px;color:#666;text-align:center;margin-top:6px}
 
-    /* Label 4x6 */
-    .label{
-      width:4in; height:6in;
-      background:#fff; color:#000;
-      border:1px solid #ddd;
-      padding:0.15in;
-      box-sizing:border-box;
-      border-radius:10px;
-      display:flex;
-      flex-direction:column;
-      gap:10px;
-      overflow:hidden;
-    }
-    .label .track{
-      font-size:30px;
-      font-weight:950;
-      letter-spacing:.2px;
-      word-break:break-all;
-    }
-    .label .meta{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap:6px 12px;
-      font-size:14px
-    }
-    .label .meta div b{
-      display:block;
-      font-size:11px;
-      color:#444;
-      margin-bottom:2px;
-      font-weight:950;
-      text-transform:uppercase;
-      letter-spacing:.4px
-    }
-    .label .client{font-size:20px; font-weight:950}
-    .label .type{font-size:18px; font-weight:950}
-    .label .qrWrap{
-      margin-top:auto;
-      display:flex;
-      justify-content:center;
-      align-items:center;
-      padding-top:6px;
-    }
-    .label .qrHint{
-      font-size:10px;
-      color:#666;
-      text-align:center;
-      margin-top:6px
-    }
+    /* EcoPack+ badge */
+    .eco-badge{display:none;align-items:center;gap:8px;margin-top:10px;padding:9px 12px;border-radius:12px;
+      background:rgba(31,164,99,.08);border:1px solid rgba(31,164,99,.35);font-size:12px;font-weight:700;color:#0f5132}
+    .eco-badge.show{display:flex}
+    .eco-badge .eco-wa{margin-left:auto;font-size:11px;font-weight:900;padding:3px 9px;border-radius:999px;
+      background:rgba(37,211,102,.15);border:1px solid rgba(37,211,102,.35);color:#128C7E;white-space:nowrap}
+    .wa-sending{display:none;margin-top:8px;padding:8px 12px;border-radius:12px;
+      background:rgba(37,211,102,.08);border:1px solid rgba(37,211,102,.30);
+      font-size:12px;color:#0f5132;font-weight:700;align-items:center;gap:8px}
+    .wa-sending.show{display:flex}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .wa-spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(31,164,99,.3);border-top-color:#1fa463;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
 
-    /* ✅ PRINT FIXES (Rollo 4x6) */
-    @page{ size: 4in 6in; margin: 0; }
+    /* Delete button in table rows */
+    button.del{padding:4px 8px;font-size:11px;background:rgba(239,68,68,.07);border-color:rgba(239,68,68,.30);color:#b91c1c;border-radius:8px;font-weight:950}
+    button.del:hover{background:rgba(239,68,68,.15)}
+
+    @page{size:4in 6in;margin:0}
     @media print{
-      html, body{
-        margin:0 !important;
-        padding:0 !important;
-        height:auto !important;
-        overflow:visible !important;
-        background:#fff !important;
-      }
-      header, .wrap, .modalHead, .modalBtns, .modalBody .hint, .modalBody .tools, footer{
-        display:none !important;
-      }
-      dialog{
-        display:block !important;
-        position:static !important;
-        margin:0 !important;
-        padding:0 !important;
-        overflow:visible !important;
-      }
-      .modal{
-        border:none !important;
-        border-radius:0 !important;
-        box-shadow:none !important;
-        background:transparent !important;
-        width:auto !important;
-      }
-      .modalBody{padding:0 !important;}
-      .label{
-        width:4in !important;
-        height:6in !important;
-        padding:0.10in !important;
-        border:none !important;
-        border-radius:0 !important;
-        overflow:hidden !important;
-      }
-      .label .track{ font-size:28px !important; }
-      .label .meta{ font-size:13px !important; }
-      .label .client{ font-size:18px !important; }
-      .label .type{ font-size:16px !important; }
-      .label .qrWrap{ padding-top:4px !important; }
-      .label .qrHint{ display:none !important; }
+      html,body{margin:0!important;padding:0!important;height:auto!important;overflow:visible!important;background:#fff!important}
+      header,.wrap,.modalHead,.modalBtns,.modalBody .hint,.modalBody .tools,footer{display:none!important}
+      dialog{display:block!important;position:static!important;margin:0!important;padding:0!important;overflow:visible!important}
+      .modal{border:none!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;width:auto!important}
+      .modalBody{padding:0!important}
+      .label{width:4in!important;height:6in!important;padding:0.10in!important;border:none!important;border-radius:0!important;overflow:hidden!important}
     }
-
-    footer{
-      border-top:1px solid var(--line);
-      background: rgba(255,255,255,.70);
-      padding:12px 18px;
-    }
-    .footRow{
-      max-width:100%;max-width:1200px;
-      margin:0 auto;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-    }
-    .welcome{
-      display:flex;
-      align-items:center;
-      gap:10px;
-      color:var(--muted);
-      font-size:12px;
-      font-weight:900;
-    }
-    .welcome b{color:var(--text); font-weight:950;}
-    .liam{
-      height:44px;
-      width:auto;
-      display:block;
-      border-radius:12px;
-      border:1px solid rgba(15,23,42,.10);
-      background:#fff;
-      padding:6px;
-    }
+    footer{border-top:1px solid var(--line);background:rgba(255,255,255,.72);padding:12px 18px}
+    .footRow{max-width:100%;max-width:1500px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .welcome{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;font-weight:900}
+    .welcome b{color:var(--text);font-weight:950}
+    .liam{height:46px;width:auto;display:block;border-radius:12px;border:1px solid rgba(15,23,42,.10);background:#fff;padding:6px}
   
 /* ── Mobile Responsive Patch ── */
 @media(max-width:900px){
@@ -393,8 +121,8 @@ td,th{white-space:nowrap}
       <!-- Optional: place LN-Store logo in same folder as ln_logo.png -->
       <img src="fr_logo.png" alt="fr Logo" onerror="this.style.display='none'">
       <div>
-        <h1>FR-LOGISTICS • Inbound & Outbound • Drop-Shipment</h1>
-        <div class="sub">Client: <b>LN Store, LLC</b> • Outbound Carrier: <b>Mail de las Americas</b> </div>
+        <h1>FR-Logistics • LN Store • Inbound / Outbound</h1>
+        <div class="sub">LN Store, LLC • Drop-Shipment • Outbound: Mail de las Americas</div>
       </div>
     </div>
     <div style="font-size:12px; color:var(--muted); font-weight:900;">
