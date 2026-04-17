@@ -268,13 +268,35 @@ button:active{transform:scale(.97)}
 </div><!-- /wrap -->
 
 <script>
-// ─── CONFIG ─────────────────────────────────────────────────────────────────
-const SS_PROXY      = '/.netlify/functions/billing-shipstation';
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
+const CLIENTS_API  = '/.netlify/functions/clients-list';
+const RATES_API    = '/.netlify/functions/billing-rates';
+const SS_API       = '/.netlify/functions/billing-shipstation';
+const INBOUND_API  = '/.netlify/functions/billing-inbound';
 const NETLIFY_EMAIL = 'https://apps.fr-logistics.net/.netlify/functions/send-onboard-email';
-const CLIENTS_API   = '/.netlify/functions/clients-list';
-const RATES_API     = '/.netlify/functions/billing-rates';
 
-// ─── CLIENT SEED (fallback if API unavailable) ───────────────────────────
+// ─── RATES ────────────────────────────────────────────────────────────────────
+const STD_RATES = {
+  inbound_carton:2.50, inbound_pallet:20.00, storage_rack:45.00, storage_lbin:5.00,
+  storage_sbin:3.00,   storage_lt:60.00,     pick_pack:3.00,     boxing:0.15,
+  labeling:1.00,       qc:50.00,             poly_bag:1.00,      kitting:0.75,
+  palletizing:5.00,    stretch_wrap:4.00,    label_removal:1.00, refurb:4.00,
+  disposal:3.00,       return_proc:5.00,     outbound_carton:2.00,outbound_pallet:25.00,
+  oversized_pallet:60.00, xdock_pkg:2.50,   xdock_pal:20.00,    order_consol:2.00,
+  pal_repack:25.00,    carrier_pickup:14.99, retail_dist:10.00,  sorting:1.00,
+  shipping_label_app:0.50, wms:0,            marketplace:150.00, custom:50.00
+};
+
+const CUSTOM_RATES = {
+  'Milano Brands LLC':            {pick_pack:3.00,qc:45.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:99.99},
+  'LN Store, LLC':                {pick_pack:3.00,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:99.99},
+  'MXS Overseas Ltd':             {pick_pack:3.00,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:0},
+  'LRE Holding (Route of Heroes)':{pick_pack:0.90,qc:50.00,inbound_pallet:15.00,storage_rack:18.00,return_proc:2.50,outbound_pallet:5.00,wms:0},
+  'UNOde50':                      {pick_pack:10.50,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:0},
+  'KMAT Supply LLC':               {pick_pack:3.00,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:99.99},
+};
+
+// ─── CLIENT SEED (fallback when Supabase is unavailable) ──────────────────────
 const CLIENT_SEED = [
   {name:"A&V Products Corp",company:"A&V Products Corp",qboName:"A&V PRODUCTS CORP",group:"other",ssStore:"",email:"avproductsusa@gmail.com",phone:"(786) 775-7331",mmb:0,shippingMarkup:10,status:"Active"},
   {name:"Altis Wholesale LLC",company:"Altis Wholesale LLC",qboName:"Marcelo Caceres",group:"other",ssStore:"",email:"marcelo@altiswholesale.com",phone:"(307) 317-3251",mmb:0,shippingMarkup:10,status:"Active"},
@@ -305,102 +327,38 @@ const CLIENT_SEED = [
   {name:"WeKeep Travel Services LLC",company:"WeKeep Travel Services LLC",qboName:"WeKeep Travel Services, LLC",group:"other",ssStore:"",email:"sofia.gaggi@wekeep.app",phone:"+541132884589",mmb:0,shippingMarkup:10,status:"Active"}
 ];
 
-// Standard rates — used for clients without custom rate cards
-const STD_RATES = {
-  inbound_carton:2.50, inbound_pallet:20.00, storage_rack:45.00, storage_lbin:5.00,
-  storage_sbin:3.00,   storage_lt:60.00,     pick_pack:3.00,     boxing:0.15,
-  labeling:1.00,       qc:50.00,             poly_bag:1.00,      kitting:0.75,
-  palletizing:5.00,    stretch_wrap:4.00,    label_removal:1.00, refurb:4.00,
-  disposal:3.00,       return_proc:5.00,     outbound_carton:2.00,outbound_pallet:25.00,
-  oversized_pallet:60.00, xdock_pkg:2.50,   xdock_pal:20.00,    order_consol:2.00,
-  pal_repack:25.00,    carrier_pickup:14.99, retail_dist:10.00,  sorting:1.00,
-  shipping_label_app:0.50, wms:0,            marketplace:150.00, custom:50.00
-};
-
-// Per-client custom rates (overrides STD_RATES)
-const CUSTOM_RATES = {
-  'Milano Brands LLC':            {pick_pack:3.00,qc:45.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:99.99},
-  'LN Store, LLC':                {pick_pack:3.00,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:99.99},
-  'MXS Overseas Ltd':             {pick_pack:3.00,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:0},
-  'LRE Holding (Route of Heroes)':{pick_pack:0.90,qc:50.00,inbound_pallet:15.00,storage_rack:18.00,return_proc:2.50,outbound_pallet:5.00,wms:0},
-  'UNOde50':                      {pick_pack:10.50,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:0},
-  'KMAT Supply LLC':               {pick_pack:3.00,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:99.99},
-};
-
-// ─── STATE ───────────────────────────────────────────────────────────────
-let _clients = []; // loaded from API
-let _rates   = {}; // loaded from billing-rates per client
-let _lines        = [];
-let _client       = null;
-let _ssOrders     = 0;
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let _clients = [];   // all clients from API
+let _rates   = {};   // rate card from Supabase for current client
+let _client  = null; // current client object
+let _lines   = [];   // billing line items
 let _ssCarrierCost = 0;
 
-function getClientRates(clientName) {
-  // If Supabase rates are loaded (_rates), use them
-  // Otherwise fall back to hardcoded STD_RATES + CUSTOM_RATES
-  if (_rates && Object.keys(_rates).length > 0) {
-    return {...STD_RATES, ..._rates};
-  }
-  const custom = CUSTOM_RATES[clientName] || {};
-  return Object.assign({...STD_RATES}, custom);
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+const g   = id => document.getElementById(id);
+const fc  = v  => new Intl.NumberFormat('en-US', { style:'currency', currency:'USD' }).format(+v || 0);
+const fD  = iso => { if (!iso) return '—'; const [y,m,d] = iso.split('-'); return `${m}/${d}/${y}`; };
+
+function setStatus(msg, type = 'info') {
+  const bar = g('statusBar');
+  bar.style.display = 'block';
+  bar.className = `status-bar status-${type}`;
+  bar.innerHTML = msg;
 }
 
-function getBillingLines(clientName, clientObj) {
-  const r = getClientRates(clientName);
-  const wmsEnabled = clientObj?.wmsIntegration || clientObj?.wms_integration || false;
-  return [
-    // INBOUND
-    {cat:'Inbound / Receiving', id:'inbound_carton', name:'Inbound — Cartons / Boxes', sku:'Inbound Package', unit:'cartons', rate:r.inbound_carton, qty:0, auto:true, tip:'Auto from Inbound/Outbound portal'},
-    {cat:'Inbound / Receiving', id:'inbound_pallet', name:'Inbound — Pallets', sku:'Inbound Pallet', unit:'pallets', rate:r.inbound_pallet, qty:0, auto:false, tip:'Enter pallets received'},
-    // STORAGE
-    {cat:'Storage', id:'storage_rack', name:'Storage — Rack Position', sku:'SFRP', unit:'racks/mo', rate:r.storage_rack, qty:0, auto:false, tip:'Enter occupied rack positions'},
-    {cat:'Storage', id:'storage_lbin', name:'Storage — Large Bin', sku:'STLB', unit:'bins/mo', rate:r.storage_lbin, qty:0, auto:false, tip:'Enter occupied large bins'},
-    {cat:'Storage', id:'storage_sbin', name:'Storage — Small Bin', sku:'SFSB', unit:'bins/mo', rate:r.storage_sbin, qty:0, auto:false, tip:'Enter occupied small bins'},
-    {cat:'Storage', id:'storage_lt', name:'Long-Term Storage (120+ days)', sku:'LTSF', unit:'racks/mo', rate:r.storage_lt, qty:0, auto:false, tip:'Inventory >120 days without movement'},
-    // FULFILLMENT
-    {cat:'Fulfillment', id:'pick_pack', name:'Pick & Pack (Orders)', sku:'FP', unit:'orders', rate:r.pick_pack, qty:0, auto:true, tip:'Auto from ShipStation shipped orders'},
-    {cat:'Fulfillment', id:'boxing', name:'Boxing / Collating Units', sku:'BCUIB', unit:'units', rate:r.boxing, qty:0, auto:false, tip:'Enter total units boxed/collated'},
-    {cat:'Fulfillment', id:'sorting', name:'Sorting and Categorizing', sku:'S&C_Per_Box', unit:'boxes', rate:r.sorting, qty:0, auto:false, tip:'Enter boxes sorted/categorized'},
-    // PREP
-    {cat:'Prep Services', id:'labeling', name:'Amazon SPN Labeling', sku:'Label ASIN or UPC', unit:'units', rate:r.labeling, qty:0, auto:false, tip:'Enter units labeled (Amazon FBA / UPC)'},
-    {cat:'Prep Services', id:'qc', name:'QC / Product Inspection', sku:'PIF', unit:'hours', rate:r.qc, qty:0, auto:false, tip:'Enter total QC inspection hours'},
-    {cat:'Prep Services', id:'poly_bag', name:'Poly Bagging', sku:'PBF', unit:'units', rate:r.poly_bag, qty:0, auto:false, tip:'Enter units poly-bagged'},
-    {cat:'Prep Services', id:'kitting', name:'Kitting & Bundling', sku:'KIT', unit:'units', rate:r.kitting, qty:0, auto:false, tip:'Enter units kitted/bundled'},
-    {cat:'Prep Services', id:'palletizing', name:'Palletizing Labor', sku:'PL01', unit:'pallets', rate:r.palletizing, qty:0, auto:false, tip:'Enter pallets palletized'},
-    {cat:'Prep Services', id:'stretch_wrap', name:'Stretch Wrapping', sku:'SW01', unit:'pallets', rate:r.stretch_wrap, qty:0, auto:false, tip:'Enter pallets stretch-wrapped'},
-    {cat:'Prep Services', id:'label_removal', name:'Removal of Old Labels', sku:'ROL', unit:'units', rate:r.label_removal, qty:0, auto:false, tip:'Enter units with labels removed'},
-    // SHIPPING
-    {cat:'Shipping', id:'shipping_label_fee', name:'Shipping Label Fee', sku:'SLF', unit:'period total', rate:0, qty:1, auto:true, tip:'Carrier cost from ShipStation + markup %. Edit markup % above.'},
-    {cat:'Shipping', id:'shipping_label_app', name:'Shipping Label Application', sku:'SLA', unit:'labels', rate:r.shipping_label_app, qty:0, auto:false, tip:'Enter labels applied (not via ShipStation)'},
-    // RETURNS
-    {cat:'Returns', id:'return_proc', name:'Return Processing', sku:'RPF', unit:'units', rate:r.return_proc, qty:0, auto:true, tip:'Auto from Inbound/Outbound portal (RMA records only)'},
-    {cat:'Returns', id:'refurb', name:'Refurbishing & Repackaging', sku:'R&R', unit:'units', rate:r.refurb, qty:0, auto:false, tip:'Enter units refurbished/repackaged'},
-    {cat:'Returns', id:'disposal', name:'Disposal & Recycling', sku:'D&R', unit:'units', rate:r.disposal, qty:0, auto:false, tip:'Enter units disposed/recycled'},
-    // OUTBOUND
-    {cat:'Outbound', id:'drop_shipment', name:'Drop-Shipment Service', sku:'Inbound-Dropshipment', unit:'packages',
-     rate:r.drop_shipment || 6.00, qty:0, auto:true,
-     tip:'Auto from Inbound/Outbound portal (Outbound Drop-Shipment records)'},
-    {cat:'Outbound', id:'outbound_carton', name:'Outbound — Cartons', sku:'OFPackage', unit:'cartons', rate:r.outbound_carton, qty:0, auto:false, tip:'Enter outbound cartons shipped'},
-    {cat:'Outbound', id:'outbound_pallet', name:'Outbound — Pallets', sku:'OFP', unit:'pallets', rate:r.outbound_pallet, qty:0, auto:false, tip:'Enter outbound pallets shipped'},
-    {cat:'Outbound', id:'oversized_pallet', name:'Oversized Pallet', sku:'OPR', unit:'pallets', rate:r.oversized_pallet, qty:0, auto:false, tip:'Exceeds 40x48", >70" ht, or >1500 lbs'},
-    // CROSS-DOCKING
-    {cat:'Cross-Docking', id:'xdock_pkg', name:'Cross-Dock — Packages', sku:'CD-Inbound Package', unit:'cartons', rate:r.xdock_pkg, qty:0, auto:false, tip:'Inbound for cross-dock (no storage)'},
-    {cat:'Cross-Docking', id:'xdock_pal', name:'Cross-Dock — Pallets', sku:'CD-Inbound Pallet', unit:'pallets', rate:r.xdock_pal, qty:0, auto:false, tip:'Inbound pallets for cross-dock'},
-    {cat:'Cross-Docking', id:'order_consol', name:'Order Consolidation', sku:'O&C', unit:'orders', rate:r.order_consol, qty:0, auto:false, tip:'Merging multiple shipments into one'},
-    {cat:'Cross-Docking', id:'pal_repack', name:'Pallet Repacking & Labeling', sku:'PR&L', unit:'pallets', rate:r.pal_repack, qty:0, auto:false, tip:'Repack + label pallet for carrier'},
-    {cat:'Cross-Docking', id:'carrier_pickup', name:'Carrier Facility Pickup', sku:'CFP', unit:'requests', rate:r.carrier_pickup, qty:0, auto:false, tip:'LTL/FTL carrier pickup coordination'},
-    // B2B
-    {cat:'B2B / Wholesale', id:'retail_dist', name:'Retail Distribution', sku:'RD', unit:'shipments', rate:r.retail_dist, qty:0, auto:false, tip:'Bulk shipments to retail locations'},
-    // TECHNOLOGY
-    {cat:'Technology', id:'wms', name:'WMS / Automated Fee', sku:'WMS', unit:'month', rate:r.wms, qty:wmsEnabled && r.wms>0 ? 1 : 0, auto:true, tip:wmsEnabled ? 'Monthly WMS fee — ShipStation integration active' : 'WMS not applicable — no direct ShipStation integration for this client'},
-    {cat:'Technology', id:'marketplace', name:'Marketplace Integration', sku:'MI', unit:'one-time', rate:r.marketplace, qty:0, auto:false, tip:'One-time marketplace setup fee'},
-    // OTHER
-    {cat:'Other', id:'custom', name:'Custom / Other Charges', sku:'CP', unit:'—', rate:0, qty:0, auto:false, tip:'Enter rate × qty for any custom charge'},
-  ];
+function resetUI() {
+  // Hide all billing output sections and reset global state
+  _lines = [];
+  _ssCarrierCost = 0;
+  g('billingCard').style.display    = 'none';
+  g('kpiSection').style.display     = 'none';
+  g('shippingMarkupRow').style.display = 'none';
+  g('ssCarrierCost').textContent    = '$0.00';
+  g('ssShippingCharge').textContent = '$0.00';
+  g('statusBar').style.display      = 'none';
 }
 
-// ─── LOAD CLIENTS FROM API ──────────────────────────────────────────────
-// Normalize a client record regardless of source (Supabase or seed)
+// ─── CLIENT SETUP ─────────────────────────────────────────────────────────────
 function normalizeClient(c) {
   const name = c.name || '';
   return {
@@ -479,253 +437,250 @@ async function loadClients() {
   sel.disabled = false;
 }
 
-// ─── STATE ────────────────────────────────────────────────────────────────────
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
-const g   = id => document.getElementById(id);
-const fc  = v  => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(+v||0);
-const fD  = iso => { if(!iso)return'—'; const[y,m,d]=iso.split('-'); return`${m}/${d}/${y}`; };
-
-function setStatus(msg, type='info') {
-  const bar = g('statusBar');
-  bar.style.display = 'block';
-  bar.className = 'status-bar status-'+type;
-  bar.innerHTML = msg;
-}
-
 function onClientChange() {
   const k = g('selClient').value;
   if (!k) return;
-  // Find client in loaded list
+
+  // 1. Set client from loaded list (normalizeClient maps all Supabase fields)
   _client = normalizeClient(
     _clients.find(c => c.name === k) ||
     CLIENT_SEED.find(c => c.name === k) ||
-    {name:k, mmb:0, shippingMarkup:10, email:'', ssStore:'', inboundClient:'', group:'other'}
+    { name: k, mmb: 0, shippingMarkup: 10, ssStore: '', ssCustomField1: '', billingSource: '', group: 'other' }
   );
 
-  // ── Reset all visual state from previous client ───────────────────────────
-  _ssCarrierCost = 0;
-  _lines = [];
-  g('billingCard').style.display        = 'none';
-  g('kpiSection').style.display         = 'none';
-  g('shippingMarkupRow').style.display  = 'none';
-  g('ssCarrierCost').textContent        = '$0.00';
-  g('ssShippingCharge').textContent     = '$0.00';
-  g('statusBar').style.display          = 'none';
+  // 2. Reset all UI immediately — no stale data from previous client
+  resetUI();
 
-  // Auto invoice number
+  // 3. Set invoice number and markup
   const now = new Date();
-  const initials = (k.replace(/[^A-Za-z ]/g,'').trim().split(' ').map(w=>w[0]||'').join('').toUpperCase()).slice(0,3);
-  g('invNum').value = `INV-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${initials}`;
+  const ini = k.replace(/[^A-Za-z ]/g,'').trim().split(' ').map(w => w[0]||'').join('').toUpperCase().slice(0,3);
+  g('invNum').value = `INV-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${ini}`;
+  g('shippingMarkupPct').value = _client.shippingMarkup ?? 10;
 
-  // Set shipping markup from client config
-  const markup = _client.shippingMarkup ?? _client.shipping_markup ?? 10;
-  g('shippingMarkupPct').value = markup;
-  const mmb = _client.mmb || 0;
-
-  setStatus(`&#128100; <b>${_client.name}</b> — loading rates...`, 'info');
-
-  // Load rate card from Supabase
+  // 4. Load rate card async (non-blocking — billing can still work with STD_RATES)
+  _rates = {};
   fetch(`${RATES_API}?client=${encodeURIComponent(k)}`)
-    .then(r => r.json())
+    .then(r => r.ok ? r.json() : null)
     .then(data => {
-      _rates = data.rates || {};
-      const src = data.hasCustomRates ? 'Custom rate card' : 'Default rates';
+      if (data?.rates) _rates = data.rates;
+      const src = data?.hasCustomRates ? 'Custom rate card' : 'Default rates';
       setStatus(
-        `&#128100; <b>${_client.name}</b> · ${src} · MMB: ${_client.mmb>0?'$'+_client.mmb:'None'} · Markup: ${markup}%`,
+        `👤 <b>${_client.name}</b> · ${src} · MMB: ${_client.mmb > 0 ? fc(_client.mmb) : 'None'} · Markup: ${_client.shippingMarkup ?? 10}%`,
         'info'
       );
     })
     .catch(() => {
-      _rates = {};
-      setStatus(`&#128100; <b>${_client.name}</b> · Using default rates (Supabase unavailable)`, 'warn');
+      setStatus(`👤 <b>${_client.name}</b> · Default rates (offline)`, 'info');
     });
 }
 
-// ─── INIT DATES ───────────────────────────────────────────────────────────────
-(function init(){
-  loadClients();
-  const now=new Date();
-  const y=now.getFullYear(),m=now.getMonth();
-  g('dateStart').value=new Date(y,m,1).toISOString().slice(0,10);
-  g('dateEnd').value=new Date(y,m+1,0).toISOString().slice(0,10);
-})();
-// Legacy stub
+// ─── RATE CARDS ───────────────────────────────────────────────────────────────
+function getClientRates(clientName) {
+  // If Supabase rates are loaded (_rates), use them
+  // Otherwise fall back to hardcoded STD_RATES + CUSTOM_RATES
+  if (_rates && Object.keys(_rates).length > 0) {
+    return {...STD_RATES, ..._rates};
+  }
+  const custom = CUSTOM_RATES[clientName] || {};
+  return Object.assign({...STD_RATES}, custom);
+}
 
+function getBillingLines(clientName, clientObj) {
+  const r = getClientRates(clientName);
+  const wmsEnabled = clientObj?.wmsIntegration || clientObj?.wms_integration || false;
+  return [
+    // INBOUND
+    {cat:'Inbound / Receiving', id:'inbound_carton', name:'Inbound — Cartons / Boxes', sku:'Inbound Package', unit:'cartons', rate:r.inbound_carton, qty:0, auto:true, tip:'Auto from Inbound/Outbound portal'},
+    {cat:'Inbound / Receiving', id:'inbound_pallet', name:'Inbound — Pallets', sku:'Inbound Pallet', unit:'pallets', rate:r.inbound_pallet, qty:0, auto:false, tip:'Enter pallets received'},
+    // STORAGE
+    {cat:'Storage', id:'storage_rack', name:'Storage — Rack Position', sku:'SFRP', unit:'racks/mo', rate:r.storage_rack, qty:0, auto:false, tip:'Enter occupied rack positions'},
+    {cat:'Storage', id:'storage_lbin', name:'Storage — Large Bin', sku:'STLB', unit:'bins/mo', rate:r.storage_lbin, qty:0, auto:false, tip:'Enter occupied large bins'},
+    {cat:'Storage', id:'storage_sbin', name:'Storage — Small Bin', sku:'SFSB', unit:'bins/mo', rate:r.storage_sbin, qty:0, auto:false, tip:'Enter occupied small bins'},
+    {cat:'Storage', id:'storage_lt', name:'Long-Term Storage (120+ days)', sku:'LTSF', unit:'racks/mo', rate:r.storage_lt, qty:0, auto:false, tip:'Inventory >120 days without movement'},
+    // FULFILLMENT
+    {cat:'Fulfillment', id:'pick_pack', name:'Pick & Pack (Orders)', sku:'FP', unit:'orders', rate:r.pick_pack, qty:0, auto:true, tip:'Auto from ShipStation shipped orders'},
+    {cat:'Fulfillment', id:'boxing', name:'Boxing / Collating Units', sku:'BCUIB', unit:'units', rate:r.boxing, qty:0, auto:false, tip:'Enter total units boxed/collated'},
+    {cat:'Fulfillment', id:'sorting', name:'Sorting and Categorizing', sku:'S&C_Per_Box', unit:'boxes', rate:r.sorting, qty:0, auto:false, tip:'Enter boxes sorted/categorized'},
+    // PREP
+    {cat:'Prep Services', id:'labeling', name:'Amazon SPN Labeling', sku:'Label ASIN or UPC', unit:'units', rate:r.labeling, qty:0, auto:false, tip:'Enter units labeled (Amazon FBA / UPC)'},
+    {cat:'Prep Services', id:'qc', name:'QC / Product Inspection', sku:'PIF', unit:'hours', rate:r.qc, qty:0, auto:false, tip:'Enter total QC inspection hours'},
+    {cat:'Prep Services', id:'poly_bag', name:'Poly Bagging', sku:'PBF', unit:'units', rate:r.poly_bag, qty:0, auto:false, tip:'Enter units poly-bagged'},
+    {cat:'Prep Services', id:'kitting', name:'Kitting & Bundling', sku:'KIT', unit:'units', rate:r.kitting, qty:0, auto:false, tip:'Enter units kitted/bundled'},
+    {cat:'Prep Services', id:'palletizing', name:'Palletizing Labor', sku:'PL01', unit:'pallets', rate:r.palletizing, qty:0, auto:false, tip:'Enter pallets palletized'},
+    {cat:'Prep Services', id:'stretch_wrap', name:'Stretch Wrapping', sku:'SW01', unit:'pallets', rate:r.stretch_wrap, qty:0, auto:false, tip:'Enter pallets stretch-wrapped'},
+    {cat:'Prep Services', id:'label_removal', name:'Removal of Old Labels', sku:'ROL', unit:'units', rate:r.label_removal, qty:0, auto:false, tip:'Enter units with labels removed'},
+    // SHIPPING
+    {cat:'Shipping', id:'shipping_label_fee', name:'Shipping Label Fee', sku:'SLF', unit:'period total', rate:0, qty:1, auto:true, tip:'Carrier cost from ShipStation + markup %. Edit markup % above.'},
+    {cat:'Shipping', id:'shipping_label_app', name:'Shipping Label Application', sku:'SLA', unit:'labels', rate:r.shipping_label_app, qty:0, auto:false, tip:'Enter labels applied (not via ShipStation)'},
+    // RETURNS
+    {cat:'Returns', id:'return_proc', name:'Return Processing', sku:'RPF', unit:'units', rate:r.return_proc, qty:0, auto:true, tip:'Auto from Inbound/Outbound portal (RMA records only)'},
+    {cat:'Returns', id:'refurb', name:'Refurbishing & Repackaging', sku:'R&R', unit:'units', rate:r.refurb, qty:0, auto:false, tip:'Enter units refurbished/repackaged'},
+    {cat:'Returns', id:'disposal', name:'Disposal & Recycling', sku:'D&R', unit:'units', rate:r.disposal, qty:0, auto:false, tip:'Enter units disposed/recycled'},
+    // OUTBOUND
+    {cat:'Outbound', id:'drop_shipment', name:'Drop-Shipment Service', sku:'Inbound-Dropshipment', unit:'packages',
+     rate:r.drop_shipment || 6.00, qty:0, auto:true,
+     tip:'Auto from Inbound/Outbound portal (Outbound Drop-Shipment records)'},
+    {cat:'Outbound', id:'outbound_carton', name:'Outbound — Cartons', sku:'OFPackage', unit:'cartons', rate:r.outbound_carton, qty:0, auto:false, tip:'Enter outbound cartons shipped'},
+    {cat:'Outbound', id:'outbound_pallet', name:'Outbound — Pallets', sku:'OFP', unit:'pallets', rate:r.outbound_pallet, qty:0, auto:false, tip:'Enter outbound pallets shipped'},
+    {cat:'Outbound', id:'oversized_pallet', name:'Oversized Pallet', sku:'OPR', unit:'pallets', rate:r.oversized_pallet, qty:0, auto:false, tip:'Exceeds 40x48", >70" ht, or >1500 lbs'},
+    // CROSS-DOCKING
+    {cat:'Cross-Docking', id:'xdock_pkg', name:'Cross-Dock — Packages', sku:'CD-Inbound Package', unit:'cartons', rate:r.xdock_pkg, qty:0, auto:false, tip:'Inbound for cross-dock (no storage)'},
+    {cat:'Cross-Docking', id:'xdock_pal', name:'Cross-Dock — Pallets', sku:'CD-Inbound Pallet', unit:'pallets', rate:r.xdock_pal, qty:0, auto:false, tip:'Inbound pallets for cross-dock'},
+    {cat:'Cross-Docking', id:'order_consol', name:'Order Consolidation', sku:'O&C', unit:'orders', rate:r.order_consol, qty:0, auto:false, tip:'Merging multiple shipments into one'},
+    {cat:'Cross-Docking', id:'pal_repack', name:'Pallet Repacking & Labeling', sku:'PR&L', unit:'pallets', rate:r.pal_repack, qty:0, auto:false, tip:'Repack + label pallet for carrier'},
+    {cat:'Cross-Docking', id:'carrier_pickup', name:'Carrier Facility Pickup', sku:'CFP', unit:'requests', rate:r.carrier_pickup, qty:0, auto:false, tip:'LTL/FTL carrier pickup coordination'},
+    // B2B
+    {cat:'B2B / Wholesale', id:'retail_dist', name:'Retail Distribution', sku:'RD', unit:'shipments', rate:r.retail_dist, qty:0, auto:false, tip:'Bulk shipments to retail locations'},
+    // TECHNOLOGY
+    {cat:'Technology', id:'wms', name:'WMS / Automated Fee', sku:'WMS', unit:'month', rate:r.wms, qty:wmsEnabled && r.wms>0 ? 1 : 0, auto:true, tip:wmsEnabled ? 'Monthly WMS fee — ShipStation integration active' : 'WMS not applicable — no direct ShipStation integration for this client'},
+    {cat:'Technology', id:'marketplace', name:'Marketplace Integration', sku:'MI', unit:'one-time', rate:r.marketplace, qty:0, auto:false, tip:'One-time marketplace setup fee'},
+    // OTHER
+    {cat:'Other', id:'custom', name:'Custom / Other Charges', sku:'CP', unit:'—', rate:0, qty:0, auto:false, tip:'Enter rate × qty for any custom charge'},
+  ];
+}
 
-// ─── LOAD DATA FROM SHIPSTATION ───────────────────────────────────────────────
+// ─── MAIN BILLING LOAD ────────────────────────────────────────────────────────
 async function loadBilling() {
-  const clientKey = g('selClient').value;
-  if (!clientKey) { alert('Please select a client first.'); return; }
-  if (!g('dateStart').value || !g('dateEnd').value) { alert('Please set billing period dates.'); return; }
+  if (!g('selClient').value) { alert('Select a client first'); return; }
+  if (!g('dateStart').value || !g('dateEnd').value) { alert('Set billing period dates'); return; }
 
+  // Ensure _client is in sync with dropdown
   if (!_client || _client.name !== g('selClient').value) onClientChange();
+
   const start = g('dateStart').value;
   const end   = g('dateEnd').value;
 
+  // Reset UI and show spinner
+  resetUI();
   g('loadSpinWrap').innerHTML = '<span class="spin"></span>';
-  setStatus('&#9656; Connecting to ShipStation API...', 'info');
 
-  let ordersCount = 0;
-  let inboundCount = 0;
-  let dropShipCount = 0;
-  _ssCarrierCost = 0; // always reset before loading new client
+  // ── Determine billing source ──────────────────────────────────────────────
+  // Priority: read from Supabase field (billing_source), fallback to infer from store/CF1
+  const bsrc = (_client.billingSource || _client.billing_source || '').toLowerCase().trim();
 
-  // Declare at function level so it's accessible in all blocks including forEach
-  const billingSource = _client.billingSource || _client.billing_source || 'ss_cf1';
+  let ordersCount   = 0;
+  let inboundCount  = 0;
+  let rmaCount      = 0;
+  let dropCount     = 0;
+  let carrierCost   = 0;
+  let ssStatus      = '';
 
-  try {
-    // ── 1. ShipStation: dual mode (integrated store OR Custom Field 1) ──────
+  // ── Step 1: ShipStation ───────────────────────────────────────────────────
+  if (bsrc === 'portal') {
+    // Portal-only client: no ShipStation involvement
+    ssStatus = `ℹ️ Portal-only client — ShipStation: N/A`;
+    g('shippingMarkupRow').style.display = 'none';
+
+  } else if (bsrc === 'ss_store' && _client.ssStore) {
+    // Mode 1: filter by store name
     try {
-      let url, modeName;
-      // billing_source from fr_clients drives the ShipStation query mode:
-      // ss_store → integrated store filter (e.g. Milano / Daizzy Gear)
-      // ss_cf1   → manual orders tagged with Custom Field 1
-      // portal   → no ShipStation (Drop-Ship, EcoPack+ clients)
-      if (billingSource === 'portal') {
-        setStatus(`&#9432; Portal-only client — ShipStation does not apply. Loading portal data...`, 'info');
-        ordersCount = 0;
-        _ssCarrierCost = 0;
-        g('shippingMarkupRow').style.display = 'none'; // hide shipping label fee panel
-        throw null; // skip to inbound section
-      } else if (billingSource === 'ss_store' || _client.ssStore) {
-        url = `${SS_PROXY}?start=${start}&end=${end}&store=${encodeURIComponent(_client.ssStore)}`;
-        modeName = `store "${_client.ssStore}"`;
-      } else if (billingSource === 'ss_cf1' || _client.ssCustomField1) {
-        // Validate CF1 is non-empty — empty CF1 would return ALL shipments (no filter)
-        const cf1 = (_client.ssCustomField1 || '').trim();
-        if (!cf1) {
-          setStatus(
-            `&#9888;&#65039; <b>${_client.name}</b>: Custom Field 1 tag is empty.<br>` +
-            `Go to <b>Clients app → Edit → Billing Configuration → SS Custom Field 1 Tag</b> and enter the exact tag used in ShipStation.`,
-            'warn'
-          );
-          ordersCount = 0;
-          throw null;
-        }
-        url = `${SS_PROXY}?start=${start}&end=${end}&customField1=${encodeURIComponent(cf1)}`;
-        modeName = `Custom Field 1 = "${cf1}"`;
-      } else {
-        setStatus(`&#9888;&#65039; Billing source not configured for this client — enter orders manually.<br>Go to <b>Clients app → Edit → Billing Configuration</b> to set it up.`, 'warn');
-        ordersCount = 0;
-        throw null;
-      }
+      const url = `${SS_API}?start=${start}&end=${end}&store=${encodeURIComponent(_client.ssStore)}`;
+      const res = await fetch(url);
+      const d   = await res.json();
+      if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
 
-      const resp = await fetch(url);
-      if (resp.ok) {
-        const data = await resp.json();
-        ordersCount    = data.count       || 0;
-        _ssCarrierCost = data.carrierCost || 0;
-
-        if (data.mode === 'store' && !data.storeMatched) {
-          // Store not found — show available stores to diagnose mismatch
-          const found = (data.storeNames||[]).join(', ') || 'none';
-          setStatus(
-            `&#9888;&#65039; Store "<b>${_client.ssStore}</b>" not matched in ShipStation.<br>` +
-            `Stores active this period: [<b>${found}</b>]<br>` +
-            `Check client ssStore config or enter orders manually.`,
-            'warn'
-          );
-          ordersCount = 0; _ssCarrierCost = 0;
-        } else if (data.mode === 'customField1' && ordersCount === 0) {
-          setStatus(
-            `&#9888;&#65039; No orders found with Custom Field 1 = "<b>${_client.ssCustomField1}</b>" in this period.<br>` +
-            `<b>Action needed:</b> In ShipStation, tag each ${_client.name} order with Custom Field 1 = "${_client.ssCustomField1}"`,
-            'warn'
-          );
-        } else {
-          setStatus(
-            `&#9989; ShipStation (${modeName}): <b>${ordersCount} orders</b> · Carrier cost: <b>${fc(_ssCarrierCost)}</b>`,
-            'ok'
-          );
-        }
+      if (d.storeMatched) {
+        ordersCount  = d.count || 0;
+        carrierCost  = d.carrierCost || 0;
+        ssStatus     = `✅ ShipStation (store "${_client.ssStore}"): <b>${ordersCount} orders</b> · Carrier: <b>${fc(carrierCost)}</b>`;
       } else {
-        const errText = await resp.text();
-        throw new Error(`HTTP ${resp.status}: ${errText.slice(0,150)}`);
+        const found = (d.storeNames || []).join(', ') || 'none';
+        ssStatus = `⚠️ Store "${_client.ssStore}" not found. Active stores: [${found}] — enter orders manually`;
       }
-    } catch(ssErr) {
-      if (ssErr !== null) {
-        setStatus(`&#9888;&#65039; ShipStation: ${ssErr.message} — enter orders manually`, 'warn');
-      }
-      ordersCount = 0;
+    } catch (e) {
+      ssStatus = `⚠️ ShipStation error: ${e.message}`;
     }
 
-    // ── 2. Inbound/Outbound: from Supabase (ilike partial match) ─────────────
-    let rmaCount = 0;
+  } else if (bsrc === 'ss_cf1' && (_client.ssCustomField1 || '').trim()) {
+    // Mode 2: filter by Custom Field 1
+    const cf1 = _client.ssCustomField1.trim();
     try {
-      // Use ssStore first (most specific), then ssCustomField1, then name
-      const searchTerm = _client.ssStore || _client.ssCustomField1 || _client.name;
-      const iResp = await fetch(
-        `/.netlify/functions/billing-inbound?client=${encodeURIComponent(searchTerm)}&start=${start}&end=${end}`
-      );
-      if (iResp.ok) {
-        const iData = await iResp.json();
-        inboundCount  = iData.count         || 0;  // Inbound (General) only
-        rmaCount      = iData.rmaCount      || 0;  // RMA / Returns — separate billing line
-        dropShipCount = iData.dropShipCount || 0;  // Outbound Drop-Shipment count
+      const url = `${SS_API}?start=${start}&end=${end}&cf1=${encodeURIComponent(cf1)}`;
+      const res = await fetch(url);
+      const d   = await res.json();
+      if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
+
+      ordersCount = d.count || 0;
+      carrierCost = d.carrierCost || 0;
+
+      if (ordersCount > 0) {
+        ssStatus = `✅ ShipStation (CF1="${cf1}"): <b>${ordersCount} orders</b> · Carrier: <b>${fc(carrierCost)}</b>`;
+      } else {
+        ssStatus = `⚠️ No orders found with CF1="${cf1}" shipped this period.<br>Tag orders in ShipStation with this exact value in Custom Field 1.`;
       }
-    } catch(ibErr) {
-      // Inbound not critical — user can fill manually
+    } catch (e) {
+      ssStatus = `⚠️ ShipStation error: ${e.message}`;
     }
 
-    // Update combined status (only override if SS call didn't already set a message)
-    if (ordersCount > 0 || inboundCount > 0 || rmaCount > 0) {
-      const wmsStatus = (_client.wmsIntegration || _client.wms_integration)
-        ? ' · WMS: <b>$99.99</b>'
-        : ' · WMS: <i>N/A</i>';
-      setStatus(
-        `&#9989; Orders: <b>${ordersCount}</b> · Inbound: <b>${inboundCount}</b> · RMA: <b>${rmaCount}</b> · Drop-Ship: <b>${dropShipCount}</b>${wmsStatus}`,
-        'ok'
-      );
-    }
+  } else if (bsrc === 'ss_cf1' && !(_client.ssCustomField1 || '').trim()) {
+    // CF1 mode but tag is empty
+    ssStatus = `⚠️ Custom Field 1 tag is empty for ${_client.name}.<br>Go to <b>Clients → Edit → Billing Configuration → SS Custom Field 1 Tag</b>`;
 
-    _ssOrders = ordersCount;
-
-    // Build billing lines with auto-populated values
-    _lines = getBillingLines(_client.name, _client);
-    const markup = +g('shippingMarkupPct').value || _client.shippingMarkup || _client.shipping_markup || 10;
-    const shippingCharge = _ssCarrierCost > 0
-      ? Math.round(_ssCarrierCost * (1 + markup / 100) * 100) / 100
-      : 0;
-
-    _lines.forEach(l => {
-      if (l.id === 'pick_pack')          l.qty  = ordersCount;
-      if (l.id === 'inbound_carton')     l.qty  = inboundCount;  // Inbound (General) only
-      if (l.id === 'return_proc')        l.qty  = rmaCount;      // RMA auto from portal
-      if (l.id === 'drop_shipment')      l.qty  = dropShipCount; // Outbound Drop-Shipment auto
-      if (l.id === 'wms') l.qty = (_client.wmsIntegration || _client.wms_integration) && l.rate > 0 ? 1 : 0;
-      // Shipping Label Fee: total charge = carrier cost × (1 + markup%)
-      // rate = total charge (not per-unit), qty = 1
-      if (l.id === 'shipping_label_fee') {
-        const isPortal = (billingSource === 'portal');
-        l.rate = isPortal ? 0 : shippingCharge;
-        l.qty  = (!isPortal && shippingCharge > 0) ? 1 : 0;
-        l.tip  = isPortal
-          ? 'Not applicable — portal-only client (no ShipStation)'
-          : `Carrier cost ${fc(_ssCarrierCost)} × (1 + ${markup}% markup) = ${fc(shippingCharge)}`;
-      }
-    });
-
-    // Update shipping markup UI panel
-    g('ssCarrierCost').textContent    = fc(_ssCarrierCost);
-    g('ssShippingCharge').textContent = fc(shippingCharge);
-    if (_ssCarrierCost > 0) {
-      g('shippingMarkupRow').style.display = 'flex';
-    }
-
-    renderBillingTable();
-    g('billingCard').style.display    = 'block';
-    g('kpiSection').style.display     = 'grid';
-    g('kpiOrders').textContent        = ordersCount;
-    g('kpiCartons').textContent       = inboundCount || '—';
-    g('billingPeriodLabel').textContent = `${_client.name} · ${fD(start)} – ${fD(end)}`;
-    recalc();
-
-  } finally {
-    g('loadSpinWrap').innerHTML = '';
+  } else {
+    // No billing source configured
+    ssStatus = `⚠️ Billing source not configured for ${_client.name}.<br>Go to <b>Clients → Edit → Billing Configuration</b>`;
   }
+
+  // ── Step 2: Portal data (Inbound/Outbound app) ────────────────────────────
+  const searchTerm = _client.ssStore || _client.ssCustomField1 || _client.name;
+  try {
+    const url = `${INBOUND_API}?client=${encodeURIComponent(searchTerm)}&start=${start}&end=${end}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const d     = await res.json();
+      inboundCount = d.count         || 0;
+      rmaCount     = d.rmaCount      || 0;
+      dropCount    = d.dropShipCount || 0;
+    }
+  } catch (_) { /* non-critical — manual entry fallback */ }
+
+  // ── Step 3: Build billing table ───────────────────────────────────────────
+  _ssCarrierCost = carrierCost;
+  const markup   = +g('shippingMarkupPct').value || _client.shippingMarkup || 10;
+  const shippingCharge = carrierCost > 0 ? Math.round(carrierCost * (1 + markup / 100) * 100) / 100 : 0;
+
+  _lines = getBillingLines(_client.name, _client);
+  _lines.forEach(l => {
+    if (l.id === 'pick_pack')          l.qty = ordersCount;
+    if (l.id === 'inbound_carton')     l.qty = inboundCount;
+    if (l.id === 'return_proc')        l.qty = rmaCount;
+    if (l.id === 'drop_shipment')      l.qty = dropCount;
+    if (l.id === 'wms')                l.qty = (_client.wmsIntegration || _client.wms_integration) && l.rate > 0 ? 1 : 0;
+    if (l.id === 'shipping_label_fee') {
+      const isPortal = bsrc === 'portal';
+      l.rate = isPortal ? 0 : shippingCharge;
+      l.qty  = (!isPortal && shippingCharge > 0) ? 1 : 0;
+      l.tip  = isPortal
+        ? 'N/A — portal-only client'
+        : `Carrier ${fc(carrierCost)} × (1 + ${markup}%) = ${fc(shippingCharge)}`;
+    }
+  });
+
+  // ── Step 4: Show results ──────────────────────────────────────────────────
+  const wmsLbl = (_client.wmsIntegration || _client.wms_integration) ? ` · WMS: <b>${fc(99.99)}</b>` : ' · WMS: N/A';
+  const fullStatus = `${ssStatus}<br>Inbound: <b>${inboundCount}</b> · RMA: <b>${rmaCount}</b> · Drop-Ship: <b>${dropCount}</b>${wmsLbl}`;
+  setStatus(fullStatus, ordersCount > 0 || inboundCount > 0 || rmaCount > 0 || dropCount > 0 ? 'ok' : 'warn');
+
+  // Update Shipping Label Fee panel
+  g('ssCarrierCost').textContent    = fc(carrierCost);
+  g('ssShippingCharge').textContent = fc(shippingCharge);
+  if (carrierCost > 0 && bsrc !== 'portal') {
+    g('shippingMarkupRow').style.display = 'flex';
+  }
+
+  // Render table and KPIs
+  renderBillingTable();
+  g('billingCard').style.display      = 'block';
+  g('kpiSection').style.display       = 'grid';
+  g('kpiOrders').textContent          = ordersCount;
+  g('kpiCartons').textContent         = inboundCount || '—';
+  g('billingPeriodLabel').textContent = `${_client.name} · ${fD(start)} – ${fD(end)}`;
+  recalc();
+
+  g('loadSpinWrap').innerHTML = '';
 }
 
-// ─── RENDER TABLE ─────────────────────────────────────────────────────────────
+// ─── RENDER / RECALC / OUTPUT ──────────────────────────────────────────────────
 function renderBillingTable() {
   const tb = g('billingBody');
   tb.innerHTML = '';
@@ -764,38 +719,6 @@ function renderBillingTable() {
   });
 }
 
-function updateQty(id, val) {
-  const l = _lines.find(x => x.id === id);
-  if (l) { l.qty = +val || 0; recalc(); }
-}
-
-function updateShippingLine() {
-  if (!_lines.length || _ssCarrierCost <= 0) return;
-  const markup = +g('shippingMarkupPct').value || 0;
-  const charge = Math.round(_ssCarrierCost * (1 + markup / 100) * 100) / 100;
-  const l = _lines.find(x => x.id === 'shipping_label_fee');
-  if (l) {
-    l.rate = charge;
-    l.qty  = charge > 0 ? 1 : 0;
-    l.tip  = `Carrier cost ${fc(_ssCarrierCost)} × (1 + ${markup}% markup) = ${fc(charge)}`;
-    // Update cell directly without re-rendering full table
-    const totEl = document.getElementById('tot_shipping_label_fee');
-    const qtyEl = document.getElementById('qty_shipping_label_fee');
-    const tipEl = document.querySelector('[data-tip="shipping_label_fee"]');
-    if (totEl) totEl.textContent = charge > 0 ? fc(charge) : '—';
-    if (qtyEl) qtyEl.value = charge > 0 ? 1 : '';
-    if (tipEl) tipEl.textContent = l.tip;
-    g('ssCarrierCost').textContent    = fc(_ssCarrierCost);
-    g('ssShippingCharge').textContent = fc(charge);
-  }
-  recalc();
-}
-function updateCustomRate(idx, val) {
-  _lines[idx].rate = +val || 0;
-  recalc();
-}
-
-// ─── RECALC ───────────────────────────────────────────────────────────────────
 function recalc() {
   let sub = 0;
   _lines.forEach(l => {
@@ -826,7 +749,33 @@ function recalc() {
   g('kpiCartons').textContent = cl ? (cl.qty || '—') : '—';
 }
 
-// ─── PDF GENERATION ───────────────────────────────────────────────────────────
+function updateQty(id, val) {
+  const l = _lines.find(x => x.id === id);
+  if (l) { l.qty = +val || 0; recalc(); }
+}
+
+function updateShippingLine() {
+  if (!_lines.length || _ssCarrierCost <= 0) return;
+  const markup = +g('shippingMarkupPct').value || 0;
+  const charge = Math.round(_ssCarrierCost * (1 + markup / 100) * 100) / 100;
+  const l = _lines.find(x => x.id === 'shipping_label_fee');
+  if (l) {
+    l.rate = charge;
+    l.qty  = charge > 0 ? 1 : 0;
+    l.tip  = `Carrier cost ${fc(_ssCarrierCost)} × (1 + ${markup}% markup) = ${fc(charge)}`;
+    // Update cell directly without re-rendering full table
+    const totEl = document.getElementById('tot_shipping_label_fee');
+    const qtyEl = document.getElementById('qty_shipping_label_fee');
+    const tipEl = document.querySelector('[data-tip="shipping_label_fee"]');
+    if (totEl) totEl.textContent = charge > 0 ? fc(charge) : '—';
+    if (qtyEl) qtyEl.value = charge > 0 ? 1 : '';
+    if (tipEl) tipEl.textContent = l.tip;
+    g('ssCarrierCost').textContent    = fc(_ssCarrierCost);
+    g('ssShippingCharge').textContent = fc(charge);
+  }
+  recalc();
+}
+
 function genPDF() {
   if (!_client) return;
   const {jsPDF} = window.jspdf;
@@ -944,7 +893,6 @@ function genPDF() {
   doc.save(fname);
 }
 
-// ─── QBO CSV EXPORT ───────────────────────────────────────────────────────────
 function genCSV() {
   if (!_client || !_lines.length) { alert('Load billing data first.'); return; }
   const invNo  = g('invNum').value || 'INV-001';
@@ -986,7 +934,6 @@ function genCSV() {
   a.click();
 }
 
-// ─── GMAIL DRAFT ──────────────────────────────────────────────────────────────
 async function sendDraft() {
   if (!_client || !_lines.length) { alert('Load billing data first.'); return; }
   if (!window.jspdf) { alert('PDF library loading, wait a moment.'); return; }
@@ -1067,6 +1014,16 @@ function resetAll() {
   g('statusBar').style.display = 'none';
   _lines = []; _client = null; _ssOrders = 0;
 }
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+(function init() {
+  loadClients();
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  g('dateStart').value = new Date(y, m, 1).toISOString().slice(0, 10);
+  g('dateEnd').value   = new Date(y, m+1, 0).toISOString().slice(0, 10);
+})();
+
 </script>
 </body>
 </html>
