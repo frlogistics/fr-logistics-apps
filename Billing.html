@@ -270,6 +270,8 @@ button:active{transform:scale(.97)}
 <script>
 
 
+
+
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const CLIENTS_API  = '/.netlify/functions/clients-list';
 const RATES_API    = '/.netlify/functions/billing-rates';
@@ -912,43 +914,45 @@ function genCSV() {
   const period  = `${fD(g('dateStart').value)} - ${fD(g('dateEnd').value)}`;
   const customer = (_client.qboName || _client.name || '').trim();
 
-  // QBO service name map: SKU → exact name as it appears in QBO
+  // QBO service name map: SKU → "Category:Name" (exact format required by QBO import)
+  // Source: ProductsServicesList_FR_LOGISTICS_MIAMI_INC exported from QBO
+  // Format: Category:Product/Service Name (both must match exactly as in QBO)
   const QBO_NAMES = {
-    'Inbound Package':   'Inbound Fees Packages',
-    'Inbound Pallet':    'Inbound Fees Pallets',
-    'SFRP':              'Storage Fees Rack Position',
-    'STLB':              'Storage Fees Large Bin',
-    'SFSB':              'Storage Fees Small Bin',
-    'LTSF':              'Long-Term Storage Fees',
-    'FP':                'Fulfillment Process (Pick & Pack)',
-    'BCUIB':             'Boxing / collating units into boxes',
-    'S&C_Per_Box':       'Sorting and Categorizing',
-    'Label ASIN or UPC': 'Labeling Fees',
-    'PIF':               'Product Inspection Fees',
-    'PBF':               'Poly Bagging Fees',
-    'KIT':               'Kitting & Bundling',
-    'PL01':              'Palletizing Labor',
-    'SW01':              'Stretch Wrapping',
-    'ROL':               'Removal of Old Labels',
-    'SLF':               'Shipping Label Fee',
-    'SLA':               'Shipping Label Application',
-    'RPF':               'Return Processing Fees',
-    'R&R':               'Refurbishing & Repackaging',
-    'D&R':               'Disposal & Recycling',
-    'OFPackage':         'Outbound Fees Package',
-    'OFP':               'Outbound Fees Pallets',
-    'OPR':               'Oversized Pallet',
-    'CD-Inbound Package':'CD-Inbound Fees Packages',
-    'CD-Inbound Pallet': 'CD-Inbound Fees Pallets',
-    'O&C':               'Order Consolidation',
-    'PR&L':              'Pallet Repacking  & Labeling',
-    'CFP':               'Carrier Facility Pickup',
-    'RD':                'Retail Distribution',
-    'WMS':               'Automated WMS',
-    'MI':                'Marketplace Integration',
-    'In&Out-Eco':        'EcoPack+',
-    'Inbound-Dropshipment': 'Inbound-Dropshipment',
-    'CP':                'Custom Projects',
+    'Inbound Package':    'Storage & Warehousing:Inbound Fees Packages',
+    'Inbound Pallet':     'Storage & Warehousing:Inbound Fees Pallets',
+    'SFRP':               'Storage & Warehousing:Storage Fees Rack Position',
+    'STLB':               'Storage & Warehousing:Storage Fees Large Bin',
+    'SFSB':               'Storage & Warehousing:Storage Fees Small Bin',
+    'LTSF':               'Storage & Warehousing:Long-Term Storage Fees',
+    'OFPackage':          'Storage & Warehousing:Outbound Fees Package',
+    'OFP':                'Storage & Warehousing:Outbound Fees Pallets',
+    'OPR':                'Storage & Warehousing:Oversized Pallet',
+    'FP':                 'Fulfillment Service:Fulfillment Process (Pick & Pack)',
+    'SLF':                'Fulfillment Service:Shipping Label Fee',
+    'S&C_Per_Box':        'Fulfillment Service:Sorting and Categorizing',
+    'BCUIB':              'Prep Services:Boxing / collating units into boxes',
+    'Label ASIN or UPC':  'Prep Services:Labeling Fees',
+    'PIF':                'Prep Services:Product Inspection Fees',
+    'PBF':                'Prep Services:Poly Bagging Fees',
+    'KIT':                'Prep Services:Kitting & Bundling',
+    'PL01':               'Prep Services:Palletizing Labor',
+    'SW01':               'Prep Services:Stretch Wrapping',
+    'ROL':                'Prep Services:Removal of Old Labels',
+    'SLA':                'Cross-Docking:Shipping Label Application',
+    'Inbound-Dropshipment':'Cross-Docking:Inbound-Dropshipment',
+    'CD-Inbound Package': 'Cross-Docking:CD-Inbound Fees Packages',
+    'CD-Inbound Pallet':  'Cross-Docking:CD-Inbound Fees Pallets',
+    'O&C':                'Cross-Docking:Order Consolidation',
+    'PR&L':               'Cross-Docking:Pallet Repacking  & Labeling',
+    'CFP':                'Cross-Docking:Carrier Facility Pickup',
+    'RPF':                'Returns & Reverse Logistics:Return Processing Fees',
+    'R&R':                'Returns & Reverse Logistics:Refurbishing & Repackaging',
+    'D&R':                'Returns & Reverse Logistics:Disposal & Recycling',
+    'RD':                 'B2B & Wholesale Fulfillment:Retail Distribution',
+    'WMS':                'eCommerce Technology:Automated WMS',
+    'MI':                 'eCommerce Technology:Marketplace Integration',
+    'In&Out-Eco':         'Storage & Warehousing:EcoPack+',
+    'CP':                 'Subscription & Special Projects:Custom Projects',
   };
 
   // QBO-compliant headers — exact names required by QBO invoice import
@@ -1054,10 +1058,9 @@ async function sendDraft() {
         subject: `Billing Summary ${invNo} — ${_client.name} | ${period}`,
         htmlBody, textBody,
         attachments: [{
-          filename: pdfFilename,
-          content:  pdfBase64,
-          encoding: 'base64',
-          type:     'application/pdf',
+          base64:   pdfBase64,    // Apps Script: Utilities.base64Decode(a.base64)
+          name:     pdfFilename,  // Apps Script: a.name
+          mimeType: 'application/pdf', // Apps Script: a.mimeType
         }]
       })
     });
@@ -1087,6 +1090,8 @@ function resetAll() {
   g('dateStart').value = new Date(y, m, 1).toISOString().slice(0, 10);
   g('dateEnd').value   = new Date(y, m+1, 0).toISOString().slice(0, 10);
 })();
+
+
 
 
 
