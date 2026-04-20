@@ -34,12 +34,25 @@ const CORS = { "Content-Type": "application/json", "Access-Control-Allow-Origin"
 const jRes = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: CORS });
 
 // ─── Query builders ──────────────────────────────────────────────────────────
-// Rows come with client info joined via PostgREST's foreign-table syntax.
 const SELECT_CORE = "id,client_id,tracking_number,order_id,carrier,content,qty_boxes,notes,label_url,label_filename,outbound_carrier,outbound_platform,outbound_tracking,status,email_received_at,physical_received_at,labeled_at,shipped_at,received_by,shipped_by,exception_reason,created_at,updated_at";
 
-// Supabase PostgREST supports joining foreign tables via ?select=...,fr_clients(...)
-// We use the relationship name (the FK) to pull client display fields.
-const SELECT_WITH_CLIENT = `${SELECT_CORE},client:fr_clients(id,name,company,store_name),config:dropship_client_configs(client_code,display_name,rate_per_package,outbound_carrier,outbound_platform)`;
+// We only embed fr_clients (the one FK that exists on dropshipments).
+// dropship_client_configs is merged in application code below via client_id.
+const SELECT_WITH_CLIENT = `${SELECT_CORE},client:fr_clients(id,name,company,store_name)`;
+
+// Fetch all client configs once, build a map by client_id.
+async function loadConfigMap() {
+  const configs = await sbSelect("dropship_client_configs", "?select=client_id,client_code,display_name,rate_per_package,outbound_carrier,outbound_platform");
+  const map = {};
+  for (const c of configs) map[c.client_id] = c;
+  return map;
+}
+
+// Attach `config` to each row using the pre-built map.
+function attachConfigs(rows, configMap) {
+  for (const r of rows) r.config = configMap[r.client_id] || null;
+  return rows;
+}
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
 export default async function handler(req) {
@@ -72,10 +85,12 @@ export default async function handler(req) {
     if (req.method === "GET" && action === "get") {
       const id = url.searchParams.get("id");
       if (!id) return jRes({ error: "id required" }, 400);
-      const rows = await sbSelect("dropshipments",
-        `?id=eq.${id}&select=${SELECT_WITH_CLIENT}&limit=1`
-      );
+      const [rows, configMap] = await Promise.all([
+        sbSelect("dropshipments", `?id=eq.${id}&select=${SELECT_WITH_CLIENT}&limit=1`),
+        loadConfigMap()
+      ]);
       if (!rows.length) return jRes({ error: "not found" }, 404);
+      attachConfigs(rows, configMap);
       return jRes({ row: rows[0] });
     }
 
@@ -105,7 +120,11 @@ export default async function handler(req) {
       if (status) q += `&status=eq.${status}`;
       if (clientId) q += `&client_id=eq.${clientId}`;
 
-      const rows = await sbSelect("dropshipments", q);
+      const [rows, configMap] = await Promise.all([
+        sbSelect("dropshipments", q),
+        loadConfigMap()
+      ]);
+      attachConfigs(rows, configMap);
       return jRes({ rows, count: rows.length });
     }
 
