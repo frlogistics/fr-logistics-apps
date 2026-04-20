@@ -39,7 +39,7 @@ const SELECT_CORE = "id,client_id,tracking_number,order_id,carrier,content,qty_b
 
 // Supabase PostgREST supports joining foreign tables via ?select=...,fr_clients(...)
 // We use the relationship name (the FK) to pull client display fields.
-const SELECT_WITH_CLIENT = `${SELECT_CORE},fr_clients(id,name,company,store_name),dropship_client_configs:client_id(client_code,display_name,rate_per_package,outbound_carrier,outbound_platform)`;
+const SELECT_WITH_CLIENT = `${SELECT_CORE},client:fr_clients(id,name,company,store_name),config:dropship_client_configs(client_code,display_name,rate_per_package,outbound_carrier,outbound_platform)`;
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
 export default async function handler(req) {
