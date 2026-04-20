@@ -3,232 +3,246 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FR-Logistics · Dropshipments</title>
+<title>Dropshipments · FR-Logistics</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&family=DM+Mono&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --ink: #0B1220;
-    --ink-2: #1A2332;
-    --paper: #F7F6F1;
-    --card: #FFFFFF;
-    --line: #E6E3DC;
-    --line-strong: #D4D0C7;
-    --muted: #6B6B5F;
-    --mute-2: #8A8A7D;
-    --brand: #F97316;
-    --brand-ink: #C2410C;
-    --ok: #22C55E;
-
-    --pending: #B45309;
-    --pending-bg: #FEF3C7;
-    --received: #1D4ED8;
-    --received-bg: #DBEAFE;
-    --labeled: #6D28D9;
-    --labeled-bg: #EDE9FE;
-    --shipped: #047857;
-    --shipped-bg: #D1FAE5;
-    --orphan: #BE185D;
-    --orphan-bg: #FCE7F3;
-    --exception: #B91C1C;
-    --exception-bg: #FEE2E2;
-  }
-
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { font-family: 'IBM Plex Sans', sans-serif; background: var(--paper); color: var(--ink); font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
-  .mono { font-family: 'IBM Plex Mono', monospace; font-feature-settings: "ss01","ss02"; }
+  :root {
+    --bg: #f4f6f9;
+    --card: #fff;
+    --border: #e2e8f0;
+    --text: #1a202c;
+    --muted: #718096;
+    --accent: #1fa463;
+    --accent-soft: rgba(31,164,99,.12);
+    --danger: #e53e3e;
+    --shadow: 0 2px 8px rgba(0,0,0,.08);
 
-  /* ─── TOP BAR ────────────────────────────────── */
-  .topbar {
-    background: var(--ink); color: #fff;
-    padding: 10px 22px;
-    display: flex; align-items: center; gap: 24px;
-    border-bottom: 1px solid #000;
-    position: relative; overflow: hidden;
+    --s-pending-bg: #fef9c3;      --s-pending-text: #854d0e;
+    --s-received-bg: #dbeafe;     --s-received-text: #1e40af;
+    --s-labeled-bg: #ede9fe;      --s-labeled-text: #6d28d9;
+    --s-shipped-bg: #dcfce7;      --s-shipped-text: #16a34a;
+    --s-orphan-bg: #fce7f3;       --s-orphan-text: #be185d;
+    --s-exception-bg: #fee2e2;    --s-exception-text: #dc2626;
   }
-  .topbar::before {
-    content: ""; position: absolute; inset: 0;
-    background-image:
-      linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px),
-      linear-gradient(0deg, rgba(255,255,255,.02) 1px, transparent 1px);
-    background-size: 12px 12px; pointer-events: none;
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.01em; font-size: 15px; position: relative; }
-  .brand-mark {
-    width: 26px; height: 26px; background: var(--brand); border-radius: 5px;
-    display: grid; place-items: center; font-family: 'IBM Plex Mono'; font-weight: 700; font-size: 13px; color: #0B1220;
+  .mono { font-family: 'DM Mono', monospace; }
+  .display { font-family: 'Syne', sans-serif; }
+
+  /* ─── HEADER ─────────────────────────────────── */
+  .hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 14px; margin-bottom: 20px;
   }
-  .brand-sep { color: #4B5563; margin: 0 2px; }
-  .brand-mod { color: #B8B8AE; font-weight: 500; }
-  .top-spacer { flex: 1; }
-  .top-pill {
+  .hdr-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 22px; font-weight: 800;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .hdr-title .badge-beta {
+    font-family: 'DM Sans'; font-size: 10px; font-weight: 700;
+    padding: 3px 8px; border-radius: 4px;
+    background: var(--accent-soft); color: var(--accent);
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .hdr-sub { color: var(--muted); font-size: 13px; margin-top: 3px; }
+  .hdr-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .btn {
+    background: none; border: 1px solid var(--border);
+    border-radius: 9px; padding: 9px 16px;
+    font-size: 13px; font-weight: 600; color: var(--text);
+    cursor: pointer; font-family: inherit;
     display: inline-flex; align-items: center; gap: 7px;
-    padding: 5px 10px; border-radius: 999px;
-    background: rgba(255,255,255,0.07);
-    border: 1px solid rgba(255,255,255,0.12);
-    font-size: 12px; color: #E5E4DE; position: relative;
-    cursor: pointer; transition: background .15s ease;
+    transition: all .15s ease; white-space: nowrap;
   }
-  .top-pill:hover { background: rgba(255,255,255,0.12); }
-  .top-pill.syncing { background: rgba(249,115,22,0.15); border-color: rgba(249,115,22,0.4); }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(34,197,94,.2); }
-  .dot.spinning { background: var(--brand); animation: pulse 1s ease-in-out infinite; }
-  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.3); } }
-  .top-meta { font-size: 12px; color: #B8B8AE; position: relative; font-family: 'IBM Plex Mono'; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-primary {
+    background: var(--accent); color: #fff; border-color: var(--accent);
+  }
+  .btn-primary:hover { background: #17a358; border-color: #17a358; color: #fff; }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+  .btn .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 0 3px rgba(31,164,99,.2);
+  }
+  .btn.syncing .dot { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-  /* ─── CLIENT BAR ─────────────────────────────── */
-  .client-bar {
+  /* ─── CONTROLS (client + KPIs) ───────────────── */
+  .controls {
     background: var(--card);
-    border-bottom: 1px solid var(--line);
-    padding: 14px 22px;
-    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 18px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .label-inline {
+    font-size: 11px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.08em;
   }
   .client-select {
-    display: inline-flex; align-items: center; gap: 10px;
-    padding: 6px 14px 6px 6px; border: 1px solid var(--line-strong);
-    border-radius: 8px; background: var(--paper);
-    font-weight: 500;
+    padding: 9px 32px 9px 14px;
+    border: 1px solid var(--border);
+    border-radius: 9px; background: #fff;
+    font-family: inherit; font-size: 13px; font-weight: 500;
+    color: var(--text); cursor: pointer; outline: none;
     appearance: none;
     background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
     background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
     background-size: 5px 5px;
     background-repeat: no-repeat;
-    padding-right: 32px;
-    cursor: pointer;
-    font-family: inherit; font-size: 14px; color: var(--ink);
     min-width: 180px;
   }
-  .client-select:focus { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .client-select:focus { border-color: var(--accent); }
 
-  .label-inline {
-    font-size: 11px; color: var(--muted);
-    text-transform: uppercase; letter-spacing: 0.08em;
-    font-weight: 600; margin-right: 4px;
-  }
-
-  /* KPI strip */
-  .kpis { display: flex; gap: 10px; flex-wrap: wrap; margin-left: auto; }
+  .kpis { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
   .kpi {
     display: inline-flex; flex-direction: column; gap: 2px;
-    padding: 8px 14px;
-    background: var(--paper);
-    border: 1px solid var(--line);
-    border-radius: 8px; min-width: 76px;
+    padding: 8px 14px; border-radius: 9px;
+    background: #f8fafc; border: 1px solid var(--border);
+    min-width: 74px;
   }
   .kpi-label {
-    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
-    color: var(--muted); font-weight: 600;
+    font-size: 10px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.06em;
     display: flex; align-items: center; gap: 5px;
   }
   .kpi-label::before {
     content: ""; width: 6px; height: 6px; border-radius: 50%;
-    background: currentColor; opacity: .7;
+    background: currentColor; opacity: .75;
   }
   .kpi-val {
-    font-family: 'IBM Plex Mono'; font-size: 22px; font-weight: 600;
-    letter-spacing: -.02em; color: var(--ink);
+    font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800;
+    color: var(--text); line-height: 1;
   }
-  .kpi.pending { color: var(--pending); }
-  .kpi.received { color: var(--received); }
-  .kpi.labeled { color: var(--labeled); }
-  .kpi.shipped { color: var(--shipped); }
-  .kpi.orphan { color: var(--orphan); }
-  .kpi.exception { color: var(--exception); }
+  .kpi.pending .kpi-label { color: var(--s-pending-text); }
+  .kpi.received .kpi-label { color: var(--s-received-text); }
+  .kpi.labeled .kpi-label { color: var(--s-labeled-text); }
+  .kpi.shipped .kpi-label { color: var(--s-shipped-text); }
+  .kpi.orphan .kpi-label { color: var(--s-orphan-text); }
+  .kpi.exception .kpi-label { color: var(--s-exception-text); }
 
   /* ─── SCAN BAR ───────────────────────────────── */
-  .scan-wrap { padding: 18px 22px; background: var(--paper); }
-  .scan {
-    display: flex; align-items: stretch; gap: 10px;
+  .scan-wrap {
     background: var(--card);
-    border: 2px solid var(--ink);
-    border-radius: 10px; overflow: hidden;
-    box-shadow: 3px 3px 0 var(--ink);
-    transition: box-shadow .1s ease, transform .1s ease;
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    margin-bottom: 16px;
+    display: flex; align-items: stretch;
+    overflow: hidden;
+    transition: border-color .15s ease, box-shadow .15s ease;
   }
-  .scan:focus-within { box-shadow: 5px 5px 0 var(--brand); transform: translate(-1px, -1px); }
+  .scan-wrap:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(31,164,99,.12);
+  }
   .scan-icon {
-    width: 54px; display: grid; place-items: center;
-    background: var(--ink); color: #fff; font-size: 22px;
-    border-right: 2px solid var(--ink);
+    width: 50px;
+    display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--accent), #17a358);
+    color: #fff; font-size: 20px;
+    font-family: 'DM Mono';
   }
   .scan input {
     flex: 1; border: 0; outline: 0; background: transparent;
-    padding: 16px 14px;
-    font-family: 'IBM Plex Mono'; font-size: 18px; font-weight: 500;
-    letter-spacing: 0.02em; color: var(--ink);
+    padding: 14px 16px;
+    font-family: 'DM Mono', monospace;
+    font-size: 16px; font-weight: 500;
+    color: var(--text);
   }
-  .scan input::placeholder { color: var(--mute-2); font-weight: 400; }
+  .scan input::placeholder { color: #a0aec0; font-weight: 400; }
   .scan-hint {
-    display: flex; align-items: center; gap: 10px;
-    padding: 0 18px; font-size: 12px; color: var(--muted);
-    border-left: 1px dashed var(--line);
+    display: flex; align-items: center; gap: 9px;
+    padding: 0 16px;
+    font-size: 12px; color: var(--muted);
+    border-left: 1px dashed var(--border);
   }
   .kbd {
-    font-family: 'IBM Plex Mono'; font-size: 11px;
-    padding: 2px 7px; border: 1px solid var(--line-strong);
-    border-radius: 4px; background: var(--paper);
-    box-shadow: 0 1px 0 var(--line-strong);
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    padding: 2px 7px; border: 1px solid var(--border);
+    border-radius: 4px; background: #f8fafc;
+    box-shadow: 0 1px 0 var(--border);
   }
 
   /* ─── TABS ───────────────────────────────────── */
-  .tabs-wrap { background: var(--paper); padding: 0 22px; border-bottom: 1px solid var(--line); }
-  .tabs { display: flex; gap: 2px; overflow-x: auto; }
-  .tab {
-    padding: 12px 16px 14px; font-size: 13px; font-weight: 500;
-    color: var(--muted); border: 0; background: transparent; cursor: pointer;
-    border-bottom: 2px solid transparent; white-space: nowrap;
-    display: inline-flex; align-items: center; gap: 8px;
-    transition: color .15s ease, border-color .15s ease;
-    font-family: inherit;
+  .tabs {
+    display: flex; gap: 8px; margin-bottom: 14px;
+    overflow-x: auto; padding-bottom: 2px;
   }
-  .tab:hover { color: var(--ink); }
-  .tab.active { color: var(--ink); border-bottom-color: var(--brand); font-weight: 600; }
+  .tab {
+    background: rgba(0,0,0,.04); border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px 14px;
+    color: var(--muted); font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+    transition: all .2s; white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .tab:hover { background: var(--accent-soft); border-color: rgba(31,164,99,.35); color: var(--text); }
+  .tab.active { background: var(--accent-soft); border-color: rgba(31,164,99,.5); color: var(--accent); }
   .tab-count {
     display: inline-grid; place-items: center;
-    min-width: 22px; height: 20px; padding: 0 7px;
-    border-radius: 999px; background: var(--line);
-    font-family: 'IBM Plex Mono'; font-size: 11px; font-weight: 600;
-    color: var(--ink);
+    min-width: 22px; height: 18px; padding: 0 6px;
+    border-radius: 999px; background: rgba(0,0,0,.08);
+    font-family: 'DM Mono'; font-size: 10px; font-weight: 700;
+    color: var(--text);
   }
-  .tab.active .tab-count { background: var(--ink); color: #fff; }
+  .tab.active .tab-count { background: var(--accent); color: #fff; }
 
   /* ─── TABLE ──────────────────────────────────── */
-  .tbl-wrap { padding: 18px 22px 40px; background: var(--paper); }
-  .tbl {
+  .tbl-wrap {
     background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
   }
   .tbl-head, .tbl-row {
     display: grid;
     grid-template-columns: 200px 110px 150px 1fr 110px 90px;
     align-items: center;
-    padding: 14px 18px; gap: 14px;
+    padding: 13px 18px; gap: 14px;
   }
   .tbl-head {
-    background: var(--paper);
-    border-bottom: 1px solid var(--line);
-    font-size: 10px; font-weight: 700;
-    letter-spacing: 0.1em; text-transform: uppercase;
-    color: var(--muted);
+    background: #f8fafc;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px; font-weight: 700;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;
   }
-  .tbl-row { border-bottom: 1px solid var(--line); transition: background .1s ease; cursor: pointer; position: relative; }
+  .tbl-row {
+    border-bottom: 1px solid var(--border);
+    transition: background .12s ease; cursor: pointer;
+  }
   .tbl-row:last-child { border-bottom: 0; }
-  .tbl-row:hover { background: #FAFAF5; }
-  .tbl-row.highlight { background: #FFF7E6; animation: flash 1.2s ease; }
-  @keyframes flash { 0% { background: #FFE4A1; } 100% { background: #FFF7E6; } }
+  .tbl-row:hover { background: #f8fafc; }
+  .tbl-row.highlight {
+    background: #fef9c3;
+    animation: flash 1.5s ease;
+  }
+  @keyframes flash { 0% { background: #fde68a; } 100% { background: #fef9c3; } }
 
-  .tracking { font-family: 'IBM Plex Mono'; font-weight: 500; font-size: 13px; letter-spacing: 0; }
-  .tracking-small { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: 'IBM Plex Mono'; }
+  .tracking { font-family: 'DM Mono'; font-weight: 500; font-size: 13px; }
+  .tracking-small { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: 'DM Mono'; }
 
   .carrier-pill {
     display: inline-flex; align-items: center; gap: 6px;
-    padding: 3px 10px; border-radius: 4px;
-    border: 1px solid var(--line-strong);
-    background: var(--paper); font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+    padding: 3px 10px; border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #f8fafc;
+    font-size: 11px; font-weight: 600;
   }
-  .carrier-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ink); }
+  .carrier-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #94a3b8; }
   .carrier-amazon::before { background: #FF9900; }
   .carrier-ups::before { background: #6B3410; }
   .carrier-fedex::before { background: #4D148C; }
@@ -237,22 +251,22 @@
   .carrier-target::before { background: #CC0000; }
 
   .content-cell { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .content-qty { color: var(--muted); font-family: 'IBM Plex Mono'; font-size: 12px; margin-right: 6px; }
+  .content-qty { color: var(--muted); font-family: 'DM Mono'; font-size: 12px; margin-right: 6px; }
 
-  .status-pill {
+  .status-badge {
     display: inline-flex; align-items: center; gap: 6px;
-    padding: 4px 10px; border-radius: 999px;
-    font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+    padding: 3px 10px; border-radius: 20px;
+    font-size: 11px; font-weight: 600;
   }
-  .status-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .s-pending { background: var(--pending-bg); color: var(--pending); }
-  .s-received { background: var(--received-bg); color: var(--received); }
-  .s-labeled { background: var(--labeled-bg); color: var(--labeled); }
-  .s-shipped { background: var(--shipped-bg); color: var(--shipped); }
-  .s-orphan { background: var(--orphan-bg); color: var(--orphan); }
-  .s-exception { background: var(--exception-bg); color: var(--exception); }
+  .status-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .sb-pending   { background: var(--s-pending-bg);   color: var(--s-pending-text); }
+  .sb-received  { background: var(--s-received-bg);  color: var(--s-received-text); }
+  .sb-labeled   { background: var(--s-labeled-bg);   color: var(--s-labeled-text); }
+  .sb-shipped   { background: var(--s-shipped-bg);   color: var(--s-shipped-text); }
+  .sb-orphan    { background: var(--s-orphan-bg);    color: var(--s-orphan-text); }
+  .sb-exception { background: var(--s-exception-bg); color: var(--s-exception-text); }
 
-  .age { font-family: 'IBM Plex Mono'; font-size: 12px; color: var(--muted); }
+  .age { font-family: 'DM Mono'; font-size: 12px; color: var(--muted); }
 
   .empty-state {
     padding: 60px 20px; text-align: center; color: var(--muted);
@@ -260,7 +274,7 @@
   }
   .loading-state {
     padding: 40px 20px; text-align: center; color: var(--muted);
-    font-size: 13px; font-family: 'IBM Plex Mono';
+    font-size: 13px; font-family: 'DM Mono';
   }
   .loading-state::after {
     content: "···"; display: inline-block; width: 24px; text-align: left;
@@ -268,9 +282,20 @@
   }
   @keyframes dots { 0% { content: "·  "; } 33% { content: "·· "; } 66% { content: "···"; } }
 
+  /* ─── DAY 1 BANNER ───────────────────────────── */
+  .day1-banner {
+    margin-bottom: 16px;
+    padding: 10px 14px;
+    background: #fef9c3; border: 1px solid #fde68a;
+    border-radius: 10px;
+    font-size: 12px; color: #854d0e;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .day1-banner strong { font-weight: 700; }
+
   /* ─── DETAIL DRAWER ──────────────────────────── */
   .detail-backdrop {
-    position: fixed; inset: 0; background: rgba(11,18,32,0.3);
+    position: fixed; inset: 0; background: rgba(15,23,42,0.3);
     opacity: 0; pointer-events: none; transition: opacity .2s ease;
     z-index: 50;
   }
@@ -278,108 +303,93 @@
   .detail {
     position: fixed; top: 0; right: 0; bottom: 0;
     width: 460px; max-width: 100%;
-    background: var(--card); border-left: 1px solid var(--line);
+    background: var(--card); border-left: 1px solid var(--border);
     transform: translateX(100%);
     transition: transform .25s cubic-bezier(.4,0,.2,1);
     z-index: 51; overflow-y: auto;
-    box-shadow: -12px 0 40px rgba(11,18,32,.06);
+    box-shadow: -12px 0 40px rgba(15,23,42,.08);
   }
   .detail.open { transform: translateX(0); }
   .detail-head {
-    padding: 18px 22px; border-bottom: 1px solid var(--line);
+    padding: 18px 22px; border-bottom: 1px solid var(--border);
     display: flex; justify-content: space-between; align-items: center;
     position: sticky; top: 0; background: var(--card); z-index: 2;
   }
   .detail-close {
-    border: 0; background: transparent; font-size: 20px;
+    border: 0; background: transparent; font-size: 22px;
     cursor: pointer; color: var(--muted);
-    padding: 6px 10px; border-radius: 6px;
+    padding: 4px 10px; border-radius: 6px;
+    font-family: inherit;
   }
-  .detail-close:hover { background: var(--paper); color: var(--ink); }
+  .detail-close:hover { background: #f8fafc; color: var(--text); }
   .detail-body { padding: 22px; display: flex; flex-direction: column; gap: 18px; }
   .detail-row { display: flex; flex-direction: column; gap: 4px; }
-  .detail-row .k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 600; }
-  .detail-row .v { font-size: 14px; color: var(--ink); }
-  .detail-row .v.mono { font-family: 'IBM Plex Mono'; font-size: 13px; }
-  .detail-row .v em { font-style: italic; color: var(--mute-2); }
+  .detail-row .k {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); font-weight: 700;
+  }
+  .detail-row .v { font-size: 14px; color: var(--text); }
+  .detail-row .v.mono { font-family: 'DM Mono'; font-size: 13px; }
+  .detail-row .v em { font-style: italic; color: #a0aec0; }
 
   .pdf-box {
-    padding: 16px; border: 1.5px dashed var(--line-strong); border-radius: 8px;
-    background: var(--paper);
+    padding: 14px;
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    background: #f8fafc;
     display: flex; align-items: center; gap: 14px;
   }
   .pdf-icon {
-    width: 44px; height: 44px; border-radius: 8px;
-    background: #E23D28; color: #fff;
-    display: grid; place-items: center; font-weight: 700; font-size: 12px;
+    width: 42px; height: 42px; border-radius: 9px;
+    background: #e53e3e; color: #fff;
+    display: grid; place-items: center;
+    font-weight: 800; font-size: 11px;
     flex-shrink: 0;
   }
   .pdf-info { flex: 1; min-width: 0; }
   .pdf-info strong { display: block; font-size: 13px; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pdf-info small { color: var(--muted); font-size: 11px; font-family: 'IBM Plex Mono'; }
-
-  .btn {
-    font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; font-weight: 600;
-    padding: 8px 14px;
-    border: 1px solid var(--line-strong);
-    background: #fff; border-radius: 6px; cursor: pointer;
-    color: var(--ink);
-    transition: all .12s ease; white-space: nowrap;
-    display: inline-flex; align-items: center; gap: 6px;
-  }
-  .btn:hover { border-color: var(--ink); }
-  .btn-primary { background: var(--ink); color: #fff; border-color: var(--ink); }
-  .btn-primary:hover { background: var(--brand); border-color: var(--brand); color: #fff; }
-  .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); padding: 6px 8px; }
-  .btn-ghost:hover { background: var(--paper); color: var(--ink); }
-  .btn-sm { padding: 4px 10px; font-size: 11px; }
-  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+  .pdf-info small { color: var(--muted); font-size: 11px; font-family: 'DM Mono'; }
+  .pdf-box.no-label { border-color: #fca5a5; background: #fee2e2; }
+  .pdf-box.no-label .pdf-icon { background: var(--s-orphan-text); }
 
   .timeline {
     display: flex; flex-direction: column; gap: 0;
-    padding-left: 8px; border-left: 2px solid var(--line); margin-left: 8px;
+    padding-left: 8px; border-left: 2px solid var(--border); margin-left: 8px;
   }
   .tl-item { padding: 8px 0 12px 18px; position: relative; }
   .tl-item::before {
-    content: ""; position: absolute; left: -17px; top: 12px;
+    content: ""; position: absolute; left: -17px; top: 10px;
     width: 14px; height: 14px; border-radius: 50%;
-    background: var(--card); border: 2px solid var(--line-strong);
+    background: var(--card); border: 2px solid var(--border);
   }
-  .tl-item.done::before { background: var(--shipped); border-color: var(--shipped); }
+  .tl-item.done::before { background: var(--accent); border-color: var(--accent); }
   .tl-item.current::before {
-    background: var(--brand); border-color: var(--brand);
-    box-shadow: 0 0 0 4px rgba(249,115,22,.2);
+    background: #f59e0b; border-color: #f59e0b;
+    box-shadow: 0 0 0 4px rgba(245,158,11,.25);
   }
-  .tl-item .tl-step { font-size: 12px; font-weight: 600; }
-  .tl-item .tl-time { font-size: 11px; color: var(--muted); font-family: 'IBM Plex Mono'; }
-
-  .day1-banner {
-    margin: 0 22px; margin-top: 18px;
-    padding: 10px 14px;
-    background: #FFF4EC; border: 1px solid #FED7AA;
-    border-radius: 8px; font-size: 12px; color: var(--brand-ink);
-    display: flex; align-items: center; gap: 10px;
-  }
-  .day1-banner strong { font-weight: 600; }
+  .tl-item .tl-step { font-size: 12px; font-weight: 700; }
+  .tl-item .tl-time { font-size: 11px; color: var(--muted); font-family: 'DM Mono'; margin-top: 2px; }
 
   /* ─── TOAST ──────────────────────────────────── */
   .toast {
     position: fixed; bottom: 24px; left: 50%;
     transform: translate(-50%, 20px);
-    background: var(--ink); color: #fff;
-    padding: 10px 18px; border-radius: 8px;
+    background: var(--text); color: #fff;
+    padding: 10px 18px; border-radius: 10px;
     font-size: 13px; font-weight: 500;
     opacity: 0; pointer-events: none;
     transition: all .25s ease; z-index: 100;
     display: flex; align-items: center; gap: 10px;
-    box-shadow: 0 10px 30px rgba(11,18,32,.2);
+    box-shadow: 0 10px 30px rgba(15,23,42,.25);
     max-width: 420px;
   }
   .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: all; }
-  .toast.toast-error { background: var(--exception); }
+  .toast.toast-error { background: var(--danger); }
 
   /* Mobile */
   @media (max-width: 780px) {
+    body { padding: 14px; }
+    .hdr-title { font-size: 18px; }
     .tbl-head { display: none; }
     .tbl-row {
       grid-template-columns: 1fr auto;
@@ -395,7 +405,6 @@
     .tbl-row > :nth-child(4) { grid-area: content; }
     .tbl-row > :nth-child(5) { grid-area: status; justify-self: end; }
     .tbl-row > :nth-child(6) { grid-area: age; justify-self: end; }
-    .client-bar { padding: 12px; }
     .kpis { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; margin-left: 0; padding-bottom: 4px; }
     .kpi { flex-shrink: 0; }
     .detail { width: 100%; }
@@ -404,29 +413,32 @@
 </head>
 <body>
 
-<!-- ─── TOP BAR ─────────────────────────────────── -->
-<header class="topbar">
-  <div class="brand">
-    <span class="brand-mark">FR</span>
-    <span>FR-Logistics</span>
-    <span class="brand-sep">/</span>
-    <span class="brand-mod">Dropshipments</span>
+<div class="hdr">
+  <div>
+    <div class="hdr-title">
+      Dropshipments
+      <span class="badge-beta">Day 1</span>
+    </div>
+    <div class="hdr-sub">Automated email-to-label pipeline · multi-client</div>
   </div>
-  <div class="top-spacer"></div>
-  <div class="top-pill" id="syncBtn" title="Run Gmail sync now">
-    <span class="dot" id="syncDot"></span>
-    <span id="syncLabel">Sync now</span>
+  <div class="hdr-actions">
+    <button class="btn" id="syncBtn" title="Run Gmail sync now">
+      <span class="dot"></span>
+      <span id="syncLabel">Sync now</span>
+    </button>
   </div>
-  <div class="top-meta" id="clock">—</div>
-</header>
+</div>
 
-<!-- ─── CLIENT BAR + KPIs ───────────────────────── -->
-<section class="client-bar">
+<div class="day1-banner">
+  <strong>Day 1 — Read-only view.</strong>
+  Status transitions (mark received · print · ship) coming in Day 2.
+</div>
+
+<section class="controls">
   <span class="label-inline">Client</span>
   <select class="client-select" id="clientSelect">
     <option value="">All clients</option>
   </select>
-  <span class="label-inline">State of today</span>
   <div class="kpis" id="kpis">
     <div class="kpi pending"><span class="kpi-label">Pending</span><span class="kpi-val" data-k="pending">—</span></div>
     <div class="kpi received"><span class="kpi-label">Received</span><span class="kpi-val" data-k="received">—</span></div>
@@ -437,80 +449,60 @@
   </div>
 </section>
 
-<!-- Day 1 banner -->
-<div class="day1-banner">
-  <strong>Day 1 — Read-only view.</strong>
-  Status transitions (mark received / print / ship) coming in Day 2.
-</div>
-
-<!-- ─── SCAN BAR ────────────────────────────────── -->
 <section class="scan-wrap">
-  <div class="scan">
-    <div class="scan-icon">⎌</div>
-    <input id="scan" type="text" autofocus placeholder="Scan or paste tracking number…">
-    <div class="scan-hint">
-      <span class="kbd">⏎</span><span>find</span>
-      <span style="margin: 0 4px; opacity: .4;">·</span>
-      <span class="kbd">⌘K</span><span>focus</span>
-    </div>
+  <div class="scan-icon">⎌</div>
+  <input id="scan" type="text" autofocus placeholder="Scan or paste tracking number…">
+  <div class="scan-hint">
+    <span class="kbd">⏎</span><span>find</span>
+    <span style="margin: 0 4px; opacity: .4;">·</span>
+    <span class="kbd">⌘K</span><span>focus</span>
   </div>
 </section>
 
-<!-- ─── TABS ────────────────────────────────────── -->
-<nav class="tabs-wrap">
-  <div class="tabs" id="tabs">
-    <button class="tab active" data-tab="all">All <span class="tab-count" data-c="all">0</span></button>
-    <button class="tab" data-tab="pending">Pending <span class="tab-count" data-c="pending">0</span></button>
-    <button class="tab" data-tab="received">Received <span class="tab-count" data-c="received">0</span></button>
-    <button class="tab" data-tab="labeled">Labeled <span class="tab-count" data-c="labeled">0</span></button>
-    <button class="tab" data-tab="shipped">Shipped <span class="tab-count" data-c="shipped">0</span></button>
-    <button class="tab" data-tab="orphan">Orphans <span class="tab-count" data-c="orphan">0</span></button>
-    <button class="tab" data-tab="exception">Exceptions <span class="tab-count" data-c="exception">0</span></button>
-  </div>
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-tab="all">All <span class="tab-count" data-c="all">0</span></button>
+  <button class="tab" data-tab="pending">Pending <span class="tab-count" data-c="pending">0</span></button>
+  <button class="tab" data-tab="received">Received <span class="tab-count" data-c="received">0</span></button>
+  <button class="tab" data-tab="labeled">Labeled <span class="tab-count" data-c="labeled">0</span></button>
+  <button class="tab" data-tab="shipped">Shipped <span class="tab-count" data-c="shipped">0</span></button>
+  <button class="tab" data-tab="orphan">Orphans <span class="tab-count" data-c="orphan">0</span></button>
+  <button class="tab" data-tab="exception">Exceptions <span class="tab-count" data-c="exception">0</span></button>
 </nav>
 
-<!-- ─── TABLE ───────────────────────────────────── -->
 <section class="tbl-wrap">
-  <div class="tbl">
-    <div class="tbl-head">
-      <div>Tracking · Order</div>
-      <div>Carrier</div>
-      <div>Platform</div>
-      <div>Content</div>
-      <div>Status</div>
-      <div>Age</div>
-    </div>
-    <div id="rows"><div class="loading-state">Loading</div></div>
+  <div class="tbl-head">
+    <div>Tracking · Order</div>
+    <div>Carrier</div>
+    <div>Outbound</div>
+    <div>Content</div>
+    <div>Status</div>
+    <div>Age</div>
   </div>
+  <div id="rows"><div class="loading-state">Loading</div></div>
 </section>
 
-<!-- ─── DETAIL DRAWER ───────────────────────────── -->
 <div class="detail-backdrop" id="backdrop"></div>
 <aside class="detail" id="detail">
   <div class="detail-head">
     <div>
-      <div style="font-size: 11px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600;">Package</div>
-      <div id="dTracking" class="mono" style="font-size: 16px; font-weight: 600; margin-top: 2px;"></div>
+      <div style="font-size: 10px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700;">Package</div>
+      <div id="dTracking" class="mono" style="font-size: 15px; font-weight: 600; margin-top: 3px;"></div>
     </div>
     <button class="detail-close" onclick="closeDetail()">✕</button>
   </div>
   <div class="detail-body" id="dBody"></div>
 </aside>
 
-<!-- ─── TOAST ───────────────────────────────────── -->
 <div class="toast" id="toast">
   <span id="toastMsg"></span>
 </div>
 
 <script>
-  // ─── Config ──────────────────────────────────────
   const API = "/.netlify/functions/dropshipments";
   const SYNC_API = "/.netlify/functions/dropship-gmail-sync";
 
-  // ─── State ───────────────────────────────────────
   const state = { rows: [], clients: [], activeTab: "all", activeClient: "", syncing: false };
 
-  // ─── Helpers ─────────────────────────────────────
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   const escapeHtml = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
@@ -539,7 +531,6 @@
     return "";
   }
 
-  // ─── Toast ───────────────────────────────────────
   let toastTimer;
   function toast(msg, { error = false } = {}) {
     const t = $("#toast");
@@ -550,7 +541,6 @@
     toastTimer = setTimeout(() => t.classList.remove("show"), 3000);
   }
 
-  // ─── API calls ───────────────────────────────────
   async function apiGet(params) {
     const u = new URL(API, window.location.origin);
     Object.entries(params).forEach(([k, v]) => v != null && u.searchParams.set(k, v));
@@ -580,7 +570,6 @@
     }
   }
 
-  // ─── Render rows ─────────────────────────────────
   function renderRows() {
     const tbody = $("#rows");
     const filtered = state.activeTab === "all"
@@ -593,7 +582,7 @@
     }
 
     tbody.innerHTML = filtered.map(r => {
-      const platform = r.outbound_platform ? ` <span style="opacity:.55; font-family:'IBM Plex Mono'; font-size: 11px;">· ${escapeHtml(r.outbound_platform)}</span>` : "";
+      const platform = r.outbound_platform ? ` <span style="opacity:.55; font-family:'DM Mono'; font-size: 11px;">· ${escapeHtml(r.outbound_platform)}</span>` : "";
       return `
         <div class="tbl-row" data-id="${r.id}">
           <div>
@@ -604,15 +593,14 @@
           <div style="font-size: 12px; color: var(--muted);">${escapeHtml(r.outbound_carrier || "—")}${platform}</div>
           <div class="content-cell">
             ${r.qty_boxes > 1 ? `<span class="content-qty">×${r.qty_boxes}</span>` : ""}
-            ${r.content ? escapeHtml(r.content) : '<em style="color: var(--mute-2);">no content parsed</em>'}
+            ${r.content ? escapeHtml(r.content) : '<em style="color: #a0aec0;">no content parsed</em>'}
           </div>
-          <div><span class="status-pill s-${r.status}">${r.status}</span></div>
+          <div><span class="status-badge sb-${r.status}">${r.status}</span></div>
           <div class="age">${fmtAge(r.email_received_at || r.physical_received_at)}</div>
         </div>
       `;
     }).join("");
 
-    // Wire up row clicks
     $$(".tbl-row").forEach(el => {
       el.addEventListener("click", () => openDetail(el.dataset.id));
     });
@@ -632,7 +620,6 @@
     });
   }
 
-  // ─── Tabs ────────────────────────────────────────
   $("#tabs").addEventListener("click", (e) => {
     const btn = e.target.closest(".tab");
     if (!btn) return;
@@ -642,13 +629,11 @@
     renderRows();
   });
 
-  // ─── Client selector ─────────────────────────────
   $("#clientSelect").addEventListener("change", (e) => {
     state.activeClient = e.target.value;
     loadRows();
   });
 
-  // ─── Detail drawer ───────────────────────────────
   async function openDetail(id) {
     const row = state.rows.find(r => r.id === id);
     if (!row) return;
@@ -673,7 +658,7 @@
   $("#backdrop").addEventListener("click", closeDetail);
 
   function renderDetail(r) {
-    const clientName = r.fr_clients?.company || r.fr_clients?.name || r.dropship_client_configs?.display_name || "—";
+    const clientName = r.client?.company || r.client?.name || r.config?.display_name || "—";
     const steps = [
       { label: "Email received", time: r.email_received_at },
       { label: "Package received", time: r.physical_received_at },
@@ -698,10 +683,10 @@
            </div>
            <button class="btn btn-primary btn-sm" onclick="openLabel('${r.id}')">Open</button>
          </div>`
-      : `<div class="pdf-box" style="border-color: var(--orphan); background: var(--orphan-bg);">
-           <div class="pdf-icon" style="background: var(--orphan);">!</div>
+      : `<div class="pdf-box no-label">
+           <div class="pdf-icon">!</div>
            <div class="pdf-info">
-             <strong style="color: var(--orphan);">No label yet</strong>
+             <strong style="color: var(--s-orphan-text);">No label yet</strong>
              <small>Awaiting email match</small>
            </div>
          </div>`;
@@ -723,7 +708,7 @@
         <div class="timeline">${timelineHtml}</div>
       </div>
 
-      <div style="font-size: 11px; color: var(--muted); font-family: 'IBM Plex Mono'; padding-top: 8px; border-top: 1px dashed var(--line);">
+      <div style="font-size: 10px; color: var(--muted); font-family: 'DM Mono'; padding-top: 8px; border-top: 1px dashed var(--border); line-height: 1.6;">
         row id: ${r.id}<br>
         email msg id: ${escapeHtml(r.email_message_id || "—")}
       </div>
@@ -740,7 +725,6 @@
   }
   window.openLabel = openLabel;
 
-  // ─── Scan ────────────────────────────────────────
   const scanInput = $("#scan");
   scanInput.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
@@ -777,12 +761,10 @@
     }
   });
 
-  // ─── Sync now button ─────────────────────────────
   $("#syncBtn").addEventListener("click", async () => {
     if (state.syncing) return;
     state.syncing = true;
     $("#syncBtn").classList.add("syncing");
-    $("#syncDot").classList.add("spinning");
     $("#syncLabel").textContent = "Syncing…";
     try {
       const r = await fetch(SYNC_API, { method: "POST" });
@@ -797,21 +779,10 @@
     } finally {
       state.syncing = false;
       $("#syncBtn").classList.remove("syncing");
-      $("#syncDot").classList.remove("spinning");
       $("#syncLabel").textContent = "Sync now";
     }
   });
 
-  // ─── Clock ───────────────────────────────────────
-  function tickClock() {
-    const d = new Date();
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mm = String(d.getMinutes()).padStart(2, "0");
-    $("#clock").textContent = `${hh}:${mm}`;
-  }
-  tickClock(); setInterval(tickClock, 30000);
-
-  // ─── Init ────────────────────────────────────────
   (async function init() {
     try {
       await loadClients();
