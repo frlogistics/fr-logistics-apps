@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&family=DM+Mono&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -210,7 +211,7 @@
   }
   .tbl-head, .tbl-row {
     display: grid;
-    grid-template-columns: 200px 110px 150px 1fr 110px 90px;
+    grid-template-columns: 38px 200px 110px 150px 1fr 110px 90px;
     align-items: center;
     padding: 13px 18px; gap: 14px;
   }
@@ -428,6 +429,73 @@
   .modal-box input { min-height: auto; }
   .modal-box textarea:focus, .modal-box input:focus { border-color: var(--accent); }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+
+  /* ─── ROW CHECKBOX (batch select) ────────────── */
+  .row-check {
+    width: 18px; height: 18px;
+    appearance: none;
+    border: 1.5px solid var(--border);
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    transition: all .12s ease;
+    display: grid; place-items: center;
+    flex-shrink: 0;
+    margin: 0;
+  }
+  .row-check:hover { border-color: var(--accent); }
+  .row-check:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .row-check:checked::after {
+    content: "✓"; color: #fff; font-size: 12px; font-weight: 800; line-height: 1;
+  }
+  .row-check:disabled {
+    opacity: 0.25; cursor: not-allowed;
+    background: #f8fafc; border-color: var(--border);
+  }
+  .tbl-row.selected { background: #f0fdf4; }
+  .tbl-row.selected:hover { background: #dcfce7; }
+  .check-cell {
+    display: flex; align-items: center; justify-content: center;
+    padding: 6px; margin: -6px;
+    cursor: pointer;
+  }
+
+  /* ─── BATCH BAR (floating when selection active) ─── */
+  .batch-bar {
+    position: fixed; bottom: 24px; left: 50%;
+    transform: translate(-50%, 30px);
+    background: var(--text); color: #fff;
+    padding: 10px 10px 10px 18px;
+    border-radius: 999px;
+    font-size: 13px; font-weight: 500;
+    box-shadow: 0 12px 40px rgba(15,23,42,.3);
+    display: flex; align-items: center; gap: 14px;
+    opacity: 0; pointer-events: none;
+    transition: all .25s cubic-bezier(.4,0,.2,1);
+    z-index: 90;
+    max-width: calc(100vw - 40px);
+  }
+  .batch-bar.show { opacity: 1; transform: translate(-50%, 0); pointer-events: all; }
+  .batch-count {
+    font-family: 'Syne', sans-serif; font-weight: 800; font-size: 15px;
+    padding: 2px 10px; border-radius: 999px;
+    background: rgba(255,255,255,.12);
+  }
+  .batch-bar .btn {
+    background: #fff; color: var(--text);
+    border-color: #fff; padding: 8px 16px; font-weight: 700;
+  }
+  .batch-bar .btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .batch-bar .btn-ghost {
+    background: transparent; color: rgba(255,255,255,.85);
+    border: 1px solid rgba(255,255,255,.15);
+  }
+  .batch-bar .btn-ghost:hover { background: rgba(255,255,255,.1); color: #fff; border-color: rgba(255,255,255,.3); }
+  .batch-bar.busy { pointer-events: none; opacity: 0.75; }
+
   .toast {
     position: fixed; bottom: 24px; left: 50%;
     transform: translate(-50%, 20px);
@@ -449,19 +517,20 @@
     .hdr-title { font-size: 18px; }
     .tbl-head { display: none; }
     .tbl-row {
-      grid-template-columns: 1fr auto;
+      grid-template-columns: auto 1fr auto;
       grid-template-areas:
-        "tr status"
-        "carrier age"
-        "content content";
+        "check tr status"
+        "check carrier age"
+        "check content content";
       row-gap: 8px;
     }
-    .tbl-row > :nth-child(1) { grid-area: tr; }
-    .tbl-row > :nth-child(2) { grid-area: carrier; }
-    .tbl-row > :nth-child(3) { display: none; }
-    .tbl-row > :nth-child(4) { grid-area: content; }
-    .tbl-row > :nth-child(5) { grid-area: status; justify-self: end; }
-    .tbl-row > :nth-child(6) { grid-area: age; justify-self: end; }
+    .tbl-row > :nth-child(1) { grid-area: check; align-self: start; }
+    .tbl-row > :nth-child(2) { grid-area: tr; }
+    .tbl-row > :nth-child(3) { grid-area: carrier; }
+    .tbl-row > :nth-child(4) { display: none; }
+    .tbl-row > :nth-child(5) { grid-area: content; }
+    .tbl-row > :nth-child(6) { grid-area: status; justify-self: end; }
+    .tbl-row > :nth-child(7) { grid-area: age; justify-self: end; }
     .kpis { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; margin-left: 0; padding-bottom: 4px; }
     .kpi { flex-shrink: 0; }
     .detail { width: 100%; }
@@ -532,6 +601,7 @@
 
 <section class="tbl-wrap">
   <div class="tbl-head">
+    <div class="check-cell" title="Select all eligible rows in this view"><input type="checkbox" class="row-check" id="selectAll"></div>
     <div>Tracking · Order</div>
     <div>Carrier</div>
     <div>Outbound</div>
@@ -541,6 +611,14 @@
   </div>
   <div id="rows"><div class="loading-state">Loading</div></div>
 </section>
+
+<!-- Floating batch action bar -->
+<div class="batch-bar" id="batchBar">
+  <span class="batch-count" id="batchCount">0</span>
+  <span id="batchLabel">selected</span>
+  <button class="btn" id="batchPrintBtn">🖨 Print labels</button>
+  <button class="btn btn-ghost" id="batchClearBtn">Clear</button>
+</div>
 
 <div class="detail-backdrop" id="backdrop"></div>
 <aside class="detail" id="detail">
@@ -628,7 +706,7 @@
   const API = "/.netlify/functions/dropshipments";
   const SYNC_API = "/.netlify/functions/dropship-gmail-sync";
 
-  const state = { rows: [], clients: [], activeTab: "all", activeClient: "", syncing: false, operator: "" };
+  const state = { rows: [], clients: [], activeTab: "all", activeClient: "", syncing: false, operator: "", batchSelection: new Set() };
 
   // ─── Operator (localStorage, prompted on first use) ──────────────────
   function loadOperator() {
@@ -787,6 +865,205 @@
     }
   }
   window.printAndLabel = printAndLabel;
+
+  // ─── Batch print (multiple labels → 1 merged PDF) ────────────────────
+  // Selection lives in state.batchSelection (Set of row ids).
+  // When rows are re-rendered (filter/tab change), any selected ids that are
+  // no longer visible are kept in state so switching tabs doesn't lose them.
+
+  function updateBatchBar() {
+    const bar = $("#batchBar");
+    const n = state.batchSelection.size;
+    if (n === 0) {
+      bar.classList.remove("show");
+      return;
+    }
+    bar.classList.add("show");
+    $("#batchCount").textContent = n;
+    $("#batchLabel").textContent = n === 1 ? "label selected" : "labels selected";
+  }
+
+  function updateSelectAllState() {
+    // Set the select-all checkbox based on whether every eligible visible row is selected.
+    const cbAll = $("#selectAll");
+    if (!cbAll) return;
+    const visibleEligible = getVisibleEligibleRows();
+    if (visibleEligible.length === 0) {
+      cbAll.checked = false;
+      cbAll.indeterminate = false;
+      cbAll.disabled = true;
+      return;
+    }
+    cbAll.disabled = false;
+    const allSelected = visibleEligible.every(r => state.batchSelection.has(r.id));
+    const someSelected = visibleEligible.some(r => state.batchSelection.has(r.id));
+    cbAll.checked = allSelected;
+    cbAll.indeterminate = !allSelected && someSelected;
+  }
+
+  function getVisibleEligibleRows() {
+    const filtered = state.activeTab === "all"
+      ? state.rows
+      : state.rows.filter(r => r.status === state.activeTab);
+    return filtered.filter(isBatchPrintable);
+  }
+
+  function clearBatchSelection() {
+    state.batchSelection.clear();
+    $$(".row-check[data-row-id]").forEach(cb => { cb.checked = false; });
+    $$(".tbl-row.selected").forEach(el => el.classList.remove("selected"));
+    updateBatchBar();
+    updateSelectAllState();
+  }
+
+  // Select-all toggles all visible eligible rows
+  $("#selectAll").addEventListener("change", (e) => {
+    const eligible = getVisibleEligibleRows();
+    if (e.target.checked) {
+      for (const r of eligible) state.batchSelection.add(r.id);
+    } else {
+      for (const r of eligible) state.batchSelection.delete(r.id);
+    }
+    // Reflect in the DOM
+    $$(".row-check[data-row-id]").forEach(cb => {
+      const id = cb.dataset.rowId;
+      const shouldBe = state.batchSelection.has(id);
+      cb.checked = shouldBe;
+      const rowEl = cb.closest(".tbl-row");
+      if (rowEl) rowEl.classList.toggle("selected", shouldBe);
+    });
+    updateBatchBar();
+    updateSelectAllState();
+  });
+
+  $("#batchClearBtn").addEventListener("click", clearBatchSelection);
+
+  // Main batch print flow: fetch signed URLs in parallel → download PDFs → merge with pdf-lib → open
+  async function batchPrint() {
+    if (!requireOperator()) return;
+    if (state.batchSelection.size === 0) return;
+
+    const ids = Array.from(state.batchSelection);
+    const rows = ids.map(id => state.rows.find(r => r.id === id)).filter(Boolean);
+    if (rows.length === 0) return;
+
+    // Defensive: drop any rows that aren't currently printable.
+    const toPrint = rows.filter(isBatchPrintable);
+    if (toPrint.length === 0) {
+      toast("Selected rows are no longer printable", { error: true });
+      return;
+    }
+    if (toPrint.length !== rows.length) {
+      toast(`${rows.length - toPrint.length} rows skipped (not printable)`);
+    }
+
+    const bar = $("#batchBar");
+    const btn = $("#batchPrintBtn");
+    bar.classList.add("busy");
+    const origLabel = btn.textContent;
+    btn.textContent = `🖨 Preparing ${toPrint.length}…`;
+
+    try {
+      if (!window.PDFLib) throw new Error("pdf-lib not loaded — check network");
+      const { PDFDocument } = window.PDFLib;
+
+      // 1. Fetch signed URLs (in parallel)
+      btn.textContent = "🔐 Signing URLs…";
+      const urlResults = await Promise.all(toPrint.map(r =>
+        apiGet({ action: "label", id: r.id }).then(j => ({ row: r, url: j.url })).catch(e => ({ row: r, err: e.message }))
+      ));
+      const urlErrors = urlResults.filter(u => u.err);
+      if (urlErrors.length) {
+        console.warn("Sign errors:", urlErrors);
+      }
+      const goodUrls = urlResults.filter(u => u.url);
+      if (goodUrls.length === 0) throw new Error("No labels could be signed");
+
+      // 2. Download all PDFs in parallel
+      btn.textContent = `📥 Downloading ${goodUrls.length}…`;
+      const pdfBlobs = await Promise.all(goodUrls.map(u =>
+        fetch(u.url).then(r => {
+          if (!r.ok) throw new Error(`Download failed for ${u.row.tracking_number}`);
+          return r.arrayBuffer();
+        }).then(buf => ({ row: u.row, buf })).catch(e => ({ row: u.row, err: e.message }))
+      ));
+      const dlErrors = pdfBlobs.filter(p => p.err);
+      if (dlErrors.length) console.warn("Download errors:", dlErrors);
+      const goodPdfs = pdfBlobs.filter(p => p.buf);
+      if (goodPdfs.length === 0) throw new Error("No PDFs could be downloaded");
+
+      // 3. Merge with pdf-lib
+      btn.textContent = `🔗 Merging ${goodPdfs.length}…`;
+      const merged = await PDFDocument.create();
+      for (const { row, buf } of goodPdfs) {
+        try {
+          const src = await PDFDocument.load(buf, { ignoreEncryption: true });
+          const pages = await merged.copyPages(src, src.getPageIndices());
+          for (const p of pages) merged.addPage(p);
+        } catch (e) {
+          console.error(`Merge failed for ${row.tracking_number}:`, e);
+        }
+      }
+      if (merged.getPageCount() === 0) throw new Error("Merged PDF has no pages");
+      const mergedBytes = await merged.save();
+
+      // 4. Open the merged PDF in a new tab (blob URL)
+      btn.textContent = "🖨 Opening PDF…";
+      const blob = new Blob([mergedBytes], { type: "application/pdf" });
+      const blobUrl = URL.createObjectURL(blob);
+      const w = window.open(blobUrl, "_blank");
+      if (!w) {
+        // Popup blocker — offer download instead
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = `dropship-labels-${new Date().toISOString().slice(0,10)}.pdf`;
+        a.click();
+        toast("Popup blocked — PDF downloaded instead");
+      }
+      // Revoke blob URL after 60s (give browser time to open and render)
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+
+      // 5. Mark each 'received' row as 'labeled' (Option A: auto-transition)
+      btn.textContent = `✓ Marking ${goodPdfs.length} labeled…`;
+      const toLabel = goodPdfs.map(p => p.row).filter(r => r.status === "received");
+      const labelResults = await Promise.all(toLabel.map(r =>
+        apiPost({ action: "label", id: r.id, operator: state.operator })
+          .then(j => ({ row: r, ok: true, updated: j.row }))
+          .catch(e => ({ row: r, ok: false, err: e.message }))
+      ));
+      // Update local state with the labeled rows
+      for (const lr of labelResults) {
+        if (lr.ok && lr.updated) {
+          const idx = state.rows.findIndex(x => x.id === lr.row.id);
+          if (idx >= 0) state.rows[idx] = { ...state.rows[idx], ...lr.updated };
+        }
+      }
+      const labelFailures = labelResults.filter(l => !l.ok).length;
+
+      clearBatchSelection();
+      renderRows();
+      renderCounts();
+
+      if (labelFailures > 0) {
+        toast(`Printed ${goodPdfs.length} · ${labelFailures} failed to label`, { error: true });
+      } else {
+        const skipped = rows.length - goodPdfs.length;
+        let msg = `Printed ${goodPdfs.length} labels`;
+        if (toLabel.length < goodPdfs.length) msg += ` · ${goodPdfs.length - toLabel.length} already labeled`;
+        if (skipped > 0) msg += ` · ${skipped} skipped`;
+        toast(msg);
+      }
+    } catch (e) {
+      console.error("Batch print error", e);
+      toast("Batch print failed: " + e.message, { error: true });
+    } finally {
+      bar.classList.remove("busy");
+      btn.textContent = origLabel;
+    }
+  }
+
+  $("#batchPrintBtn").addEventListener("click", batchPrint);
+  window.batchPrint = batchPrint;
   async function loadClients() {
     const j = await apiGet({ action: "clients" });
     state.clients = j.clients || [];
@@ -816,13 +1093,23 @@
 
     if (filtered.length === 0) {
       tbody.innerHTML = '<div class="empty-state">No packages in this view.</div>';
+      updateBatchBar();
       return;
     }
 
     tbody.innerHTML = filtered.map(r => {
       const platform = r.outbound_platform ? ` <span style="opacity:.55; font-family:'DM Mono'; font-size: 11px;">· ${escapeHtml(r.outbound_platform)}</span>` : "";
+      const selectable = isBatchPrintable(r);
+      const selected = state.batchSelection.has(r.id);
+      const rowClass = selected ? "tbl-row selected" : "tbl-row";
+      const checkTitle = selectable
+        ? "Select to batch print"
+        : (r.label_url ? `Cannot batch print from status '${r.status}'` : "No label available");
       return `
-        <div class="tbl-row" data-id="${r.id}">
+        <div class="${rowClass}" data-id="${r.id}">
+          <label class="check-cell" title="${checkTitle}" onclick="event.stopPropagation()">
+            <input type="checkbox" class="row-check" data-row-id="${r.id}" ${selected ? "checked" : ""} ${selectable ? "" : "disabled"}>
+          </label>
           <div>
             <div class="tracking">${escapeHtml(r.tracking_number)}</div>
             ${r.order_id ? `<div class="tracking-small">${escapeHtml(r.order_id)}</div>` : ""}
@@ -839,9 +1126,34 @@
       `;
     }).join("");
 
+    // Wire up row clicks (open drawer), but not when clicking the checkbox
     $$(".tbl-row").forEach(el => {
-      el.addEventListener("click", () => openDetail(el.dataset.id));
+      el.addEventListener("click", (e) => {
+        if (e.target.closest(".check-cell")) return;
+        openDetail(el.dataset.id);
+      });
     });
+
+    // Wire up the checkbox changes
+    $$(".row-check[data-row-id]").forEach(cb => {
+      cb.addEventListener("change", (e) => {
+        const id = cb.dataset.rowId;
+        if (cb.checked) state.batchSelection.add(id);
+        else state.batchSelection.delete(id);
+        const rowEl = cb.closest(".tbl-row");
+        if (rowEl) rowEl.classList.toggle("selected", cb.checked);
+        updateBatchBar();
+        updateSelectAllState();
+      });
+    });
+
+    updateBatchBar();
+    updateSelectAllState();
+  }
+
+  // A row is batch-printable when it has a label and is in a state where printing makes sense.
+  function isBatchPrintable(r) {
+    return !!r.label_url && (r.status === "received" || r.status === "labeled");
   }
 
   function renderCounts() {
@@ -1209,13 +1521,14 @@
     }
   });
 
-  // Escape key closes all modals
+  // Escape key closes all modals or clears batch selection
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     if ($("#scanConfirmModal").classList.contains("open")) closeScanConfirmModal();
     else if ($("#orphanModal").classList.contains("open")) closeOrphanModal();
     else if ($("#operatorModal").classList.contains("open")) closeOperatorModal();
     else if ($("#reasonModal").classList.contains("open")) closeReasonModal();
+    else if (state.batchSelection.size > 0) clearBatchSelection();
   });
 
   // ─── Operator modal ─────────────────────────────────────────────────
