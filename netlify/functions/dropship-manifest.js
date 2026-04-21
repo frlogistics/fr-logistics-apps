@@ -36,7 +36,6 @@
 const SUPABASE_URL  = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY  = Netlify.env.get("SUPABASE_SERVICE_KEY");
 const RESEND_KEY    = Netlify.env.get("RESEND_API_KEY");
-const WA_SECRET     = Netlify.env.get("WHATSAPP_WEBHOOK_SECRET") || "frlogistics_wa_2026";
 const SITE_URL      = "https://apps.fr-logistics.net";
 
 // ─── Ops digest (internal copy to operations) ─────────────────────────────
@@ -77,37 +76,50 @@ function clientLabel(c) {
   return c.store_name || c.company || c.name || "Client";
 }
 
-// ─── WhatsApp send (via our existing whatsapp-notify endpoint) ────────────────
-async function sendWhatsAppTemplate({ to, clientName, dateLabel, inbound, outbound, lang = "en" }) {
-  const templateName     = "daily_summary";
-  const templateLanguage = lang === "ES" || lang === "es" ? "es" : "en";
-  const templateParams   = [
-    String(clientName || ""),
-    String(dateLabel  || ""),
-    String(inbound    || "0"),
-    String(outbound   || "0")
-  ];
-  const fallbackText =
-    `Hi ${clientName}, here is your daily summary from FR-Logistics Miami — ${dateLabel}: ` +
-    `Inbound: ${inbound} package(s) received. Outbound: ${outbound} shipment(s) processed. ` +
-    `For full details contact us at info@fr-logistics.net.`;
+// ─── WhatsApp send (DIRECT to Meta Graph API — bypasses whatsapp-notify) ─────
+// We call Meta directly for two reasons:
+//   1. Function-to-function calls in Netlify hit routing edge cases when the
+//      target function uses a custom config.path
+//   2. Skipping the intermediate hop is faster and removes a failure point
+async function sendWhatsAppMeta({ to, templateName, templateLanguage = "en", templateParams = [], fallbackText = "" }) {
+  const WA_TOKEN    = Netlify.env.get("WHATSAPP_TOKEN");
+  const WA_PHONE_ID = Netlify.env.get("WHATSAPP_PHONE_ID");
+  if (!WA_TOKEN)    throw new Error("WHATSAPP_TOKEN not configured");
+  if (!WA_PHONE_ID) throw new Error("WHATSAPP_PHONE_ID not configured");
 
-  const r = await fetch(`${SITE_URL}/.netlify/functions/whatsapp-notify`, {
+  const phone = String(to || "").replace(/\D/g, "");  // digits only
+  if (!phone) throw new Error("recipient phone is empty");
+
+  const url = `https://graph.facebook.com/v21.0/${WA_PHONE_ID}/messages`;
+  const body = {
+    messaging_product: "whatsapp",
+    to: phone,
+    type: "template",
+    template: {
+      name: templateName,
+      language: { code: templateLanguage },
+      components: [{
+        type: "body",
+        parameters: templateParams.map(p => ({ type: "text", text: String(p ?? "") }))
+      }]
+    }
+  };
+
+  const r = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-fr-secret": WA_SECRET },
-    body: JSON.stringify({
-      to,
-      type: "template",
-      templateName,
-      templateLanguage,
-      templateParams,
-      fallbackText
-    })
+    headers: { "Authorization": `Bearer ${WA_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body)
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(`wa-notify ${r.status}: ${j.error || JSON.stringify(j)}`);
+  if (!r.ok) {
+    const errMsg = j.error?.message || JSON.stringify(j);
+    throw new Error(`Meta ${r.status}: ${errMsg}`);
+  }
+  return { ok: true, message_id: j.messages?.[0]?.id || null };
+}
 
-  // Log to wa-messages (best-effort, non-fatal if it fails)
+// Best-effort log to wa-messages (audit trail). Failures here are not fatal.
+async function logWhatsAppOutbound({ to, clientName, templateName, fallbackText }) {
   try {
     await fetch(`${SITE_URL}/.netlify/functions/wa-messages`, {
       method: "POST",
@@ -123,8 +135,26 @@ async function sendWhatsAppTemplate({ to, clientName, dateLabel, inbound, outbou
   } catch (e) {
     console.warn("[dropship-manifest] wa-messages log failed:", e.message);
   }
+}
 
-  return { ok: true, fallbackText, ...j };
+// Per-client manifest send.
+async function sendWhatsAppTemplate({ to, clientName, dateLabel, inbound, outbound, lang = "en" }) {
+  const templateName     = "daily_summary";
+  const templateLanguage = lang === "ES" || lang === "es" ? "es" : "en";
+  const templateParams   = [
+    String(clientName || ""),
+    String(dateLabel  || ""),
+    String(inbound    || "0"),
+    String(outbound   || "0")
+  ];
+  const fallbackText =
+    `Hi ${clientName}, here is your daily summary from FR-Logistics Miami — ${dateLabel}: ` +
+    `Inbound: ${inbound} package(s) received. Outbound: ${outbound} shipment(s) processed. ` +
+    `For full details contact us at info@fr-logistics.net.`;
+
+  const r = await sendWhatsAppMeta({ to, templateName, templateLanguage, templateParams, fallbackText });
+  await logWhatsAppOutbound({ to, clientName, templateName, fallbackText });
+  return { ok: true, fallbackText, ...r };
 }
 
 // ─── Ops digest: send a consolidated WhatsApp to Jose ─────────────────────
@@ -149,37 +179,20 @@ async function sendOpsWhatsAppDigest({ dateLabel, totals, sentClients, errors })
     `Inbound: ${inbound} package(s) received. Outbound: ${outbound} shipment(s) processed across ${sentClients} client(s).`;
   if (errors > 0) fallbackText += ` ${errors} send error(s) — check email digest for details.`;
 
-  const r = await fetch(`${SITE_URL}/.netlify/functions/whatsapp-notify`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-fr-secret": WA_SECRET },
-    body: JSON.stringify({
-      to: OPS_WHATSAPP_NUMBER,
-      type: "template",
-      templateName,
-      templateLanguage,
-      templateParams,
-      fallbackText
-    })
+  const r = await sendWhatsAppMeta({
+    to: OPS_WHATSAPP_NUMBER,
+    templateName,
+    templateLanguage,
+    templateParams,
+    fallbackText
   });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(`ops wa-notify ${r.status}: ${j.error || JSON.stringify(j)}`);
-
-  // Best-effort log to wa-messages
-  try {
-    await fetch(`${SITE_URL}/.netlify/functions/wa-messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action:     "add_outbound",
-        to:         OPS_WHATSAPP_NUMBER,
-        clientName: "Operations (internal)",
-        template:   templateName,
-        text:       fallbackText
-      })
-    });
-  } catch (e) { console.warn("[ops-digest] wa-messages log failed:", e.message); }
-
-  return { ok: true };
+  await logWhatsAppOutbound({
+    to: OPS_WHATSAPP_NUMBER,
+    clientName: "Operations (internal)",
+    templateName,
+    fallbackText
+  });
+  return { ok: true, ...r };
 }
 
 // ─── Ops digest: send the rich HTML email to Jose ─────────────────────────
