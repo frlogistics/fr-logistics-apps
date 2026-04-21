@@ -81,41 +81,73 @@ function clientLabel(c) {
 //   1. Function-to-function calls in Netlify hit routing edge cases when the
 //      target function uses a custom config.path
 //   2. Skipping the intermediate hop is faster and removes a failure point
-async function sendWhatsAppMeta({ to, templateName, templateLanguage = "en", templateParams = [], fallbackText = "" }) {
+//
+// Language handling: Meta requires the EXACT language code the template was
+// approved with. Our daily_summary is currently only approved in en_US, so
+// we automatically fall back to en_US if the requested language doesn't exist.
+async function sendWhatsAppMeta({ to, templateName, templateLanguage = "en_US", templateParams = [], fallbackText = "" }) {
   const WA_TOKEN    = Netlify.env.get("WHATSAPP_TOKEN");
   const WA_PHONE_ID = Netlify.env.get("WHATSAPP_PHONE_ID");
   if (!WA_TOKEN)    throw new Error("WHATSAPP_TOKEN not configured");
   if (!WA_PHONE_ID) throw new Error("WHATSAPP_PHONE_ID not configured");
 
-  const phone = String(to || "").replace(/\D/g, "");  // digits only
+  // Normalize the phone: digits only. Meta wants 13052403172 (no '+', no spaces).
+  const phone = String(to || "").replace(/\D/g, "");
   if (!phone) throw new Error("recipient phone is empty");
+  if (phone.length < 10) throw new Error(`recipient phone too short: ${phone}`);
 
   const url = `https://graph.facebook.com/v21.0/${WA_PHONE_ID}/messages`;
-  const body = {
+
+  const buildBody = (langCode) => ({
     messaging_product: "whatsapp",
     to: phone,
     type: "template",
     template: {
       name: templateName,
-      language: { code: templateLanguage },
+      language: { code: langCode },
       components: [{
         type: "body",
         parameters: templateParams.map(p => ({ type: "text", text: String(p ?? "") }))
       }]
     }
+  });
+
+  const tryLang = async (langCode) => {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${WA_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify(buildBody(langCode))
+    });
+    const j = await r.json().catch(() => ({}));
+    return { ok: r.ok, status: r.status, json: j, lang_used: langCode };
   };
 
-  const r = await fetch(url, {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${WA_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    const errMsg = j.error?.message || JSON.stringify(j);
-    throw new Error(`Meta ${r.status}: ${errMsg}`);
+  // First attempt: requested language
+  let result = await tryLang(templateLanguage);
+
+  // Fallback chain: if the requested lang isn't in Meta's translation list,
+  // try the most-likely-approved variant. Specifically Meta error 132001
+  // "Template name does not exist in the translation" means the template
+  // exists but not in this language.
+  const fallbackChain = [];
+  if (templateLanguage !== "en_US") fallbackChain.push("en_US");
+  if (templateLanguage !== "en")    fallbackChain.push("en");
+
+  for (const fb of fallbackChain) {
+    if (result.ok) break;
+    const errCode = result.json?.error?.code;
+    const errMsg  = result.json?.error?.message || "";
+    const isLangMissing = errCode === 132001 || /does not exist in the translation/i.test(errMsg);
+    if (!isLangMissing) break;  // some other error, don't retry
+    console.warn(`[wa-meta] template ${templateName} not in ${result.lang_used}, retrying with ${fb}`);
+    result = await tryLang(fb);
   }
-  return { ok: true, message_id: j.messages?.[0]?.id || null };
+
+  if (!result.ok) {
+    const errMsg = result.json?.error?.message || JSON.stringify(result.json);
+    throw new Error(`Meta ${result.status}: ${errMsg}`);
+  }
+  return { ok: true, message_id: result.json?.messages?.[0]?.id || null, lang_used: result.lang_used };
 }
 
 // Best-effort log to wa-messages (audit trail). Failures here are not fatal.
@@ -138,9 +170,15 @@ async function logWhatsAppOutbound({ to, clientName, templateName, fallbackText 
 }
 
 // Per-client manifest send.
-async function sendWhatsAppTemplate({ to, clientName, dateLabel, inbound, outbound, lang = "en" }) {
+// We try the client's preferred language first, with automatic fallback
+// to en_US handled inside sendWhatsAppMeta if the template isn't translated.
+async function sendWhatsAppTemplate({ to, clientName, dateLabel, inbound, outbound, lang = "en_US" }) {
   const templateName     = "daily_summary";
-  const templateLanguage = lang === "ES" || lang === "es" ? "es" : "en";
+  // Map our client lang values to Meta's exact language codes.
+  // daily_summary is currently only approved in en_US, but if we ever add
+  // an "es" version, this will pick it up automatically.
+  const langMap = { ES: "es", es: "es", EN: "en_US", en: "en_US", "en_US": "en_US" };
+  const templateLanguage = langMap[lang] || "en_US";
   const templateParams   = [
     String(clientName || ""),
     String(dateLabel  || ""),
@@ -166,7 +204,7 @@ async function sendOpsWhatsAppDigest({ dateLabel, totals, sentClients, errors })
   const outbound = totals.shipped;
   // Use daily_summary template — same one used for clients, with "Operations" as recipient name
   const templateName     = "daily_summary";
-  const templateLanguage = "en";
+  const templateLanguage = "en_US";  // template is approved in en_US
   const templateParams   = [
     "Operations",
     String(dateLabel || ""),
