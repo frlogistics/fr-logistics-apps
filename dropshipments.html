@@ -370,7 +370,64 @@
   .tl-item .tl-step { font-size: 12px; font-weight: 700; }
   .tl-item .tl-time { font-size: 11px; color: var(--muted); font-family: 'DM Mono'; margin-top: 2px; }
 
-  /* ─── TOAST ──────────────────────────────────── */
+  /* ─── OPERATOR BTN ───────────────────────────── */
+  .btn-ghost {
+    background: #f8fafc; border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { background: #fff; border-color: var(--accent); color: var(--accent); }
+  .op-avatar {
+    display: inline-grid; place-items: center;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--accent); color: #fff;
+    font-size: 10px; font-weight: 800; font-family: 'Syne', sans-serif;
+    letter-spacing: 0;
+  }
+  .op-avatar.empty { background: #cbd5e1; }
+
+  /* ─── ACTION BUTTONS IN DRAWER ───────────────── */
+  .action-bar {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    padding: 16px; margin: 0 -22px -22px -22px;
+    background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
+    border-top: 1px solid var(--border);
+    position: sticky; bottom: 0; z-index: 3;
+  }
+  .action-bar .btn { flex: 1; justify-content: center; padding: 11px 14px; font-size: 13px; }
+  .action-bar .btn-lg {
+    padding: 13px 16px; font-size: 14px; font-weight: 700;
+    box-shadow: 0 2px 6px rgba(31,164,99,.2);
+  }
+  .action-bar .btn-danger {
+    background: #fff; border-color: #fca5a5; color: var(--danger);
+  }
+  .action-bar .btn-danger:hover { background: #fee2e2; border-color: var(--danger); }
+
+  /* Exception modal */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(15,23,42,.5);
+    display: none; z-index: 200;
+    align-items: center; justify-content: center; padding: 24px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal-box {
+    background: #fff; border-radius: 14px; padding: 24px;
+    max-width: 440px; width: 100%;
+    box-shadow: 0 20px 60px rgba(15,23,42,.3);
+  }
+  .modal-box h3 {
+    font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800;
+    margin-bottom: 6px;
+  }
+  .modal-box p { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .modal-box textarea, .modal-box input {
+    width: 100%; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 8px;
+    font-family: inherit; font-size: 14px; outline: none;
+    resize: vertical; min-height: 80px;
+  }
+  .modal-box input { min-height: auto; }
+  .modal-box textarea:focus, .modal-box input:focus { border-color: var(--accent); }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
   .toast {
     position: fixed; bottom: 24px; left: 50%;
     transform: translate(-50%, 20px);
@@ -417,11 +474,15 @@
   <div>
     <div class="hdr-title">
       Dropshipments
-      <span class="badge-beta">Day 1</span>
+      <span class="badge-beta">Day 2</span>
     </div>
     <div class="hdr-sub">Automated email-to-label pipeline · multi-client</div>
   </div>
   <div class="hdr-actions">
+    <button class="btn btn-ghost" id="operatorBtn" title="Change operator">
+      <span class="op-avatar" id="operatorAvatar">—</span>
+      <span id="operatorLabel">Set operator</span>
+    </button>
     <button class="btn" id="syncBtn" title="Run Gmail sync now">
       <span class="dot"></span>
       <span id="syncLabel">Sync now</span>
@@ -429,9 +490,9 @@
   </div>
 </div>
 
-<div class="day1-banner">
-  <strong>Day 1 — Read-only view.</strong>
-  Status transitions (mark received · print · ship) coming in Day 2.
+<div class="day1-banner" id="day1Banner">
+  <strong>Day 2 — Status transitions enabled.</strong>
+  Batch print · scan-to-receive · auto-sync coming next.
 </div>
 
 <section class="controls">
@@ -493,6 +554,32 @@
   <div class="detail-body" id="dBody"></div>
 </aside>
 
+<!-- Modal: exception reason -->
+<div class="modal-backdrop" id="reasonModal">
+  <div class="modal-box">
+    <h3>Mark as exception</h3>
+    <p>What happened with this package? (short note — visible in the timeline)</p>
+    <textarea id="reasonInput" placeholder="e.g. Package arrived damaged, missing docs, wrong item…"></textarea>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeReasonModal()">Cancel</button>
+      <button class="btn btn-primary" id="reasonConfirm">Flag exception</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: operator name -->
+<div class="modal-backdrop" id="operatorModal">
+  <div class="modal-box">
+    <h3>Who's using this terminal?</h3>
+    <p>We'll use this name to track who received and shipped each package. Saved locally.</p>
+    <input id="operatorInput" placeholder="Your name (e.g. Jose, Maria…)" maxlength="60">
+    <div class="modal-actions">
+      <button class="btn" onclick="closeOperatorModal()">Cancel</button>
+      <button class="btn btn-primary" id="operatorConfirm">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast">
   <span id="toastMsg"></span>
 </div>
@@ -501,7 +588,39 @@
   const API = "/.netlify/functions/dropshipments";
   const SYNC_API = "/.netlify/functions/dropship-gmail-sync";
 
-  const state = { rows: [], clients: [], activeTab: "all", activeClient: "", syncing: false };
+  const state = { rows: [], clients: [], activeTab: "all", activeClient: "", syncing: false, operator: "" };
+
+  // ─── Operator (localStorage, prompted on first use) ──────────────────
+  function loadOperator() {
+    try { state.operator = localStorage.getItem("fr_drop_operator") || ""; }
+    catch (e) { state.operator = ""; }
+    renderOperatorPill();
+  }
+  function saveOperator(name) {
+    const clean = String(name || "").trim().slice(0, 60);
+    state.operator = clean;
+    try { localStorage.setItem("fr_drop_operator", clean); } catch (e) {}
+    renderOperatorPill();
+  }
+  function renderOperatorPill() {
+    const av = $("#operatorAvatar");
+    const lbl = $("#operatorLabel");
+    if (state.operator) {
+      av.textContent = state.operator.charAt(0).toUpperCase();
+      av.classList.remove("empty");
+      lbl.textContent = state.operator;
+    } else {
+      av.textContent = "—";
+      av.classList.add("empty");
+      lbl.textContent = "Set operator";
+    }
+  }
+  function requireOperator() {
+    if (state.operator) return true;
+    openOperatorModal();
+    toast("Set your operator name first", { error: true });
+    return false;
+  }
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -549,6 +668,85 @@
     if (!r.ok) throw new Error(j.error || "Request failed");
     return j;
   }
+  async function apiPost(body) {
+    const r = await fetch(API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "Request failed");
+    return j;
+  }
+
+  // ─── State machine actions ──────────────────────────────────────────
+  // For every action: ensure operator is set, POST the action, update
+  // the local row in state, re-render, and show a toast.
+  async function doAction(id, action, extra = {}) {
+    if (!requireOperator()) return;
+    const row = state.rows.find(r => r.id === id);
+    if (!row) { toast("Row not found in local state", { error: true }); return; }
+
+    const btns = $$(".action-bar .btn");
+    btns.forEach(b => b.disabled = true);
+
+    try {
+      const j = await apiPost({ action, id, operator: state.operator, ...extra });
+      if (j.row) {
+        // Replace the row in state with the updated one.
+        const idx = state.rows.findIndex(r => r.id === id);
+        // Keep the embedded client/config we already had.
+        const prev = state.rows[idx];
+        state.rows[idx] = { ...prev, ...j.row };
+      }
+      renderRows();
+      renderCounts();
+      // Refresh the drawer if still open on the same row.
+      if ($("#detail").classList.contains("open") && $("#dTracking").textContent === row.tracking_number) {
+        renderDetail(state.rows.find(r => r.id === id));
+      }
+      toast(actionMessage(action, row.tracking_number));
+    } catch (e) {
+      toast("Failed: " + e.message, { error: true });
+    } finally {
+      btns.forEach(b => b.disabled = false);
+    }
+  }
+
+  function actionMessage(action, tracking) {
+    const t = tracking.length > 14 ? tracking.slice(0, 10) + "…" : tracking;
+    switch (action) {
+      case "receive":   return `Received · ${t}`;
+      case "label":     return `Labeled · ${t}`;
+      case "ship":      return `Shipped · ${t}`;
+      case "revert":    return `Reverted · ${t}`;
+      case "exception": return `Flagged · ${t}`;
+      case "resolve":   return `Resolved · ${t}`;
+      default:          return `Updated · ${t}`;
+    }
+  }
+
+  // ─── Print label: opens PDF in new tab + marks labeled (1-step flow) ───
+  async function printAndLabel(id) {
+    if (!requireOperator()) return;
+    const row = state.rows.find(r => r.id === id);
+    if (!row) return;
+
+    try {
+      // Open the PDF first (user-triggered, so popup blocker is OK).
+      const j = await apiGet({ action: "label", id });
+      if (!j.url) throw new Error("No label URL");
+      window.open(j.url, "_blank");
+
+      // If already labeled or later, we don't transition back.
+      if (row.status === "received") {
+        await doAction(id, "label");
+      }
+    } catch (e) {
+      toast("Print failed: " + e.message, { error: true });
+    }
+  }
+  window.printAndLabel = printAndLabel;
   async function loadClients() {
     const j = await apiGet({ action: "clients" });
     state.clients = j.clients || [];
@@ -660,17 +858,18 @@
   function renderDetail(r) {
     const clientName = r.client?.company || r.client?.name || r.config?.display_name || "—";
     const steps = [
-      { label: "Email received", time: r.email_received_at },
-      { label: "Package received", time: r.physical_received_at },
-      { label: "Label printed", time: r.labeled_at },
-      { label: "Shipped", time: r.shipped_at }
+      { label: "Email received",   time: r.email_received_at,    by: null },
+      { label: "Package received", time: r.physical_received_at, by: r.received_by },
+      { label: "Label printed",    time: r.labeled_at,           by: null },
+      { label: "Shipped",          time: r.shipped_at,           by: r.shipped_by }
     ];
     const currentIdx = steps.findIndex(s => !s.time);
     const timelineHtml = steps.map((s, i) => {
       const cls = s.time ? "done" : (i === currentIdx ? "current" : "");
+      const byLbl = s.by ? ` <span style="color:var(--muted);">· by ${escapeHtml(s.by)}</span>` : "";
       return `<div class="tl-item ${cls}">
         <div class="tl-step">${s.label}</div>
-        <div class="tl-time">${fmtDateTime(s.time)}</div>
+        <div class="tl-time">${fmtDateTime(s.time)}${byLbl}</div>
       </div>`;
     }).join("");
 
@@ -681,7 +880,7 @@
              <strong>${escapeHtml(r.label_filename || r.label_url.split("/").pop())}</strong>
              <small>${escapeHtml(r.outbound_carrier || "")} ${r.outbound_platform ? "· " + escapeHtml(r.outbound_platform) : ""}</small>
            </div>
-           <button class="btn btn-primary btn-sm" onclick="openLabel('${r.id}')">Open</button>
+           <button class="btn btn-sm" onclick="openLabelOnly('${r.id}')" title="Just open, don't mark labeled">Preview</button>
          </div>`
       : `<div class="pdf-box no-label">
            <div class="pdf-icon">!</div>
@@ -691,8 +890,16 @@
            </div>
          </div>`;
 
+    const exceptionBox = r.status === "exception" && r.exception_reason
+      ? `<div class="detail-row"><span class="k">Exception reason</span>
+           <div class="pdf-box" style="background:#fef2f2; border-color:#fca5a5;">
+             <div style="font-size:13px; color:#991b1b;">${escapeHtml(r.exception_reason)}</div>
+           </div>
+         </div>` : "";
+
     $("#dBody").innerHTML = `
       <div class="detail-row"><span class="k">Client</span><span class="v">${escapeHtml(clientName)}</span></div>
+      <div class="detail-row"><span class="k">Status</span><span class="v"><span class="status-badge sb-${r.status}">${r.status}</span></span></div>
       <div class="detail-row"><span class="k">Order ID</span><span class="v mono">${escapeHtml(r.order_id || "—")}</span></div>
       <div class="detail-row"><span class="k">Inbound carrier</span><span class="v">${escapeHtml(r.carrier || "—")}</span></div>
       <div class="detail-row"><span class="k">Content</span><span class="v">${r.content ? escapeHtml(r.content) : '<em>no content parsed</em>'}</span></div>
@@ -700,6 +907,7 @@
       ${r.notes ? `<div class="detail-row"><span class="k">Notes</span><span class="v"><em>${escapeHtml(r.notes)}</em></span></div>` : ""}
       <div class="detail-row"><span class="k">Outbound</span><span class="v">${escapeHtml(r.outbound_carrier || "—")}${r.outbound_platform ? " · " + escapeHtml(r.outbound_platform) : ""}</span></div>
       ${r.outbound_tracking ? `<div class="detail-row"><span class="k">Outbound tracking</span><span class="v mono">${escapeHtml(r.outbound_tracking)}</span></div>` : ""}
+      ${exceptionBox}
 
       <div class="detail-row"><span class="k" style="margin-bottom: 8px;">Outbound label</span>${pdfBox}</div>
 
@@ -712,10 +920,62 @@
         row id: ${r.id}<br>
         email msg id: ${escapeHtml(r.email_message_id || "—")}
       </div>
+
+      ${renderActionBar(r)}
     `;
   }
 
-  async function openLabel(id) {
+  // Returns HTML for the action bar at the bottom of the drawer.
+  function renderActionBar(r) {
+    const id = r.id;
+    const hasLabel = !!r.label_url;
+
+    // Each branch only shows the buttons relevant to the current status.
+    switch (r.status) {
+      case "pending":
+        return `<div class="action-bar">
+          <button class="btn btn-primary btn-lg" onclick="doAction('${id}','receive')">📦 Mark received</button>
+          <button class="btn btn-danger" onclick="openReasonModal('${id}')">Flag exception</button>
+        </div>`;
+
+      case "received":
+        return `<div class="action-bar">
+          <button class="btn btn-primary btn-lg" onclick="printAndLabel('${id}')" ${hasLabel ? "" : "disabled title='No label available'"}>🖨 Print label</button>
+          <button class="btn" onclick="doAction('${id}','revert')" title="Back to pending">↶ Revert</button>
+          <button class="btn btn-danger" onclick="openReasonModal('${id}')">Flag</button>
+        </div>`;
+
+      case "labeled":
+        return `<div class="action-bar">
+          <button class="btn btn-primary btn-lg" onclick="doAction('${id}','ship')">🚚 Mark shipped</button>
+          <button class="btn" onclick="printAndLabel('${id}')" title="Reprint label">🖨 Reprint</button>
+          <button class="btn" onclick="doAction('${id}','revert')" title="Back to received">↶ Revert</button>
+        </div>`;
+
+      case "shipped":
+        return `<div class="action-bar">
+          <span style="flex:1; text-align:center; padding:11px; font-size:12px; color:var(--muted);">Shipped · no further actions</span>
+          <button class="btn" onclick="doAction('${id}','revert')" title="Back to labeled">↶ Undo ship</button>
+        </div>`;
+
+      case "orphan":
+        return `<div class="action-bar">
+          <span style="flex:1; text-align:center; padding:11px; font-size:12px; color:var(--muted);">Awaiting email match — no actions available</span>
+        </div>`;
+
+      case "exception":
+        return `<div class="action-bar">
+          <button class="btn btn-primary" onclick="doAction('${id}','resolve')">✓ Resolve → pending</button>
+          <button class="btn btn-primary" onclick="doAction('${id}','receive')">📦 Receive directly</button>
+        </div>`;
+
+      default:
+        return "";
+    }
+  }
+
+  // Open the PDF without changing status (preview mode).
+  async function openLabelOnly(id) {
     try {
       const j = await apiGet({ action: "label", id });
       if (j.url) window.open(j.url, "_blank");
@@ -723,7 +983,8 @@
       toast("Failed to open label: " + e.message, { error: true });
     }
   }
-  window.openLabel = openLabel;
+  window.openLabelOnly = openLabelOnly;
+  window.doAction = doAction;
 
   const scanInput = $("#scan");
   scanInput.addEventListener("keydown", (e) => {
@@ -783,10 +1044,61 @@
     }
   });
 
+  // ─── Operator modal ─────────────────────────────────────────────────
+  function openOperatorModal() {
+    $("#operatorInput").value = state.operator || "";
+    $("#operatorModal").classList.add("open");
+    setTimeout(() => $("#operatorInput").focus(), 60);
+  }
+  function closeOperatorModal() { $("#operatorModal").classList.remove("open"); }
+  window.closeOperatorModal = closeOperatorModal;
+  $("#operatorBtn").addEventListener("click", openOperatorModal);
+  $("#operatorConfirm").addEventListener("click", () => {
+    const name = $("#operatorInput").value.trim();
+    if (!name) { toast("Name cannot be empty", { error: true }); return; }
+    saveOperator(name);
+    closeOperatorModal();
+    toast(`Hello, ${name}`);
+  });
+  $("#operatorInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("#operatorConfirm").click();
+    if (e.key === "Escape") closeOperatorModal();
+  });
+
+  // ─── Exception reason modal ────────────────────────────────────────
+  let _pendingReasonId = null;
+  function openReasonModal(id) {
+    _pendingReasonId = id;
+    $("#reasonInput").value = "";
+    $("#reasonModal").classList.add("open");
+    setTimeout(() => $("#reasonInput").focus(), 60);
+  }
+  function closeReasonModal() {
+    $("#reasonModal").classList.remove("open");
+    _pendingReasonId = null;
+  }
+  window.openReasonModal = openReasonModal;
+  window.closeReasonModal = closeReasonModal;
+  $("#reasonConfirm").addEventListener("click", () => {
+    if (!_pendingReasonId) return;
+    const reason = $("#reasonInput").value.trim();
+    const id = _pendingReasonId;
+    closeReasonModal();
+    doAction(id, "exception", { reason });
+  });
+  $("#reasonInput").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeReasonModal();
+  });
+
   (async function init() {
     try {
+      loadOperator();
       await loadClients();
       await loadRows();
+      // First-time user — prompt for operator name
+      if (!state.operator) {
+        setTimeout(openOperatorModal, 400);
+      }
     } catch (e) {
       toast("Init failed: " + e.message, { error: true });
     }
