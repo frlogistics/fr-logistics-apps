@@ -15,13 +15,16 @@
 //   ?action=clients                      → active dropshipment clients
 //
 // POST endpoints (JSON body: { action, id, operator, ... }):
-//   action=receive       → pending/exception → received   (sets physical_received_at, received_by)
-//   action=label         → received          → labeled    (sets labeled_at)
-//   action=ship          → labeled           → shipped    (sets shipped_at, shipped_by)
-//   action=revert        → received/labeled/shipped → previous status (clears ts/by)
-//   action=exception     → pending/received/labeled → exception (reason: body.reason)
-//   action=resolve       → exception         → pending   (clears exception_reason)
-//   action=create_orphan → new row with status='orphan'  (body: tracking_number, client_id, operator)
+//   action=receive          → pending/exception → received   (sets physical_received_at, received_by)
+//   action=label            → received          → labeled    (sets labeled_at)
+//   action=ship             → labeled           → shipped    (sets shipped_at, shipped_by)
+//   action=revert           → received/labeled/shipped → previous status (clears ts/by)
+//   action=exception        → pending/received/labeled → exception (reason: body.reason)
+//   action=resolve          → exception         → pending   (clears exception_reason)
+//   action=create_orphan    → new row with status='orphan'  (body: tracking_number, client_id, operator)
+//   action=link_outbound    → set outbound_tracking + transition received→labeled
+//                             (body: id, outbound_tracking, operator, optional force:true)
+//   action=unlink_outbound  → clear outbound_tracking (status unchanged)
 
 const SUPABASE_URL  = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY  = Netlify.env.get("SUPABASE_SERVICE_KEY");
@@ -268,6 +271,103 @@ export default async function handler(req) {
         return jRes({ ok: true, action: "create_orphan", row: inserted[0] });
       }
 
+      // ── link_outbound: assign an outbound_tracking + transition to labeled ──
+      // Used by the post-print "Link outbound trackings" modal. The operator
+      // scans the carrier label barcode after printing; this writes the
+      // outbound_tracking value and (if currently 'received') promotes the
+      // row to 'labeled'.
+      //
+      // Body: { id, outbound_tracking, operator }
+      // Optional body: { force: true }   → allow re-link if outbound is already set
+      //
+      // Returns 409 if the outbound_tracking is already used by another row.
+      if (act === "link_outbound") {
+        const id          = body.id;
+        const outbound    = (body.outbound_tracking || "").trim();
+        const force       = body.force === true;
+        if (!id) return jRes({ error: "id required" }, 400);
+        if (!outbound) return jRes({ error: "outbound_tracking required" }, 400);
+        if (outbound.length < 4 || outbound.length > 64) {
+          return jRes({ error: "outbound_tracking must be 4-64 characters" }, 400);
+        }
+
+        // Load the row and validate state.
+        const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,outbound_tracking,tracking_number&limit=1`);
+        if (!cur.length) return jRes({ error: "not found" }, 404);
+        const current = cur[0];
+
+        // Only allow link from received or labeled (re-link case).
+        if (current.status !== "received" && current.status !== "labeled") {
+          return jRes({
+            error: `cannot link outbound from status '${current.status}'`,
+            allowed_from: ["received", "labeled"]
+          }, 409);
+        }
+
+        // Reject re-linking unless ?force=true (operator confirmed override).
+        if (current.outbound_tracking && current.outbound_tracking !== outbound && !force) {
+          return jRes({
+            error: "this package already has a different outbound_tracking",
+            current_outbound: current.outbound_tracking,
+            hint: "send force:true in body to overwrite"
+          }, 409);
+        }
+
+        // Reject if this outbound_tracking is already used by another row.
+        // (Belt-and-suspenders; the partial UNIQUE INDEX in DB also enforces this.)
+        const dupes = await sbSelect("dropshipments",
+          `?outbound_tracking=eq.${encodeURIComponent(outbound)}&select=id,tracking_number,status&limit=2`
+        );
+        const conflicting = dupes.find(d => d.id !== id);
+        if (conflicting) {
+          return jRes({
+            error: "outbound_tracking is already linked to another package",
+            conflict: { id: conflicting.id, tracking_number: conflicting.tracking_number, status: conflicting.status }
+          }, 409);
+        }
+
+        const now = new Date().toISOString();
+        const patch = {
+          outbound_tracking: outbound
+        };
+        // If currently received, promote to labeled (single-step link+transition).
+        if (current.status === "received") {
+          patch.status = "labeled";
+          patch.labeled_at = now;
+        }
+        // For 're-link' on already-labeled rows, we keep status as labeled and
+        // just overwrite the outbound_tracking. labeled_at stays as-is.
+
+        try {
+          const updated = await sbPatch("dropshipments", `id=eq.${id}`, patch);
+          return jRes({
+            ok: true,
+            action: "link_outbound",
+            row: updated[0],
+            transitioned: current.status === "received"
+          });
+        } catch (e) {
+          // PostgreSQL unique violation surfaces here if two clients race
+          if (String(e.message).includes("23505") || String(e.message).includes("duplicate")) {
+            return jRes({ error: "outbound_tracking conflict (race condition)", detail: e.message }, 409);
+          }
+          throw e;
+        }
+      }
+
+      // ── unlink_outbound: clear outbound_tracking (reset for re-scan) ────
+      // Used when the operator needs to undo a wrong link. Does NOT change
+      // status — the row stays labeled if it was labeled.
+      // Body: { id, operator }
+      if (act === "unlink_outbound") {
+        const id = body.id;
+        if (!id) return jRes({ error: "id required" }, 400);
+        const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,outbound_tracking&limit=1`);
+        if (!cur.length) return jRes({ error: "not found" }, 404);
+        const updated = await sbPatch("dropshipments", `id=eq.${id}`, { outbound_tracking: null });
+        return jRes({ ok: true, action: "unlink_outbound", row: updated[0], previous_outbound: cur[0].outbound_tracking });
+      }
+
       // ── State machine transitions (receive/label/ship/revert/exception/resolve) ──
       const id = body.id;
       if (!id) return jRes({ error: "id required" }, 400);
@@ -288,7 +388,7 @@ export default async function handler(req) {
       };
 
       const rule = LEGAL[act];
-      if (!rule) return jRes({ error: `unknown action '${act}'`, allowed: [...Object.keys(LEGAL), "create_orphan"] }, 400);
+      if (!rule) return jRes({ error: `unknown action '${act}'`, allowed: [...Object.keys(LEGAL), "create_orphan", "link_outbound", "unlink_outbound"] }, 400);
       if (!rule.from.includes(current.status)) {
         return jRes({ error: `cannot ${act} from status '${current.status}'`, allowed_from: rule.from }, 409);
       }
