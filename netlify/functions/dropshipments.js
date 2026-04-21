@@ -1,16 +1,22 @@
 // netlify/functions/dropshipments.js
-// Dropshipments · read/list endpoint + signed URL generator for label PDFs.
+// Dropshipments · read/list + state machine transitions.
 //
-// Day 1 endpoints:
-//   GET  ?action=list                  → list all dropshipments (with joined client info)
-//   GET  ?action=list&status=pending   → filter by status
-//   GET  ?action=get&id={uuid}         → single row
-//   GET  ?action=label&id={uuid}       → returns signed URL for the PDF (5 min TTL)
-//   GET  ?action=stats                 → counts by status (for KPI strip)
-//   GET  ?action=clients               → list active dropshipment clients (for selector)
+// GET endpoints:
+//   ?action=list                         → list (with fr_clients join + config merge)
+//   ?action=list&status=pending          → filter by status
+//   ?action=list&client_id={uuid}        → filter by client
+//   ?action=get&id={uuid}                → single row with full detail
+//   ?action=label&id={uuid}              → returns signed URL for PDF (5 min TTL)
+//   ?action=stats                        → counts by status
+//   ?action=clients                      → active dropshipment clients
 //
-// Day 2+ (placeholder, not implemented yet):
-//   POST body.action=receive / label / ship / exception / resolve
+// POST endpoints (JSON body: { action, id, operator, ... }):
+//   action=receive   → pending/exception → received   (sets physical_received_at, received_by)
+//   action=label     → received          → labeled    (sets labeled_at)
+//   action=ship      → labeled           → shipped    (sets shipped_at, shipped_by)
+//   action=revert    → received/labeled/shipped → previous status (clears ts/by)
+//   action=exception → pending/received/labeled → exception (reason: body.reason)
+//   action=resolve   → exception         → pending   (clears exception_reason)
 
 const SUPABASE_URL  = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY  = Netlify.env.get("SUPABASE_SERVICE_KEY");
@@ -18,6 +24,7 @@ const SB_BUCKET     = "dropship-labels";
 
 const SB = () => ({ "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" });
 async function sbSelect(t, q = "") { const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}${q}`, { headers: SB() }); if (!r.ok) throw new Error(`sbSelect ${t}: ${await r.text()}`); return r.json(); }
+async function sbPatch(t, f, d) { const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}?${f}`, { method: "PATCH", headers: { ...SB(), "Prefer": "return=representation" }, body: JSON.stringify(d) }); if (!r.ok) throw new Error(`sbPatch ${t}: ${await r.text()}`); return r.json(); }
 async function sbSignedUrl(path, expiresIn = 300) {
   const r = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${SB_BUCKET}/${path}`, {
     method: "POST",
@@ -128,12 +135,62 @@ export default async function handler(req) {
       return jRes({ rows, count: rows.length });
     }
 
-    // ── POST: placeholder for Day 2 mutations ─────────────────────────────
+    // ── POST: status transitions ──────────────────────────────────────────
     if (req.method === "POST") {
-      return jRes({
-        error: "Mutations not yet implemented. Planned for Day 2.",
-        planned_actions: ["receive", "label", "ship", "exception", "resolve"]
-      }, 501);
+      const body = await req.json().catch(() => ({}));
+      const act = body.action;
+      const id = body.id;
+      const operator = (body.operator || "").trim().slice(0, 60) || "warehouse";
+
+      if (!act || !id) return jRes({ error: "action and id required" }, 400);
+
+      // Load the current row to validate the transition.
+      const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,label_url,tracking_number&limit=1`);
+      if (!cur.length) return jRes({ error: "not found" }, 404);
+      const current = cur[0];
+
+      // Allowed transitions: (from, to) pairs
+      const LEGAL = {
+        receive:    { from: ["pending", "exception"],       to: "received",  ts: "physical_received_at", by: "received_by" },
+        label:      { from: ["received"],                    to: "labeled",   ts: "labeled_at",           by: null },
+        ship:       { from: ["labeled"],                     to: "shipped",   ts: "shipped_at",           by: "shipped_by" },
+        revert:     { from: ["received", "labeled", "shipped"], to: null,     ts: null,                   by: null }, // special: computed below
+        exception:  { from: ["pending", "received", "labeled"], to: "exception", ts: null,                 by: null },
+        resolve:    { from: ["exception"],                   to: "pending",   ts: null,                   by: null }
+      };
+
+      const rule = LEGAL[act];
+      if (!rule) return jRes({ error: `unknown action '${act}'`, allowed: Object.keys(LEGAL) }, 400);
+      if (!rule.from.includes(current.status)) {
+        return jRes({ error: `cannot ${act} from status '${current.status}'`, allowed_from: rule.from }, 409);
+      }
+
+      // Build the patch payload.
+      const patch = {};
+
+      if (act === "revert") {
+        // Revert to the previous status, clearing that step's timestamp.
+        const REVERT_TO = { received: "pending", labeled: "received", shipped: "labeled" };
+        const CLEAR_TS  = { received: "physical_received_at", labeled: "labeled_at", shipped: "shipped_at" };
+        const CLEAR_BY  = { received: "received_by", labeled: null, shipped: "shipped_by" };
+        patch.status = REVERT_TO[current.status];
+        patch[CLEAR_TS[current.status]] = null;
+        if (CLEAR_BY[current.status]) patch[CLEAR_BY[current.status]] = null;
+      } else if (act === "exception") {
+        patch.status = rule.to;
+        patch.exception_reason = (body.reason || "").trim().slice(0, 500) || null;
+      } else if (act === "resolve") {
+        patch.status = rule.to;
+        patch.exception_reason = null;
+      } else {
+        // receive, label, ship
+        patch.status = rule.to;
+        if (rule.ts) patch[rule.ts] = new Date().toISOString();
+        if (rule.by) patch[rule.by] = operator;
+      }
+
+      const updated = await sbPatch("dropshipments", `id=eq.${id}`, patch);
+      return jRes({ ok: true, action: act, row: updated[0] });
     }
 
     return jRes({ error: "Method not allowed" }, 405);
