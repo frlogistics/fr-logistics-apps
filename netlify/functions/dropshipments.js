@@ -1,22 +1,24 @@
 // netlify/functions/dropshipments.js
-// Dropshipments · read/list + state machine transitions.
+// Dropshipments · read/list + state machine transitions + orphan registration.
 //
 // GET endpoints:
 //   ?action=list                         → list (with fr_clients join + config merge)
 //   ?action=list&status=pending          → filter by status
 //   ?action=list&client_id={uuid}        → filter by client
 //   ?action=get&id={uuid}                → single row with full detail
+//   ?action=lookup&tracking={num}        → find row by tracking_number (all clients)
 //   ?action=label&id={uuid}              → returns signed URL for PDF (5 min TTL)
 //   ?action=stats                        → counts by status
 //   ?action=clients                      → active dropshipment clients
 //
 // POST endpoints (JSON body: { action, id, operator, ... }):
-//   action=receive   → pending/exception → received   (sets physical_received_at, received_by)
-//   action=label     → received          → labeled    (sets labeled_at)
-//   action=ship      → labeled           → shipped    (sets shipped_at, shipped_by)
-//   action=revert    → received/labeled/shipped → previous status (clears ts/by)
-//   action=exception → pending/received/labeled → exception (reason: body.reason)
-//   action=resolve   → exception         → pending   (clears exception_reason)
+//   action=receive       → pending/exception → received   (sets physical_received_at, received_by)
+//   action=label         → received          → labeled    (sets labeled_at)
+//   action=ship          → labeled           → shipped    (sets shipped_at, shipped_by)
+//   action=revert        → received/labeled/shipped → previous status (clears ts/by)
+//   action=exception     → pending/received/labeled → exception (reason: body.reason)
+//   action=resolve       → exception         → pending   (clears exception_reason)
+//   action=create_orphan → new row with status='orphan'  (body: tracking_number, client_id, operator)
 
 const SUPABASE_URL  = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY  = Netlify.env.get("SUPABASE_SERVICE_KEY");
@@ -24,6 +26,7 @@ const SB_BUCKET     = "dropship-labels";
 
 const SB = () => ({ "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" });
 async function sbSelect(t, q = "") { const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}${q}`, { headers: SB() }); if (!r.ok) throw new Error(`sbSelect ${t}: ${await r.text()}`); return r.json(); }
+async function sbInsert(t, d) { const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}`, { method: "POST", headers: { ...SB(), "Prefer": "return=representation" }, body: JSON.stringify(d) }); if (!r.ok) throw new Error(`sbInsert ${t}: ${await r.text()}`); return r.json(); }
 async function sbPatch(t, f, d) { const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}?${f}`, { method: "PATCH", headers: { ...SB(), "Prefer": "return=representation" }, body: JSON.stringify(d) }); if (!r.ok) throw new Error(`sbPatch ${t}: ${await r.text()}`); return r.json(); }
 async function sbSignedUrl(path, expiresIn = 300) {
   const r = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${SB_BUCKET}/${path}`, {
@@ -101,6 +104,18 @@ export default async function handler(req) {
       return jRes({ row: rows[0] });
     }
 
+    // ── GET: lookup by tracking number (for scan bar) ─────────────────────
+    if (req.method === "GET" && action === "lookup") {
+      const tracking = (url.searchParams.get("tracking") || "").trim();
+      if (!tracking) return jRes({ error: "tracking required" }, 400);
+      const [rows, configMap] = await Promise.all([
+        sbSelect("dropshipments", `?tracking_number=eq.${encodeURIComponent(tracking)}&select=${SELECT_WITH_CLIENT}&limit=5`),
+        loadConfigMap()
+      ]);
+      attachConfigs(rows, configMap);
+      return jRes({ rows, count: rows.length, tracking });
+    }
+
     // ── GET: signed URL for label PDF ─────────────────────────────────────
     if (req.method === "GET" && action === "label") {
       const id = url.searchParams.get("id");
@@ -135,14 +150,48 @@ export default async function handler(req) {
       return jRes({ rows, count: rows.length });
     }
 
-    // ── POST: status transitions ──────────────────────────────────────────
+    // ── POST: status transitions + orphan registration ───────────────────
     if (req.method === "POST") {
       const body = await req.json().catch(() => ({}));
       const act = body.action;
-      const id = body.id;
       const operator = (body.operator || "").trim().slice(0, 60) || "warehouse";
 
-      if (!act || !id) return jRes({ error: "action and id required" }, 400);
+      if (!act) return jRes({ error: "action required" }, 400);
+
+      // ── create_orphan: INSERT a new row for an un-emailed tracking ──────
+      if (act === "create_orphan") {
+        const tracking = (body.tracking_number || "").trim();
+        const clientId = (body.client_id || "").trim();
+        const notes    = (body.notes || "").trim().slice(0, 500) || null;
+        if (!tracking) return jRes({ error: "tracking_number required" }, 400);
+        if (!clientId) return jRes({ error: "client_id required" }, 400);
+
+        // Verify the client exists and is configured for dropshipments.
+        const cfg = await sbSelect("dropship_client_configs", `?client_id=eq.${clientId}&select=client_id,client_code,display_name&limit=1`);
+        if (!cfg.length) return jRes({ error: "client_id not configured for dropshipments" }, 400);
+
+        // Idempotency: if a row with same (client_id, tracking) already exists, return conflict.
+        const existing = await sbSelect("dropshipments", `?client_id=eq.${clientId}&tracking_number=eq.${encodeURIComponent(tracking)}&select=id,status&limit=1`);
+        if (existing.length) {
+          return jRes({ error: "tracking already exists for this client", existing: existing[0] }, 409);
+        }
+
+        const now = new Date().toISOString();
+        const inserted = await sbInsert("dropshipments", [{
+          client_id:            clientId,
+          tracking_number:      tracking,
+          status:               "orphan",
+          qty_boxes:            1,
+          notes:                notes,
+          physical_received_at: now,
+          received_by:          operator
+        }]);
+        return jRes({ ok: true, action: "create_orphan", row: inserted[0] });
+      }
+
+      // ── State machine transitions (receive/label/ship/revert/exception/resolve) ──
+      const id = body.id;
+      if (!id) return jRes({ error: "id required" }, 400);
 
       // Load the current row to validate the transition.
       const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,label_url,tracking_number&limit=1`);
@@ -151,16 +200,16 @@ export default async function handler(req) {
 
       // Allowed transitions: (from, to) pairs
       const LEGAL = {
-        receive:    { from: ["pending", "exception"],       to: "received",  ts: "physical_received_at", by: "received_by" },
-        label:      { from: ["received"],                    to: "labeled",   ts: "labeled_at",           by: null },
-        ship:       { from: ["labeled"],                     to: "shipped",   ts: "shipped_at",           by: "shipped_by" },
-        revert:     { from: ["received", "labeled", "shipped"], to: null,     ts: null,                   by: null }, // special: computed below
-        exception:  { from: ["pending", "received", "labeled"], to: "exception", ts: null,                 by: null },
-        resolve:    { from: ["exception"],                   to: "pending",   ts: null,                   by: null }
+        receive:    { from: ["pending", "exception", "orphan"], to: "received",  ts: "physical_received_at", by: "received_by" },
+        label:      { from: ["received"],                        to: "labeled",   ts: "labeled_at",           by: null },
+        ship:       { from: ["labeled"],                         to: "shipped",   ts: "shipped_at",           by: "shipped_by" },
+        revert:     { from: ["received", "labeled", "shipped"],  to: null,        ts: null,                   by: null },
+        exception:  { from: ["pending", "received", "labeled"],  to: "exception", ts: null,                   by: null },
+        resolve:    { from: ["exception"],                       to: "pending",   ts: null,                   by: null }
       };
 
       const rule = LEGAL[act];
-      if (!rule) return jRes({ error: `unknown action '${act}'`, allowed: Object.keys(LEGAL) }, 400);
+      if (!rule) return jRes({ error: `unknown action '${act}'`, allowed: [...Object.keys(LEGAL), "create_orphan"] }, 400);
       if (!rule.from.includes(current.status)) {
         return jRes({ error: `cannot ${act} from status '${current.status}'`, allowed_from: rule.from }, 409);
       }
