@@ -136,9 +136,28 @@ function applyParsingRules(body, rules) {
 }
 
 // ─── Build Gmail query string per client ─────────────────────────────────────
-function buildGmailQuery(cfg) {
+// Options:
+//   since           (string, e.g. "2026/04/20")  → use `after:YYYY/MM/DD`
+//                                                   instead of `newer_than:14d`
+//   ignoreProcessed (boolean)                    → drop the `-label:` exclude
+//                                                   so already-processed
+//                                                   emails are re-processed.
+//                                                   Used during reset flows.
+function buildGmailQuery(cfg, opts = {}) {
   const senders = cfg.sender_emails.map(e => `from:${e}`).join(" OR ");
-  return `(${senders}) subject:"${cfg.subject_pattern}" -label:"${cfg.gmail_label_processed}" has:attachment newer_than:14d`;
+  const dateFilter = opts.since
+    ? `after:${opts.since}`
+    : "newer_than:14d";
+  const labelExclude = opts.ignoreProcessed
+    ? ""
+    : `-label:"${cfg.gmail_label_processed}"`;
+  return [
+    `(${senders})`,
+    `subject:"${cfg.subject_pattern}"`,
+    labelExclude,
+    "has:attachment",
+    dateFilter
+  ].filter(Boolean).join(" ");
 }
 
 // ─── Core: process one message for one client ────────────────────────────────
@@ -221,17 +240,21 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
 }
 
 // ─── Core: sync all active clients ───────────────────────────────────────────
-async function runSync({ dryRun = false } = {}) {
+async function runSync({ dryRun = false, since = null, ignoreProcessed = false, maxResults = 50 } = {}) {
   const configs = await sbSelect("dropship_client_configs", "?active=eq.true&select=*");
-  const summary = { started_at: new Date().toISOString(), clients: [] };
+  const summary = {
+    started_at: new Date().toISOString(),
+    overrides: { since, ignoreProcessed, maxResults },
+    clients: []
+  };
 
   for (const cfg of configs) {
     const clientSummary = { client_code: cfg.client_code, processed: [], errors: [] };
     try {
       const labelIdProcessed = await gmailEnsureLabel(cfg.gmail_label_processed);
-      const query = buildGmailQuery(cfg);
+      const query = buildGmailQuery(cfg, { since, ignoreProcessed });
       clientSummary.query = query;
-      const messages = await gmailSearch(query, 50);
+      const messages = await gmailSearch(query, maxResults);
       clientSummary.found = messages.length;
 
       if (dryRun) {
@@ -270,6 +293,21 @@ export default async function handler(req) {
   const url = new URL(req.url);
   const dryRun = url.searchParams.get("dry_run") === "1";
 
+  // Override params (used during reset / backfill flows). When NOT supplied,
+  // the sync uses its normal defaults (newer_than:14d, exclude processed label).
+  //
+  //   ?since=2026/04/20      → use `after:2026/04/20` instead of newer_than:14d
+  //   ?ignore_processed=1    → drop the -label exclude, re-process everything
+  //   ?max_results=200       → fetch more messages in a single sync (default 50)
+  //
+  // Scheduled invocations always use defaults — overrides are only for manual.
+  const sinceRaw = url.searchParams.get("since") || null;
+  // Validate: only accept YYYY/MM/DD pattern to avoid Gmail query injection.
+  const since = (sinceRaw && /^\d{4}\/\d{1,2}\/\d{1,2}$/.test(sinceRaw)) ? sinceRaw : null;
+  const ignoreProcessed = url.searchParams.get("ignore_processed") === "1";
+  const maxResultsRaw = parseInt(url.searchParams.get("max_results") || "0", 10);
+  const maxResults = (maxResultsRaw > 0 && maxResultsRaw <= 500) ? maxResultsRaw : 50;
+
   // Netlify Scheduled Functions identify themselves via this header.
   // We also accept legacy User-Agent match as a fallback.
   const ua = req.headers.get("user-agent") || "";
@@ -285,9 +323,11 @@ export default async function handler(req) {
       bucket: SB_BUCKET,
       mode: "manual + scheduled (every 2h)",
       usage: {
-        run:      "POST /.netlify/functions/dropship-gmail-sync",
-        dry_run:  "POST /.netlify/functions/dropship-gmail-sync?dry_run=1",
-        info:     "GET  /.netlify/functions/dropship-gmail-sync?action=info"
+        run:               "POST /.netlify/functions/dropship-gmail-sync",
+        dry_run:           "POST /.netlify/functions/dropship-gmail-sync?dry_run=1",
+        info:              "GET  /.netlify/functions/dropship-gmail-sync?action=info",
+        backfill_since:    "POST /.netlify/functions/dropship-gmail-sync?since=2026/04/20",
+        full_reset_resync: "POST /.netlify/functions/dropship-gmail-sync?since=2026/04/20&ignore_processed=1&max_results=200"
       },
       scheduled: {
         active: true,
@@ -303,8 +343,18 @@ export default async function handler(req) {
     return jRes({ error: "Method not allowed. POST to run sync." }, 405);
   }
 
+  // Scheduled invocations always use defaults; reject overrides for safety.
+  const effectiveSince = isScheduled ? null : since;
+  const effectiveIgnore = isScheduled ? false : ignoreProcessed;
+  const effectiveMaxResults = isScheduled ? 50 : maxResults;
+
   try {
-    const summary = await runSync({ dryRun });
+    const summary = await runSync({
+      dryRun,
+      since: effectiveSince,
+      ignoreProcessed: effectiveIgnore,
+      maxResults: effectiveMaxResults
+    });
     if (isScheduled) {
       const totalProcessed = (summary.clients || []).reduce((a, c) => a + (c.processed?.length || 0), 0);
       const totalErrors    = (summary.clients || []).reduce((a, c) => a + (c.errors?.length    || 0), 0);
@@ -316,5 +366,3 @@ export default async function handler(req) {
     return jRes({ ok: false, error: e.message, stack: e.stack }, 500);
   }
 }
-
-
