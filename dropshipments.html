@@ -616,8 +616,27 @@
 <div class="batch-bar" id="batchBar">
   <span class="batch-count" id="batchCount">0</span>
   <span id="batchLabel">selected</span>
-  <button class="btn" id="batchPrintBtn">🖨 Print labels</button>
+  <span id="batchHint" style="display:none; font-size:11px; opacity:0.85; padding:0 6px;">Filter by status to enable batch actions</span>
+  <button class="btn" id="batchActionBtn" style="display:none;">Action</button>
   <button class="btn btn-ghost" id="batchClearBtn">Clear</button>
+</div>
+
+<!-- Modal: batch ship confirmation -->
+<div class="modal-backdrop" id="batchShipModal">
+  <div class="modal-box">
+    <h3>📤 Mark as shipped?</h3>
+    <p style="margin:6px 0 14px 0; color:var(--muted); font-size:13px;">
+      You are about to mark <strong id="batchShipCount">0</strong> packages as shipped.
+      This action cannot be batch-undone — each row would need an individual "Undo ship".
+    </p>
+    <div style="background:#f0fdf4; border:1px solid #86efac; padding:12px 14px; border-radius:10px; margin-bottom:14px; max-height:200px; overflow-y:auto;">
+      <div id="batchShipList" style="font-family:'DM Mono',monospace; font-size:12px; line-height:1.7;"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeBatchShipModal()">Cancel</button>
+      <button class="btn btn-primary" id="batchShipConfirmBtn" style="min-width:170px;">✓ Mark all shipped</button>
+    </div>
+  </div>
 </div>
 
 <div class="detail-backdrop" id="backdrop"></div>
@@ -636,9 +655,16 @@
 <div class="modal-backdrop" id="scanConfirmModal">
   <div class="modal-box">
     <h3>📦 Mark as received?</h3>
+    <div id="scanConfirmViaOutbound" style="display:none; background:#dbeafe; color:#1e40af; padding:7px 12px; border-radius:8px; font-size:12px; font-weight:500; margin-bottom:10px;">
+      🏷 Matched via outbound shipping label
+    </div>
     <div style="background:#f8fafc; padding:14px; border-radius:10px; margin:14px 0; font-family:'DM Mono',monospace;">
-      <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">Tracking</div>
+      <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">Inbound Tracking</div>
       <div id="scanConfirmTracking" style="font-weight:600; font-size:15px; margin-bottom:10px;"></div>
+      <div id="scanConfirmOutboundWrap" style="display:none; margin-bottom:10px;">
+        <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">Outbound Tracking</div>
+        <div id="scanConfirmOutbound" style="font-weight:500; font-size:13px;"></div>
+      </div>
       <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">Content</div>
       <div id="scanConfirmContent" style="font-family:'DM Sans',sans-serif; font-size:13px;"></div>
     </div>
@@ -880,7 +906,55 @@
     }
     bar.classList.add("show");
     $("#batchCount").textContent = n;
-    $("#batchLabel").textContent = n === 1 ? "label selected" : "labels selected";
+
+    const sel = inspectBatchSelection();
+    const labelEl  = $("#batchLabel");
+    const hintEl   = $("#batchHint");
+    const actionBtn = $("#batchActionBtn");
+
+    // Reset visibility before reconfiguring
+    actionBtn.style.display = "none";
+    hintEl.style.display = "none";
+    actionBtn.classList.remove("btn-ship", "btn-receive");
+    actionBtn.onclick = null;
+
+    if (sel.kind === "mixed") {
+      labelEl.textContent = "selected";
+      hintEl.style.display = "";
+      hintEl.textContent = `Mixed statuses (${sel.statuses.join(", ")}) — filter by tab to enable an action`;
+      return;
+    }
+
+    if (sel.kind === "print_labels") {
+      // All rows are 'received' — print labels (then auto-mark labeled).
+      // Only enable if all selected rows actually have a label_url.
+      const printable = sel.rows.filter(r => !!r.label_url);
+      labelEl.textContent = n === 1 ? "label selected" : "labels selected";
+      actionBtn.style.display = "";
+      actionBtn.textContent = "🖨 Print labels";
+      actionBtn.onclick = batchPrint;
+      if (printable.length < sel.rows.length) {
+        hintEl.style.display = "";
+        hintEl.textContent = `${sel.rows.length - printable.length} of ${sel.rows.length} have no PDF — they'll be skipped`;
+      }
+      return;
+    }
+
+    if (sel.kind === "mark_shipped") {
+      labelEl.textContent = n === 1 ? "package selected" : "packages selected";
+      actionBtn.style.display = "";
+      actionBtn.textContent = "📤 Mark shipped";
+      actionBtn.onclick = openBatchShipModal;
+      return;
+    }
+
+    if (sel.kind === "mark_received") {
+      labelEl.textContent = n === 1 ? "package selected" : "packages selected";
+      actionBtn.style.display = "";
+      actionBtn.textContent = "📦 Mark received";
+      actionBtn.onclick = batchMarkReceived;
+      return;
+    }
   }
 
   function updateSelectAllState() {
@@ -905,7 +979,7 @@
     const filtered = state.activeTab === "all"
       ? state.rows
       : state.rows.filter(r => r.status === state.activeTab);
-    return filtered.filter(isBatchPrintable);
+    return filtered.filter(isBatchEligible);
   }
 
   function clearBatchSelection() {
@@ -958,7 +1032,7 @@
     }
 
     const bar = $("#batchBar");
-    const btn = $("#batchPrintBtn");
+    const btn = $("#batchActionBtn");
     bar.classList.add("busy");
     const origLabel = btn.textContent;
     btn.textContent = `🖨 Preparing ${toPrint.length}…`;
@@ -1062,8 +1136,126 @@
     }
   }
 
-  $("#batchPrintBtn").addEventListener("click", batchPrint);
+  // Note: batchActionBtn.onclick is wired dynamically inside updateBatchBar()
+  // depending on what's selected (print / ship / receive).
   window.batchPrint = batchPrint;
+
+  // ─── Batch mark shipped (with confirmation modal — Decision 2 = B) ──────
+  function openBatchShipModal() {
+    if (!requireOperator()) return;
+    const sel = inspectBatchSelection();
+    if (sel.kind !== "mark_shipped") {
+      toast("Selection is no longer all 'labeled' — refresh the batch", { error: true });
+      return;
+    }
+    const rows = sel.rows;
+    $("#batchShipCount").textContent = rows.length;
+    // Show a compact preview list of trackings (caps at ~15 to keep modal tidy).
+    const preview = rows.slice(0, 15).map(r =>
+      `→ ${escapeHtml(r.tracking_number)}${r.outbound_tracking ? ` <span style="color:#64748b;">· ${escapeHtml(r.outbound_tracking)}</span>` : ""}`
+    ).join("<br>");
+    const more = rows.length > 15 ? `<div style="color:#64748b; margin-top:6px; font-style:italic;">…and ${rows.length - 15} more</div>` : "";
+    $("#batchShipList").innerHTML = preview + more;
+    $("#batchShipModal").classList.add("open");
+    setTimeout(() => $("#batchShipConfirmBtn").focus(), 60);
+  }
+  function closeBatchShipModal() {
+    $("#batchShipModal").classList.remove("open");
+    setTimeout(() => $("#scan").focus(), 40);
+  }
+  window.closeBatchShipModal = closeBatchShipModal;
+
+  $("#batchShipConfirmBtn").addEventListener("click", async () => {
+    closeBatchShipModal();
+    await batchMarkShipped();
+  });
+
+  async function batchMarkShipped() {
+    if (!requireOperator()) return;
+    const sel = inspectBatchSelection();
+    if (sel.kind !== "mark_shipped") {
+      toast("Selection is no longer all 'labeled' — refresh the batch", { error: true });
+      return;
+    }
+    const rows = sel.rows;
+    const bar = $("#batchBar");
+    const btn = $("#batchActionBtn");
+    const origLabel = btn.textContent;
+    bar.classList.add("busy");
+    btn.textContent = `📤 Shipping ${rows.length}…`;
+
+    // Parallel POST action=ship for each row. If any fail we report counts.
+    const results = await Promise.all(rows.map(r =>
+      apiPost({ action: "ship", id: r.id, operator: state.operator })
+        .then(j => ({ row: r, ok: true, updated: j.row }))
+        .catch(e => ({ row: r, ok: false, err: e.message }))
+    ));
+
+    // Apply server updates back to local state to avoid a full reload.
+    for (const res of results) {
+      if (res.ok && res.updated) {
+        const idx = state.rows.findIndex(x => x.id === res.row.id);
+        if (idx >= 0) state.rows[idx] = { ...state.rows[idx], ...res.updated };
+      }
+    }
+    const failures = results.filter(r => !r.ok);
+    clearBatchSelection();
+    renderRows();
+    renderCounts();
+    bar.classList.remove("busy");
+    btn.textContent = origLabel;
+
+    if (failures.length === 0) {
+      toast(`✓ Marked ${rows.length} as shipped`);
+    } else if (failures.length < rows.length) {
+      toast(`Shipped ${rows.length - failures.length} · ${failures.length} failed`, { error: true });
+      console.error("batch ship failures:", failures);
+    } else {
+      toast(`All ${rows.length} ship attempts failed`, { error: true });
+      console.error("batch ship failures:", failures);
+    }
+  }
+  window.batchMarkShipped = batchMarkShipped;
+
+  // ─── Batch mark received (rare bonus path — pending → received) ─────────
+  // No confirmation modal here because reverting a single received row is
+  // trivial via the drawer's Undo. Mirrors the single-row receive flow.
+  async function batchMarkReceived() {
+    if (!requireOperator()) return;
+    const sel = inspectBatchSelection();
+    if (sel.kind !== "mark_received") {
+      toast("Selection must be all 'pending' or 'exception'", { error: true });
+      return;
+    }
+    const rows = sel.rows;
+    const bar = $("#batchBar");
+    const btn = $("#batchActionBtn");
+    const origLabel = btn.textContent;
+    bar.classList.add("busy");
+    btn.textContent = `📦 Receiving ${rows.length}…`;
+
+    const results = await Promise.all(rows.map(r =>
+      apiPost({ action: "receive", id: r.id, operator: state.operator })
+        .then(j => ({ row: r, ok: true, updated: j.row }))
+        .catch(e => ({ row: r, ok: false, err: e.message }))
+    ));
+    for (const res of results) {
+      if (res.ok && res.updated) {
+        const idx = state.rows.findIndex(x => x.id === res.row.id);
+        if (idx >= 0) state.rows[idx] = { ...state.rows[idx], ...res.updated };
+      }
+    }
+    const failures = results.filter(r => !r.ok);
+    clearBatchSelection();
+    renderRows();
+    renderCounts();
+    bar.classList.remove("busy");
+    btn.textContent = origLabel;
+
+    if (failures.length === 0) toast(`✓ Marked ${rows.length} as received`);
+    else toast(`Received ${rows.length - failures.length} · ${failures.length} failed`, { error: true });
+  }
+  window.batchMarkReceived = batchMarkReceived;
   async function loadClients() {
     const j = await apiGet({ action: "clients" });
     state.clients = j.clients || [];
@@ -1099,12 +1291,12 @@
 
     tbody.innerHTML = filtered.map(r => {
       const platform = r.outbound_platform ? ` <span style="opacity:.55; font-family:'DM Mono'; font-size: 11px;">· ${escapeHtml(r.outbound_platform)}</span>` : "";
-      const selectable = isBatchPrintable(r);
+      const selectable = isBatchEligible(r);
       const selected = state.batchSelection.has(r.id);
       const rowClass = selected ? "tbl-row selected" : "tbl-row";
       const checkTitle = selectable
-        ? "Select to batch print"
-        : (r.label_url ? `Cannot batch print from status '${r.status}'` : "No label available");
+        ? `Select for batch action (status: ${r.status})`
+        : `Cannot batch from status '${r.status}'`;
       return `
         <div class="${rowClass}" data-id="${r.id}">
           <label class="check-cell" title="${checkTitle}" onclick="event.stopPropagation()">
@@ -1151,9 +1343,34 @@
     updateSelectAllState();
   }
 
-  // A row is batch-printable when it has a label and is in a state where printing makes sense.
+  // A row is batch-eligible (selectable via checkbox) if it's in a status
+  // where SOME batch operation could apply. Excludes terminal/odd states.
+  function isBatchEligible(r) {
+    return r.status === "received" || r.status === "labeled";
+  }
+  // Kept for back-compat with existing batch-print code paths.
   function isBatchPrintable(r) {
     return !!r.label_url && (r.status === "received" || r.status === "labeled");
+  }
+
+  // Inspect the current selection and return what action(s) make sense.
+  // Returns one of:
+  //   { kind: "print_labels", rows: [...] }   → all rows ∈ {received, labeled} with label_url
+  //   { kind: "mark_shipped", rows: [...] }   → all rows are 'labeled'
+  //   { kind: "mark_received", rows: [...] }  → all rows are 'pending'/'exception'  (rare batch case)
+  //   { kind: "mixed" }                        → rows have multiple statuses, force filter
+  //   { kind: "empty" }                        → no selection
+  function inspectBatchSelection() {
+    const ids = Array.from(state.batchSelection);
+    if (ids.length === 0) return { kind: "empty" };
+    const rows = ids.map(id => state.rows.find(r => r.id === id)).filter(Boolean);
+    const statuses = new Set(rows.map(r => r.status));
+    if (statuses.size > 1) return { kind: "mixed", rows, statuses: [...statuses] };
+    const only = [...statuses][0];
+    if (only === "labeled")  return { kind: "mark_shipped",  rows };
+    if (only === "received") return { kind: "print_labels",  rows };
+    if (only === "pending" || only === "exception") return { kind: "mark_received", rows };
+    return { kind: "mixed", rows, statuses: [only] };
   }
 
   function renderCounts() {
@@ -1342,6 +1559,10 @@
   // 1. Exists + status='pending'/'exception': confirm → mark received
   // 2. Exists + status != 'pending': just highlight + open drawer
   // 3. Does NOT exist in DB: prompt to create orphan
+  //
+  // Matches by EITHER tracking_number (inbound, e.g. TBA…) OR outbound_tracking
+  // (the carrier label printed by us). When matched via outbound, we tell the
+  // operator so they know how the system found it.
   const scanInput = $("#scan");
   scanInput.addEventListener("keydown", async (e) => {
     if (e.key !== "Enter") return;
@@ -1350,10 +1571,16 @@
     scanInput.value = "";
     if (!requireOperator()) return;
 
-    // Try local first (fast, zero network).
+    const valLower = val.toLowerCase();
+
+    // Try local first (fast, zero network). Match by inbound OR outbound tracking.
     let match = state.rows.find(r =>
-      r.tracking_number.toLowerCase() === val.toLowerCase()
+      (r.tracking_number    || "").toLowerCase() === valLower ||
+      (r.outbound_tracking  || "").toLowerCase() === valLower
     );
+    let matchField = match
+      ? (((match.outbound_tracking || "").toLowerCase() === valLower) ? "outbound_tracking" : "tracking_number")
+      : null;
 
     // Fall back to server lookup (covers rows not currently in view / filters applied).
     if (!match) {
@@ -1361,6 +1588,7 @@
         const j = await apiGet({ action: "lookup", tracking: val });
         if (j.rows && j.rows.length === 1) {
           match = j.rows[0];
+          matchField = match.match_field || "tracking_number";
           // Merge into state if missing, so subsequent actions work on it.
           if (!state.rows.find(r => r.id === match.id)) state.rows.unshift(match);
         } else if (j.rows && j.rows.length > 1) {
@@ -1373,14 +1601,17 @@
     }
 
     if (match) {
+      const viaOutbound = matchField === "outbound_tracking";
+      const viaLabel = viaOutbound ? " · via outbound label" : "";
+
       // Path 1: pending/exception → prompt confirm receive
       if (match.status === "pending" || match.status === "exception") {
-        openScanConfirmModal(match);
+        openScanConfirmModal(match, { viaOutbound });
         return;
       }
       // Path 2: already received/labeled/shipped/orphan → just highlight + open drawer
       highlightAndOpen(match);
-      toast(`Already ${match.status} · ${shortTracking(match.tracking_number)}`);
+      toast(`Already ${match.status}${viaLabel} · ${shortTracking(match.tracking_number)}`);
       return;
     }
 
@@ -1439,10 +1670,24 @@
 
   // ─── Scan confirm modal (pending → received shortcut) ─────────────────
   let _pendingScanMatch = null;
-  function openScanConfirmModal(match) {
+  function openScanConfirmModal(match, opts = {}) {
     _pendingScanMatch = match;
     $("#scanConfirmTracking").textContent = match.tracking_number;
     $("#scanConfirmContent").textContent = match.content || "—";
+
+    // Show outbound tracking row if available (helpful context)
+    const outWrap = $("#scanConfirmOutboundWrap");
+    if (match.outbound_tracking) {
+      outWrap.style.display = "";
+      $("#scanConfirmOutbound").textContent = match.outbound_tracking;
+    } else {
+      outWrap.style.display = "none";
+    }
+
+    // Show "matched via outbound" badge when applicable
+    const viaBadge = $("#scanConfirmViaOutbound");
+    viaBadge.style.display = opts.viaOutbound ? "" : "none";
+
     // Button label depends on current status
     $("#scanConfirmBtn").textContent = match.status === "exception" ? "✓ Receive (resolve exception)" : "✓ Mark received";
     $("#scanConfirmModal").classList.add("open");
@@ -1526,6 +1771,7 @@
     if (e.key !== "Escape") return;
     if ($("#scanConfirmModal").classList.contains("open")) closeScanConfirmModal();
     else if ($("#orphanModal").classList.contains("open")) closeOrphanModal();
+    else if ($("#batchShipModal").classList.contains("open")) closeBatchShipModal();
     else if ($("#operatorModal").classList.contains("open")) closeOperatorModal();
     else if ($("#reasonModal").classList.contains("open")) closeReasonModal();
     else if (state.batchSelection.size > 0) clearBatchSelection();
