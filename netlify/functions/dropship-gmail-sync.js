@@ -171,7 +171,8 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
   const emailReceivedAt = new Date(parseInt(msg.internalDate, 10)).toISOString();
 
   if (existingRow?.status === "orphan") {
-    // Match orphan with its email → promote to received
+    // Match orphan with its email → promote to received.
+    // Clear orphan_alerted_at so if it re-enters orphan status later it's freshly alerted.
     await sbPatch("dropshipments", `id=eq.${existingRow.id}`, {
       order_id:          parsed.order_id || null,
       carrier:           parsed.carrier || null,
@@ -184,6 +185,7 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
       outbound_platform: cfg.outbound_platform,
       email_message_id:  msg.id,
       email_received_at: emailReceivedAt,
+      orphan_alerted_at: null,
       status:            "received"
     });
     await gmailAddLabel(msg.id, labelIdProcessed);
@@ -268,26 +270,47 @@ export default async function handler(req) {
   const url = new URL(req.url);
   const dryRun = url.searchParams.get("dry_run") === "1";
 
+  // Netlify Scheduled Functions identify themselves via this header.
+  // We also accept legacy User-Agent match as a fallback.
+  const ua = req.headers.get("user-agent") || "";
+  const isScheduled =
+    req.headers.get("x-nf-event") === "schedule" ||
+    ua.toLowerCase().includes("netlify-scheduled");
+
   // Health/info endpoint
   if (req.method === "GET" && url.searchParams.get("action") === "info") {
     return jRes({
       module: "dropship-gmail-sync",
       gmail_user: GMAIL_USER,
       bucket: SB_BUCKET,
-      mode: "manual",
+      mode: "manual + scheduled (every 2h)",
       usage: {
-        run:     "POST /.netlify/functions/dropship-gmail-sync",
-        dry_run: "GET  /.netlify/functions/dropship-gmail-sync?action=info",
-        preview: "POST /.netlify/functions/dropship-gmail-sync?dry_run=1"
+        run:      "POST /.netlify/functions/dropship-gmail-sync",
+        dry_run:  "POST /.netlify/functions/dropship-gmail-sync?dry_run=1",
+        info:     "GET  /.netlify/functions/dropship-gmail-sync?action=info"
+      },
+      scheduled: {
+        active: true,
+        schedule: "0 */2 * * *",
+        note: "Runs automatically every 2 hours. See netlify.toml."
       }
     });
   }
 
-  if (req.method !== "POST") return jRes({ error: "Method not allowed. POST to run sync." }, 405);
+  // Allow GET from scheduled invocation as well (belt + suspenders for Netlify quirks).
+  const shouldRun = req.method === "POST" || isScheduled;
+  if (!shouldRun) {
+    return jRes({ error: "Method not allowed. POST to run sync." }, 405);
+  }
 
   try {
     const summary = await runSync({ dryRun });
-    return jRes({ ok: true, summary });
+    if (isScheduled) {
+      const totalProcessed = (summary.clients || []).reduce((a, c) => a + (c.processed?.length || 0), 0);
+      const totalErrors    = (summary.clients || []).reduce((a, c) => a + (c.errors?.length    || 0), 0);
+      console.log(`[dropship-gmail-sync] scheduled run: ${totalProcessed} processed, ${totalErrors} errors`);
+    }
+    return jRes({ ok: true, scheduled: isScheduled, summary });
   } catch (e) {
     console.error("[dropship-gmail-sync] fatal:", e);
     return jRes({ ok: false, error: e.message, stack: e.stack }, 500);
