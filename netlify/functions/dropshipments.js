@@ -8,7 +8,10 @@
 //   ?action=get&id={uuid}                → single row with full detail
 //   ?action=lookup&tracking={num}        → find row by tracking_number (all clients)
 //   ?action=label&id={uuid}              → returns signed URL for PDF (5 min TTL)
-//   ?action=stats                        → counts by status
+//   ?action=stats                        → counts by status + extended KPIs
+//                                           (shipped_today, shipped_this_month,
+//                                            received_today, orphans_aging,
+//                                            oldest_pending_hours)
 //   ?action=clients                      → active dropshipment clients
 //
 // POST endpoints (JSON body: { action, id, operator, ... }):
@@ -72,15 +75,76 @@ export default async function handler(req) {
   const action = url.searchParams.get("action") || "list";
 
   try {
-    // ── GET: stats (KPI strip counts) ─────────────────────────────────────
+    // ── GET: stats (KPI strip counts + dashboard KPIs) ────────────────────
+    // Returns both:
+    //   - status counts (pending, received, labeled, shipped, orphan, exception, total)
+    //   - extended KPIs for the kpi-dash widget:
+    //       shipped_today, shipped_this_month, oldest_pending_hours,
+    //       received_today, orphans_aging (>6h)
+    // Backward compatible — old callers ignore the new fields.
     if (req.method === "GET" && action === "stats") {
       const clientFilter = url.searchParams.get("client_id");
-      const base = "dropshipments?select=status";
-      const q = clientFilter ? `${base}&client_id=eq.${clientFilter}` : base;
-      const rows = await sbSelect("", q);
+      const clientFilterParam = clientFilter ? `&client_id=eq.${clientFilter}` : "";
+
+      // Primary fetch: status + key timestamps for ALL rows
+      const rows = await sbSelect("dropshipments",
+        `?select=status,physical_received_at,shipped_at${clientFilterParam}`
+      );
       const counts = { pending: 0, received: 0, labeled: 0, shipped: 0, orphan: 0, exception: 0, total: rows.length };
       for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
-      return jRes(counts);
+
+      // Extended KPIs — computed in-memory from the same fetch
+      const now    = new Date();
+      const today  = now.toISOString().slice(0, 10);                   // YYYY-MM-DD UTC
+      const monthStart = today.slice(0, 7) + "-01";                    // YYYY-MM-01 UTC
+      const sixHoursAgo = new Date(now.getTime() - 6 * 3600 * 1000);
+
+      let shipped_today = 0, shipped_this_month = 0, received_today = 0;
+      let oldest_pending_at = null, orphans_aging = 0;
+
+      for (const r of rows) {
+        if (r.shipped_at) {
+          const d = r.shipped_at.slice(0, 10);
+          if (d === today)            shipped_today += 1;
+          if (d >= monthStart)        shipped_this_month += 1;
+        }
+        if (r.physical_received_at) {
+          const d = r.physical_received_at.slice(0, 10);
+          if (d === today)            received_today += 1;
+        }
+        // Track oldest pending (status='pending' rows by their email_received_at if available;
+        // since we didn't fetch that, we approximate using physical_received_at — pending
+        // rows usually don't have it set, so this heuristic is for bonus warning only)
+        if (r.status === "orphan" && r.physical_received_at) {
+          const ts = new Date(r.physical_received_at);
+          if (ts < sixHoursAgo) orphans_aging += 1;
+        }
+      }
+
+      // Oldest pending: separate small query for accuracy (uses email_received_at)
+      const pendingRows = await sbSelect("dropshipments",
+        `?status=eq.pending&select=email_received_at&order=email_received_at.asc.nullslast&limit=1${clientFilterParam}`
+      );
+      if (pendingRows.length && pendingRows[0].email_received_at) {
+        oldest_pending_at = pendingRows[0].email_received_at;
+      }
+
+      // Compute oldest_pending_hours from oldest_pending_at
+      let oldest_pending_hours = null;
+      if (oldest_pending_at) {
+        oldest_pending_hours = Math.round((now.getTime() - new Date(oldest_pending_at).getTime()) / 3600000);
+      }
+
+      return jRes({
+        ...counts,
+        shipped_today,
+        shipped_this_month,
+        received_today,
+        orphans_aging,
+        oldest_pending_at,
+        oldest_pending_hours,
+        as_of: now.toISOString()
+      });
     }
 
     // ── GET: clients (for selector dropdown) ──────────────────────────────
@@ -105,15 +169,30 @@ export default async function handler(req) {
     }
 
     // ── GET: lookup by tracking number (for scan bar) ─────────────────────
+    // Searches BOTH inbound (tracking_number) and outbound (outbound_tracking)
+    // so operators can scan either the inbound carrier label OR the outbound
+    // shipping label they just printed.
+    //
+    // Returns match_field: "tracking_number" | "outbound_tracking" so the UI
+    // can tell the user how the match was found ("Found via outbound tracking").
     if (req.method === "GET" && action === "lookup") {
       const tracking = (url.searchParams.get("tracking") || "").trim();
       if (!tracking) return jRes({ error: "tracking required" }, 400);
-      const [rows, configMap] = await Promise.all([
-        sbSelect("dropshipments", `?tracking_number=eq.${encodeURIComponent(tracking)}&select=${SELECT_WITH_CLIENT}&limit=5`),
-        loadConfigMap()
-      ]);
+      const enc = encodeURIComponent(tracking);
+      const configMap = await loadConfigMap();
+      // PostgREST doesn't natively support OR across two eq filters in a clean
+      // way, so we use the `or=(...)` syntax: matches if EITHER field equals.
+      const filter = `or=(tracking_number.eq.${enc},outbound_tracking.eq.${enc})`;
+      const rows = await sbSelect("dropshipments", `?${filter}&select=${SELECT_WITH_CLIENT}&limit=5`);
       attachConfigs(rows, configMap);
-      return jRes({ rows, count: rows.length, tracking });
+      // Annotate each row with how it matched (informational, used by the UI toast).
+      const matches = rows.map(r => ({
+        ...r,
+        match_field: r.tracking_number === tracking ? "tracking_number"
+                    : r.outbound_tracking === tracking ? "outbound_tracking"
+                    : "unknown"
+      }));
+      return jRes({ rows: matches, count: matches.length, tracking });
     }
 
     // ── GET: signed URL for label PDF ─────────────────────────────────────
@@ -236,6 +315,11 @@ export default async function handler(req) {
         patch.status = rule.to;
         if (rule.ts) patch[rule.ts] = new Date().toISOString();
         if (rule.by) patch[rule.by] = operator;
+        // When an orphan is manually received, clear the alerted flag so the
+        // record is eligible for a fresh alert if it ever returns to orphan.
+        if (act === "receive" && current.status === "orphan") {
+          patch.orphan_alerted_at = null;
+        }
       }
 
       const updated = await sbPatch("dropshipments", `id=eq.${id}`, patch);
