@@ -512,7 +512,7 @@
 
 <section class="scan-wrap">
   <div class="scan-icon">⎌</div>
-  <input id="scan" type="text" autofocus placeholder="Scan or paste tracking number…">
+  <input id="scan" type="text" autofocus placeholder="Scan tracking → confirm receive, or register orphan…">
   <div class="scan-hint">
     <span class="kbd">⏎</span><span>find</span>
     <span style="margin: 0 4px; opacity: .4;">·</span>
@@ -553,6 +553,46 @@
   </div>
   <div class="detail-body" id="dBody"></div>
 </aside>
+
+<!-- Modal: scan-to-receive confirmation -->
+<div class="modal-backdrop" id="scanConfirmModal">
+  <div class="modal-box">
+    <h3>📦 Mark as received?</h3>
+    <div style="background:#f8fafc; padding:14px; border-radius:10px; margin:14px 0; font-family:'DM Mono',monospace;">
+      <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">Tracking</div>
+      <div id="scanConfirmTracking" style="font-weight:600; font-size:15px; margin-bottom:10px;"></div>
+      <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">Content</div>
+      <div id="scanConfirmContent" style="font-family:'DM Sans',sans-serif; font-size:13px;"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeScanConfirmModal()">Cancel</button>
+      <button class="btn btn-primary" id="scanConfirmBtn" style="min-width:150px;">✓ Mark received</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: create orphan -->
+<div class="modal-backdrop" id="orphanModal">
+  <div class="modal-box">
+    <h3>🎯 Unknown tracking</h3>
+    <p>This tracking isn't registered yet. Create an orphan record — the system will auto-match when the client email arrives.</p>
+    <div style="background:#fce7f3; padding:12px 14px; border-radius:10px; margin:14px 0; font-family:'DM Mono',monospace; font-size:14px; color:var(--s-orphan-text);">
+      <span id="orphanTracking" style="font-weight:600;"></span>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; display:block; margin-bottom:6px;">Client</label>
+      <select id="orphanClientSelect" class="client-select" style="width:100%; min-width:0;"></select>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; display:block; margin-bottom:6px;">Notes (optional)</label>
+      <input id="orphanNotes" placeholder="e.g. Box looked damaged on arrival…" maxlength="500">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeOrphanModal()">Cancel</button>
+      <button class="btn btn-primary" id="orphanConfirmBtn" style="min-width:150px;">Create orphan</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal: exception reason -->
 <div class="modal-backdrop" id="reasonModal">
@@ -986,34 +1026,75 @@
   window.openLabelOnly = openLabelOnly;
   window.doAction = doAction;
 
+  // ─── Smart scan handler — 3 paths based on what's scanned ───────────────
+  // 1. Exists + status='pending'/'exception': confirm → mark received
+  // 2. Exists + status != 'pending': just highlight + open drawer
+  // 3. Does NOT exist in DB: prompt to create orphan
   const scanInput = $("#scan");
-  scanInput.addEventListener("keydown", (e) => {
+  scanInput.addEventListener("keydown", async (e) => {
     if (e.key !== "Enter") return;
     const val = scanInput.value.trim();
     if (!val) return;
-    const match = state.rows.find(r =>
-      r.tracking_number.toLowerCase() === val.toLowerCase() ||
-      r.tracking_number.toLowerCase().includes(val.toLowerCase())
-    );
-    if (match) {
-      state.activeTab = "all";
-      $$(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === "all"));
-      renderRows();
-      setTimeout(() => {
-        const el = document.querySelector(`.tbl-row[data-id="${match.id}"]`);
-        if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "center" });
-          el.classList.add("highlight");
-          setTimeout(() => el.classList.remove("highlight"), 1500);
-        }
-        openDetail(match.id);
-      }, 100);
-      toast("Found: " + match.tracking_number);
-    } else {
-      toast("Tracking not found in current view", { error: true });
-    }
     scanInput.value = "";
+    if (!requireOperator()) return;
+
+    // Try local first (fast, zero network).
+    let match = state.rows.find(r =>
+      r.tracking_number.toLowerCase() === val.toLowerCase()
+    );
+
+    // Fall back to server lookup (covers rows not currently in view / filters applied).
+    if (!match) {
+      try {
+        const j = await apiGet({ action: "lookup", tracking: val });
+        if (j.rows && j.rows.length === 1) {
+          match = j.rows[0];
+          // Merge into state if missing, so subsequent actions work on it.
+          if (!state.rows.find(r => r.id === match.id)) state.rows.unshift(match);
+        } else if (j.rows && j.rows.length > 1) {
+          toast(`${j.rows.length} matches found — narrow your search`, { error: true });
+          return;
+        }
+      } catch (err) {
+        console.error("scan lookup failed", err);
+      }
+    }
+
+    if (match) {
+      // Path 1: pending/exception → prompt confirm receive
+      if (match.status === "pending" || match.status === "exception") {
+        openScanConfirmModal(match);
+        return;
+      }
+      // Path 2: already received/labeled/shipped/orphan → just highlight + open drawer
+      highlightAndOpen(match);
+      toast(`Already ${match.status} · ${shortTracking(match.tracking_number)}`);
+      return;
+    }
+
+    // Path 3: no match → prompt to create orphan
+    openOrphanModal(val);
   });
+
+  function shortTracking(t) {
+    if (!t) return "";
+    return t.length > 14 ? t.slice(0, 10) + "…" : t;
+  }
+
+  function highlightAndOpen(match) {
+    state.activeTab = "all";
+    $$(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === "all"));
+    renderRows();
+    setTimeout(() => {
+      const el = document.querySelector(`.tbl-row[data-id="${match.id}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("highlight");
+        setTimeout(() => el.classList.remove("highlight"), 1500);
+      }
+      openDetail(match.id);
+    }, 80);
+  }
   document.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "k") {
       e.preventDefault();
@@ -1042,6 +1123,99 @@
       $("#syncBtn").classList.remove("syncing");
       $("#syncLabel").textContent = "Sync now";
     }
+  });
+
+  // ─── Scan confirm modal (pending → received shortcut) ─────────────────
+  let _pendingScanMatch = null;
+  function openScanConfirmModal(match) {
+    _pendingScanMatch = match;
+    $("#scanConfirmTracking").textContent = match.tracking_number;
+    $("#scanConfirmContent").textContent = match.content || "—";
+    // Button label depends on current status
+    $("#scanConfirmBtn").textContent = match.status === "exception" ? "✓ Receive (resolve exception)" : "✓ Mark received";
+    $("#scanConfirmModal").classList.add("open");
+    // Focus the confirm button so Enter = confirm
+    setTimeout(() => $("#scanConfirmBtn").focus(), 60);
+  }
+  function closeScanConfirmModal() {
+    $("#scanConfirmModal").classList.remove("open");
+    _pendingScanMatch = null;
+    // Return focus to scan input for rapid multi-scan
+    setTimeout(() => $("#scan").focus(), 40);
+  }
+  window.closeScanConfirmModal = closeScanConfirmModal;
+  $("#scanConfirmBtn").addEventListener("click", async () => {
+    if (!_pendingScanMatch) return;
+    const id = _pendingScanMatch.id;
+    closeScanConfirmModal();
+    await doAction(id, "receive");
+  });
+
+  // ─── Orphan modal (unknown tracking) ──────────────────────────────────
+  let _pendingOrphanTracking = null;
+  function openOrphanModal(tracking) {
+    _pendingOrphanTracking = tracking;
+    $("#orphanTracking").textContent = tracking;
+    $("#orphanNotes").value = "";
+    // Populate client select from state.clients
+    const sel = $("#orphanClientSelect");
+    sel.innerHTML = state.clients.map(c =>
+      `<option value="${c.client_id}">${escapeHtml(c.display_name)}</option>`
+    ).join("");
+    // Default to active client if one is selected
+    if (state.activeClient) sel.value = state.activeClient;
+    $("#orphanModal").classList.add("open");
+    setTimeout(() => $("#orphanConfirmBtn").focus(), 60);
+  }
+  function closeOrphanModal() {
+    $("#orphanModal").classList.remove("open");
+    _pendingOrphanTracking = null;
+    setTimeout(() => $("#scan").focus(), 40);
+  }
+  window.closeOrphanModal = closeOrphanModal;
+  $("#orphanConfirmBtn").addEventListener("click", async () => {
+    if (!_pendingOrphanTracking) return;
+    if (!requireOperator()) return;
+    const tracking = _pendingOrphanTracking;
+    const clientId = $("#orphanClientSelect").value;
+    const notes = $("#orphanNotes").value.trim();
+    if (!clientId) { toast("Pick a client", { error: true }); return; }
+
+    $("#orphanConfirmBtn").disabled = true;
+    try {
+      const j = await apiPost({
+        action: "create_orphan",
+        tracking_number: tracking,
+        client_id: clientId,
+        operator: state.operator,
+        notes
+      });
+      closeOrphanModal();
+      if (j.row) {
+        state.rows.unshift(j.row);
+        renderRows();
+        renderCounts();
+        setTimeout(() => highlightAndOpen(j.row), 60);
+      }
+      toast(`Orphan created · ${shortTracking(tracking)}`);
+    } catch (e) {
+      if (e.message && e.message.includes("already exists")) {
+        toast("Tracking already registered for this client", { error: true });
+      } else {
+        toast("Failed: " + e.message, { error: true });
+      }
+    } finally {
+      $("#orphanConfirmBtn").disabled = false;
+    }
+  });
+
+  // Escape key closes all modals
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if ($("#scanConfirmModal").classList.contains("open")) closeScanConfirmModal();
+    else if ($("#orphanModal").classList.contains("open")) closeOrphanModal();
+    else if ($("#operatorModal").classList.contains("open")) closeOperatorModal();
+    else if ($("#reasonModal").classList.contains("open")) closeReasonModal();
   });
 
   // ─── Operator modal ─────────────────────────────────────────────────
