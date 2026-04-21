@@ -675,6 +675,84 @@
   </div>
 </div>
 
+<!-- Modal: link outbound trackings (post-print) -->
+<div class="modal-backdrop" id="linkOutboundModal">
+  <div class="modal-box" style="max-width: 560px;">
+    <h3>🔗 Link printed labels to packages</h3>
+    <p style="color:var(--muted); font-size:13px; margin:6px 0 14px 0;">
+      Scan the <strong>outbound barcode</strong> on each printed label.
+      The system auto-assigns to the next pending package — verify visually before pegging the label.
+    </p>
+
+    <!-- Progress -->
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+      <div style="font-size:13px; font-weight:600;">
+        Progress: <span id="linkProgress">0 / 0</span> linked
+      </div>
+      <div style="flex:1; height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
+        <div id="linkProgressBar" style="height:100%; background:var(--green, #00A878); width:0%; transition:width 0.3s;"></div>
+      </div>
+    </div>
+
+    <!-- Scan input -->
+    <div style="margin-bottom:14px;">
+      <input id="linkOutboundInput"
+             placeholder="Scan or type outbound barcode here…"
+             autocomplete="off"
+             style="width:100%; font-family:'DM Mono',monospace; font-size:15px; padding:12px 14px; border:2px solid var(--green,#00A878); border-radius:10px; outline:none;">
+    </div>
+
+    <!-- Last linked confirmation (Modelo 3 visual feedback) -->
+    <div id="linkLastBox" style="display:none; background:#dcfce7; border:1px solid #86efac; padding:14px; border-radius:10px; margin-bottom:14px;">
+      <div style="font-size:10px; color:#15803d; text-transform:uppercase; letter-spacing:0.07em; font-weight:700; margin-bottom:6px;">✅ Just linked</div>
+      <div id="linkLastOutbound" style="font-family:'DM Mono',monospace; font-size:13px; font-weight:600; margin-bottom:4px;"></div>
+      <div style="font-size:11px; color:#475569; margin-bottom:6px;">→ <span id="linkLastInbound" style="font-family:'DM Mono',monospace;"></span></div>
+      <div id="linkLastContent" style="font-size:14px; font-weight:500; color:#1f2937; margin-bottom:8px; line-height:1.4;"></div>
+      <button class="btn" onclick="openFixMatchModal()" style="font-size:12px; padding:5px 12px; background:#fef3c7; color:#92400e; border:1px solid #fde68a;">
+        🔧 Wrong match? Click to fix
+      </button>
+    </div>
+
+    <!-- Pending list (compact) -->
+    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 12px; margin-bottom:14px; max-height:180px; overflow-y:auto;">
+      <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:700; margin-bottom:8px;">
+        Pending to link (<span id="linkPendingCount">0</span>)
+      </div>
+      <div id="linkPendingList" style="font-family:'DM Mono',monospace; font-size:11px; line-height:1.7;"></div>
+    </div>
+
+    <!-- Status / error area -->
+    <div id="linkStatusMsg" style="display:none; padding:8px 12px; border-radius:8px; font-size:12px; margin-bottom:10px;"></div>
+
+    <div class="modal-actions">
+      <button class="btn" onclick="skipLinkOutbound()">Skip & mark labeled anyway</button>
+      <button class="btn btn-primary" onclick="closeLinkOutboundModal()" id="linkDoneBtn">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: fix wrong outbound match -->
+<div class="modal-backdrop" id="fixMatchModal">
+  <div class="modal-box" style="max-width:480px;">
+    <h3>🔧 Fix the link</h3>
+    <p style="color:var(--muted); font-size:13px;">
+      Currently this outbound is linked to the wrong package. Pick the correct one from the list.
+    </p>
+    <div style="background:#fef3c7; padding:10px 12px; border-radius:8px; margin:14px 0; font-family:'DM Mono',monospace; font-size:13px;">
+      <div style="font-size:10px; color:#92400e; text-transform:uppercase; margin-bottom:4px;">Outbound to re-link</div>
+      <div id="fixMatchOutbound" style="font-weight:600;"></div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; display:block; margin-bottom:6px;">Correct package</label>
+      <select id="fixMatchSelect" class="client-select" style="width:100%; min-width:0;"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeFixMatchModal()">Cancel</button>
+      <button class="btn btn-primary" id="fixMatchConfirmBtn" style="min-width:150px;">Re-link</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: create orphan -->
 <div class="modal-backdrop" id="orphanModal">
   <div class="modal-box">
@@ -886,6 +964,13 @@
       if (row.status === "received") {
         await doAction(id, "label");
       }
+
+      // After printing a single label, offer to link the outbound (Q2 = A).
+      // Refresh the row from state to get the updated status.
+      setTimeout(() => {
+        const cur = state.rows.find(r => r.id === id) || row;
+        offerLinkOutbound([cur]);
+      }, 1500);
     } catch (e) {
       toast("Print failed: " + e.message, { error: true });
     }
@@ -1127,6 +1212,14 @@
         if (skipped > 0) msg += ` · ${skipped} skipped`;
         toast(msg);
       }
+
+      // After print + auto-label, offer to link outbound trackings (Opción B = optional).
+      // Toast button will appear if there are eligible rows still missing outbound_tracking.
+      // Brief delay so the print toast doesn't get overwritten instantly.
+      setTimeout(() => {
+        const printedRows = goodPdfs.map(p => p.row);
+        offerLinkOutbound(printedRows);
+      }, 1500);
     } catch (e) {
       console.error("Batch print error", e);
       toast("Batch print failed: " + e.message, { error: true });
@@ -1256,6 +1349,323 @@
     else toast(`Received ${rows.length - failures.length} · ${failures.length} failed`, { error: true });
   }
   window.batchMarkReceived = batchMarkReceived;
+
+  // ─── Link Outbound flow (Modelo 3 — 1 scan + visual verification) ────
+  // State for the link modal:
+  //   _linkState = {
+  //     pending:   [row, row, ...]       // rows still awaiting a scan
+  //     linked:    [{row, outbound}, ..] // rows already scanned (audit trail in modal)
+  //     last:      {row, outbound}|null  // most recent for "Wrong match" undo
+  //     allRows:   [row, ...]            // initial set for "skip & mark labeled"
+  //   }
+  let _linkState = null;
+
+  // Triggered after a successful batch print or single print.
+  // shows toast with "🔗 Link outbound trackings now" button (Opción B = optional flow).
+  function offerLinkOutbound(rows) {
+    if (!rows || rows.length === 0) return;
+    // Filter to only rows that ended up in 'received' or 'labeled' state and
+    // don't already have an outbound_tracking — those are the ones that need linking.
+    const eligible = rows.filter(r => {
+      const cur = state.rows.find(x => x.id === r.id) || r;
+      return (cur.status === "received" || cur.status === "labeled") && !cur.outbound_tracking;
+    });
+    if (eligible.length === 0) return; // nothing to link
+
+    // Show a toast with an action button (custom — toast() doesn't support actions
+    // by default, so we render directly into the toast element).
+    const t = $("#toast");
+    if (!t) return;
+    t.innerHTML = `
+      🔗 ${eligible.length} label${eligible.length === 1 ? "" : "s"} ready to link to outbound trackings.
+      <button onclick="openLinkOutboundFromToast()" style="margin-left:10px; padding:4px 12px; background:#fff; color:#1f2937; border:0; border-radius:6px; font-weight:600; cursor:pointer; font-family:inherit;">
+        Link now →
+      </button>
+    `;
+    t.classList.add("show");
+    // Stash for the button onclick
+    window._toastLinkRows = eligible;
+    // Auto-hide after 12s (longer than default toast — gives time to click)
+    clearTimeout(window._toastTimer);
+    window._toastTimer = setTimeout(() => { t.classList.remove("show"); }, 12000);
+  }
+  window.openLinkOutboundFromToast = function () {
+    const rows = window._toastLinkRows || [];
+    $("#toast").classList.remove("show");
+    if (rows.length) openLinkOutboundModal(rows);
+  };
+
+  function openLinkOutboundModal(rows) {
+    if (!requireOperator()) return;
+    if (!rows || rows.length === 0) return;
+
+    _linkState = {
+      pending: rows.slice(),
+      linked: [],
+      last: null,
+      allRows: rows.slice()
+    };
+    renderLinkPending();
+    $("#linkLastBox").style.display = "none";
+    $("#linkStatusMsg").style.display = "none";
+    $("#linkOutboundInput").value = "";
+    $("#linkOutboundModal").classList.add("open");
+    setTimeout(() => $("#linkOutboundInput").focus(), 80);
+  }
+  window.openLinkOutboundModal = openLinkOutboundModal;
+
+  // Wrapper for the drawer's "Scan to link" button (inline onclick).
+  window.linkOutboundForRow = function (id) {
+    const row = state.rows.find(x => x.id === id);
+    if (!row) {
+      toast("Row not found in state", { error: true });
+      return;
+    }
+    if (row.outbound_tracking) {
+      toast("This package already has an outbound tracking", { error: true });
+      return;
+    }
+    openLinkOutboundModal([row]);
+  };
+
+  function closeLinkOutboundModal() {
+    $("#linkOutboundModal").classList.remove("open");
+    _linkState = null;
+    setTimeout(() => $("#scan").focus(), 40);
+  }
+  window.closeLinkOutboundModal = closeLinkOutboundModal;
+
+  function renderLinkPending() {
+    if (!_linkState) return;
+    const { pending, linked, allRows } = _linkState;
+    const total = allRows.length;
+    const done = linked.length;
+    $("#linkProgress").textContent = `${done} / ${total}`;
+    $("#linkProgressBar").style.width = `${total > 0 ? Math.round(done * 100 / total) : 0}%`;
+    $("#linkPendingCount").textContent = pending.length;
+    if (pending.length === 0) {
+      $("#linkPendingList").innerHTML = '<div style="color:#15803d; font-style:italic;">All linked! ✅</div>';
+    } else {
+      $("#linkPendingList").innerHTML = pending.map(r =>
+        `→ <strong>${escapeHtml(r.tracking_number)}</strong> · ${escapeHtml(r.content || "—").slice(0, 60)}`
+      ).join("<br>");
+    }
+  }
+
+  function setLinkStatus(msg, kind) {
+    const el = $("#linkStatusMsg");
+    if (!msg) { el.style.display = "none"; return; }
+    const styles = {
+      error: "background:#fee2e2; color:#dc2626; border:1px solid #fecaca;",
+      warn:  "background:#fef3c7; color:#92400e; border:1px solid #fde68a;",
+      info:  "background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe;"
+    };
+    el.style.cssText = "display:block; padding:8px 12px; border-radius:8px; font-size:12px; margin-bottom:10px; " + (styles[kind] || styles.info);
+    el.textContent = msg;
+  }
+
+  // Scan handler inside the link modal
+  $("#linkOutboundInput").addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter") return;
+    const val = $("#linkOutboundInput").value.trim();
+    if (!val) return;
+    $("#linkOutboundInput").value = "";
+    if (!_linkState) return;
+
+    // Detect inbound by accident (TBA pattern is Amazon-specific; reject)
+    if (/^TBA\d{10,}$/i.test(val)) {
+      setLinkStatus(`That looks like an inbound tracking (TBA…). Scan the OUTBOUND barcode printed on the carrier label.`, "warn");
+      return;
+    }
+
+    // Already linked in this session?
+    const alreadyHere = _linkState.linked.find(x => x.outbound === val);
+    if (alreadyHere) {
+      setLinkStatus(`Already linked to ${alreadyHere.row.tracking_number} in this session. Skipping.`, "info");
+      return;
+    }
+
+    // Take the next pending package
+    if (_linkState.pending.length === 0) {
+      setLinkStatus(`All packages already linked. Click "Done" to finish.`, "info");
+      return;
+    }
+    const target = _linkState.pending[0];
+
+    // POST link_outbound
+    try {
+      const res = await apiPost({
+        action: "link_outbound",
+        id: target.id,
+        outbound_tracking: val,
+        operator: state.operator
+      });
+      // Apply update to local state (for the main grid)
+      const idx = state.rows.findIndex(x => x.id === target.id);
+      if (idx >= 0 && res.row) state.rows[idx] = { ...state.rows[idx], ...res.row };
+
+      // Move to linked
+      _linkState.pending.shift();
+      _linkState.linked.push({ row: target, outbound: val });
+      _linkState.last = { row: target, outbound: val };
+
+      // Update "last linked" UI
+      $("#linkLastOutbound").textContent = val;
+      $("#linkLastInbound").textContent = target.tracking_number;
+      $("#linkLastContent").textContent = target.content || "(no content)";
+      $("#linkLastBox").style.display = "";
+      setLinkStatus(null);
+
+      renderLinkPending();
+      renderRows();    // reflects the new labeled status in the main grid
+      renderCounts();
+
+      // Auto-close when all done
+      if (_linkState.pending.length === 0) {
+        toast(`✓ ${_linkState.linked.length} package${_linkState.linked.length === 1 ? "" : "s"} linked and marked as labeled`);
+        setTimeout(closeLinkOutboundModal, 800);
+      }
+    } catch (err) {
+      const msg = String(err.message || err);
+      // Common conflict: outbound already used by another package (different session)
+      if (msg.includes("already linked") || msg.includes("conflict")) {
+        setLinkStatus(`That outbound tracking is already linked to a different package. Check the barcode and try again.`, "error");
+      } else {
+        setLinkStatus(`Link failed: ${msg}`, "error");
+      }
+    }
+  });
+
+  // Skip & mark all remaining as labeled (Q3 = B behavior)
+  async function skipLinkOutbound() {
+    if (!_linkState) return;
+    const remaining = _linkState.pending.filter(r => {
+      // Only those still in 'received' status (some may have been moved by other actions)
+      const cur = state.rows.find(x => x.id === r.id) || r;
+      return cur.status === "received";
+    });
+    if (remaining.length === 0) {
+      closeLinkOutboundModal();
+      return;
+    }
+    if (!confirm(`Mark ${remaining.length} remaining package${remaining.length === 1 ? "" : "s"} as labeled WITHOUT outbound tracking? You can link them individually later.`)) return;
+
+    // Promote each to labeled via the existing 'label' action.
+    const results = await Promise.all(remaining.map(r =>
+      apiPost({ action: "label", id: r.id, operator: state.operator })
+        .then(j => ({ ok: true, row: r, updated: j.row }))
+        .catch(e => ({ ok: false, row: r, err: e.message }))
+    ));
+    for (const res of results) {
+      if (res.ok && res.updated) {
+        const idx = state.rows.findIndex(x => x.id === res.row.id);
+        if (idx >= 0) state.rows[idx] = { ...state.rows[idx], ...res.updated };
+      }
+    }
+    const failed = results.filter(r => !r.ok).length;
+    closeLinkOutboundModal();
+    renderRows();
+    renderCounts();
+    if (failed === 0) toast(`✓ ${remaining.length} marked as labeled (no outbound)`);
+    else toast(`Marked ${remaining.length - failed} · ${failed} failed`, { error: true });
+  }
+  window.skipLinkOutbound = skipLinkOutbound;
+
+  // ── Fix wrong match submodal ──
+  function openFixMatchModal() {
+    if (!_linkState || !_linkState.last) return;
+    const last = _linkState.last;
+    $("#fixMatchOutbound").textContent = last.outbound;
+    // Build dropdown of pending + the last (so it can be re-confirmed)
+    const candidates = [last.row, ..._linkState.pending];
+    const sel = $("#fixMatchSelect");
+    sel.innerHTML = candidates.map(r =>
+      `<option value="${r.id}">${escapeHtml(r.tracking_number)} · ${escapeHtml((r.content || "—").slice(0, 50))}</option>`
+    ).join("");
+    sel.value = last.row.id;
+    $("#fixMatchModal").classList.add("open");
+    setTimeout(() => sel.focus(), 60);
+  }
+  window.openFixMatchModal = openFixMatchModal;
+
+  function closeFixMatchModal() {
+    $("#fixMatchModal").classList.remove("open");
+    setTimeout(() => $("#linkOutboundInput").focus(), 40);
+  }
+  window.closeFixMatchModal = closeFixMatchModal;
+
+  $("#fixMatchConfirmBtn").addEventListener("click", async () => {
+    if (!_linkState || !_linkState.last) return;
+    const newId = $("#fixMatchSelect").value;
+    if (!newId) return;
+    const last = _linkState.last;
+    if (newId === last.row.id) {
+      // No change — just close
+      closeFixMatchModal();
+      return;
+    }
+
+    const newTarget = state.rows.find(x => x.id === newId)
+                   || _linkState.pending.find(x => x.id === newId)
+                   || _linkState.linked.map(l => l.row).find(x => x.id === newId);
+    if (!newTarget) {
+      setLinkStatus("Could not find the selected row in state. Refresh and try again.", "error");
+      closeFixMatchModal();
+      return;
+    }
+
+    try {
+      // 1. unlink the wrong row (clears outbound, status stays labeled)
+      await apiPost({ action: "unlink_outbound", id: last.row.id, operator: state.operator });
+      // 2. revert the wrong row from labeled back to received (since the link triggered the transition)
+      await apiPost({ action: "revert", id: last.row.id, operator: state.operator })
+            .catch(() => null);  // best-effort; ignore if state was different
+      // 3. link the correct row
+      const res = await apiPost({
+        action: "link_outbound",
+        id: newTarget.id,
+        outbound_tracking: last.outbound,
+        operator: state.operator,
+        force: true
+      });
+
+      // Update local state
+      // Wrong row: revert to received status
+      const wrongIdx = state.rows.findIndex(x => x.id === last.row.id);
+      if (wrongIdx >= 0) {
+        state.rows[wrongIdx] = { ...state.rows[wrongIdx], outbound_tracking: null, status: "received", labeled_at: null };
+      }
+      // New row: apply the response
+      const newIdx = state.rows.findIndex(x => x.id === newTarget.id);
+      if (newIdx >= 0 && res.row) {
+        state.rows[newIdx] = { ...state.rows[newIdx], ...res.row };
+      }
+
+      // Update linkState: remove last from linked, add new to linked, push wrong row back to pending
+      _linkState.linked = _linkState.linked.filter(l => l.outbound !== last.outbound);
+      _linkState.linked.push({ row: newTarget, outbound: last.outbound });
+      // Remove newTarget from pending if it was there
+      _linkState.pending = _linkState.pending.filter(r => r.id !== newTarget.id);
+      // Add wrong row back to pending if it isn't already linked elsewhere
+      const wrongStillLinked = _linkState.linked.find(l => l.row.id === last.row.id);
+      if (!wrongStillLinked) {
+        _linkState.pending.push(last.row);
+      }
+      _linkState.last = { row: newTarget, outbound: last.outbound };
+
+      // Refresh UI
+      $("#linkLastInbound").textContent = newTarget.tracking_number;
+      $("#linkLastContent").textContent = newTarget.content || "(no content)";
+      renderLinkPending();
+      renderRows();
+      renderCounts();
+      setLinkStatus(`✓ Re-linked to ${newTarget.tracking_number}`, "info");
+      closeFixMatchModal();
+    } catch (err) {
+      setLinkStatus(`Re-link failed: ${err.message}`, "error");
+      closeFixMatchModal();
+    }
+  });
   async function loadClients() {
     const j = await apiGet({ action: "clients" });
     state.clients = j.clients || [];
@@ -1475,7 +1885,11 @@
       <div class="detail-row"><span class="k">Qty boxes</span><span class="v mono">${r.qty_boxes || 1}</span></div>
       ${r.notes ? `<div class="detail-row"><span class="k">Notes</span><span class="v"><em>${escapeHtml(r.notes)}</em></span></div>` : ""}
       <div class="detail-row"><span class="k">Outbound</span><span class="v">${escapeHtml(r.outbound_carrier || "—")}${r.outbound_platform ? " · " + escapeHtml(r.outbound_platform) : ""}</span></div>
-      ${r.outbound_tracking ? `<div class="detail-row"><span class="k">Outbound tracking</span><span class="v mono">${escapeHtml(r.outbound_tracking)}</span></div>` : ""}
+      ${r.outbound_tracking
+        ? `<div class="detail-row"><span class="k">Outbound tracking</span><span class="v mono">${escapeHtml(r.outbound_tracking)}</span></div>`
+        : ((r.status === "received" || r.status === "labeled")
+          ? `<div class="detail-row"><span class="k">Outbound tracking</span><span class="v"><button class="btn" onclick="linkOutboundForRow('${r.id}')" style="font-size:12px; padding:5px 12px; background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe;">🔗 Scan to link</button></span></div>`
+          : "")}
       ${exceptionBox}
 
       <div class="detail-row"><span class="k" style="margin-bottom: 8px;">Outbound label</span>${pdfBox}</div>
@@ -1769,7 +2183,9 @@
   // Escape key closes all modals or clears batch selection
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    if ($("#scanConfirmModal").classList.contains("open")) closeScanConfirmModal();
+    if ($("#fixMatchModal").classList.contains("open")) closeFixMatchModal();
+    else if ($("#linkOutboundModal").classList.contains("open")) closeLinkOutboundModal();
+    else if ($("#scanConfirmModal").classList.contains("open")) closeScanConfirmModal();
     else if ($("#orphanModal").classList.contains("open")) closeOrphanModal();
     else if ($("#batchShipModal").classList.contains("open")) closeBatchShipModal();
     else if ($("#operatorModal").classList.contains("open")) closeOperatorModal();
