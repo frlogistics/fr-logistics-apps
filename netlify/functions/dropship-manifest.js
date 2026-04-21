@@ -35,8 +35,18 @@
 
 const SUPABASE_URL  = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY  = Netlify.env.get("SUPABASE_SERVICE_KEY");
+const RESEND_KEY    = Netlify.env.get("RESEND_API_KEY");
 const WA_SECRET     = Netlify.env.get("WHATSAPP_WEBHOOK_SECRET") || "frlogistics_wa_2026";
 const SITE_URL      = "https://apps.fr-logistics.net";
+
+// ─── Ops digest (internal copy to operations) ─────────────────────────────
+// After sending the per-client manifests, we also notify Jose with:
+//   - 1 WhatsApp consolidated message (quick mobile glance)
+//   - 1 email with full HTML breakdown (archivable, searchable)
+const OPS_WHATSAPP_NUMBER = "13052403172";          // Jose's mobile (no '+', no spaces)
+const OPS_EMAIL_TO        = "josefuentes@fr-logistics.net";
+const OPS_EMAIL_FROM      = "FR-Logistics <ops@fr-logistics.net>";
+const OPS_EMAIL_FROM_FALLBACK = "onboarding@resend.dev";
 
 // ─── Supabase helpers ────────────────────────────────────────────────────────
 const SB = () => ({ "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" });
@@ -115,6 +125,190 @@ async function sendWhatsAppTemplate({ to, clientName, dateLabel, inbound, outbou
   }
 
   return { ok: true, fallbackText, ...j };
+}
+
+// ─── Ops digest: send a consolidated WhatsApp to Jose ─────────────────────
+// Uses the same daily_summary template (already approved). The "client name"
+// slot becomes "Operations" so Jose sees an internal-style message.
+// We aggregate received/shipped totals across ALL clients processed today.
+async function sendOpsWhatsAppDigest({ dateLabel, totals, sentClients, errors }) {
+  const inbound  = totals.received;
+  const outbound = totals.shipped;
+  // Use daily_summary template — same one used for clients, with "Operations" as recipient name
+  const templateName     = "daily_summary";
+  const templateLanguage = "en";
+  const templateParams   = [
+    "Operations",
+    String(dateLabel || ""),
+    String(inbound),
+    String(outbound)
+  ];
+  // Fallback text gets richer detail since template is rigid
+  let fallbackText =
+    `Hi Operations, here is your daily summary from FR-Logistics Miami — ${dateLabel}: ` +
+    `Inbound: ${inbound} package(s) received. Outbound: ${outbound} shipment(s) processed across ${sentClients} client(s).`;
+  if (errors > 0) fallbackText += ` ${errors} send error(s) — check email digest for details.`;
+
+  const r = await fetch(`${SITE_URL}/.netlify/functions/whatsapp-notify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-fr-secret": WA_SECRET },
+    body: JSON.stringify({
+      to: OPS_WHATSAPP_NUMBER,
+      type: "template",
+      templateName,
+      templateLanguage,
+      templateParams,
+      fallbackText
+    })
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`ops wa-notify ${r.status}: ${j.error || JSON.stringify(j)}`);
+
+  // Best-effort log to wa-messages
+  try {
+    await fetch(`${SITE_URL}/.netlify/functions/wa-messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action:     "add_outbound",
+        to:         OPS_WHATSAPP_NUMBER,
+        clientName: "Operations (internal)",
+        template:   templateName,
+        text:       fallbackText
+      })
+    });
+  } catch (e) { console.warn("[ops-digest] wa-messages log failed:", e.message); }
+
+  return { ok: true };
+}
+
+// ─── Ops digest: send the rich HTML email to Jose ─────────────────────────
+async function sendOpsEmailDigest({ dateLabel, today, perClient, totals }) {
+  if (!RESEND_KEY) { console.warn("[ops-digest] RESEND_API_KEY not configured, skipping email"); return { skipped: true }; }
+
+  const sentRows  = perClient.filter(c => c.action === "sent");
+  const skipRows  = perClient.filter(c => c.action && c.action.startsWith("skip:"));
+  const errorRows = perClient.filter(c => c.action === "error");
+
+  const subject = errorRows.length
+    ? `📦 Daily Manifest — ${dateLabel} — ${errorRows.length} ERROR(S)`
+    : `📦 Daily Manifest — ${dateLabel} — ${totals.shipped} shipped across ${sentRows.length} client(s)`;
+
+  const sentTableRows = sentRows.length ? sentRows.map(c => `
+    <tr>
+      <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;font-weight:600;">${escapeHtml(c.client_label || "—")}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#64748b;font-family:monospace;">${escapeHtml(c.wa_number || "—")}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;text-align:right;color:#1e40af;">${c.received}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;text-align:right;color:#16a34a;font-weight:700;">${c.shipped}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:11px;text-align:right;color:#64748b;">${c.marked_rows || 0}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="5" style="padding:20px;text-align:center;color:#94a3b8;font-size:13px;">No manifests sent today</td></tr>`;
+
+  const errorBlock = errorRows.length ? `
+    <h3 style="margin:24px 0 8px 0;font-size:14px;color:#dc2626;">⚠️ Send errors</h3>
+    <table style="width:100%;border-collapse:collapse;background:#fef2f2;border-radius:8px;overflow:hidden;">
+      ${errorRows.map(c => `
+        <tr>
+          <td style="padding:8px 12px;font-size:12px;font-weight:600;width:30%;">${escapeHtml(c.client_label || c.client_id || "—")}</td>
+          <td style="padding:8px 12px;font-size:12px;font-family:monospace;color:#991b1b;">${escapeHtml(c.error || "Unknown")}</td>
+        </tr>
+      `).join("")}
+    </table>
+  ` : "";
+
+  const skipBlock = skipRows.length ? `
+    <details style="margin-top:16px;">
+      <summary style="cursor:pointer;font-size:12px;color:#64748b;padding:6px 0;">
+        ${skipRows.length} client(s) skipped (no activity / no WA consent)
+      </summary>
+      <table style="width:100%;border-collapse:collapse;margin-top:8px;background:#f8fafc;border-radius:8px;overflow:hidden;font-size:12px;">
+        ${skipRows.map(c => `
+          <tr>
+            <td style="padding:6px 10px;color:#64748b;width:50%;">${escapeHtml(c.client_label || c.client_id || "—")}</td>
+            <td style="padding:6px 10px;color:#94a3b8;font-family:monospace;font-size:11px;">${escapeHtml(c.action.replace("skip:", ""))}</td>
+            <td style="padding:6px 10px;text-align:right;color:#64748b;font-size:11px;">recv:${c.received} · ship:${c.shipped}</td>
+          </tr>
+        `).join("")}
+      </table>
+    </details>
+  ` : "";
+
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:720px;margin:0 auto;padding:24px;background:#f4f6f9;">
+      <div style="background:#fff;border-radius:14px;padding:28px;border:1px solid #e2e8f0;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+          <span style="font-size:24px;">📦</span>
+          <h1 style="margin:0;font-size:20px;color:#1a202c;">Daily Manifest Sent</h1>
+        </div>
+        <p style="color:#64748b;font-size:13px;margin:0 0 20px 0;">${dateLabel} · day boundary in UTC (${today})</p>
+
+        <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:130px;background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;">
+            <div style="font-size:11px;color:#166534;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Shipped today</div>
+            <div style="font-size:28px;color:#15803d;font-weight:800;line-height:1;margin-top:4px;">${totals.shipped}</div>
+          </div>
+          <div style="flex:1;min-width:130px;background:#dbeafe;border:1px solid #93c5fd;border-radius:10px;padding:14px;">
+            <div style="font-size:11px;color:#1e40af;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Received today</div>
+            <div style="font-size:28px;color:#1d4ed8;font-weight:800;line-height:1;margin-top:4px;">${totals.received}</div>
+          </div>
+          <div style="flex:1;min-width:130px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;">
+            <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Manifests sent</div>
+            <div style="font-size:28px;color:#1a202c;font-weight:800;line-height:1;margin-top:4px;">${sentRows.length}</div>
+          </div>
+        </div>
+
+        <h3 style="margin:0 0 8px 0;font-size:14px;color:#1a202c;">Per-client breakdown</h3>
+        <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+          <thead>
+            <tr style="background:#f8fafc;">
+              <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #e2e8f0;">Client</th>
+              <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #e2e8f0;">WA</th>
+              <th style="padding:10px 12px;text-align:right;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #e2e8f0;">Received</th>
+              <th style="padding:10px 12px;text-align:right;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #e2e8f0;">Shipped</th>
+              <th style="padding:10px 12px;text-align:right;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #e2e8f0;">Marked</th>
+            </tr>
+          </thead>
+          <tbody>${sentTableRows}</tbody>
+        </table>
+
+        ${errorBlock}
+        ${skipBlock}
+
+        <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;">
+          <a href="${SITE_URL}/portal.html#app=dropshipments.html"
+             style="display:inline-block;background:#1fa463;color:#fff;text-decoration:none;padding:10px 20px;border-radius:9px;font-weight:600;font-size:14px;">
+            Open Dropshipments →
+          </a>
+        </div>
+        <p style="color:#94a3b8;font-size:11px;margin-top:20px;text-align:center;">
+          Automated daily manifest digest from FR-Logistics Dropshipments<br>
+          Sent ${new Date().toISOString()}
+        </p>
+      </div>
+    </div>
+  `;
+
+  // Try branded sender first, fallback to Resend's default if domain not verified.
+  async function tryResend(from) {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to: [OPS_EMAIL_TO], subject, html })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(`Resend ${r.status}: ${j.message || JSON.stringify(j)}`);
+    return j;
+  }
+  try {
+    return { ok: true, ...(await tryResend(OPS_EMAIL_FROM)) };
+  } catch (e) {
+    console.warn("[ops-digest] branded sender failed, retrying default:", e.message);
+    return { ok: true, fallback: true, ...(await tryResend(OPS_EMAIL_FROM_FALLBACK)) };
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 }
 
 // ─── Core: build per-client summary for today (UTC) ──────────────────────────
@@ -284,6 +478,55 @@ async function run({ dryRun = false, onlyClientId = null, force = false } = {}) 
   result.total_clients = result.clients.length;
   result.total_sent    = result.clients.filter(c => c.action === "sent").length;
   result.total_errors  = result.clients.filter(c => c.action === "error").length;
+
+  // ─── Ops digests (Option D: WhatsApp + Email to Jose) ───────────────────
+  // Aggregate totals across all clients in this run.
+  const totals = {
+    received: result.clients.reduce((sum, c) => sum + (c.received || 0), 0),
+    shipped:  result.clients.reduce((sum, c) => sum + (c.shipped  || 0), 0)
+  };
+  result.totals = totals;
+  result.ops_digest = { whatsapp: null, email: null };
+
+  // Don't spam ops on dry runs.
+  // Don't send if literally nothing happened (no clients processed at all),
+  // unless force=1 was passed for testing purposes.
+  const hasAnyActivity = result.total_sent > 0 || result.total_errors > 0 || force;
+
+  if (!dryRun && hasAnyActivity) {
+    // 1. WhatsApp consolidated to Jose
+    try {
+      await sendOpsWhatsAppDigest({
+        dateLabel,
+        totals,
+        sentClients: result.total_sent,
+        errors: result.total_errors
+      });
+      result.ops_digest.whatsapp = { ok: true, to: OPS_WHATSAPP_NUMBER };
+    } catch (e) {
+      console.error("[dropship-manifest] ops WA digest failed:", e.message);
+      result.ops_digest.whatsapp = { ok: false, error: e.message };
+    }
+
+    // 2. Email digest to Jose with full HTML breakdown
+    try {
+      const emailRes = await sendOpsEmailDigest({
+        dateLabel,
+        today,
+        perClient: result.clients,
+        totals
+      });
+      result.ops_digest.email = { ok: true, to: OPS_EMAIL_TO, ...emailRes };
+    } catch (e) {
+      console.error("[dropship-manifest] ops email digest failed:", e.message);
+      result.ops_digest.email = { ok: false, error: e.message };
+    }
+  } else if (dryRun) {
+    result.ops_digest.note = "skipped:dry_run";
+  } else {
+    result.ops_digest.note = "skipped:no_activity";
+  }
+
   return result;
 }
 
@@ -311,6 +554,12 @@ export default async function handler(req) {
       template_used: "daily_summary",
       mode: "manual + scheduled (daily at 11 PM UTC / 7 PM Miami)",
       schedule: "0 23 * * *",
+      ops_digest: {
+        whatsapp_to: OPS_WHATSAPP_NUMBER,
+        email_to:    OPS_EMAIL_TO,
+        email_from:  OPS_EMAIL_FROM,
+        resend_configured: !!RESEND_KEY
+      },
       usage: {
         run:         "POST /.netlify/functions/dropship-manifest",
         dry_run:     "POST /.netlify/functions/dropship-manifest?dry_run=1",
