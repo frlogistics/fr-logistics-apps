@@ -9,7 +9,12 @@
 
 [functions."refresh-ig-token"]
   schedule = "0 12 1 */45 *"
+[functions."dropship-gmail-sync"]
+  schedule = "0 */2 * * *"
 
+[functions."dropship-orphan-alert"]
+  schedule = "15 */2 * * *"
+  
 [[headers]]
   for = "/.netlify/functions/*"
   [headers.values]
