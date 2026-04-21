@@ -42,7 +42,10 @@ const SITE_URL      = "https://apps.fr-logistics.net";
 // After sending the per-client manifests, we also notify Jose with:
 //   - 1 WhatsApp consolidated message (quick mobile glance)
 //   - 1 email with full HTML breakdown (archivable, searchable)
-const OPS_WHATSAPP_NUMBER = "13052403172";          // Jose's mobile (no '+', no spaces)
+// NOTE: Using Jose's personal +1 786 775 7335 because the Miami business line
+// +1 305 240 3172 is not yet on the WABA's allowed recipients list.
+// Switch back to 13052403172 once added in Meta Business Manager.
+const OPS_WHATSAPP_NUMBER = "17867757335";          // Jose's personal mobile (no '+', no spaces)
 const OPS_EMAIL_TO        = "josefuentes@fr-logistics.net";
 const OPS_EMAIL_FROM      = "FR-Logistics <ops@fr-logistics.net>";
 const OPS_EMAIL_FROM_FALLBACK = "onboarding@resend.dev";
