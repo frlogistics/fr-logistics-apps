@@ -287,14 +287,38 @@ export default async function handler(req) {
         const force       = body.force === true;
         if (!id) return jRes({ error: "id required" }, 400);
         if (!outbound) return jRes({ error: "outbound_tracking required" }, 400);
-        if (outbound.length < 4 || outbound.length > 64) {
-          return jRes({ error: "outbound_tracking must be 4-64 characters" }, 400);
+
+        // ── Validation (Day 4: prevent accidental garbage inputs) ──
+        // Length: 6-64 chars (tightened from 4 to block typos like "test1")
+        if (outbound.length < 6 || outbound.length > 64) {
+          return jRes({ error: "outbound_tracking must be 6-64 characters" }, 400);
+        }
+        // Format: alphanumeric only. Real carrier barcodes never contain
+        // spaces, punctuation, or symbols — blocking them here catches
+        // test strings ("test 123"), copy-paste errors with stray chars,
+        // and emoji scans.
+        if (!/^[A-Za-z0-9]+$/.test(outbound)) {
+          return jRes({
+            error: "outbound_tracking must contain only letters and digits (no spaces or symbols)"
+          }, 400);
         }
 
         // Load the row and validate state.
         const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,outbound_tracking,tracking_number&limit=1`);
         if (!cur.length) return jRes({ error: "not found" }, 404);
         const current = cur[0];
+
+        // Reject if operator scanned the inbound tracking by mistake.
+        // This is the most common human error: the inbound (TBA...) and the
+        // outbound label are usually side-by-side on the package, and it's
+        // easy to scan the wrong one. Catching it here surfaces a clear hint
+        // instead of silently poisoning the row with the inbound as outbound.
+        if (outbound === current.tracking_number) {
+          return jRes({
+            error: "outbound_tracking cannot be the same as the inbound tracking_number",
+            hint: "looks like you scanned the inbound barcode — scan the OUTBOUND label (carrier barcode) instead"
+          }, 400);
+        }
 
         // Only allow link from received or labeled (re-link case).
         if (current.status !== "received" && current.status !== "labeled") {
