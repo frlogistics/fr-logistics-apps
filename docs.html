@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FR-Logistics Miami — Docs Library</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&family=Fraunces:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --green:       #1a7a4a;
+    --green-light: #e6f4ec;
+    --green-dark:  #0f5a35;
+    --amber:       #b07010;
+    --amber-light: #fef3dc;
+    --red:         #c0461a;
+    --blue:        #1878c8;
+    --blue-light:  #e6f0fb;
+    --purple:      #6a1ab0;
+    --purple-light:#f0e6fa;
+    --navy:        #0f1d35;
+    --paper:       #faf9f6;
+    --surface:     #ffffff;
+    --surface2:    #f3f2ee;
+    --border:      rgba(15, 29, 53, 0.12);
+    --border-strong: rgba(15, 29, 53, 0.2);
+    --text:        #1a1a18;
+    --text2:       #5a5a55;
+    --text3:       #9a9a95;
+    --radius:      10px;
+    --radius-lg:   14px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'DM Sans', -apple-system, sans-serif;
+    background: var(--paper);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.55;
+  }
+
+  /* ── Hero ─────────────────────────────────────────────────────── */
+  .hero {
+    background:
+      radial-gradient(circle at 15% 40%, rgba(26,122,74,0.08), transparent 40%),
+      radial-gradient(circle at 85% 60%, rgba(24,120,200,0.06), transparent 40%),
+      linear-gradient(180deg, var(--navy) 0%, #1a2d4a 100%);
+    color: white;
+    padding: 2.5rem 2rem 3.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      repeating-linear-gradient(45deg, transparent 0, transparent 80px, rgba(255,255,255,0.015) 80px, rgba(255,255,255,0.015) 81px);
+    pointer-events: none;
+  }
+  .hero-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    position: relative;
+  }
+  .hero-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 1.25rem;
+  }
+  .hero-logo {
+    width: 40px; height: 40px;
+    background: white;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    font-weight: 700;
+    color: var(--navy);
+    font-size: 15px;
+    letter-spacing: -0.5px;
+  }
+  .hero-title {
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: clamp(1.6rem, 3.5vw, 2.4rem);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.25rem;
+  }
+  .hero-title em {
+    font-style: italic;
+    color: #9fe1cb;
+  }
+  .hero-sub {
+    opacity: 0.75;
+    font-size: 0.95rem;
+    margin-bottom: 1.75rem;
+  }
+
+  .search-box {
+    display: flex;
+    gap: 10px;
+    max-width: 640px;
+    position: relative;
+  }
+  .search-box::before {
+    content: '🔍';
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px;
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  #searchInput {
+    flex: 1;
+    padding: 12px 14px 12px 40px;
+    border: 0;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.95);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    color: var(--text);
+    outline: none;
+    transition: all 0.15s;
+  }
+  #searchInput:focus {
+    background: white;
+    box-shadow: 0 0 0 3px rgba(159,225,203,0.35);
+  }
+  #searchInput::placeholder { color: var(--text3); }
+
+  /* ── Nav / back ──────────────────────────────────────────────── */
+  .topnav {
+    background: var(--navy);
+    padding: 0.6rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .back-btn {
+    background: rgba(255,255,255,0.08);
+    border: 0;
+    color: white;
+    padding: 6px 14px;
+    border-radius: 7px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .back-btn:hover { background: rgba(255,255,255,0.15); }
+  .topnav-title { color: rgba(255,255,255,0.7); font-size: 12px; font-family: 'DM Mono', monospace; letter-spacing: 0.04em; }
+
+  /* ── Layout ──────────────────────────────────────────────────── */
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem 2rem 4rem;
+  }
+
+  /* ── Filter chips ─────────────────────────────────────────────── */
+  .chips-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 2rem;
+    align-items: center;
+  }
+  .chip-label {
+    font-size: 0.72rem;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-right: 8px;
+  }
+  .chip {
+    padding: 7px 14px;
+    border-radius: 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: var(--text2);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .chip-count {
+    font-family: 'DM Mono', monospace;
+    font-size: 10.5px;
+    background: var(--surface2);
+    padding: 1px 6px;
+    border-radius: 10px;
+    color: var(--text3);
+  }
+  .chip:hover {
+    border-color: var(--border-strong);
+    color: var(--text);
+  }
+  .chip.active {
+    background: var(--navy);
+    border-color: var(--navy);
+    color: white;
+  }
+  .chip.active .chip-count {
+    background: rgba(255,255,255,0.15);
+    color: white;
+  }
+
+  /* ── App sections ─────────────────────────────────────────────── */
+  .app-section { margin-bottom: 2.5rem; }
+  .app-section.hidden { display: none; }
+  .app-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 1rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .app-title {
+    font-family: 'Fraunces', serif;
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: var(--navy);
+  }
+  .app-count {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--text3);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  /* ── Doc cards grid ───────────────────────────────────────────── */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 14px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.1rem 1.15rem 1rem;
+    transition: all 0.18s ease;
+    position: relative;
+    cursor: pointer;
+  }
+  .card:hover {
+    border-color: var(--border-strong);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(15,29,53,0.08);
+  }
+
+  .card-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 0.75rem;
+  }
+  .card-icon {
+    font-size: 1.6rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .card-title {
+    font-family: 'Fraunces', serif;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--navy);
+    line-height: 1.25;
+    flex: 1;
+  }
+  .card-version {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--text3);
+    background: var(--surface2);
+    padding: 2px 7px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .card-desc {
+    font-size: 0.85rem;
+    color: var(--text2);
+    line-height: 1.5;
+    margin-bottom: 0.9rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .card-meta {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    margin-bottom: 0.85rem;
+  }
+  .pill {
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 10.5px;
+    font-weight: 500;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  .pill.lang-es { background: #fef3dc; color: #7a6010; }
+  .pill.lang-en { background: #e6ecf4; color: #1a4878; }
+  .pill.lang-bilingual { background: #e6f4ec; color: #0f5a35; }
+  .pill.type-html { background: #fde4dc; color: #7a2b0f; }
+  .pill.type-pdf  { background: #f0e6fa; color: #5a1a9a; }
+  .pill.type-docx { background: #e6f0fb; color: #0f4a80; }
+  .pill.type-md   { background: var(--surface2); color: var(--text2); }
+  .pill.audience  { background: #fff; border: 1px solid var(--border); color: var(--text2); }
+
+  .card-actions {
+    display: flex;
+    gap: 8px;
+    padding-top: 0.75rem;
+    border-top: 1px dashed var(--border);
+  }
+  .btn {
+    flex: 1;
+    padding: 7px 12px;
+    border: 0;
+    border-radius: 7px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.12s;
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    gap: 5px;
+  }
+  .btn-view {
+    background: var(--green);
+    color: white;
+  }
+  .btn-view:hover { background: var(--green-dark); }
+  .btn-download {
+    background: var(--surface2);
+    color: var(--text);
+  }
+  .btn-download:hover {
+    background: var(--border);
+  }
+
+  /* ── Empty / loading states ──────────────────────────────────── */
+  .empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text3);
+    font-size: 0.9rem;
+  }
+  .empty-state .icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.75rem;
+    opacity: 0.5;
+  }
+  .loading {
+    text-align: center;
+    padding: 4rem 1rem;
+    color: var(--text3);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+  }
+  .spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-banner {
+    background: #fde4dc;
+    border: 1px solid #f5a89a;
+    color: #7a2b0f;
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    margin-bottom: 1.5rem;
+  }
+
+  /* ── Footer ──────────────────────────────────────────────────── */
+  footer {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem 2rem;
+    color: var(--text3);
+    font-size: 0.78rem;
+    text-align: center;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.04em;
+  }
+
+  @media (max-width: 600px) {
+    .hero { padding: 2rem 1.25rem 2.75rem; }
+    .container { padding: 1.5rem 1.25rem 3rem; }
+    .cards { grid-template-columns: 1fr; }
+    .chips-row { gap: 6px; }
+    .chip { font-size: 12px; padding: 5px 11px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Topnav with back button ─────────────────────────────────── -->
+<div class="topnav">
+  <button class="back-btn" onclick="history.back()">← Back</button>
+  <span class="topnav-title">Docs Library</span>
+</div>
+
+<!-- ── Hero with search ─────────────────────────────────────────── -->
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-top">
+      <div class="hero-logo">FR</div>
+    </div>
+    <h1 class="hero-title">Docs <em>Library</em></h1>
+    <p class="hero-sub">Manuales, runbooks y documentación interna · Manuals, runbooks and internal documentation</p>
+    <div class="search-box">
+      <input id="searchInput" placeholder="Buscar por título, descripción o tag… / Search by title, description or tag…" type="text"/>
+    </div>
+  </div>
+</div>
+
+<!-- ── Content ──────────────────────────────────────────────────── -->
+<div class="container">
+
+  <div class="chips-row" id="chipsRow">
+    <span class="chip-label">Filter:</span>
+    <button class="chip active" data-app="all" onclick="setFilter('all', this)">
+      All <span class="chip-count" id="count-all">0</span>
+    </button>
+    <!-- app chips injected by JS -->
+  </div>
+
+  <div id="errorBanner" class="error-banner" style="display:none;"></div>
+  <div id="loadingState" class="loading"><span class="spinner"></span>Loading library…</div>
+  <div id="appsList"></div>
+
+</div>
+
+<footer>
+  <strong>FR-Logistics Miami</strong> &middot; Docs Library v1.0 &middot; Data from Supabase
+</footer>
+
+<script>
+const DOCS_API = '/.netlify/functions/docs-list';
+const APP_ORDER = ['Dropshipments', 'Billing', 'Portal', 'Dashboard', 'Other'];
+
+let allDocs = [];
+let groupedDocs = {};
+let currentFilter = 'all';
+let searchTerm = '';
+
+async function loadDocs() {
+  try {
+    const res = await fetch(DOCS_API);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json();
+
+    allDocs = d.all || [];
+    groupedDocs = d.grouped_by_app || {};
+
+    document.getElementById('loadingState').style.display = 'none';
+    renderChips();
+    renderList();
+  } catch (err) {
+    document.getElementById('loadingState').style.display = 'none';
+    const eb = document.getElementById('errorBanner');
+    eb.textContent = '⚠ Error loading docs: ' + err.message;
+    eb.style.display = 'block';
+  }
+}
+
+function renderChips() {
+  const row = document.getElementById('chipsRow');
+  // remove any prior app chips (keep "Filter:" label and "All")
+  row.querySelectorAll('.chip[data-app]:not([data-app="all"])').forEach(c => c.remove());
+
+  document.getElementById('count-all').textContent = allDocs.length;
+
+  for (const app of APP_ORDER) {
+    const count = (groupedDocs[app] || []).length;
+    if (count === 0) continue;
+    const btn = document.createElement('button');
+    btn.className = 'chip';
+    btn.dataset.app = app;
+    btn.innerHTML = `${app} <span class="chip-count">${count}</span>`;
+    btn.onclick = () => setFilter(app, btn);
+    row.appendChild(btn);
+  }
+}
+
+function setFilter(app, el) {
+  currentFilter = app;
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderList();
+}
+
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  searchTerm = e.target.value.toLowerCase().trim();
+  renderList();
+});
+
+function matchesSearch(doc) {
+  if (!searchTerm) return true;
+  const hay = [
+    doc.title,
+    doc.description,
+    doc.related_app,
+    doc.audience,
+    (doc.tags || []).join(' ')
+  ].filter(Boolean).join(' ').toLowerCase();
+  return hay.includes(searchTerm);
+}
+
+function renderList() {
+  const target = document.getElementById('appsList');
+  target.innerHTML = '';
+
+  const appsToShow = currentFilter === 'all' ? APP_ORDER : [currentFilter];
+  let totalShown = 0;
+
+  for (const app of appsToShow) {
+    const docs = (groupedDocs[app] || []).filter(matchesSearch);
+    if (!docs.length) continue;
+    totalShown += docs.length;
+
+    const section = document.createElement('div');
+    section.className = 'app-section';
+    section.innerHTML = `
+      <div class="app-header">
+        <h2 class="app-title">${app}</h2>
+        <span class="app-count">${docs.length} doc${docs.length === 1 ? '' : 's'}</span>
+      </div>
+      <div class="cards">${docs.map(renderCard).join('')}</div>
+    `;
+    target.appendChild(section);
+  }
+
+  if (totalShown === 0) {
+    target.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">📭</div>
+        <div>${searchTerm
+          ? `No docs match "${searchTerm}"`
+          : currentFilter === 'all'
+            ? 'No docs in the library yet'
+            : `No docs for ${currentFilter} yet`}</div>
+      </div>`;
+  }
+}
+
+function renderCard(doc) {
+  const url = doc.url;
+  const isExternal = /^https?:\/\//.test(url);
+  const langPillClass = 'lang-' + (doc.language || 'bilingual');
+  const typePillClass = 'type-' + (doc.file_type || 'html');
+  const langLabel = { es: 'ES', en: 'EN', bilingual: 'ES/EN' }[doc.language] || 'ES/EN';
+  const audiencePill = doc.audience
+    ? `<span class="pill audience">${doc.audience}</span>`
+    : '';
+
+  return `
+    <div class="card" onclick="viewDoc('${escapeAttr(url)}', event)">
+      <div class="card-head">
+        <div class="card-icon">${doc.icon || '📄'}</div>
+        <div class="card-title">${esc(doc.title)}</div>
+        ${doc.version ? `<div class="card-version">${esc(doc.version)}</div>` : ''}
+      </div>
+      ${doc.description ? `<p class="card-desc">${esc(doc.description)}</p>` : ''}
+      <div class="card-meta">
+        <span class="pill ${langPillClass}">${langLabel}</span>
+        <span class="pill ${typePillClass}">${(doc.file_type || 'html').toUpperCase()}</span>
+        ${audiencePill}
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-view" onclick="viewDoc('${escapeAttr(url)}', event)">👁 View</button>
+        <button class="btn btn-download" onclick="downloadDoc('${escapeAttr(url)}', '${escapeAttr(doc.title)}', event)">⬇ Download</button>
+      </div>
+    </div>`;
+}
+
+function viewDoc(url, ev) {
+  if (ev) ev.stopPropagation();
+  // Open in new tab within the same window
+  window.open(url, '_blank', 'noopener');
+}
+
+async function downloadDoc(url, title, ev) {
+  if (ev) ev.stopPropagation();
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Download failed');
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    const ext = url.split('.').pop() || 'html';
+    a.href = URL.createObjectURL(blob);
+    a.download = (title || 'document').replace(/[^a-z0-9]+/gi, '_') + '.' + ext;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  } catch (err) {
+    alert('Could not download: ' + err.message);
+  }
+}
+
+function esc(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function escapeAttr(s) {
+  return String(s || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+// Boot
+loadDocs();
+</script>
+
+</body>
+</html>
