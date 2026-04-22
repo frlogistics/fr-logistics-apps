@@ -1,6 +1,12 @@
 // netlify/functions/dropshipments.js
 // Dropshipments · read/list + state machine transitions + orphan registration.
 //
+// Day 4: when a package transitions to `received` or `shipped`, we also insert
+// a row into shipments_general (Inbound/Outbound Drop-Shipment) so the
+// Billing Generator (billing.html → billing-inbound.js) can count it.
+// Sync is forward-only (revert does not delete) and idempotent (duplicate
+// trackings are swallowed silently).
+//
 // GET endpoints:
 //   ?action=list                         → list (with fr_clients join + config merge)
 //   ?action=list&status=pending          → filter by status
@@ -397,7 +403,10 @@ export default async function handler(req) {
       if (!id) return jRes({ error: "id required" }, 400);
 
       // Load the current row to validate the transition.
-      const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,label_url,tracking_number&limit=1`);
+      // Extra fields (client_id, outbound_tracking, carrier, order_id, content)
+      // are needed for the shipments_general sync that happens after receive/ship
+      // (Day 4 — Billing Generator compatibility).
+      const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,label_url,tracking_number,outbound_tracking,client_id,carrier,order_id,content,outbound_carrier&limit=1`);
       if (!cur.length) return jRes({ error: "not found" }, 404);
       const current = cur[0];
 
@@ -447,6 +456,66 @@ export default async function handler(req) {
       }
 
       const updated = await sbPatch("dropshipments", `id=eq.${id}`, patch);
+
+      // ── Sync to shipments_general (Day 4: Billing Generator compatibility) ──
+      // Forward transitions only: receive creates the Inbound row,
+      // ship creates the Outbound row. Revert does NOT delete — if a package
+      // was wrongly shipped, fix it manually in shipments_general afterwards.
+      //
+      // Non-fatal: failures here are logged but don't bubble up. The primary
+      // dropshipments update succeeded, and the billing sync can be reconciled
+      // later if needed (idempotent — re-running the action is safe).
+      if (act === "receive" || act === "ship") {
+        try {
+          const cfgRows = await sbSelect("dropship_client_configs",
+            `?client_id=eq.${current.client_id}&select=client_name_billing,outbound_carrier&limit=1`
+          );
+          const cfg = cfgRows[0];
+
+          if (!cfg?.client_name_billing) {
+            console.warn(`[dropshipments.${act}] no client_name_billing configured for client_id=${current.client_id} — skipping shipments_general sync`);
+          } else {
+            const sgRow = act === "receive"
+              ? {
+                  tracking:  current.tracking_number,
+                  direction: "Inbound",
+                  type:      "Inbound (Drop-Shipment)",
+                  carrier:   current.carrier || "Other",
+                  client:    cfg.client_name_billing,
+                  notes:     `Order: ${current.order_id || "—"}${current.content ? ` · ${current.content}` : ""}`
+                }
+              : {
+                  tracking:  current.outbound_tracking,
+                  direction: "Outbound",
+                  type:      "Outbound (Drop-Shipment)",
+                  carrier:   current.outbound_carrier || cfg.outbound_carrier || "MailAmericas",
+                  client:    cfg.client_name_billing,
+                  notes:     `Order: ${current.order_id || "—"}`
+                };
+
+            if (!sgRow.tracking) {
+              console.warn(`[dropshipments.${act}] no tracking to sync (id=${id}) — skipping shipments_general sync`);
+            } else {
+              try {
+                await sbInsert("shipments_general", sgRow);
+                console.log(`[dropshipments.${act}] synced to shipments_general: ${sgRow.direction} ${sgRow.tracking}`);
+              } catch (e) {
+                // Unique constraint on tracking means this row was already synced.
+                // Treat as success (idempotent behavior — same as the backfill SQL).
+                if (String(e.message).includes("23505") || String(e.message).toLowerCase().includes("duplicate")) {
+                  console.log(`[dropshipments.${act}] already in shipments_general: ${sgRow.tracking}`);
+                } else {
+                  throw e;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // Non-fatal: dropshipments update already succeeded. Log and move on.
+          console.error(`[dropshipments.${act}] shipments_general sync failed (non-fatal):`, e.message);
+        }
+      }
+
       return jRes({ ok: true, action: act, row: updated[0] });
     }
 
