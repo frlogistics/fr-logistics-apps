@@ -261,7 +261,43 @@ button:active{transform:scale(.97)}
         <span id="draftSpinWrap"></span>
         &#9993;&#65039; Create Gmail Draft
       </button>
+      <button class="bb" id="markInvoicedBtn" onclick="markAsInvoiced()" disabled
+              title="Generate a PDF or CSV first — this marks the packages as invoiced in the database so they won't be re-billed next month"
+              style="background:#10b981;border-color:#10b981;color:#fff;opacity:0.5;">
+        <span id="markInvoicedSpin"></span>
+        &#9989; Mark as Invoiced
+      </button>
+      <button class="bb" onclick="showPastInvoices()" style="background:#6366f1;border-color:#6366f1;color:#fff;">
+        &#128196; Past Invoices
+      </button>
       <span style="margin-left:auto;font-size:11px;color:var(--muted)" id="draftStatus"></span>
+    </div>
+  </div>
+
+  <!-- ── Banner: already-billed warning ────────────────────────────────── -->
+  <div id="billedBanner" style="display:none;margin-top:12px;padding:12px 16px;
+       background:#fef3c7;border:1px solid #fde68a;border-radius:10px;
+       font-size:13px;color:#92400e;">
+    <strong>⚠️ Already invoiced in this period:</strong>
+    <span id="billedBannerText"></span>
+    <span style="color:#78716c;font-size:12px;margin-left:8px;">
+      (Totals below reflect only <strong>unbilled</strong> packages. Invoiced ones won't be charged again.)
+    </span>
+  </div>
+
+  <!-- ── Modal: past invoices ──────────────────────────────────────────── -->
+  <div id="pastInvoicesModal" style="display:none;position:fixed;inset:0;
+       background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:12px;padding:24px;max-width:720px;width:90%;
+         max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h3 style="margin:0;font-size:18px;">📄 Past Invoices</h3>
+        <button onclick="closePastInvoices()" style="background:none;border:0;font-size:22px;
+                cursor:pointer;color:#64748b;padding:0 8px;">×</button>
+      </div>
+      <div id="pastInvoicesContent" style="font-size:13px;">
+        <div style="text-align:center;color:#64748b;padding:20px;">Loading…</div>
+      </div>
     </div>
   </div>
 
@@ -279,6 +315,8 @@ const CLIENTS_API  = '/.netlify/functions/clients-list';
 const RATES_API    = '/.netlify/functions/billing-rates';
 const SS_API       = '/.netlify/functions/billing-shipstation';
 const INBOUND_API  = '/.netlify/functions/billing-inbound';
+const MARK_API     = '/.netlify/functions/billing-mark-invoiced';
+const HISTORY_API  = '/.netlify/functions/billing-history';
 const NETLIFY_EMAIL = 'https://apps.fr-logistics.net/.netlify/functions/send-onboard-email';
 
 // ─── RATES ────────────────────────────────────────────────────────────────────
@@ -339,6 +377,7 @@ let _rates   = {};   // rate card from Supabase for current client
 let _client  = null; // current client object
 let _lines   = [];   // billing line items
 let _ssCarrierCost = 0;
+let _invoicedMarkable = false; // Day 4: true after PDF/CSV is generated, enables Mark-as-Invoiced button
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const g   = id => document.getElementById(id);
@@ -629,14 +668,20 @@ async function loadBilling() {
 
   // ── Step 2: Portal data (Inbound/Outbound app) ────────────────────────────
   const searchTerm = _client.ssStore || _client.ssCustomField1 || _client.name;
+  let billedInfo = null;  // Day 4: info about already-invoiced packages in this period
   try {
     const url = `${INBOUND_API}?client=${encodeURIComponent(searchTerm)}&start=${start}&end=${end}`;
     const res = await fetch(url);
     if (res.ok) {
       const d     = await res.json();
+      // These fields are now UNBILLED-only (backwards compatible field names)
       inboundCount = d.count         || 0;
       rmaCount     = d.rmaCount      || 0;
       dropCount    = d.dropShipCount || 0;
+      // New: already-invoiced breakdown
+      if (d.billed && (d.billed.count || d.billed.rmaCount || d.billed.dropShipCount)) {
+        billedInfo = d.billed;
+      }
     }
   } catch (_) { /* non-critical — manual entry fallback */ }
 
@@ -682,6 +727,26 @@ async function loadBilling() {
   g('kpiCartons').textContent         = inboundCount || '—';
   g('billingPeriodLabel').textContent = `${_client.name} · ${fD(start)} – ${fD(end)}`;
   recalc();
+
+  // ── Day 4: Already-invoiced banner ──────────────────────────────────────
+  const banner = g('billedBanner');
+  if (billedInfo) {
+    const parts = [];
+    if (billedInfo.count)         parts.push(`${billedInfo.count} inbound`);
+    if (billedInfo.rmaCount)      parts.push(`${billedInfo.rmaCount} RMA`);
+    if (billedInfo.dropShipCount) parts.push(`${billedInfo.dropShipCount} drop-shipments`);
+    const invList = (billedInfo.invoices || [])
+      .map(i => `<strong>${i.invoice_number}</strong> (${fc(i.total_usd)})`)
+      .join(' · ');
+    g('billedBannerText').innerHTML = `${parts.join(' · ')} already billed in ${invList || 'prior invoice(s)'}.`;
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
+
+  // Reset Mark-as-Invoiced button: disabled until user generates PDF or CSV
+  _invoicedMarkable = false;
+  updateMarkInvoicedBtn();
 
   g('loadSpinWrap').innerHTML = '';
 }
@@ -904,6 +969,9 @@ function genPDF() {
   if (!doc) return;
   const fname = `FR_Billing_${(_client.name||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.pdf`;
   doc.save(fname);
+  // Day 4: enable "Mark as Invoiced" — user has now produced a deliverable
+  _invoicedMarkable = true;
+  updateMarkInvoicedBtn();
 }
 
 function genCSV() {
@@ -991,7 +1059,191 @@ function genCSV() {
   a.href     = URL.createObjectURL(blob);
   a.download = `QBO_Import_${(customer || 'Client').replace(/[^a-z0-9]+/gi, '_')}_${g('dateStart').value}.csv`;
   a.click();
+  // Day 4: enable "Mark as Invoiced" — user has now produced a deliverable
+  _invoicedMarkable = true;
+  updateMarkInvoicedBtn();
 }
+
+// ─── BILLING ROLLUP · Mark as Invoiced + Past Invoices (Day 4) ────────────────
+
+// Toggle the "Mark as Invoiced" button between enabled / disabled look.
+// Enabled only when: client+lines loaded AND user has generated a PDF or CSV.
+function updateMarkInvoicedBtn() {
+  const btn   = g('markInvoicedBtn');
+  if (!btn) return;
+  const ready = _invoicedMarkable && _client && _lines.length > 0;
+  btn.disabled        = !ready;
+  btn.style.opacity   = ready ? '1' : '0.5';
+  btn.style.cursor    = ready ? 'pointer' : 'not-allowed';
+}
+
+// Create a billing_runs entry in Supabase and mark all unbilled
+// shipments_general rows of this client+period as invoiced.
+async function markAsInvoiced() {
+  if (!_client || !_lines.length) { alert('Load billing data first.'); return; }
+  if (!_invoicedMarkable)         { alert('Generate a PDF or CSV first.'); return; }
+
+  const start  = g('dateStart').value;
+  const end    = g('dateEnd').value;
+  const invNum = (g('invNum').value || '').trim();
+  const total  = +g('totInvoice').textContent.replace(/[^0-9.]/g, '') || 0;
+
+  if (!start || !end) { alert('Set billing period dates.'); return; }
+  if (!total)         { alert('Invoice total is zero — nothing to mark.'); return; }
+
+  // Derive a short client_code for the auto-generated invoice number.
+  // Use the first 2-3 letters of the company name, or the qboName if set.
+  const clientCode =
+    (_client.clientCode || _client.client_code ||
+     (_client.name || '').split(/\s+/)[0].slice(0, 3).toUpperCase() || 'UNK');
+
+  const packageCount = _lines.reduce((s, l) => s + (+l.qty || 0), 0);
+  const lineItems    = _lines
+    .filter(l => +l.qty > 0)
+    .map(l => ({ id: l.id, name: l.name, qty: l.qty, rate: l.rate, total: l.qty * l.rate }));
+
+  const confirmMsg = [
+    `Mark as invoiced?`,
+    ``,
+    `Client: ${_client.name}`,
+    `Period: ${fD(start)} – ${fD(end)}`,
+    `Invoice: ${invNum}`,
+    `Total: ${fc(total)}`,
+    ``,
+    `This will create invoice ${invNum} and mark all unbilled packages`,
+    `in this period as invoiced. This action is NOT reversible from the UI.`
+  ].join('\n');
+
+  if (!confirm(confirmMsg)) return;
+
+  g('markInvoicedSpin').innerHTML = '<span class="spin"></span>';
+
+  try {
+    const res = await fetch(MARK_API, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client:         _client.ssStore || _client.ssCustomField1 || _client.name,
+        client_code:    clientCode,
+        period_start:   start,
+        period_end:     end,
+        total_usd:      total,
+        package_count:  packageCount,
+        line_items:     lineItems,
+        operator:       (window._operator || ''),
+        invoice_number: invNum   // backend auto-generates if empty
+      })
+    });
+
+    const data = await res.json();
+
+    if (res.status === 409) {
+      alert(
+        `Invoice number already exists.\n\n` +
+        `${data.existing?.invoice_number} was generated on ` +
+        `${new Date(data.existing?.generated_at).toLocaleDateString()}.\n\n` +
+        `Choose a different invoice number and try again.`
+      );
+      return;
+    }
+    if (!res.ok) {
+      alert(`Error marking as invoiced:\n\n${data.error || 'Unknown error'}`);
+      return;
+    }
+
+    alert(
+      `✅ Invoiced successfully\n\n` +
+      `Invoice: ${data.invoice_number}\n` +
+      `Packages marked: ${data.marked_count}\n` +
+      `Total: ${fc(data.total_usd)}`
+    );
+
+    // Refresh to show the just-invoiced packages in the "billed" banner
+    await loadBilling();
+  } catch (err) {
+    alert(`Network error: ${err.message}`);
+  } finally {
+    g('markInvoicedSpin').innerHTML = '';
+  }
+}
+
+// Open the Past Invoices modal and fetch recent billing_runs for this client.
+async function showPastInvoices() {
+  if (!_client) { alert('Select a client first.'); return; }
+
+  const modal   = g('pastInvoicesModal');
+  const content = g('pastInvoicesContent');
+  content.innerHTML = '<div style="text-align:center;color:#64748b;padding:20px;">Loading…</div>';
+  modal.style.display = 'flex';
+
+  try {
+    const searchTerm = _client.ssStore || _client.ssCustomField1 || _client.name;
+    const res = await fetch(`${HISTORY_API}?client=${encodeURIComponent(searchTerm)}&limit=12`);
+    const d   = await res.json();
+
+    if (!res.ok) {
+      content.innerHTML = `<div style="color:#dc2626;padding:16px;">Error: ${d.error || 'Unknown'}</div>`;
+      return;
+    }
+
+    if (!d.invoices || d.invoices.length === 0) {
+      content.innerHTML = `
+        <div style="text-align:center;color:#64748b;padding:30px;">
+          <div style="font-size:32px;margin-bottom:8px;">📭</div>
+          <div>No past invoices for <strong>${_client.name}</strong></div>
+          <div style="font-size:11px;margin-top:8px;">They will appear here after you click "Mark as Invoiced".</div>
+        </div>`;
+      return;
+    }
+
+    const rows = d.invoices.map(inv => {
+      const gen   = new Date(inv.generated_at).toLocaleDateString();
+      const start = inv.period_start;
+      const end   = inv.period_end;
+      const by    = inv.generated_by ? ` · by ${inv.generated_by}` : '';
+      return `
+        <tr>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-family:monospace;">${inv.invoice_number}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#64748b;">${start} – ${end}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;"><strong>${fc(inv.total_usd)}</strong></td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;">${inv.package_count}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#94a3b8;font-size:11px;">${gen}${by}</td>
+        </tr>`;
+    }).join('');
+
+    content.innerHTML = `
+      <div style="margin-bottom:12px;color:#64748b;font-size:12px;">
+        Showing last ${d.invoices.length} invoice(s) for <strong>${_client.name}</strong>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="background:#f9fafb;">
+            <th style="padding:8px 12px;text-align:left;font-weight:600;border-bottom:2px solid #e5e7eb;">Invoice #</th>
+            <th style="padding:8px 12px;text-align:left;font-weight:600;border-bottom:2px solid #e5e7eb;">Period</th>
+            <th style="padding:8px 12px;text-align:right;font-weight:600;border-bottom:2px solid #e5e7eb;">Total</th>
+            <th style="padding:8px 12px;text-align:right;font-weight:600;border-bottom:2px solid #e5e7eb;">Pkgs</th>
+            <th style="padding:8px 12px;text-align:right;font-weight:600;border-bottom:2px solid #e5e7eb;">Generated</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch (err) {
+    content.innerHTML = `<div style="color:#dc2626;padding:16px;">Network error: ${err.message}</div>`;
+  }
+}
+
+function closePastInvoices() {
+  g('pastInvoicesModal').style.display = 'none';
+}
+
+// Close modal on click-outside or Escape
+document.addEventListener('click', (e) => {
+  const m = g('pastInvoicesModal');
+  if (m && e.target === m) closePastInvoices();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closePastInvoices();
+});
 
 async function sendDraft() {
   if (!_client || !_lines.length) { alert('Load billing data first.'); return; }
