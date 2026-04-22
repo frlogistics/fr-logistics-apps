@@ -7,6 +7,10 @@
 //
 // Day 1: manual invocation only (HTTP POST to /.netlify/functions/dropship-gmail-sync).
 // Day 2: migrate to Netlify Scheduled Function (hourly cron).
+// Day 4: auto-extract outbound_tracking from label filename when possible,
+//        eliminating the need for the Link Outbound modal in the 95%+ case
+//        where the carrier embeds the outbound number in the PDF filename
+//        (e.g. "shipping_label_46886078645.pdf").
 //
 // Model: 1 Gmail message = 1 package = 1 DB row.
 // Idempotent: uses (client_id, tracking_number) unique index to prevent duplicates.
@@ -122,6 +126,25 @@ function findPdfAttachment(payload, pattern) {
   return null;
 }
 
+// ─── Extract outbound tracking from label filename ───────────────────────────
+// Many carriers embed the outbound tracking number in the PDF filename itself,
+// e.g. "shipping_label_46886078645.pdf" → outbound = 46886078645.
+//
+// When this matches, the row is inserted with outbound_tracking already set,
+// eliminating the need for the operator to scan the outbound barcode via the
+// Link Outbound modal. If the pattern doesn't match (e.g. future clients with
+// a different filename convention), the field stays NULL and the modal serves
+// as the fallback path.
+//
+// FUTURE: if additional clients onboard with different filename formats,
+// move this regex into dropship_client_configs.outbound_filename_pattern
+// (per-client, like parsing_rules and attachment_pattern).
+function extractOutboundFromFilename(filename) {
+  if (!filename) return null;
+  const m = filename.match(/shipping_label_(\d+)\.pdf/i);
+  return m ? m[1] : null;
+}
+
 // ─── Parser: apply per-client regex rules to email body ──────────────────────
 function applyParsingRules(body, rules) {
   const out = {};
@@ -178,12 +201,14 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
   // Upload PDF attachment (if present).
   let labelPath = null;
   let labelFilename = null;
+  let outboundTracking = null;
   const att = findPdfAttachment(msg.payload, cfg.attachment_pattern || ".*\\.pdf$");
   if (att) {
     const bytes = await gmailGetAttachment(msg.id, att.attachmentId);
     const safeTracking = parsed.tracking_number.replace(/[^A-Za-z0-9._-]/g, "_");
     labelPath = `${cfg.client_code}/${safeTracking}.pdf`;
     labelFilename = att.filename;
+    outboundTracking = extractOutboundFromFilename(labelFilename);
     await sbStorageUpload(labelPath, bytes, att.mimeType || "application/pdf");
   }
 
@@ -202,6 +227,7 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
       label_filename:    labelFilename,
       outbound_carrier:  cfg.outbound_carrier,
       outbound_platform: cfg.outbound_platform,
+      outbound_tracking: outboundTracking,
       email_message_id:  msg.id,
       email_received_at: emailReceivedAt,
       orphan_alerted_at: null,
@@ -230,6 +256,7 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
     label_filename:    labelFilename,
     outbound_carrier:  cfg.outbound_carrier,
     outbound_platform: cfg.outbound_platform,
+    outbound_tracking: outboundTracking,
     email_message_id:  msg.id,
     email_received_at: emailReceivedAt,
     status:            "pending"
