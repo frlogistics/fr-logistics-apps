@@ -139,7 +139,7 @@
   <span class="nav-badge">Live</span>
   <div class="nav-right">
     <span class="nav-sync" id="syncTime">Loading...</span>
-    <button class="nav-refresh" id="refreshBtn" onclick="loadData()">↻ Refresh</button>
+    <button class="nav-refresh" id="refreshBtn" onclick="loadAll()">↻ Refresh</button>
   </div>
 </nav>
 
@@ -149,6 +149,9 @@
   <div class="tabs">
     <button class="tab active" onclick="showTab('kpis',this)">KPIs</button>
     <button class="tab" onclick="showTab('stores',this)">Por Store</button>
+    <button class="tab" onclick="showTab('dropship',this)">Dropshipments</button>
+    <button class="tab" onclick="showTab('warehouse',this)">Warehouse</button>
+    <button class="tab" onclick="showTab('billing',this)">Billing</button>
   </div>
 
   <!-- ── KPIs Panel ── -->
@@ -225,6 +228,152 @@
     </div>
   </div>
 
+  <!-- ── Dropshipments Panel ── -->
+  <div id="panel-dropship" class="panel">
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Pending</div><div class="kpi-value val-amber" id="ds-pending">—</div><div class="kpi-sub">Awaiting arrival</div></div>
+      <div class="kpi-card"><div class="kpi-label">Received</div><div class="kpi-value" id="ds-received">—</div><div class="kpi-sub">Physical at warehouse</div></div>
+      <div class="kpi-card"><div class="kpi-label">Labeled</div><div class="kpi-value" id="ds-labeled">—</div><div class="kpi-sub">Ready to ship</div></div>
+      <div class="kpi-card"><div class="kpi-label">Shipped</div><div class="kpi-value val-green" id="ds-shipped">—</div><div class="kpi-sub">Out the door</div></div>
+      <div class="kpi-card"><div class="kpi-label">Stuck</div><div class="kpi-value val-amber" id="ds-stuck">—</div><div class="kpi-sub">Need attention</div></div>
+      <div class="kpi-card"><div class="kpi-label">Orphans</div><div class="kpi-value" id="ds-orphans">—</div><div class="kpi-sub">No matching email</div></div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">Volume 14d · Received vs Shipped</div>
+        <div class="legend">
+          <span><span class="ldot" style="background:#1a7a4a;"></span>Received</span>
+          <span><span class="ldot" style="background:#1878c8;"></span>Shipped</span>
+        </div>
+        <div style="position:relative;width:100%;height:200px;"><canvas id="dsVolumeChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Pipeline</div>
+        <div class="doughnut-wrap">
+          <canvas id="dsPipelineChart"></canvas>
+          <div class="doughnut-label"><div class="big" id="ds-pipeline-total">—</div><div class="sm">Total</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stuck packages detail -->
+    <div class="pending-card" id="stuckSection">
+      <div class="info-title">⚠ Stuck packages</div>
+      <table class="pending-table">
+        <thead><tr>
+          <th>Tracking</th><th>Client</th><th>Status</th><th>Stuck for</th>
+        </tr></thead>
+        <tbody id="stuckTableBody"></tbody>
+      </table>
+    </div>
+
+    <!-- By client -->
+    <div class="pending-card" style="margin-top:16px;">
+      <div class="info-title">By client · Active pipeline</div>
+      <table class="pending-table">
+        <thead><tr>
+          <th>Client</th>
+          <th style="text-align:right;">Pending</th>
+          <th style="text-align:right;">Received</th>
+          <th style="text-align:right;">Labeled</th>
+          <th style="text-align:right;">Shipped</th>
+          <th style="text-align:right;">Stuck</th>
+        </tr></thead>
+        <tbody id="dsByClientBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Warehouse Panel ── -->
+  <div id="panel-warehouse" class="panel">
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Inbound MTD</div><div class="kpi-value val-green" id="wh-inb-mtd">—</div><div class="kpi-sub" id="wh-period">—</div></div>
+      <div class="kpi-card"><div class="kpi-label">Outbound MTD</div><div class="kpi-value" id="wh-out-mtd">—</div><div class="kpi-sub">Packages shipped</div></div>
+      <div class="kpi-card"><div class="kpi-label">Today</div><div class="kpi-value" id="wh-today">—</div><div class="kpi-sub" id="wh-today-sub">In + Out</div></div>
+      <div class="kpi-card"><div class="kpi-label">This Week</div><div class="kpi-value" id="wh-week">—</div><div class="kpi-sub" id="wh-week-sub">Last 7 days</div></div>
+      <div class="kpi-card"><div class="kpi-label">Drop-ships</div><div class="kpi-value val-amber" id="wh-drop">—</div><div class="kpi-sub">MTD outbound</div></div>
+      <div class="kpi-card"><div class="kpi-label">RMA</div><div class="kpi-value" id="wh-rma">—</div><div class="kpi-sub">MTD returns</div></div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">Volume 30d · Inbound vs Outbound</div>
+        <div class="legend">
+          <span><span class="ldot" style="background:#1a7a4a;"></span>Inbound</span>
+          <span><span class="ldot" style="background:#1878c8;"></span>Outbound</span>
+        </div>
+        <div style="position:relative;width:100%;height:200px;"><canvas id="whVolumeChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">MTD Breakdown</div>
+        <div class="info-row" style="padding:4px 0;"><span class="info-key">Inbound cartons</span><span class="info-val" id="wh-inb-carton">—</span></div>
+        <div class="info-row" style="padding:4px 0;"><span class="info-key">Inbound drop-ship</span><span class="info-val" id="wh-inb-drop">—</span></div>
+        <div class="info-row" style="padding:4px 0;"><span class="info-key">Inbound RMA</span><span class="info-val" id="wh-inb-rma">—</span></div>
+        <div class="info-row" style="padding:4px 0;"><span class="info-key">Outbound package</span><span class="info-val" id="wh-out-pkg">—</span></div>
+        <div class="info-row" style="padding:4px 0;"><span class="info-key">Outbound drop-ship</span><span class="info-val" id="wh-out-drop">—</span></div>
+      </div>
+    </div>
+
+    <div class="pending-card">
+      <div class="info-title">By client · Month-to-date</div>
+      <table class="pending-table">
+        <thead><tr>
+          <th>Client</th>
+          <th style="text-align:right;">Inbound</th>
+          <th style="text-align:right;">Outbound</th>
+          <th style="text-align:right;">Drop-ships</th>
+        </tr></thead>
+        <tbody id="whByClientBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Billing Panel ── -->
+  <div id="panel-billing" class="panel">
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Invoiced MTD</div><div class="kpi-value val-green" id="bi-invoiced">—</div><div class="kpi-sub" id="bi-period">—</div></div>
+      <div class="kpi-card"><div class="kpi-label">Invoices</div><div class="kpi-value" id="bi-count">—</div><div class="kpi-sub">This month</div></div>
+      <div class="kpi-card"><div class="kpi-label">Pending to Bill</div><div class="kpi-value val-amber" id="bi-unbilled">—</div><div class="kpi-sub" id="bi-unbilled-sub">—</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total MTD</div><div class="kpi-value" id="bi-total">—</div><div class="kpi-sub">Invoiced + pending</div></div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card" style="grid-column: span 2;">
+        <div class="chart-title">Revenue · Last 6 months</div>
+        <div style="position:relative;width:100%;height:200px;"><canvas id="biRevenueChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="pending-card">
+      <div class="info-title">Pending to bill · By client</div>
+      <table class="pending-table">
+        <thead><tr>
+          <th>Client</th>
+          <th style="text-align:right;">Packages</th>
+          <th style="text-align:right;">Est. USD</th>
+          <th>Oldest unbilled</th>
+        </tr></thead>
+        <tbody id="biPendingBody"></tbody>
+      </table>
+    </div>
+
+    <div class="pending-card" style="margin-top:16px;">
+      <div class="info-title">Recent invoices</div>
+      <table class="pending-table">
+        <thead><tr>
+          <th>Invoice #</th>
+          <th>Client</th>
+          <th>Period</th>
+          <th style="text-align:right;">Total</th>
+          <th style="text-align:right;">Pkgs</th>
+          <th>Generated</th>
+        </tr></thead>
+        <tbody id="biInvoicesBody"></tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="dash-footer">
     <div class="footer-left"><strong>FR-Logistics Miami, Inc.</strong> · Doral, Miami FL · Data en tiempo real via ShipStation API</div>
   </div>
@@ -234,6 +383,9 @@
   // ── Config ───────────────────────────────────────────────────────────────
   // La función vive en el mismo dominio (Netlify), no se necesita URL absoluta
   const API_URL = '/.netlify/functions/shipstation';
+  const DROPSHIP_API  = '/.netlify/functions/dashboard-dropship-stats';
+  const WAREHOUSE_API = '/.netlify/functions/dashboard-warehouse-stats';
+  const BILLING_API   = '/.netlify/functions/dashboard-billing-stats';
 
   const MP_CLASS = {
     'walmart':    'mp-wal',
@@ -428,8 +580,304 @@
     });
   }
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // DROPSHIPMENTS TAB (Day 4 — unified dashboard)
+  // ═════════════════════════════════════════════════════════════════════════
+  let dsVolumeInst = null, dsPipelineInst = null;
+
+  async function loadDropshipStats() {
+    try {
+      const r = await fetch(DROPSHIP_API);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+
+      // KPI cards
+      document.getElementById('ds-pending').textContent  = d.pipeline.pending;
+      document.getElementById('ds-received').textContent = d.pipeline.received;
+      document.getElementById('ds-labeled').textContent  = d.pipeline.labeled;
+      document.getElementById('ds-shipped').textContent  = d.pipeline.shipped;
+      document.getElementById('ds-orphans').textContent  = d.pipeline.orphan;
+
+      const stuckTotal = d.stuck.pending_over_48h.length + d.stuck.received_over_24h.length
+                       + d.stuck.labeled_over_6h.length + d.stuck.orphans.length;
+      document.getElementById('ds-stuck').textContent = stuckTotal;
+
+      // Pipeline doughnut
+      renderDsPipeline(d.pipeline);
+
+      // Volume chart
+      renderDsVolume(d.volume_14d);
+
+      // Stuck table
+      renderStuckTable(d.stuck);
+
+      // By client table
+      renderDsByClient(d.by_client);
+
+    } catch (err) {
+      console.error('[dropship-stats]', err);
+    }
+  }
+
+  function renderDsPipeline(p) {
+    if (dsPipelineInst) dsPipelineInst.destroy();
+    const total = p.pending + p.received + p.labeled + p.shipped + p.orphan + p.exception;
+    document.getElementById('ds-pipeline-total').textContent = total;
+    dsPipelineInst = new Chart(document.getElementById('dsPipelineChart'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Pending', 'Received', 'Labeled', 'Shipped', 'Orphan', 'Exception'],
+        datasets: [{
+          data: [p.pending, p.received, p.labeled, p.shipped, p.orphan, p.exception],
+          backgroundColor: ['#e2a030', '#1878c8', '#6a1ab0', '#1a7a4a', '#c0461a', '#6b6b68'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        cutout: '70%',
+        plugins: { legend: { display: false } }
+      }
+    });
+  }
+
+  function renderDsVolume(vol14d) {
+    if (dsVolumeInst) dsVolumeInst.destroy();
+    const labels = vol14d.map(v => v.date.slice(5)); // MM-DD
+    const received = vol14d.map(v => v.received);
+    const shipped  = vol14d.map(v => v.shipped);
+    dsVolumeInst = new Chart(document.getElementById('dsVolumeChart'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Received', data: received, backgroundColor: '#1a7a4a', borderRadius: 3 },
+          { label: 'Shipped',  data: shipped,  backgroundColor: '#1878c8', borderRadius: 3 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks:{font:{size:10}}, grid:{display:false}, border:{display:false} },
+          y: { ticks:{font:{size:10},stepSize:1}, grid:{color:'rgba(0,0,0,0.05)'}, border:{display:false} }
+        }
+      }
+    });
+  }
+
+  function renderStuckTable(stuck) {
+    const body = document.getElementById('stuckTableBody');
+    const flat = [
+      ...stuck.pending_over_48h.map(s  => ({ ...s, kind: 'Pending >48h' })),
+      ...stuck.received_over_24h.map(s => ({ ...s, kind: 'Received >24h' })),
+      ...stuck.labeled_over_6h.map(s   => ({ ...s, kind: 'Labeled >6h' })),
+      ...stuck.orphans.map(s           => ({ ...s, kind: 'Orphan' }))
+    ].sort((a, b) => (b.hours_stuck || 0) - (a.hours_stuck || 0));
+
+    if (!flat.length) {
+      body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:16px;">✓ No stuck packages</td></tr>';
+      return;
+    }
+    body.innerHTML = flat.map(s => `
+      <tr>
+        <td>${s.tracking}</td>
+        <td>${s.client}</td>
+        <td><span class="pill pill-amber">${s.kind}</span></td>
+        <td>${s.hours_stuck != null ? s.hours_stuck + 'h' : '—'}</td>
+      </tr>`).join('');
+  }
+
+  function renderDsByClient(list) {
+    const body = document.getElementById('dsByClientBody');
+    if (!list.length) {
+      body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:16px;">No clients</td></tr>';
+      return;
+    }
+    body.innerHTML = list.map(c => `
+      <tr>
+        <td>${c.client_name}</td>
+        <td style="text-align:right;">${c.pending}</td>
+        <td style="text-align:right;">${c.received}</td>
+        <td style="text-align:right;">${c.labeled}</td>
+        <td style="text-align:right;">${c.shipped}</td>
+        <td style="text-align:right;">${c.stuck > 0 ? `<span class="pill pill-amber">${c.stuck}</span>` : '0'}</td>
+      </tr>`).join('');
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // WAREHOUSE TAB
+  // ═════════════════════════════════════════════════════════════════════════
+  let whVolumeInst = null;
+
+  async function loadWarehouseStats() {
+    try {
+      const r = await fetch(WAREHOUSE_API);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+
+      document.getElementById('wh-inb-mtd').textContent = d.mtd.inbound.total;
+      document.getElementById('wh-out-mtd').textContent = d.mtd.outbound.total;
+      document.getElementById('wh-today').textContent   = (d.today.inbound + d.today.outbound);
+      document.getElementById('wh-today-sub').textContent = `${d.today.inbound} in · ${d.today.outbound} out`;
+      document.getElementById('wh-week').textContent   = (d.this_week.inbound + d.this_week.outbound);
+      document.getElementById('wh-week-sub').textContent = `${d.this_week.inbound} in · ${d.this_week.outbound} out`;
+      document.getElementById('wh-drop').textContent = d.mtd.outbound.dropship;
+      document.getElementById('wh-rma').textContent = d.mtd.inbound.rma;
+      document.getElementById('wh-period').textContent = d.mtd.period;
+
+      document.getElementById('wh-inb-carton').textContent = d.mtd.inbound.carton;
+      document.getElementById('wh-inb-drop').textContent   = d.mtd.inbound.dropship;
+      document.getElementById('wh-inb-rma').textContent    = d.mtd.inbound.rma;
+      document.getElementById('wh-out-pkg').textContent    = d.mtd.outbound.package;
+      document.getElementById('wh-out-drop').textContent   = d.mtd.outbound.dropship;
+
+      renderWhVolume(d.volume_30d);
+      renderWhByClient(d.by_client);
+    } catch (err) {
+      console.error('[warehouse-stats]', err);
+    }
+  }
+
+  function renderWhVolume(vol30d) {
+    if (whVolumeInst) whVolumeInst.destroy();
+    const labels = vol30d.map(v => v.date.slice(5));
+    whVolumeInst = new Chart(document.getElementById('whVolumeChart'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Inbound',  data: vol30d.map(v => v.inbound),  borderColor: '#1a7a4a', backgroundColor: 'rgba(26,122,74,0.1)', tension: 0.3, fill: true, pointRadius: 2 },
+          { label: 'Outbound', data: vol30d.map(v => v.outbound), borderColor: '#1878c8', backgroundColor: 'rgba(24,120,200,0.1)', tension: 0.3, fill: true, pointRadius: 2 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks:{font:{size:9},maxRotation:0,autoSkip:true,maxTicksLimit:10}, grid:{display:false}, border:{display:false} },
+          y: { ticks:{font:{size:10},stepSize:1}, grid:{color:'rgba(0,0,0,0.05)'}, border:{display:false} }
+        }
+      }
+    });
+  }
+
+  function renderWhByClient(list) {
+    const body = document.getElementById('whByClientBody');
+    if (!list.length) {
+      body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:16px;">No activity this month</td></tr>';
+      return;
+    }
+    body.innerHTML = list.map(c => `
+      <tr>
+        <td>${c.client}</td>
+        <td style="text-align:right;">${c.inbound_total}</td>
+        <td style="text-align:right;">${c.outbound_total}</td>
+        <td style="text-align:right;">${c.outbound_dropship > 0 ? `<span class="pill pill-green">${c.outbound_dropship}</span>` : '0'}</td>
+      </tr>`).join('');
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // BILLING TAB
+  // ═════════════════════════════════════════════════════════════════════════
+  let biRevenueInst = null;
+
+  async function loadBillingStats() {
+    try {
+      const r = await fetch(BILLING_API);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+
+      document.getElementById('bi-invoiced').textContent = '$' + d.mtd.invoiced_amount.toFixed(0);
+      document.getElementById('bi-count').textContent    = d.mtd.invoiced_count;
+      document.getElementById('bi-unbilled').textContent = '$' + d.mtd.unbilled_amount.toFixed(0);
+      document.getElementById('bi-unbilled-sub').textContent = `${d.mtd.unbilled_count} drop-ships unbilled`;
+      document.getElementById('bi-total').textContent    = '$' + d.mtd.total_amount.toFixed(0);
+      document.getElementById('bi-period').textContent   = d.mtd.period;
+
+      renderBiRevenue(d.revenue_6m);
+      renderBiPending(d.pending_by_client);
+      renderBiInvoices(d.recent_invoices);
+    } catch (err) {
+      console.error('[billing-stats]', err);
+    }
+  }
+
+  function renderBiRevenue(rev6m) {
+    if (biRevenueInst) biRevenueInst.destroy();
+    const labels = rev6m.map(r => r.month);
+    const totals = rev6m.map(r => r.total);
+    biRevenueInst = new Chart(document.getElementById('biRevenueChart'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{ data: totals, backgroundColor: '#1a7a4a', borderRadius: 6 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => '$' + ctx.parsed.y.toFixed(2) } } },
+        scales: {
+          x: { ticks:{font:{size:11}}, grid:{display:false}, border:{display:false} },
+          y: { ticks:{font:{size:10}, callback: v => '$' + v}, grid:{color:'rgba(0,0,0,0.05)'}, border:{display:false} }
+        }
+      }
+    });
+  }
+
+  function renderBiPending(list) {
+    const body = document.getElementById('biPendingBody');
+    if (!list.length) {
+      body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:16px;">✓ All packages billed</td></tr>';
+      return;
+    }
+    body.innerHTML = list.map(c => {
+      const age = c.oldest_unbilled_at
+        ? Math.floor((Date.now() - new Date(c.oldest_unbilled_at).getTime()) / 86400000) + 'd ago'
+        : '—';
+      return `
+        <tr>
+          <td>${c.client}</td>
+          <td style="text-align:right;">${c.unbilled_count}</td>
+          <td style="text-align:right;">$${c.unbilled_est_usd.toFixed(2)}</td>
+          <td>${age}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  function renderBiInvoices(list) {
+    const body = document.getElementById('biInvoicesBody');
+    if (!list.length) {
+      body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:16px;">No invoices yet</td></tr>';
+      return;
+    }
+    body.innerHTML = list.map(i => {
+      const gen = new Date(i.generated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return `
+        <tr>
+          <td style="font-family:'DM Mono',monospace;font-size:11px;">${i.invoice_number}</td>
+          <td>${i.client}</td>
+          <td>${i.period_start.slice(5)} – ${i.period_end.slice(5)}</td>
+          <td style="text-align:right;"><strong>$${Number(i.total_usd).toFixed(2)}</strong></td>
+          <td style="text-align:right;">${i.package_count}</td>
+          <td>${gen}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // Unified loader — called on boot and when Refresh is clicked
+  // ═════════════════════════════════════════════════════════════════════════
+  async function loadAll() {
+    await Promise.all([
+      loadData(),              // ShipStation KPIs
+      loadDropshipStats(),     // Dropshipments tab
+      loadWarehouseStats(),    // Warehouse tab
+      loadBillingStats()       // Billing tab
+    ]);
+  }
+
   // ── Boot ──────────────────────────────────────────────────────────────────
-  loadData();
+  loadAll();
 </script>
 </body>
 </html>
