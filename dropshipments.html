@@ -726,7 +726,7 @@
 
     <div class="modal-actions">
       <button class="btn" onclick="skipLinkOutbound()">Skip & mark labeled anyway</button>
-      <button class="btn btn-primary" onclick="closeLinkOutboundModal()" id="linkDoneBtn">Done</button>
+      <button class="btn btn-primary" onclick="handleLinkDoneClick()" id="linkDoneBtn">Done</button>
     </div>
   </div>
 </div>
@@ -1411,6 +1411,7 @@
     $("#linkOutboundInput").value = "";
     $("#linkOutboundModal").classList.add("open");
     setTimeout(() => $("#linkOutboundInput").focus(), 80);
+    updateLinkDoneBtnLabel();
   }
   window.openLinkOutboundModal = openLinkOutboundModal;
 
@@ -1435,6 +1436,71 @@
   }
   window.closeLinkOutboundModal = closeLinkOutboundModal;
 
+  // ── Day 4 fix: defense-in-depth for the "Done" button ─────────────────────
+  // Bug observed: user types/scans an outbound code into the input but doesn't
+  // press Enter, then clicks "Done". The modal used to close silently, leaving
+  // the package in `labeled` status with outbound_tracking = NULL. The auto-
+  // extraction from filename (added in dropship-gmail-sync.js) eliminates this
+  // for 95%+ of cases, but we keep the manual modal as a fallback — and it
+  // shouldn't have a silent failure mode.
+  //
+  // Three layers:
+  //   1. If input has unsubmitted text → submit it first (simulate Enter)
+  //   2. If pending packages remain AND some are already linked → confirm
+  //   3. The button label adapts to context so the next click is unambiguous
+  async function handleLinkDoneClick() {
+    const input = $("#linkOutboundInput");
+    const val = (input.value || "").trim();
+
+    // Layer 1: unsubmitted text in the input → submit it before doing anything
+    if (val) {
+      // Dispatch a synthetic Enter keydown — reuses the existing submit handler
+      // so the link logic stays in one place and behavior is identical to a
+      // physical Enter press.
+      const enterEvt = new KeyboardEvent("keydown", { key: "Enter", bubbles: true });
+      input.dispatchEvent(enterEvt);
+      // The submit handler runs async (POST link_outbound). After it resolves,
+      // it will either auto-close (if all linked) or update _linkState. Don't
+      // close here — let the user see the "Just linked" feedback. They can
+      // click Done again if they want to leave.
+      return;
+    }
+
+    // Layer 2: warn if user is leaving with unfinished work
+    if (_linkState && _linkState.pending.length > 0 && _linkState.linked.length > 0) {
+      const n = _linkState.pending.length;
+      const ok = confirm(
+        `${n} package${n === 1 ? "" : "s"} still without outbound tracking.\n\n` +
+        `Close anyway? You can link them individually later from each package drawer.`
+      );
+      if (!ok) return;
+    }
+
+    // Layer 3: clean close (either nothing pending, or user explicitly cancelled)
+    closeLinkOutboundModal();
+  }
+  window.handleLinkDoneClick = handleLinkDoneClick;
+
+  // Update the Done button label so the next click is unambiguous.
+  // Called from renderLinkPending() and from input 'input' event below.
+  function updateLinkDoneBtnLabel() {
+    const btn = $("#linkDoneBtn");
+    if (!btn || !_linkState) return;
+    const inputVal = ($("#linkOutboundInput").value || "").trim();
+    const pending = _linkState.pending.length;
+    const linked = _linkState.linked.length;
+
+    if (inputVal) {
+      btn.textContent = "Link & Done";
+    } else if (pending === 0) {
+      btn.textContent = "Done";
+    } else if (linked === 0) {
+      btn.textContent = "Cancel";
+    } else {
+      btn.textContent = `Done (${pending} unlinked)`;
+    }
+  }
+
   function renderLinkPending() {
     if (!_linkState) return;
     const { pending, linked, allRows } = _linkState;
@@ -1450,6 +1516,7 @@
         `→ <strong>${escapeHtml(r.tracking_number)}</strong> · ${escapeHtml(r.content || "—").slice(0, 60)}`
       ).join("<br>");
     }
+    updateLinkDoneBtnLabel();
   }
 
   function setLinkStatus(msg, kind) {
@@ -1463,6 +1530,13 @@
     el.style.cssText = "display:block; padding:8px 12px; border-radius:8px; font-size:12px; margin-bottom:10px; " + (styles[kind] || styles.info);
     el.textContent = msg;
   }
+
+  // Live-update the Done button label as user types/scans (Day 4 fix).
+  // Critical for the bug case: as soon as the input has text, the button reads
+  // "Link & Done" instead of "Done", removing the silent-failure ambiguity.
+  $("#linkOutboundInput").addEventListener("input", () => {
+    if (_linkState) updateLinkDoneBtnLabel();
+  });
 
   // Scan handler inside the link modal
   $("#linkOutboundInput").addEventListener("keydown", async (e) => {
