@@ -11,6 +11,10 @@
 //        eliminating the need for the Link Outbound modal in the 95%+ case
 //        where the carrier embeds the outbound number in the PDF filename
 //        (e.g. "shipping_label_46886078645.pdf").
+// Day 4: detect inbound carrier from tracking format when the email's
+//        "Transportista:" field is unreliable (some clients hardcode "Amazon"
+//        regardless of actual carrier). Format-based detection overrides the
+//        parsed value when a known pattern matches (UPS, Amazon, USPS, FedEx, DHL).
 //
 // Model: 1 Gmail message = 1 package = 1 DB row.
 // Idempotent: uses (client_id, tracking_number) unique index to prevent duplicates.
@@ -145,6 +149,40 @@ function extractOutboundFromFilename(filename) {
   return m ? m[1] : null;
 }
 
+// ─── Detect carrier from tracking number format ──────────────────────────────
+// Day 4: some client emails have an unreliable "Transportista:" field that
+// always says "Amazon" regardless of the actual carrier. Since carrier formats
+// are highly recognizable, we use the tracking pattern as ground truth and
+// override when there's a clear match.
+//
+// Returns a normalized carrier name if the tracking matches a known pattern,
+// null otherwise. The caller decides whether to override the email value.
+function detectCarrierFromTracking(tracking) {
+  if (!tracking) return null;
+  const t = tracking.trim().toUpperCase();
+
+  // UPS: "1Z" + 16 alphanumeric characters (total 18 chars)
+  if (/^1Z[A-Z0-9]{16}$/.test(t)) return "UPS";
+
+  // Amazon Logistics: "TBA" + 9-12 digits (historically 10 or 12)
+  if (/^TBA\d{9,12}$/.test(t)) return "Amazon";
+
+  // USPS: 20-26 digits, often starting with 92, 93, 94, 95, 9202, 9305, etc.
+  // Also: USPS tracking label starts with 9 and is 22-26 digits.
+  if (/^9\d{21,25}$/.test(t)) return "USPS";
+
+  // FedEx Ground: 15 digits. FedEx Express: 12 digits.
+  // Avoid collision with UPS/USPS/Amazon by requiring no prefix.
+  if (/^\d{12}$/.test(t)) return "FedEx";
+  if (/^\d{15}$/.test(t)) return "FedEx";
+
+  // DHL: 10-11 digits (common for DHL Express).
+  if (/^\d{10,11}$/.test(t)) return "DHL";
+
+  // No known pattern matched — caller should keep the email-provided value.
+  return null;
+}
+
 // ─── Parser: apply per-client regex rules to email body ──────────────────────
 function applyParsingRules(body, rules) {
   const out = {};
@@ -192,6 +230,15 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
   if (!parsed.tracking_number) {
     console.warn(`[${cfg.client_code}] msg ${msg.id}: no tracking_number extracted, skipping`);
     return { status: "skipped", reason: "no_tracking" };
+  }
+
+  // Day 4: override carrier with format-based detection when possible.
+  // Some clients' emails always report "Amazon" even when the tracking is UPS,
+  // USPS, etc. The tracking number format is reliable ground truth.
+  const detectedCarrier = detectCarrierFromTracking(parsed.tracking_number);
+  if (detectedCarrier && detectedCarrier !== parsed.carrier) {
+    console.log(`[${cfg.client_code}] msg ${msg.id}: carrier override ${parsed.carrier || "(empty)"} → ${detectedCarrier} (from tracking ${parsed.tracking_number})`);
+    parsed.carrier = detectedCarrier;
   }
 
   // Idempotency: check if tracking already ingested for this client.
