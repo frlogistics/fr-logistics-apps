@@ -15,9 +15,19 @@
 //        "Transportista:" field is unreliable (some clients hardcode "Amazon"
 //        regardless of actual carrier). Format-based detection overrides the
 //        parsed value when a known pattern matches (UPS, Amazon, USPS, FedEx, DHL).
+// Day 5: parse the PDF label content to extract the REAL scannable barcode,
+//        not just the filename ID. Some routes (e.g. Total Express / Brazil
+//        Remessa Conforme) use a barcode like "MAIL103329991TX" that DIFFERS
+//        from the filename's numeric ID. PDF-extracted value takes precedence;
+//        filename is kept as fallback for when PDF parsing returns nothing.
 //
 // Model: 1 Gmail message = 1 package = 1 DB row.
 // Idempotent: uses (client_id, tracking_number) unique index to prevent duplicates.
+
+// Note: import from /lib/pdf-parse.js (not the package root) to skip the
+// debug auto-test that runs on `require('pdf-parse')` and breaks in serverless
+// environments that don't ship the test fixtures.
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
 const SUPABASE_URL    = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY    = Netlify.env.get("SUPABASE_SERVICE_KEY");
@@ -149,6 +159,57 @@ function extractOutboundFromFilename(filename) {
   return m ? m[1] : null;
 }
 
+// ─── Extract real barcode from PDF content (Day 5) ───────────────────────────
+// Some labels have a barcode that DIFFERS from the filename-embedded ID.
+// Known case: MailAmericas → Total Express (Brazil / Remessa Conforme) uses
+// a barcode like "MAIL103329991TX" while the filename has the MailAmericas
+// internal numeric reference (e.g. "shipping_label_46893563630.pdf").
+//
+// This function parses the PDF text and tries to find the real scannable
+// barcode. The caller should prefer this value over the filename extraction.
+//
+// Strategy (in order of specificity):
+//   1. MailAmericas-Brazil format: "MAIL" + 9-10 digits + "TX".
+//      Most specific pattern; when present, it's authoritative.
+//   2. If the filename-ID is present in the PDF text → confirmed match,
+//      meaning the filename IS the barcode (normal case, e.g. Argentina).
+//   3. Return null → caller falls back to filename-based extraction.
+//
+// Returns: { barcode, source } on success, null otherwise.
+// Non-fatal: any error returns null so the sync continues with filename fallback.
+async function extractBarcodeFromPDF(pdfBuffer, filenameId) {
+  if (!pdfBuffer) return null;
+
+  let text;
+  try {
+    const data = await pdfParse(pdfBuffer);
+    text = data?.text || "";
+  } catch (err) {
+    console.warn(`[pdf-extract] parse failed: ${err.message}`);
+    return null;
+  }
+
+  // Normalize: strip whitespace so spaced-out barcodes match
+  // (e.g. "MA IL1 033 299 91 TX" → "MAIL103329991TX")
+  const cleaned = text.replace(/\s+/g, "");
+
+  // Pattern 1 — MailAmericas / Total Express (Brazil, Remessa Conforme)
+  // Specific format, highest priority when present.
+  const brazilMatch = cleaned.match(/MAIL\d{9,10}TX/i);
+  if (brazilMatch) {
+    return { barcode: brazilMatch[0].toUpperCase(), source: "pdf_brazil_total" };
+  }
+
+  // Pattern 2 — filename-ID appears in PDF text
+  // This confirms filename = barcode (typical MailAmericas Express route).
+  if (filenameId && cleaned.includes(filenameId)) {
+    return { barcode: filenameId, source: "pdf_filename_confirmed" };
+  }
+
+  // No recognized pattern matched; caller falls back to filename heuristic.
+  return null;
+}
+
 // ─── Detect carrier from tracking number format ──────────────────────────────
 // Day 4: some client emails have an unreliable "Transportista:" field that
 // always says "Amazon" regardless of the actual carrier. Since carrier formats
@@ -255,7 +316,23 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
     const safeTracking = parsed.tracking_number.replace(/[^A-Za-z0-9._-]/g, "_");
     labelPath = `${cfg.client_code}/${safeTracking}.pdf`;
     labelFilename = att.filename;
-    outboundTracking = extractOutboundFromFilename(labelFilename);
+
+    // Day 5: Try PDF content first for the authoritative barcode (e.g. Brazil
+    // routes where the barcode differs from the filename ID). Fall back to
+    // filename-based extraction if the PDF parser returns nothing.
+    const filenameId = extractOutboundFromFilename(labelFilename);
+    const pdfResult  = await extractBarcodeFromPDF(bytes, filenameId);
+
+    if (pdfResult?.barcode) {
+      outboundTracking = pdfResult.barcode;
+      console.log(`[${cfg.client_code}] ${parsed.tracking_number}: outbound=${outboundTracking} (source: ${pdfResult.source})`);
+    } else if (filenameId) {
+      outboundTracking = filenameId;
+      console.log(`[${cfg.client_code}] ${parsed.tracking_number}: outbound=${outboundTracking} (source: filename_fallback)`);
+    } else {
+      console.log(`[${cfg.client_code}] ${parsed.tracking_number}: no outbound_tracking extracted (will need Link Outbound modal)`);
+    }
+
     await sbStorageUpload(labelPath, bytes, att.mimeType || "application/pdf");
   }
 
