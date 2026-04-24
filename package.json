@@ -2,6 +2,7 @@
   "name": "fr-logistics-apps",
   "version": "1.0.0",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0"
+    "@anthropic-ai/sdk": "^0.39.0",
+    "pdf-parse": "^1.1.1"
   }
 }
