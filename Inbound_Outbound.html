@@ -305,45 +305,51 @@ td,th{white-space:nowrap}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.20.3/xlsx.full.min.js"></script>
 <script>
-  /* ── Static fallback client list ── */
-  const CLIENTS_FALLBACK = [
-    "","A&V PRODUCTS CORP","AK ACCOUNTING","JDK ENTERTAINMENT LLC","JDK NETWORK, LLC",
-    "LN STORE, LLC","MAQUILLAJE AL POR MAYOR INC.","Milano Brands LLC","MXS Overseas Ltd",
-    "PACIFIC HORIZON INVESTMENTS LLC","Soluciones Mas X Menos","THE PRODUCT BAR LLC",
-    "TOME DOG TOYs","ANA DA SILVA","WeKeep - C&G Solutions SA","NEW"
-  ];
+  /* ── Static catalogs (carriers / types are operational, not client data) ── */
   const CARRIERS  = ["","Amazon","USPS","UPS","FedEx","DHL","Mail de las Americas","Other"];
   const IN_TYPES  = ["New Product","RMA (Returns)","Inbound (Prep Service)","Inbound (General)","Inbound (Amazon FBA)","Inbound (Drop-Shipment)","Inbound (EcoPack+)","Overstock","Other"];
   const OUT_TYPES = ["Outbound (Shipment)","Outbound (Drop-Shipment)","Outbound (Pickup EcoPack+)","Replacement","Return to Sender","Other"];
 
-  /* ── Master clients (loaded from portal wa-clients function) ── */
+  /* ── Master clients — single source of truth: Clients App (fr_clients) ── */
+  /* No SEED, no fallback. If clients-list is unavailable, the app stops    */
+  /* and asks the operator to fix it in the Clients App.                    */
   let masterClients = [];
   let clientNames   = [];
+  let clientsLoadError = null;
 
   async function loadMasterClients(){
+    clientsLoadError = null;
     try {
-      const res = await fetch("/.netlify/functions/wa-clients");
+      const res = await fetch("/.netlify/functions/clients-list");
       if(!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
-      console.log("wa-clients loaded:", data.length, "clients", data.slice(0,2));
-      if(Array.isArray(data) && data.length){
-        masterClients = data.map(c => ({
-          name:      c.name      || "",
-          company:   c.company   || "",
-          storeName: c.store_name || c.storeName || "",
-          waNumber:  c.wa_number  || c.waNumber  || "",
-          services:  Array.isArray(c.services)
-                       ? c.services.map(s => s.replace(/"/g,'').trim())
-                       : (c.services ? c.services.split(",").map(s=>s.replace(/"/g,'').trim()).filter(Boolean) : []),
-          waConsent: c.wa_consent || c.waConsent || "Pending",
-          lang:      c.lang || "EN",
-        }));
-        clientNames = ["", ...masterClients.map(c => c.storeName || c.company || c.name).filter(Boolean)];
-        return;
+      if(!Array.isArray(data) || !data.length){
+        throw new Error("clients-list returned no clients");
       }
-    } catch(e){ console.warn("wa-clients unavailable, using fallback:", e.message); }
-    masterClients = [];
-    clientNames   = CLIENTS_FALLBACK;
+      masterClients = data.map(c => ({
+        name:      c.name      || "",
+        company:   c.company   || "",
+        storeName: c.store_name || c.storeName || "",
+        waNumber:  c.wa_number  || c.waNumber  || "",
+        services:  Array.isArray(c.services)
+                     ? c.services.map(s => s.replace(/"/g,'').trim())
+                     : (c.services ? c.services.split(",").map(s=>s.replace(/"/g,'').trim()).filter(Boolean) : []),
+        waConsent: c.wa_consent || c.waConsent || "Pending",
+        lang:      c.lang || "EN",
+        defaultOutboundCarrier: c.default_outbound_carrier || c.defaultOutboundCarrier || "",
+      }));
+      // Display name preference: storeName → company → name
+      clientNames = ["", ...masterClients
+        .map(c => c.storeName || c.company || c.name)
+        .filter(Boolean)
+        .sort((a,b) => a.localeCompare(b))];
+      console.log("clients-list loaded:", masterClients.length);
+    } catch(e){
+      clientsLoadError = e.message;
+      masterClients = [];
+      clientNames   = [""];
+      console.error("Could not load clients from Clients App:", e.message);
+    }
   }
 
   function getMasterClient(displayName){
@@ -551,6 +557,21 @@ td,th{white-space:nowrap}
     $("inClient").value=clientNames[0]||""; $("outClient").value=clientNames[0]||"";
     setLastSaved(getLastSaved());
     onInClientChange(); // init badge for currently selected client
+
+    /* If clients-list failed to load, show a blocking banner — do not let     */
+    /* the operator save shipments tied to a stale or empty client list.      */
+    if (clientsLoadError) {
+      const banner = document.createElement("div");
+      banner.style.cssText = "background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;"
+        + "padding:12px 16px;margin:12px 0;border-radius:8px;font-size:13px;line-height:1.5;";
+      banner.innerHTML = "<b>⚠️ Could not load clients from the Clients App.</b><br>"
+        + "Reason: " + clientsLoadError + ".<br>"
+        + "Add or fix clients in the Clients App, then reload this page. "
+        + "Saving shipments is disabled until clients are available.";
+      document.querySelector(".wrap").insertBefore(banner, document.querySelector(".wrap").firstChild);
+      $("saveInboundBtn").disabled  = true;
+      $("saveOutboundBtn").disabled = true;
+    }
 
     $("inTracking").addEventListener("input",()=>{ $("inCarrier").value=suggestCarrier($("inTracking").value); });
     $("inTracking").addEventListener("keydown",e=>{ if(e.key==="Enter"){e.preventDefault();$("saveInboundBtn").click();} });
