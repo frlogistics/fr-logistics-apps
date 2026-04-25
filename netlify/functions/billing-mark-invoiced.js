@@ -63,10 +63,14 @@ async function sbPatch(table, filter, data) {
   return r.json();
 }
 
-function autoInvoiceNumber(periodStart, clientCode) {
-  // Parses "2026-04-01" → "INV-2026-04-LN"
-  const [year, month] = periodStart.split('-');
+function autoInvoiceNumber(cadence, periodEnd, clientCode) {
+  // weekly / biweekly / custom -> INV-YYYY-MM-DD-CODE  (uses period_end day)
+  // monthly                    -> INV-YYYY-MM-CODE
+  const [year, month, day] = (periodEnd || '').split('-');
   const code = (clientCode || 'UNK').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (cadence === 'weekly' || cadence === 'biweekly' || cadence === 'custom') {
+    return `INV-${year}-${month}-${day}-${code}`;
+  }
   return `INV-${year}-${month}-${code}`;
 }
 
@@ -112,9 +116,15 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'total_usd must be a non-negative number' }) };
   }
 
-  // Auto-generate invoice_number if not provided
+// Auto-generate invoice_number if not provided (cadence-aware)
   if (!invoiceNumber) {
-    invoiceNumber = autoInvoiceNumber(periodStart, clientCode);
+    // Look up billing_cadence from fr_clients (match on name OR store_name)
+    const matches = await sbSelect(
+      'fr_clients',
+      `?or=(name.eq.${encodeURIComponent(client)},store_name.eq.${encodeURIComponent(client)})&select=billing_cadence&limit=1`
+    );
+    const cadence = matches[0]?.billing_cadence || 'monthly';
+    invoiceNumber = autoInvoiceNumber(cadence, periodEnd, clientCode);
   }
 
   // ── Check uniqueness of invoice_number ──────────────────────────────────
