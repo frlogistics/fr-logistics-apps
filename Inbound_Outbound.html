@@ -127,6 +127,28 @@ td,th{white-space:nowrap}
 </header>
 
 <div class="wrap">
+  <!-- PIN CLIENT BAR -->
+  <div id="pinBar" style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+       background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:14px;
+       flex-wrap:wrap;font-size:13px">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:18px">🔒</span>
+      <b>Pin Client Mode:</b>
+      <span id="pinStatus" style="color:#64748b">Off — multi-client</span>
+    </div>
+    <div style="flex:1;min-width:180px;display:flex;align-items:center;gap:8px">
+      <select id="pinClientSelect" style="padding:6px 10px;border:1px solid #cbd5e1;
+              border-radius:6px;font-size:13px;flex:1"></select>
+    </div>
+    <button id="pinToggleBtn" style="padding:6px 14px;border-radius:6px;border:0;
+            background:#0ea55f;color:#fff;font-weight:600;cursor:pointer;font-size:12px">
+      🔒 Pin
+    </button>
+    <span id="pinCarrierHint" style="font-size:11px;color:#0ea55f;font-weight:600;display:none">
+      Default outbound carrier: <span id="pinCarrierName"></span>
+    </span>
+  </div>
+
   <div class="grid3">
 
     <!-- INBOUND -->
@@ -189,7 +211,7 @@ td,th{white-space:nowrap}
         </div>
       </div>
       <label>Client</label>
-      <select id="outClient"></select>
+      <select id="outClient" onchange="onOutClientChange()"></select>
       <label>Notes (optional)</label>
       <textarea id="outNotes" placeholder="Destination, service level, customs docs..."></textarea>
       <div class="btns">
@@ -376,6 +398,108 @@ td,th{white-space:nowrap}
     }
   }
 
+  /* ── Auto-carrier on Outbound client change ── */
+  /* When the operator picks a client whose row in fr_clients has a            */
+  /* default_outbound_carrier, set the outbound carrier dropdown automatically. */
+  function onOutClientChange(){
+    const name = document.getElementById("outClient").value;
+    const c    = getMasterClient(name);
+    if (c && c.defaultOutboundCarrier) {
+      const sel = document.getElementById("outCarrier");
+      const opt = Array.from(sel.options).find(o => o.value === c.defaultOutboundCarrier);
+      if (opt) sel.value = c.defaultOutboundCarrier;
+    }
+  }
+
+  /* ── Pin Client Mode ─────────────────────────────────────────────────────  */
+  /* When pinned: client is fixed in both Inbound and Outbound cards,         */
+  /* dropdowns are disabled, logs are filtered to that client, and the        */
+  /* default_outbound_carrier (if any) is auto-applied to Outbound.           */
+  /* The pinned client persists across page reloads via localStorage.         */
+  let pinnedClient = null;  // display name string, or null
+  const PIN_KEY = "io_pinned_client_v1";
+
+  function applyPin(displayName) {
+    pinnedClient = displayName || null;
+    if (pinnedClient) {
+      localStorage.setItem(PIN_KEY, pinnedClient);
+    } else {
+      localStorage.removeItem(PIN_KEY);
+    }
+
+    const inSel  = $("inClient");
+    const outSel = $("outClient");
+    const status = $("pinStatus");
+    const btn    = $("pinToggleBtn");
+    const hint   = $("pinCarrierHint");
+    const carName= $("pinCarrierName");
+
+    if (pinnedClient) {
+      inSel.value  = pinnedClient;
+      outSel.value = pinnedClient;
+      inSel.disabled  = true;
+      outSel.disabled = true;
+      status.textContent = `On — ${pinnedClient}`;
+      status.style.color = "#0ea55f";
+      btn.textContent    = "🔓 Unpin";
+      btn.style.background = "#dc2626";
+
+      const c = getMasterClient(pinnedClient);
+      if (c && c.defaultOutboundCarrier) {
+        carName.textContent = c.defaultOutboundCarrier;
+        hint.style.display  = "inline";
+      } else {
+        hint.style.display  = "none";
+      }
+      onInClientChange();
+      onOutClientChange();
+    } else {
+      inSel.disabled  = false;
+      outSel.disabled = false;
+      status.textContent = "Off — multi-client";
+      status.style.color = "#64748b";
+      btn.textContent    = "🔒 Pin";
+      btn.style.background = "#0ea55f";
+      hint.style.display  = "none";
+    }
+
+    // Re-render logs with the new filter
+    renderTables();
+  }
+
+  function setupPinControls(){
+    const sel = $("pinClientSelect");
+    const btn = $("pinToggleBtn");
+    sel.innerHTML = clientNames.map(n =>
+      `<option value="${n}">${n || "— Select client —"}</option>`
+    ).join("");
+
+    // Restore previously pinned client (if it still exists in masterClients)
+    const stored = localStorage.getItem(PIN_KEY);
+    if (stored && clientNames.includes(stored)) {
+      sel.value = stored;
+      applyPin(stored);
+    }
+
+    btn.addEventListener("click", () => {
+      if (pinnedClient) {
+        applyPin(null);
+      } else {
+        const choice = sel.value;
+        if (!choice) {
+          alert("Select a client first to pin.");
+          return;
+        }
+        applyPin(choice);
+      }
+    });
+
+    sel.addEventListener("change", () => {
+      // Changing the picker while pinned re-pins to the new selection
+      if (pinnedClient) applyPin(sel.value);
+    });
+  }
+
   /* ── WA trigger after inbound save ── */
   async function countPendingPackages(clientDisplayName){
     try {
@@ -503,6 +627,8 @@ td,th{white-space:nowrap}
     const sq=$("search").value.trim().toLowerCase(), mf=$("monthFilter").value;
     if(sq) data=data.filter(x=>(x.tracking||"").toLowerCase().includes(sq)||(x.notes||"").toLowerCase().includes(sq)||(x.client||"").toLowerCase().includes(sq));
     if(mf) data=data.filter(x=>monthKey(x.createdAt)===mf);
+    /* Pin Client Mode: when active, restrict logs to the pinned client */
+    if(pinnedClient) data=data.filter(x=>x.client===pinnedClient);
     const ib=data.filter(x=>x.direction==="Inbound"), ob=data.filter(x=>x.direction==="Outbound");
 
     /* FIX: added 🗑️ delete button per row alongside Print */
@@ -557,6 +683,7 @@ td,th{white-space:nowrap}
     $("inClient").value=clientNames[0]||""; $("outClient").value=clientNames[0]||"";
     setLastSaved(getLastSaved());
     onInClientChange(); // init badge for currently selected client
+    setupPinControls();  // wire up Pin Client Mode (restores from localStorage if any)
 
     /* If clients-list failed to load, show a blocking banner — do not let     */
     /* the operator save shipments tied to a stale or empty client list.      */
