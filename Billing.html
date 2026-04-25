@@ -348,36 +348,7 @@ const CUSTOM_RATES = {
   'KMAT Supply LLC':               {pick_pack:3.00,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:99.99},
 };
 
-// ─── CLIENT SEED (fallback when Supabase is unavailable) ──────────────────────
-const CLIENT_SEED = [
-  {name:"A&V Products Corp",company:"A&V Products Corp",qboName:"A&V PRODUCTS CORP",group:"other",ssStore:"",email:"avproductsusa@gmail.com",phone:"(786) 775-7331",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Altis Wholesale LLC",company:"Altis Wholesale LLC",qboName:"Marcelo Caceres",group:"other",ssStore:"",email:"marcelo@altiswholesale.com",phone:"(307) 317-3251",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Ape Beverages, Inc",company:"Ape Beverages, Inc",qboName:"Ape Beverages, INC",group:"other",ssStore:"",email:"jay@apebeverages.com",phone:"+63 961 405 3953",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Arkansas Transload, LLC",company:"Arkansas Transload, LLC",qboName:"Arkansas Transload, LLC.",group:"other",ssStore:"",email:"genny.goens@arkansastransloads.com",phone:"(501) 306-0278",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Brainoa LLC",company:"Brainoa LLC",qboName:"Brainoa LLC",group:"other",ssStore:"",email:"hamilton@brainoa.com",phone:"(510) 890-9664",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Curly Lovers by Susi",company:"Curly Lovers by Susi",qboName:"Curly Lovers by Susi",group:"other",ssStore:"",email:"Susi@curlylovers.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Dosistea, LLC",company:"Dosistea, LLC",qboName:"Dosistea, LLC",group:"other",ssStore:"",email:"hello@dosistea.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Drinks Chef Ltd",company:"Drinks Chef Ltd",qboName:"Drinks Chef Ltd",group:"other",ssStore:"",email:"sarah@drinkschef.com",phone:"(+256) 7714496196",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Greywolfe Investing LLC",company:"Greywolfe Investing LLC",qboName:"Greywolfe Investing LLC",group:"other",ssStore:"",email:"heilinb@greywolfeinvesting.com",phone:"(293) 653-8858",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"JDK Network, LLC",company:"JDK Network, LLC",qboName:"JDK NETWORK, LLC",group:"internal",ssStore:"",email:"info@jdknetwork.store",phone:"(786) 775-7331",mmb:0,shippingMarkup:0,status:"Active"},
-  {name:"KMAT Supply LLC",company:"KMAT Supply LLC",qboName:"KMAT Supply LLC",group:"active",ssStore:"",email:"",phone:"",mmb:0,shippingMarkup:10,status:"Onboarding",wmsIntegration:false,ssCustomField1:"KMAT Supply LLC"},
-  {name:"Klear Protein",company:"Klear Protein",qboName:"Klear Protein",group:"other",ssStore:"",email:"kyle@klearprotein.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Koriledge Construction, Inc",company:"Koriledge Construction, Inc",qboName:"Koriledge Construction, Inc",group:"other",ssStore:"",email:"gwoodruff@koriledge.com",phone:"(800) 316-0565",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"LN Store, LLC",company:"LN Store, LLC",qboName:"LN STORE, LLC",group:"active",ssStore:"",email:"tisseraobras@gmail.com",phone:"+5492644538942",mmb:0,shippingMarkup:10,status:"Active",wmsIntegration:false,ssCustomField1:""},
-  {name:"LRE Holding (Route of Heroes)",company:"LRE Holding",qboName:"LRE Holding",group:"active",ssStore:"",email:"",phone:"",mmb:3250,shippingMarkup:10,status:"Onboarding",wmsIntegration:false,ssCustomField1:"LRE Holding"},
-  {name:"Maquillaje Al Por Mayor Inc",company:"Maquillaje Al Por Mayor Inc",qboName:"MAQUILLAJE AL POR MAYOR INC",group:"other",ssStore:"",email:"info@maquillajealpormayor.pe",phone:"(786) 707-5677",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Milano Brands LLC",company:"Milano Brands LLC",qboName:"Milano Brands LLC",group:"active",ssStore:"Daizzy Gear",email:"julieta@milanobrands.us",phone:"",mmb:0,shippingMarkup:10,status:"Active",wmsIntegration:true,ssCustomField1:""},
-  {name:"Mouratoglou Apparel USA",company:"Mouratoglou Apparel USA",qboName:"Mouratoglou Apparel USA",group:"other",ssStore:"",email:"flavien.raveau@mouratoglou.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"MXS Overseas Ltd",company:"MXS Overseas Ltd",qboName:"MXS Overseas Ltd",group:"active",ssStore:"",email:"mxsoverseas@gmail.com",phone:"",mmb:0,shippingMarkup:10,status:"Active",wmsIntegration:false,ssCustomField1:"MXS Overseas Ltd"},
-  {name:"Pacific Horizon Investments",company:"Pacific Horizon Investments",qboName:"PACIFIC HORIZON INVESTMENTS LLC",group:"other",ssStore:"",email:"trade.logistics@fdmperu.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Simplex",company:"Simplex",qboName:"Simplex",group:"other",ssStore:"",email:"fc@simplexvili.com.ar",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Soluciones Mas X Menos",company:"Soluciones Mas X Menos",qboName:"Soluciones Mas X Menos",group:"active",ssStore:"",email:"solucionesmasxmenos23@gmail.com",phone:"",mmb:0,shippingMarkup:10,status:"Active",wmsIntegration:false,ssCustomField1:"Soluciones Mas X Menos"},
-  {name:"Streamlined Efficiency",company:"Streamlined Efficiency",qboName:"Streamlined Efficiency",group:"other",ssStore:"",email:"cristina@1streamline.com",phone:"(203) 717-5056",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"The Product Bar LLC",company:"The Product Bar LLC",qboName:"THE PRODUCT BAR LLC",group:"active",ssStore:"",email:"adolfoalamo@gmail.com",phone:"(786) 633-1807",mmb:0,shippingMarkup:10,status:"Active",wmsIntegration:false,ssCustomField1:"The Product Bar LLC"},
-  {name:"Tome Dog Toys",company:"Tome Dog Toys",qboName:"Tome Dog Toys",group:"other",ssStore:"",email:"info@tomedogtoys.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"UNOde50",company:"UNOde50",qboName:"UNOde50",group:"active",ssStore:"",email:"",phone:"",mmb:5250,shippingMarkup:0,status:"Active",wmsIntegration:false,ssCustomField1:"UNOde50"},
-  {name:"WeKeep Travel Services LLC",company:"WeKeep Travel Services LLC",qboName:"WeKeep Travel Services, LLC",group:"other",ssStore:"",email:"sofia.gaggi@wekeep.app",phone:"+541132884589",mmb:0,shippingMarkup:10,status:"Active"}
-];
+// ─── (CLIENT_SEED removed Apr 2026 — Clients App is the single source of truth)
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let _clients = [];   // all clients from API
@@ -412,10 +383,21 @@ function resetUI() {
 }
 
 // ─── CLIENT SETUP ─────────────────────────────────────────────────────────────
+// All clients come from fr_clients (Clients App) — no SEED, no fallback.
+// In fr_clients: `name` may be a CONTACT person, `company` is the COMPANY/BRAND.
+// For billing we want the COMPANY (legal entity) as the display + lookup key,
+// so we override `name` with company-first logic and keep the original contact
+// in `contactName` for reference.
 function normalizeClient(c) {
-  const name = c.name || '';
+  const rawName    = (c.name    || '').trim();
+  const rawCompany = (c.company || '').trim();
+  // Display name = company first, fallback to name
+  const displayName = rawCompany || rawName;
   return {
     ...c,
+    name:            displayName,                  // overridden: used everywhere as display + key
+    contactName:     rawName !== rawCompany ? rawName : '',  // preserved if distinct from company
+    company:         rawCompany || rawName,
     // Map Supabase snake_case → camelCase
     ssStore:         c.ssStore         || c.store_name          || '',
     shippingMarkup:  c.shippingMarkup  ?? c.shipping_markup     ?? 10,
@@ -429,14 +411,14 @@ function normalizeClient(c) {
     // Billing cadence: drives invoice-number format (weekly/biweekly/monthly/custom)
     billingCadence:  c.billingCadence  || c.billing_cadence     || 'monthly',
     // Inbound client name for portal search
-    inboundClient:   c.inboundClient   || c.store_name          || name,
-    // Determine group
+    inboundClient:   c.inboundClient   || c.store_name          || displayName,
+    // Determine group (uses display/company name)
     group: c.group || (
       ['Milano Brands LLC','MXS Overseas Ltd','LN Store, LLC',
        'LRE Holding (Route of Heroes)','UNOde50','KMAT Supply LLC',
-       'Soluciones Mas X Menos','The Product Bar LLC'].includes(name)
+       'Soluciones Mas X Menos','The Product Bar LLC'].includes(displayName)
         ? 'active'
-        : name.toLowerCase().includes('jdk') ? 'internal' : 'other'
+        : displayName.toLowerCase().includes('jdk') ? 'internal' : 'other'
     ),
   };
 }
@@ -445,22 +427,36 @@ async function loadClients() {
   const sel = g('selClient');
   sel.innerHTML = '<option value="">⏳ Loading clients...</option>';
 
+  // Single source of truth: fr_clients via /.netlify/functions/clients-list
+  // No SEED, no fallback — if the API fails we surface the error and stop.
   try {
     const resp = await fetch(CLIENTS_API);
-    if (resp.ok) {
-      const raw = await resp.json();
-      // Merge API data with seed: API is source of truth, seed fills gaps
-      const apiNames = new Set(raw.map(c => c.name));
-      const seedOnly = CLIENT_SEED.filter(c => !apiNames.has(c.name));
-      _clients = [...raw, ...seedOnly].map(normalizeClient);
-    } else {
-      throw new Error('API ' + resp.status);
+    if (!resp.ok) throw new Error('API ' + resp.status);
+    const raw = await resp.json();
+    if (!Array.isArray(raw) || !raw.length) {
+      throw new Error('clients-list returned no clients');
     }
+    _clients = raw.map(normalizeClient);
   } catch(e) {
-    _clients = CLIENT_SEED.map(normalizeClient);
+    sel.innerHTML = '<option value="">⚠️ Unable to load clients</option>';
+    sel.disabled = true;
+    setStatus(
+      `⚠️ <b>Could not load clients from the Clients App.</b><br>` +
+      `Reason: ${e.message}. ` +
+      `Add or fix clients in the <a href="portal.html#app=wa-clients.html">Clients App</a>, then refresh.`,
+      'error'
+    );
+    return;
   }
 
-  if (!_clients.length) _clients = CLIENT_SEED.map(normalizeClient);
+  // De-dupe by display name (in case both contact-row and company-row exist)
+  const seen = new Set();
+  _clients = _clients.filter(c => {
+    const k = (c.name || '').toLowerCase();
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 
   // Sort alphabetically, case-insensitive
   _clients.sort((a,b) => (a.name||'').localeCompare(b.name||''));
@@ -496,12 +492,13 @@ function onClientChange() {
   const k = g('selClient').value;
   if (!k) return;
 
-  // 1. Set client from loaded list (normalizeClient maps all Supabase fields)
-  _client = normalizeClient(
-    _clients.find(c => c.name === k) ||
-    CLIENT_SEED.find(c => c.name === k) ||
-    { name: k, mmb: 0, shippingMarkup: 10, ssStore: '', ssCustomField1: '', billingSource: '', group: 'other' }
-  );
+  // 1. Set client from loaded list (already normalized by loadClients)
+  const found = _clients.find(c => c.name === k);
+  if (!found) {
+    setStatus(`⚠️ Client "${k}" not found in the Clients App.`, 'error');
+    return;
+  }
+  _client = found;
 
   // 2. Reset all UI immediately — no stale data from previous client
   resetUI();
