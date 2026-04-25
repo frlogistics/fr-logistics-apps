@@ -735,7 +735,21 @@ async function loadBilling() {
   }
 
   // ── Step 2: Portal data (Inbound/Outbound app) ────────────────────────────
-  const searchTerm = _client.ssStore || _client.ssCustomField1 || _client.name;
+  // Pick the correct identifier to search shipments_general by, based on
+  // billing_source. Portal-only clients (drop-ship / EcoPack+) are saved
+  // under the COMPANY name; ShipStation-store clients are saved under the
+  // store name; CF1 clients are saved under the CF1 tag.
+  let searchTerm;
+  if (bsrc === 'portal') {
+    searchTerm = _client.name;                                  // company
+  } else if (bsrc === 'ss_store' && _client.ssStore) {
+    searchTerm = _client.ssStore;                               // store
+  } else if (bsrc === 'ss_cf1' && _client.ssCustomField1) {
+    searchTerm = _client.ssCustomField1;                        // CF1 tag
+  } else {
+    // Defensive fallback: prefer store, then company, then CF1
+    searchTerm = _client.ssStore || _client.name || _client.ssCustomField1;
+  }
   let billedInfo = null;  // Day 4: info about already-invoiced packages in this period
   try {
     const url = `${INBOUND_API}?client=${encodeURIComponent(searchTerm)}&start=${start}&end=${end}`;
