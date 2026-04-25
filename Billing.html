@@ -28,6 +28,14 @@ body{font-family:"DM Sans",sans-serif;background:#f1f5f9;color:var(--text);min-h
 .brand p{font-size:11px;color:var(--muted);margin-top:1px}
 .badge{font-size:10px;font-weight:700;letter-spacing:.6px;padding:4px 12px;
        border:1px solid #bbf7d0;border-radius:999px;color:var(--g2);background:var(--glt)}
+/* Billing cadence badge (next to Invoice # label) */
+.cad-badge{display:inline-block;font-size:9px;font-weight:700;padding:2px 7px;
+           border-radius:999px;letter-spacing:.3px;margin-left:6px;
+           text-transform:none;vertical-align:middle}
+.cad-badge[data-cadence="weekly"]{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.cad-badge[data-cadence="biweekly"]{background:#fce7f3;color:#9d174d;border:1px solid #fbcfe8}
+.cad-badge[data-cadence="monthly"]{background:#dcfce7;color:#166534;border:1px solid #bbf7d0}
+.cad-badge[data-cadence="custom"]{background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe}
 /* CARD */
 .card{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden;
       box-shadow:var(--shadow);margin-bottom:14px}
@@ -142,10 +150,10 @@ button:active{transform:scale(.97)}
         </div>
         <div class="f">
           <label>Billing Period — End</label>
-          <input id="dateEnd" type="date"/>
+          <input id="dateEnd" type="date" onchange="autoPopulateInvNum()"/>
         </div>
         <div class="f">
-          <label>Invoice #</label>
+          <label>Invoice # <span id="cadenceBadge" class="cad-badge" style="display:none"></span></label>
           <input id="invNum" placeholder="INV-2026-001"/>
         </div>
       </div>
@@ -418,6 +426,8 @@ function normalizeClient(c) {
     // Custom Field 1 tag: used in ShipStation for manual order identification
     ssCustomField1:  c.ssCustomField1  || c.ss_custom_field_1   || '',
     billingSource:   c.billingSource   || c.billing_source     || '',
+    // Billing cadence: drives invoice-number format (weekly/biweekly/monthly/custom)
+    billingCadence:  c.billingCadence  || c.billing_cadence     || 'monthly',
     // Inbound client name for portal search
     inboundClient:   c.inboundClient   || c.store_name          || name,
     // Determine group
@@ -496,10 +506,8 @@ function onClientChange() {
   // 2. Reset all UI immediately — no stale data from previous client
   resetUI();
 
-  // 3. Set invoice number and markup
-  const now = new Date();
-  const ini = k.replace(/[^A-Za-z ]/g,'').trim().split(' ').map(w => w[0]||'').join('').toUpperCase().slice(0,3);
-  g('invNum').value = `INV-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${ini}`;
+  // 3. Set invoice number (cadence-aware) and markup
+  autoPopulateInvNum();
   g('shippingMarkupPct').value = _client.shippingMarkup ?? 10;
 
   // 4. Load rate card async (non-blocking — billing can still work with STD_RATES)
@@ -517,6 +525,69 @@ function onClientChange() {
     .catch(() => {
       setStatus(`👤 <b>${_client.name}</b> · Default rates (offline)`, 'info');
     });
+}
+
+// ─── INVOICE # AUTO-POPULATION (cadence-aware) ────────────────────────────────
+// Derives a 2-3 letter client code: prefer client_code from DB, fall back to
+// initials of the cleaned client name (e.g. "LN Store, LLC" -> "LSL").
+function getClientCode(client) {
+  if (!client) return 'UNK';
+  if (client.clientCode || client.client_code) {
+    return String(client.clientCode || client.client_code).toUpperCase();
+  }
+  return (client.name || '')
+    .replace(/[^A-Za-z ]/g, '')
+    .trim()
+    .split(/\s+/)
+    .map(w => w[0] || '')
+    .join('')
+    .toUpperCase()
+    .slice(0, 3) || 'UNK';
+}
+
+// Builds the invoice number based on cadence + period_end date.
+// weekly / biweekly / custom -> INV-YYYY-MM-DD-CODE  (uses period_end day)
+// monthly                    -> INV-YYYY-MM-CODE
+// Parses the ISO date manually to avoid UTC-offset day shifts.
+function formatInvoiceNumber(cadence, periodEndIso, code) {
+  let y, m, d;
+  if (periodEndIso && /^\d{4}-\d{2}-\d{2}$/.test(periodEndIso)) {
+    [y, m, d] = periodEndIso.split('-');
+  } else {
+    const now = new Date();
+    y = String(now.getFullYear());
+    m = String(now.getMonth() + 1).padStart(2, '0');
+    d = String(now.getDate()).padStart(2, '0');
+  }
+  if (cadence === 'weekly' || cadence === 'biweekly' || cadence === 'custom') {
+    return `INV-${y}-${m}-${d}-${code}`;
+  }
+  return `INV-${y}-${m}-${code}`; // monthly (default)
+}
+
+// Refreshes the Invoice # input + cadence badge using current _client + dateEnd.
+// Safe to call from listeners; bails out if no client is selected.
+function autoPopulateInvNum() {
+  if (!_client) return;
+  const cadence = _client.billingCadence || 'monthly';
+  const code    = getClientCode(_client);
+  const end     = g('dateEnd').value;
+  g('invNum').value = formatInvoiceNumber(cadence, end, code);
+  renderCadenceBadge(cadence);
+}
+
+function renderCadenceBadge(cadence) {
+  const el = g('cadenceBadge');
+  if (!el) return;
+  const labels = {
+    weekly:   '🔄 Weekly',
+    biweekly: '🔁 Biweekly',
+    monthly:  '📅 Monthly',
+    custom:   '⚙️ Custom',
+  };
+  el.textContent = labels[cadence] || labels.monthly;
+  el.dataset.cadence = cadence;
+  el.style.display = 'inline-block';
 }
 
 // ─── RATE CARDS ───────────────────────────────────────────────────────────────
@@ -1340,6 +1411,7 @@ async function sendDraft() {
 function resetAll() {
   g('selClient').value = '';
   g('invNum').value = '';
+  const cb = g('cadenceBadge'); if (cb) cb.style.display = 'none';
   g('billingCard').style.display = 'none';
   g('kpiSection').style.display = 'none';
   g('statusBar').style.display = 'none';
