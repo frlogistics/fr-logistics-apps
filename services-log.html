@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FR-Logistics | Services Log</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f1f5f9; --surface:#ffffff; --panel:#f8fafc;
+    --border:#e2e8f0; --border-strong:#cbd5e1;
+    --text:#0f172a; --muted:#64748b; --hint:#94a3b8;
+    --g1:#0ea55f; --g2:#16a34a; --g3:#15803d; --gdk:#065f46;
+    --glt:#ecfdf5; --gmd:#d1fae5; --gbr:#bbf7d0;
+    --amber-bg:#fef3c7; --amber-tx:#92400e;
+    --red-bg:#fee2e2; --red-tx:#991b1b;
+    --gray-bg:#f1f5f9; --gray-tx:#475569;
+    --blue-bg:#dbeafe; --blue-tx:#1e40af;
+    --shadow:0 1px 3px rgba(0,0,0,.07),0 4px 14px rgba(0,0,0,.05);
+    --shadow2:0 8px 30px rgba(0,0,0,.10);
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'DM Sans',system-ui,sans-serif;
+    background:var(--bg);color:var(--text);
+    min-height:100vh;line-height:1.5;-webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{font-family:'Syne',sans-serif;letter-spacing:-.01em}
+
+  /* ── Header ───────────────────────────────────────────────────── */
+  .topbar{
+    background:var(--surface);border-bottom:1px solid var(--border);
+    padding:14px 24px;display:flex;justify-content:space-between;align-items:center;
+    position:sticky;top:0;z-index:50;
+  }
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand-mark{
+    width:34px;height:34px;border-radius:8px;
+    background:linear-gradient(135deg,var(--g1),var(--gdk));
+    color:#fff;font-family:'Syne',sans-serif;font-weight:800;font-size:15px;
+    display:flex;align-items:center;justify-content:center;letter-spacing:-.02em;
+  }
+  .brand-text{font-family:'Syne',sans-serif;font-weight:700;font-size:16px;color:var(--text)}
+  .brand-sub{font-size:11px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+  .back-link{
+    color:var(--muted);text-decoration:none;font-size:13px;font-weight:500;
+    padding:8px 14px;border-radius:8px;border:1px solid var(--border);
+    transition:all .15s;
+  }
+  .back-link:hover{background:var(--panel);color:var(--text);border-color:var(--border-strong)}
+
+  /* ── Container ──────────────────────────────────────────────────── */
+  .wrap{max-width:1280px;margin:0 auto;padding:24px}
+  .page-head{margin-bottom:20px}
+  .page-head h1{font-size:26px;font-weight:700;margin-bottom:4px}
+  .page-head p{color:var(--muted);font-size:14px}
+
+  /* ── KPI cards ──────────────────────────────────────────────────── */
+  .kpis{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+    gap:14px;margin-bottom:24px;
+  }
+  .kpi{
+    background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:16px 18px;box-shadow:var(--shadow);
+  }
+  .kpi-label{font-size:11px;font-weight:600;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+  .kpi-value{font-family:'Syne',sans-serif;font-size:26px;font-weight:700;color:var(--text);line-height:1.1}
+  .kpi-sub{font-size:12px;color:var(--hint);margin-top:4px}
+
+  /* ── Card ───────────────────────────────────────────────────────── */
+  .card{
+    background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:20px 22px;box-shadow:var(--shadow);margin-bottom:20px;
+  }
+  .card h2{font-size:17px;font-weight:600;margin-bottom:4px;color:var(--text)}
+  .card .card-sub{font-size:13px;color:var(--muted);margin-bottom:18px}
+
+  /* ── Form ───────────────────────────────────────────────────────── */
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .grid-3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px}
+  .grid-1{display:grid;grid-template-columns:1fr;gap:14px}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:11px;font-weight:600;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.04em}
+  .field input,.field select,.field textarea{
+    font:inherit;font-size:14px;color:var(--text);
+    background:var(--surface);border:1px solid var(--border);border-radius:8px;
+    padding:9px 12px;outline:none;transition:border-color .15s,box-shadow .15s;
+    width:100%;
+  }
+  .field input:focus,.field select:focus,.field textarea:focus{
+    border-color:var(--g2);box-shadow:0 0 0 3px rgba(22,163,74,.12);
+  }
+  .field input:disabled,.field select:disabled{
+    background:var(--panel);color:var(--hint);cursor:not-allowed;
+  }
+  .field textarea{resize:vertical;min-height:60px;font-family:inherit}
+  .hint{font-size:11px;color:var(--hint)}
+
+  .form-foot{
+    display:flex;justify-content:space-between;align-items:center;
+    margin-top:18px;padding-top:14px;border-top:1px solid var(--border);
+  }
+  .estimate{font-size:13px;color:var(--muted)}
+  .estimate strong{color:var(--text);font-weight:600;font-size:15px}
+  .estimate em{color:var(--hint);font-style:normal;margin-left:4px}
+
+  /* ── Buttons ────────────────────────────────────────────────────── */
+  .btn{
+    font:inherit;font-size:13px;font-weight:600;
+    padding:9px 18px;border-radius:8px;cursor:pointer;
+    border:1px solid transparent;transition:all .15s;
+  }
+  .btn-primary{background:var(--g2);color:#fff;border-color:var(--g2)}
+  .btn-primary:hover{background:var(--g3);border-color:var(--g3)}
+  .btn-primary:disabled{background:var(--hint);border-color:var(--hint);cursor:not-allowed}
+  .btn-ghost{background:transparent;color:var(--muted);border-color:var(--border)}
+  .btn-ghost:hover{background:var(--panel);color:var(--text);border-color:var(--border-strong)}
+  .btn-danger{background:transparent;color:var(--red-tx);border-color:var(--red-bg)}
+  .btn-danger:hover{background:var(--red-bg)}
+  .btn-row{display:flex;gap:10px}
+
+  /* ── Filters bar ────────────────────────────────────────────────── */
+  .filters{
+    display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:12px;align-items:end;
+    margin-bottom:18px;
+  }
+
+  /* ── Table ──────────────────────────────────────────────────────── */
+  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead{background:var(--panel)}
+  th{
+    text-align:left;padding:11px 14px;font-size:11px;font-weight:600;
+    color:var(--muted);text-transform:uppercase;letter-spacing:.04em;
+    border-bottom:1px solid var(--border);white-space:nowrap;
+  }
+  th.num,td.num{text-align:right}
+  th.ctr,td.ctr{text-align:center}
+  td{padding:11px 14px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--panel)}
+  td.muted{color:var(--muted)}
+  td.right-actions{text-align:right;white-space:nowrap}
+  td .icon-btn{
+    background:none;border:none;cursor:pointer;color:var(--muted);
+    font-size:14px;padding:4px 8px;border-radius:6px;transition:all .15s;
+  }
+  td .icon-btn:hover{background:var(--panel);color:var(--text)}
+  td .icon-btn.delete:hover{background:var(--red-bg);color:var(--red-tx)}
+
+  .badge{
+    display:inline-block;padding:3px 9px;border-radius:6px;
+    font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;
+  }
+  .badge-logged{background:var(--amber-bg);color:var(--amber-tx)}
+  .badge-billed{background:var(--gmd);color:var(--gdk)}
+  .badge-voided{background:var(--gray-bg);color:var(--gray-tx)}
+
+  .empty{padding:40px 20px;text-align:center;color:var(--muted);font-size:14px}
+  .loading{padding:40px 20px;text-align:center;color:var(--hint);font-size:14px}
+
+  /* ── Toast ──────────────────────────────────────────────────────── */
+  #toast{
+    position:fixed;bottom:24px;right:24px;z-index:200;
+    background:var(--text);color:#fff;padding:12px 18px;border-radius:8px;
+    font-size:13px;font-weight:500;box-shadow:var(--shadow2);
+    transform:translateY(100px);opacity:0;transition:all .25s;
+  }
+  #toast.show{transform:translateY(0);opacity:1}
+  #toast.error{background:var(--red-tx)}
+  #toast.success{background:var(--g3)}
+
+  /* ── Responsive ─────────────────────────────────────────────────── */
+  @media(max-width:780px){
+    .grid-2,.grid-3{grid-template-columns:1fr}
+    .filters{grid-template-columns:1fr}
+    .form-foot{flex-direction:column;gap:12px;align-items:stretch}
+    .btn-row{justify-content:stretch}
+    .btn-row .btn{flex:1}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark">FR</div>
+    <div>
+      <div class="brand-text">Services Log</div>
+      <div class="brand-sub">FR-Logistics Operations</div>
+    </div>
+  </div>
+  <a href="portal.html" class="back-link">← Back to portal</a>
+</div>
+
+<div class="wrap">
+
+  <div class="page-head">
+    <h1>Services Rendered Log</h1>
+    <p>Capture warehouse services per client to feed monthly billing</p>
+  </div>
+
+  <!-- KPIs ─────────────────────────────────────────────────────── -->
+  <div class="kpis">
+    <div class="kpi">
+      <div class="kpi-label">This month — total billed value</div>
+      <div class="kpi-value" id="kpi-total">$0.00</div>
+      <div class="kpi-sub" id="kpi-total-sub">Entries logged for current period</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Entries this month</div>
+      <div class="kpi-value" id="kpi-count">0</div>
+      <div class="kpi-sub" id="kpi-count-sub">Across all clients</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Pending to bill</div>
+      <div class="kpi-value" id="kpi-pending">$0.00</div>
+      <div class="kpi-sub" id="kpi-pending-sub">Status: logged</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Top client this month</div>
+      <div class="kpi-value" id="kpi-topclient" style="font-size:18px">—</div>
+      <div class="kpi-sub" id="kpi-topclient-sub">By billed value</div>
+    </div>
+  </div>
+
+  <!-- New entry form ──────────────────────────────────────────── -->
+  <div class="card">
+    <h2>New entry</h2>
+    <p class="card-sub">Log a service performed in the warehouse</p>
+
+    <div class="grid-2">
+      <div class="field">
+        <label for="f-client">Client</label>
+        <select id="f-client">
+          <option value="">Loading clients…</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-date">Service date</label>
+        <input type="date" id="f-date">
+      </div>
+    </div>
+
+    <div class="grid-3" style="margin-top:14px">
+      <div class="field">
+        <label for="f-service">Service</label>
+        <select id="f-service">
+          <option value="">Loading services…</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-qty">Quantity</label>
+        <input type="number" id="f-qty" step="0.25" min="0" placeholder="0">
+      </div>
+      <div class="field">
+        <label for="f-unit">Unit · rate</label>
+        <input type="text" id="f-unit" disabled value="—">
+      </div>
+    </div>
+
+    <div class="grid-2" style="margin-top:14px">
+      <div class="field">
+        <label for="f-ref">Reference (optional)</label>
+        <input type="text" id="f-ref" placeholder="e.g. INB-2026-0418, Order #12345">
+      </div>
+      <div class="field">
+        <label for="f-by">Performed by (optional)</label>
+        <input type="text" id="f-by" placeholder="e.g. Warehouse Team, Carlos">
+      </div>
+    </div>
+
+    <div class="grid-1" style="margin-top:14px">
+      <div class="field">
+        <label for="f-notes">Notes (optional)</label>
+        <textarea id="f-notes" placeholder="Brief note about the work performed"></textarea>
+      </div>
+    </div>
+
+    <div class="form-foot">
+      <div class="estimate">
+        Estimated subtotal:
+        <strong id="estimate-total">$0.00</strong>
+        <em id="estimate-formula"></em>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="btn-clear">Clear</button>
+        <button class="btn btn-primary" id="btn-save">Save entry</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters + table ─────────────────────────────────────────── -->
+  <div class="card">
+    <h2>Recent entries</h2>
+    <p class="card-sub">Filter by client, date range or status — last 200 entries shown</p>
+
+    <div class="filters">
+      <div class="field">
+        <label for="filt-client">Client</label>
+        <select id="filt-client">
+          <option value="">All clients</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="filt-from">From</label>
+        <input type="date" id="filt-from">
+      </div>
+      <div class="field">
+        <label for="filt-to">To</label>
+        <input type="date" id="filt-to">
+      </div>
+      <div class="field">
+        <label for="filt-status">Status</label>
+        <select id="filt-status">
+          <option value="">All</option>
+          <option value="logged">Logged</option>
+          <option value="billed">Billed</option>
+          <option value="voided">Voided</option>
+        </select>
+      </div>
+      <button class="btn btn-ghost" id="btn-export">Export CSV</button>
+    </div>
+
+    <div class="table-wrap">
+      <table id="entries-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Client</th>
+            <th>Service</th>
+            <th class="num">Qty</th>
+            <th>Unit</th>
+            <th class="num">Rate</th>
+            <th class="num">Total</th>
+            <th>Reference</th>
+            <th class="ctr">Status</th>
+            <th class="ctr">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="entries-body">
+          <tr><td colspan="10" class="loading">Loading entries…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════════════
+// State
+// ════════════════════════════════════════════════════════════════════
+const API_LOG     = '/.netlify/functions/services-log';
+const API_CLIENTS = '/.netlify/functions/wa-clients';
+
+let CLIENTS = [];
+let CATALOG = [];
+let ENTRIES = [];
+
+// ════════════════════════════════════════════════════════════════════
+// Init
+// ════════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('f-date').value = todayISO();
+  setMonthDefaultFilters();
+  Promise.all([loadClients(), loadCatalog()])
+    .then(() => loadEntries())
+    .catch(err => toast('Init error: ' + err.message, 'error'));
+
+  // Form events
+  document.getElementById('f-service').addEventListener('change', onServiceChange);
+  document.getElementById('f-qty').addEventListener('input', updateEstimate);
+  document.getElementById('btn-save').addEventListener('click', saveEntry);
+  document.getElementById('btn-clear').addEventListener('click', clearForm);
+
+  // Filters events
+  ['filt-client','filt-from','filt-to','filt-status'].forEach(id =>
+    document.getElementById(id).addEventListener('change', loadEntries));
+  document.getElementById('btn-export').addEventListener('click', exportCSV);
+});
+
+// ════════════════════════════════════════════════════════════════════
+// Loaders
+// ════════════════════════════════════════════════════════════════════
+async function loadClients() {
+  const r = await fetch(API_CLIENTS);
+  const data = await r.json();
+  if (!Array.isArray(data)) throw new Error('Failed to load clients');
+  CLIENTS = data
+    .filter(c => (c.status === 'Active') || c.active === true)
+    .sort((a,b) => (a.name||'').localeCompare(b.name||''));
+
+  const optsEntry  = '<option value="">— Select client —</option>' +
+    CLIENTS.map(c => `<option value="${c.id}" data-name="${escapeAttr(c.name)}">${escapeHTML(c.name)}${c.company ? ' · ' + escapeHTML(c.company) : ''}</option>`).join('');
+  const optsFilter = '<option value="">All clients</option>' +
+    CLIENTS.map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('');
+
+  document.getElementById('f-client').innerHTML = optsEntry;
+  document.getElementById('filt-client').innerHTML = optsFilter;
+}
+
+async function loadCatalog() {
+  const r = await fetch(API_LOG + '?catalog=true');
+  const data = await r.json();
+  if (!Array.isArray(data)) throw new Error('Failed to load catalog');
+  CATALOG = data;
+  const opts = '<option value="">— Select service —</option>' +
+    CATALOG.map(s => `<option value="${s.service_code}">${escapeHTML(s.service_name)}</option>`).join('');
+  document.getElementById('f-service').innerHTML = opts;
+}
+
+async function loadEntries() {
+  const tbody = document.getElementById('entries-body');
+  tbody.innerHTML = '<tr><td colspan="10" class="loading">Loading entries…</td></tr>';
+
+  const params = new URLSearchParams();
+  const client = document.getElementById('filt-client').value;
+  const from   = document.getElementById('filt-from').value;
+  const to     = document.getElementById('filt-to').value;
+  const status = document.getElementById('filt-status').value;
+  if (client) params.set('client_id', client);
+  if (from)   params.set('from', from);
+  if (to)     params.set('to', to);
+  if (status) params.set('status', status);
+  params.set('limit', '200');
+
+  try {
+    const r = await fetch(API_LOG + '?' + params.toString());
+    const data = await r.json();
+    if (!Array.isArray(data)) throw new Error('Failed to load entries');
+    ENTRIES = data;
+    renderEntries();
+    updateKPIs();
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="10" class="empty">Error: ${escapeHTML(err.message)}</td></tr>`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Render
+// ════════════════════════════════════════════════════════════════════
+function renderEntries() {
+  const tbody = document.getElementById('entries-body');
+  if (!ENTRIES.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="empty">No entries match the current filters</td></tr>';
+    return;
+  }
+  tbody.innerHTML = ENTRIES.map(e => {
+    const isVoided = e.status === 'voided';
+    const isBilled = e.status === 'billed';
+    return `
+      <tr ${isVoided ? 'style="opacity:.55"' : ''}>
+        <td class="muted">${formatDate(e.service_date)}</td>
+        <td>${escapeHTML(e.client_name)}</td>
+        <td>${escapeHTML(e.service_name)}</td>
+        <td class="num">${formatQty(e.quantity)}</td>
+        <td class="muted">${escapeHTML(e.unit)}</td>
+        <td class="num muted">${formatMoney(e.unit_rate)}</td>
+        <td class="num"><strong>${formatMoney(e.line_total)}</strong></td>
+        <td class="muted">${escapeHTML(e.reference_id || '—')}</td>
+        <td class="ctr"><span class="badge badge-${e.status}">${e.status}</span></td>
+        <td class="right-actions">
+          ${isBilled || isVoided ? '' : `<button class="icon-btn delete" onclick="voidEntry(${e.id})" title="Void entry">✕</button>`}
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+function updateKPIs() {
+  const yymm = todayISO().slice(0,7);
+  const monthEntries = ENTRIES.filter(e =>
+    e.service_date && e.service_date.slice(0,7) === yymm && e.status !== 'voided');
+
+  const total   = monthEntries.reduce((s,e) => s + (e.line_total || 0), 0);
+  const pending = monthEntries.filter(e => e.status === 'logged')
+                              .reduce((s,e) => s + (e.line_total || 0), 0);
+
+  // Top client by total
+  const byClient = {};
+  monthEntries.forEach(e => { byClient[e.client_name] = (byClient[e.client_name] || 0) + (e.line_total || 0); });
+  const top = Object.entries(byClient).sort((a,b) => b[1] - a[1])[0];
+
+  document.getElementById('kpi-total').textContent   = formatMoney(total);
+  document.getElementById('kpi-count').textContent   = monthEntries.length;
+  document.getElementById('kpi-pending').textContent = formatMoney(pending);
+  document.getElementById('kpi-topclient').textContent = top ? top[0] : '—';
+  document.getElementById('kpi-topclient-sub').textContent = top ? formatMoney(top[1]) + ' billed' : 'By billed value';
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Form actions
+// ════════════════════════════════════════════════════════════════════
+function onServiceChange() {
+  const code = document.getElementById('f-service').value;
+  const svc  = CATALOG.find(s => s.service_code === code);
+  if (!svc) {
+    document.getElementById('f-unit').value = '—';
+    updateEstimate();
+    return;
+  }
+  document.getElementById('f-unit').value = `${svc.unit} · ${formatMoney(svc.default_rate)}/${svc.unit}`;
+  updateEstimate();
+}
+
+function updateEstimate() {
+  const code = document.getElementById('f-service').value;
+  const qty  = parseFloat(document.getElementById('f-qty').value || 0);
+  const svc  = CATALOG.find(s => s.service_code === code);
+  if (!svc || !qty || qty <= 0) {
+    document.getElementById('estimate-total').textContent = '$0.00';
+    document.getElementById('estimate-formula').textContent = '';
+    return;
+  }
+  const total = qty * svc.default_rate;
+  document.getElementById('estimate-total').textContent = formatMoney(total);
+  document.getElementById('estimate-formula').textContent = `(${qty} × ${formatMoney(svc.default_rate)})`;
+}
+
+async function saveEntry() {
+  const btn = document.getElementById('btn-save');
+  const clientSel = document.getElementById('f-client');
+  const serviceSel = document.getElementById('f-service');
+
+  const client_id = clientSel.value;
+  const client_name = clientSel.options[clientSel.selectedIndex]?.dataset.name || '';
+  const code = serviceSel.value;
+  const svc = CATALOG.find(s => s.service_code === code);
+  const qty = parseFloat(document.getElementById('f-qty').value || 0);
+  const date = document.getElementById('f-date').value;
+
+  // Validate
+  if (!client_id) return toast('Select a client', 'error');
+  if (!svc) return toast('Select a service', 'error');
+  if (!qty || qty <= 0) return toast('Quantity must be greater than 0', 'error');
+  if (!date) return toast('Service date required', 'error');
+
+  const payload = {
+    client_id,
+    client_name,
+    service_code: svc.service_code,
+    service_name: svc.service_name,
+    quantity: qty,
+    unit: svc.unit,
+    unit_rate: svc.default_rate,
+    service_date: date,
+    reference_id: document.getElementById('f-ref').value.trim() || null,
+    performed_by: document.getElementById('f-by').value.trim() || null,
+    notes: document.getElementById('f-notes').value.trim() || null,
+    logged_by: 'Portal',
+  };
+
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  try {
+    const r = await fetch(API_LOG, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Save failed');
+    toast('Entry saved', 'success');
+    clearForm();
+    loadEntries();
+  } catch (err) {
+    toast('Error: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save entry';
+  }
+}
+
+async function voidEntry(id) {
+  if (!confirm('Void this entry? This cannot be undone (but a new entry can replace it).')) return;
+  try {
+    const r = await fetch(API_LOG + '?id=' + id, { method: 'DELETE' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Void failed');
+    toast('Entry voided', 'success');
+    loadEntries();
+  } catch (err) {
+    toast('Error: ' + err.message, 'error');
+  }
+}
+
+function clearForm() {
+  document.getElementById('f-client').value = '';
+  document.getElementById('f-service').value = '';
+  document.getElementById('f-qty').value = '';
+  document.getElementById('f-unit').value = '—';
+  document.getElementById('f-ref').value = '';
+  document.getElementById('f-by').value = '';
+  document.getElementById('f-notes').value = '';
+  document.getElementById('f-date').value = todayISO();
+  updateEstimate();
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Export CSV
+// ════════════════════════════════════════════════════════════════════
+function exportCSV() {
+  if (!ENTRIES.length) return toast('Nothing to export', 'error');
+  const headers = ['Date','Client','Service','Quantity','Unit','Rate','Total','Reference','Performed by','Notes','Status','Period'];
+  const rows = ENTRIES.map(e => [
+    e.service_date, e.client_name, e.service_name,
+    e.quantity, e.unit, e.unit_rate, e.line_total,
+    e.reference_id, e.performed_by, e.notes, e.status, e.invoice_period
+  ]);
+  const csv = [headers, ...rows]
+    .map(r => r.map(v => csvEscape(v)).join(','))
+    .join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `services-log-${todayISO()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('CSV exported', 'success');
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Helpers
+// ════════════════════════════════════════════════════════════════════
+function todayISO() {
+  const d = new Date();
+  return d.getFullYear() + '-' +
+    String(d.getMonth()+1).padStart(2,'0') + '-' +
+    String(d.getDate()).padStart(2,'0');
+}
+
+function setMonthDefaultFilters() {
+  const d = new Date();
+  const yymm = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+  document.getElementById('filt-from').value = yymm + '-01';
+  document.getElementById('filt-to').value = todayISO();
+}
+
+function formatMoney(n) {
+  const v = parseFloat(n || 0);
+  return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function formatQty(n) {
+  const v = parseFloat(n || 0);
+  return v % 1 === 0 ? v.toFixed(0) : v.toFixed(2);
+}
+function formatDate(iso) {
+  if (!iso) return '—';
+  const [y,m,d] = iso.split('-');
+  return `${d}/${m}/${y.slice(2)}`;
+}
+function escapeHTML(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escapeAttr(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+}
+function csvEscape(v) {
+  if (v == null) return '';
+  const s = String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+}
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + (type || '');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.className = ''; }, 3200);
+}
+
+// Expose for inline onclick
+window.voidEntry = voidEntry;
+</script>
+
+</body>
+</html>
