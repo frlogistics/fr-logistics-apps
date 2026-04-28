@@ -31,6 +31,9 @@
 //   action=link_outbound    → set outbound_tracking + transition received→labeled
 //                             (body: id, outbound_tracking, operator, optional force:true)
 //   action=unlink_outbound  → clear outbound_tracking (status unchanged)
+//   action=process_orphan   → upload PDF + fill outbound/order/content + transition orphan→received
+//                             (body: id, outbound_tracking, outbound_carrier, order_id, content,
+//                              label_filename, pdf_base64, operator)
 
 const SUPABASE_URL  = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY  = Netlify.env.get("SUPABASE_SERVICE_KEY");
@@ -49,6 +52,25 @@ async function sbSignedUrl(path, expiresIn = 300) {
   if (!r.ok) throw new Error(`sbSignedUrl: ${await r.text()}`);
   const j = await r.json();
   return `${SUPABASE_URL}/storage/v1${j.signedURL || j.signedUrl || j.url}`;
+}
+
+// Upload a binary blob to Supabase Storage. Used by process_orphan to push the
+// PDF that the client emailed. Path is the in-bucket path (e.g. "LN/123.pdf").
+// Uses upsert=true so re-processing an orphan overwrites cleanly.
+async function sbStorageUpload(path, bytes, contentType = "application/pdf") {
+  const url = `${SUPABASE_URL}/storage/v1/object/${SB_BUCKET}/${path}`;
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": contentType,
+      "x-upsert": "true"
+    },
+    body: bytes
+  });
+  if (!r.ok) throw new Error(`sbStorageUpload: ${r.status} ${await r.text()}`);
+  return r.json().catch(() => ({ ok: true }));
 }
 
 // Response helpers
@@ -277,6 +299,184 @@ export default async function handler(req) {
         return jRes({ ok: true, action: "create_orphan", row: inserted[0] });
       }
 
+      // ── process_orphan: complete an orphan record manually ──────────────
+      // This is the catch-all for the case where:
+      //   - The package physically arrived (orphan was created via scan)
+      //   - The client did NOT send the structured email the parser expects
+      //   - Instead they replied conversationally with the label as PDF attached
+      //
+      // Operator opens the orphan in the drawer, clicks "Process orphan",
+      // drops the PDF (filename usually contains the outbound tracking),
+      // picks the carrier, fills order_id + content, and submits.
+      //
+      // We:
+      //   1. Upload the PDF to dropship-labels/{client_code}/{tracking}.pdf
+      //   2. Patch the dropshipments row: status orphan → received, fill all fields
+      //   3. Sync to shipments_general so Billing counts it (Day 4 behavior)
+      //
+      // Body: { id, outbound_tracking, outbound_carrier, order_id, content,
+      //         label_filename, pdf_base64, operator }
+      //         (qty_boxes, notes, outbound_platform are optional)
+      if (act === "process_orphan") {
+        const id              = body.id;
+        const outbound        = (body.outbound_tracking || "").trim();
+        const outboundCarrier = (body.outbound_carrier || "").trim();
+        const outboundPlatform= (body.outbound_platform || "").trim() || null;
+        const orderId         = (body.order_id || "").trim() || null;
+        const content         = (body.content || "").trim() || null;
+        const qtyBoxes        = parseInt(body.qty_boxes || "1", 10) || 1;
+        const labelFilename   = (body.label_filename || "").trim() || null;
+        const pdfBase64       = body.pdf_base64 || null;
+        const notes           = (body.notes || "").trim().slice(0, 500) || null;
+
+        if (!id) return jRes({ error: "id required" }, 400);
+        if (!outbound) return jRes({ error: "outbound_tracking required" }, 400);
+        if (outbound.length < 6 || outbound.length > 64) {
+          return jRes({ error: "outbound_tracking must be 6-64 characters" }, 400);
+        }
+        if (!/^[A-Za-z0-9-]+$/.test(outbound)) {
+          return jRes({ error: "outbound_tracking must contain only letters, digits, and hyphens" }, 400);
+        }
+        if (!outboundCarrier) return jRes({ error: "outbound_carrier required" }, 400);
+        if (!pdfBase64) return jRes({ error: "pdf_base64 required" }, 400);
+
+        // Load the orphan row + client config
+        const cur = await sbSelect("dropshipments",
+          `?id=eq.${id}&select=id,status,client_id,tracking_number,outbound_tracking,physical_received_at,received_by&limit=1`
+        );
+        if (!cur.length) return jRes({ error: "not found" }, 404);
+        const current = cur[0];
+
+        if (current.status !== "orphan") {
+          return jRes({
+            error: `process_orphan only valid for status='orphan' (current: '${current.status}')`,
+            hint: "use link_outbound for received/labeled rows instead"
+          }, 409);
+        }
+
+        // Reject if outbound is the same as the inbound (sanity: catches operator mis-typing)
+        if (outbound === current.tracking_number) {
+          return jRes({
+            error: "outbound_tracking cannot be the same as the inbound tracking_number",
+            hint: "the outbound is the tracking shown on the carrier label sent by the client (e.g. MailAmericas number)"
+          }, 400);
+        }
+
+        // Reject if this outbound is already used elsewhere
+        const dupes = await sbSelect("dropshipments",
+          `?outbound_tracking=eq.${encodeURIComponent(outbound)}&select=id,tracking_number,status&limit=2`
+        );
+        const conflicting = dupes.find(d => d.id !== id);
+        if (conflicting) {
+          return jRes({
+            error: "outbound_tracking is already linked to another package",
+            conflict: { id: conflicting.id, tracking_number: conflicting.tracking_number, status: conflicting.status }
+          }, 409);
+        }
+
+        // Resolve client_code for the storage path
+        const cfgRows = await sbSelect("dropship_client_configs",
+          `?client_id=eq.${current.client_id}&select=client_code,client_name_billing,outbound_carrier&limit=1`
+        );
+        if (!cfgRows.length) return jRes({ error: "client config not found" }, 400);
+        const clientCode = (cfgRows[0].client_code || "MISC").trim();
+
+        // Decode and upload the PDF
+        let pdfBytes;
+        try {
+          // Strip data: prefix if present (e.g. "data:application/pdf;base64,...")
+          const cleanB64 = pdfBase64.includes(",") ? pdfBase64.split(",")[1] : pdfBase64;
+          const binStr = atob(cleanB64);
+          pdfBytes = new Uint8Array(binStr.length);
+          for (let i = 0; i < binStr.length; i++) pdfBytes[i] = binStr.charCodeAt(i);
+        } catch (e) {
+          return jRes({ error: "invalid pdf_base64 encoding", detail: e.message }, 400);
+        }
+
+        // Storage path: e.g. "LN/46886078645.pdf" — same convention as the parser.
+        const storagePath = `${clientCode}/${outbound}.pdf`;
+        try {
+          await sbStorageUpload(storagePath, pdfBytes, "application/pdf");
+        } catch (e) {
+          return jRes({ error: "PDF upload failed", detail: e.message }, 500);
+        }
+
+        // Patch the dropshipments row: orphan → received with all fields filled
+        const now = new Date().toISOString();
+        const patch = {
+          status:                "received",
+          outbound_tracking:     outbound,
+          outbound_carrier:      outboundCarrier,
+          outbound_platform:     outboundPlatform,
+          order_id:              orderId,
+          content:               content,
+          qty_boxes:             qtyBoxes,
+          label_url:             storagePath,
+          label_filename:        labelFilename || `${outbound}.pdf`,
+          received_by:           operator,
+          // Preserve physical_received_at if it was already set by create_orphan;
+          // otherwise stamp it now.
+          physical_received_at:  current.physical_received_at || now,
+          // Clear orphan-alert flag so future re-orphan would re-alert
+          orphan_alerted_at:     null
+        };
+        if (notes) patch.notes = notes;
+
+        let updated;
+        try {
+          updated = await sbPatch("dropshipments", `id=eq.${id}`, patch);
+        } catch (e) {
+          // Catch the orphan_alerted_at column missing case (pre-Day 5 schemas)
+          // and retry without it.
+          if (String(e.message).includes("orphan_alerted_at")) {
+            delete patch.orphan_alerted_at;
+            updated = await sbPatch("dropshipments", `id=eq.${id}`, patch);
+          } else {
+            throw e;
+          }
+        }
+        const updatedRow = updated[0];
+
+        // ── Sync to shipments_general so Billing Generator counts the inbound ──
+        // Mirrors the receive-action sync logic (forward-only, idempotent).
+        try {
+          const cfg = cfgRows[0];
+          if (cfg?.client_name_billing) {
+            const sgRow = {
+              tracking:  current.tracking_number,
+              direction: "Inbound",
+              type:      "Inbound (Drop-Shipment)",
+              carrier:   "Other",
+              client:    cfg.client_name_billing,
+              notes:     `Order: ${orderId || "—"}${content ? ` · ${content}` : ""} · processed from orphan`
+            };
+            try {
+              await sbInsert("shipments_general", sgRow);
+              console.log(`[dropshipments.process_orphan] synced to shipments_general: Inbound ${sgRow.tracking}`);
+            } catch (e) {
+              if (String(e.message).includes("23505") || String(e.message).toLowerCase().includes("duplicate")) {
+                console.log(`[dropshipments.process_orphan] already in shipments_general: ${sgRow.tracking}`);
+              } else {
+                throw e;
+              }
+            }
+          } else {
+            console.warn(`[dropshipments.process_orphan] no client_name_billing — skipping sync`);
+          }
+        } catch (e) {
+          // Non-fatal — primary update already succeeded
+          console.error(`[dropshipments.process_orphan] shipments_general sync failed:`, e.message);
+        }
+
+        return jRes({
+          ok: true,
+          action: "process_orphan",
+          row: updatedRow,
+          label_path: storagePath,
+          transitioned: "orphan → received"
+        });
+      }
+
       // ── link_outbound: assign an outbound_tracking + transition to labeled ──
       // Used by the post-print "Link outbound trackings" modal. The operator
       // scans the carrier label barcode after printing; this writes the
@@ -421,7 +621,7 @@ export default async function handler(req) {
       };
 
       const rule = LEGAL[act];
-      if (!rule) return jRes({ error: `unknown action '${act}'`, allowed: [...Object.keys(LEGAL), "create_orphan", "link_outbound", "unlink_outbound"] }, 400);
+      if (!rule) return jRes({ error: `unknown action '${act}'`, allowed: [...Object.keys(LEGAL), "create_orphan", "link_outbound", "unlink_outbound", "process_orphan"] }, 400);
       if (!rule.from.includes(current.status)) {
         return jRes({ error: `cannot ${act} from status '${current.status}'`, allowed_from: rule.from }, 409);
       }
