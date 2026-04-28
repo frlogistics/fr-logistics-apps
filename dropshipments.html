@@ -430,6 +430,54 @@
   .modal-box textarea:focus, .modal-box input:focus { border-color: var(--accent); }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 
+  /* ─── PROCESS ORPHAN MODAL — drop-zone styles ─── */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 24px 16px;
+    text-align: center;
+    background: #f8fafc;
+    cursor: pointer;
+    transition: all .15s ease;
+  }
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .drop-zone.has-file {
+    border-style: solid;
+    border-color: var(--accent);
+    background: #f0fdf4;
+    text-align: left;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .drop-zone-icon { font-size: 32px; }
+  .drop-zone-text { font-size: 13px; color: var(--muted); }
+  .drop-zone-text strong { color: var(--text); display: block; margin-bottom: 4px; font-size: 14px; font-weight: 600; }
+  .drop-zone.has-file .drop-zone-text { flex: 1; }
+  .drop-zone .file-info { font-family: 'DM Mono'; font-size: 11px; }
+
+  .form-grid-2 {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .form-field { display: flex; flex-direction: column; gap: 5px; }
+  .form-field label {
+    font-size: 10px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .form-field input, .form-field select, .form-field textarea {
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: inherit; font-size: 13px;
+    outline: none;
+    background: #fff;
+  }
+  .form-field input:focus, .form-field select:focus, .form-field textarea:focus {
+    border-color: var(--accent);
+  }
+  .form-field input.mono, .form-field textarea.mono { font-family: 'DM Mono'; }
+
   /* ─── ROW CHECKBOX (batch select) ────────────── */
   .row-check {
     width: 18px; height: 18px;
@@ -534,6 +582,7 @@
     .kpis { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; margin-left: 0; padding-bottom: 4px; }
     .kpi { flex-shrink: 0; }
     .detail { width: 100%; }
+    .form-grid-2 { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -772,6 +821,86 @@
     <div class="modal-actions">
       <button class="btn" onclick="closeOrphanModal()">Cancel</button>
       <button class="btn btn-primary" id="orphanConfirmBtn" style="min-width:150px;">Create orphan</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: process orphan (manual link with PDF) -->
+<div class="modal-backdrop" id="processOrphanModal">
+  <div class="modal-box" style="max-width: 580px;">
+    <h3>🔗 Process orphan package</h3>
+    <p style="color:var(--muted); font-size:13px; margin:6px 0 14px 0;">
+      Use this when the client sent the label outside the structured email format
+      (for example, as a reply with the PDF attached). Drop the PDF below, fill in
+      the missing fields, and the package will move to <strong>Received</strong>.
+    </p>
+
+    <div style="background:#fce7f3; padding:10px 14px; border-radius:10px; margin-bottom:14px;">
+      <div style="font-size:10px; color:var(--s-orphan-text); text-transform:uppercase; letter-spacing:0.08em; font-weight:700; margin-bottom:4px;">Inbound tracking</div>
+      <div id="processOrphanInbound" style="font-family:'DM Mono'; font-size:14px; font-weight:600; color:var(--text);"></div>
+    </div>
+
+    <!-- PDF drop zone -->
+    <div class="form-field" style="margin-bottom:14px;">
+      <label>Outbound label PDF</label>
+      <div class="drop-zone" id="processOrphanDrop">
+        <div class="drop-zone-icon">📄</div>
+        <div class="drop-zone-text">
+          <strong>Drop PDF here or click to browse</strong>
+          The outbound tracking will be auto-extracted from the filename
+        </div>
+      </div>
+      <input type="file" id="processOrphanFile" accept="application/pdf,.pdf" style="display:none;">
+    </div>
+
+    <div class="form-grid-2" style="margin-bottom:12px;">
+      <div class="form-field">
+        <label>Outbound tracking *</label>
+        <input id="processOrphanOutbound" class="mono" placeholder="e.g. 46886078645" autocomplete="off">
+      </div>
+      <div class="form-field">
+        <label>Outbound carrier *</label>
+        <select id="processOrphanCarrier">
+          <option value="">— pick one —</option>
+          <option value="MailAmericas">MailAmericas</option>
+          <option value="Correo Argentino">Correo Argentino</option>
+          <option value="DHL">DHL</option>
+          <option value="FedEx">FedEx</option>
+          <option value="UPS">UPS</option>
+          <option value="USPS">USPS</option>
+          <option value="Estafeta">Estafeta</option>
+          <option value="Servientrega">Servientrega</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-grid-2" style="margin-bottom:12px;">
+      <div class="form-field">
+        <label>Order ID</label>
+        <input id="processOrphanOrderId" class="mono" placeholder="e.g. 113-5092355-3401804">
+      </div>
+      <div class="form-field">
+        <label>Qty boxes</label>
+        <input id="processOrphanQty" type="number" min="1" max="50" value="1" class="mono">
+      </div>
+    </div>
+
+    <div class="form-field" style="margin-bottom:12px;">
+      <label>Content</label>
+      <textarea id="processOrphanContent" placeholder="e.g. 2 units — pendant necklace + earrings" maxlength="500" style="min-height:60px;"></textarea>
+    </div>
+
+    <div class="form-field" style="margin-bottom:14px;">
+      <label>Notes (optional)</label>
+      <input id="processOrphanNotes" placeholder="e.g. Email reply from Fernando 4/28, label attached in thread" maxlength="500">
+    </div>
+
+    <div id="processOrphanStatusMsg" style="display:none; padding:8px 12px; border-radius:8px; font-size:12px; margin-bottom:10px;"></div>
+
+    <div class="modal-actions">
+      <button class="btn" onclick="closeProcessOrphanModal()">Cancel</button>
+      <button class="btn btn-primary" id="processOrphanConfirmBtn" style="min-width:200px;">✓ Process & Mark Received</button>
     </div>
   </div>
 </div>
@@ -1740,6 +1869,248 @@
       closeFixMatchModal();
     }
   });
+
+  // ─── Process Orphan flow (manual link with PDF upload) ───────────────
+  // For the case where the client emailed back a label as a reply or
+  // outside the structured email format. Operator drops the PDF, fills
+  // the missing fields, and the orphan transitions to received with the
+  // label uploaded to the bucket.
+  let _processOrphanState = null;
+
+  function openProcessOrphanModal(id) {
+    if (!requireOperator()) return;
+    const row = state.rows.find(r => r.id === id);
+    if (!row) { toast("Row not found", { error: true }); return; }
+    if (row.status !== "orphan") {
+      toast("Process Orphan only works on rows with status='orphan'", { error: true });
+      return;
+    }
+
+    _processOrphanState = { id, row, file: null, base64: null };
+    $("#processOrphanInbound").textContent = row.tracking_number;
+    $("#processOrphanOutbound").value = "";
+    $("#processOrphanCarrier").value = "";
+    $("#processOrphanOrderId").value = "";
+    $("#processOrphanContent").value = "";
+    $("#processOrphanQty").value = "1";
+    $("#processOrphanNotes").value = row.notes || "";
+    $("#processOrphanFile").value = "";
+    setProcessOrphanStatus(null);
+
+    // Reset drop zone visuals
+    const drop = $("#processOrphanDrop");
+    drop.classList.remove("has-file");
+    drop.innerHTML = `
+      <div class="drop-zone-icon">📄</div>
+      <div class="drop-zone-text">
+        <strong>Drop PDF here or click to browse</strong>
+        The outbound tracking will be auto-extracted from the filename
+      </div>
+    `;
+
+    $("#processOrphanModal").classList.add("open");
+    setTimeout(() => $("#processOrphanFile").focus(), 80);
+  }
+  window.openProcessOrphanModal = openProcessOrphanModal;
+
+  function closeProcessOrphanModal() {
+    $("#processOrphanModal").classList.remove("open");
+    _processOrphanState = null;
+    setTimeout(() => $("#scan").focus(), 40);
+  }
+  window.closeProcessOrphanModal = closeProcessOrphanModal;
+
+  function setProcessOrphanStatus(msg, kind = "error") {
+    const el = $("#processOrphanStatusMsg");
+    if (!msg) { el.style.display = "none"; return; }
+    const styles = {
+      error: "background:#fee2e2; color:#dc2626; border:1px solid #fecaca;",
+      warn:  "background:#fef3c7; color:#92400e; border:1px solid #fde68a;",
+      info:  "background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe;"
+    };
+    el.style.cssText = "display:block; padding:8px 12px; border-radius:8px; font-size:12px; margin-bottom:10px; " + (styles[kind] || styles.error);
+    el.textContent = msg;
+  }
+
+  // Read a File as base64 (without the data: prefix)
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        const b64 = String(result).split(",")[1] || "";
+        resolve(b64);
+      };
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Auto-extract outbound tracking from filename (e.g. "46886078645.pdf" → "46886078645")
+  function extractOutboundFromFilename(filename) {
+    if (!filename) return null;
+    const base = filename.replace(/\.pdf$/i, "").trim();
+    // Common patterns: pure digits, alphanumeric tracking, dashes ok
+    if (/^[A-Za-z0-9-]{6,64}$/.test(base)) return base;
+    // Fall back: look for the longest alphanumeric run in the name
+    const matches = base.match(/[A-Za-z0-9]{6,64}/g);
+    if (matches && matches.length) {
+      // Pick the longest match (most likely the tracking number)
+      matches.sort((a, b) => b.length - a.length);
+      return matches[0];
+    }
+    return null;
+  }
+
+  async function handleProcessOrphanFile(file) {
+    if (!file) return;
+    if (!file.type.includes("pdf") && !file.name.toLowerCase().endsWith(".pdf")) {
+      setProcessOrphanStatus("Only PDF files are accepted", "error");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setProcessOrphanStatus("File too large (max 5MB)", "error");
+      return;
+    }
+    if (!_processOrphanState) return;
+
+    try {
+      const b64 = await fileToBase64(file);
+      _processOrphanState.file = file;
+      _processOrphanState.base64 = b64;
+
+      // Update drop zone to show file info
+      const drop = $("#processOrphanDrop");
+      drop.classList.add("has-file");
+      const sizeKb = Math.round(file.size / 1024);
+      drop.innerHTML = `
+        <div class="drop-zone-icon">📄</div>
+        <div class="drop-zone-text">
+          <strong>${escapeHtml(file.name)}</strong>
+          <span class="file-info">${sizeKb} KB · click to change</span>
+        </div>
+      `;
+
+      // Auto-fill outbound tracking if empty
+      const outboundField = $("#processOrphanOutbound");
+      if (!outboundField.value.trim()) {
+        const extracted = extractOutboundFromFilename(file.name);
+        if (extracted) {
+          outboundField.value = extracted;
+          setProcessOrphanStatus(`Auto-filled outbound tracking from filename: ${extracted}`, "info");
+        }
+      }
+    } catch (e) {
+      setProcessOrphanStatus("Failed to read file: " + e.message, "error");
+    }
+  }
+
+  // Wire up the drop zone (lazy — runs only after DOM exists)
+  function wireProcessOrphanDropZone() {
+    const drop = $("#processOrphanDrop");
+    const fileInput = $("#processOrphanFile");
+
+    drop.addEventListener("click", () => fileInput.click());
+
+    drop.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      drop.classList.add("dragover");
+    });
+    drop.addEventListener("dragleave", () => drop.classList.remove("dragover"));
+    drop.addEventListener("drop", (e) => {
+      e.preventDefault();
+      drop.classList.remove("dragover");
+      const file = e.dataTransfer?.files?.[0];
+      if (file) handleProcessOrphanFile(file);
+    });
+
+    fileInput.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      if (file) handleProcessOrphanFile(file);
+    });
+  }
+
+  // Submit handler
+  $("#processOrphanConfirmBtn").addEventListener("click", async () => {
+    if (!_processOrphanState) return;
+    if (!requireOperator()) return;
+
+    const outbound = $("#processOrphanOutbound").value.trim();
+    const carrier = $("#processOrphanCarrier").value.trim();
+    const orderId = $("#processOrphanOrderId").value.trim();
+    const content = $("#processOrphanContent").value.trim();
+    const qty = parseInt($("#processOrphanQty").value || "1", 10) || 1;
+    const notes = $("#processOrphanNotes").value.trim();
+
+    // Validation
+    if (!_processOrphanState.base64) {
+      setProcessOrphanStatus("Drop the PDF label first", "error");
+      return;
+    }
+    if (!outbound) {
+      setProcessOrphanStatus("Outbound tracking is required", "error");
+      return;
+    }
+    if (outbound === _processOrphanState.row.tracking_number) {
+      setProcessOrphanStatus("Outbound tracking cannot be the same as the inbound", "error");
+      return;
+    }
+    if (!carrier) {
+      setProcessOrphanStatus("Pick an outbound carrier", "error");
+      return;
+    }
+
+    const btn = $("#processOrphanConfirmBtn");
+    const origLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Uploading…";
+
+    try {
+      const res = await apiPost({
+        action: "process_orphan",
+        id: _processOrphanState.id,
+        outbound_tracking: outbound,
+        outbound_carrier: carrier,
+        order_id: orderId || null,
+        content: content || null,
+        qty_boxes: qty,
+        label_filename: _processOrphanState.file?.name || `${outbound}.pdf`,
+        pdf_base64: _processOrphanState.base64,
+        notes: notes || null,
+        operator: state.operator
+      });
+
+      // Update local state with the new row
+      if (res.row) {
+        const idx = state.rows.findIndex(r => r.id === _processOrphanState.id);
+        if (idx >= 0) state.rows[idx] = { ...state.rows[idx], ...res.row };
+      }
+
+      const trackingNumber = _processOrphanState.row.tracking_number;
+      closeProcessOrphanModal();
+      renderRows();
+      renderCounts();
+
+      // Refresh drawer if still open on this row
+      if ($("#detail").classList.contains("open") && $("#dTracking").textContent === trackingNumber) {
+        const updated = state.rows.find(r => r.tracking_number === trackingNumber);
+        if (updated) renderDetail(updated);
+      }
+
+      toast(`✓ Orphan processed · ${shortTracking(trackingNumber)} → received`);
+    } catch (e) {
+      const msg = String(e.message || e);
+      if (msg.includes("already linked")) {
+        setProcessOrphanStatus("That outbound tracking is already used by another package", "error");
+      } else {
+        setProcessOrphanStatus("Failed: " + msg, "error");
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = origLabel;
+    }
+  });
+
   async function loadClients() {
     const j = await apiGet({ action: "clients" });
     state.clients = j.clients || [];
@@ -2017,7 +2388,8 @@
 
       case "orphan":
         return `<div class="action-bar">
-          <span style="flex:1; text-align:center; padding:11px; font-size:12px; color:var(--muted);">Awaiting email match — no actions available</span>
+          <button class="btn btn-primary btn-lg" onclick="openProcessOrphanModal('${id}')">🔗 Process orphan (manual link)</button>
+          <button class="btn" onclick="doAction('${id}','receive')" title="Mark received without a label (rare — only if you'll re-label later)">📦 Receive without label</button>
         </div>`;
 
       case "exception":
@@ -2257,7 +2629,8 @@
   // Escape key closes all modals or clears batch selection
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    if ($("#fixMatchModal").classList.contains("open")) closeFixMatchModal();
+    if ($("#processOrphanModal").classList.contains("open")) closeProcessOrphanModal();
+    else if ($("#fixMatchModal").classList.contains("open")) closeFixMatchModal();
     else if ($("#linkOutboundModal").classList.contains("open")) closeLinkOutboundModal();
     else if ($("#scanConfirmModal").classList.contains("open")) closeScanConfirmModal();
     else if ($("#orphanModal").classList.contains("open")) closeOrphanModal();
@@ -2316,6 +2689,7 @@
   (async function init() {
     try {
       loadOperator();
+      wireProcessOrphanDropZone();
       await loadClients();
       await loadRows();
       // First-time user — prompt for operator name
