@@ -132,19 +132,21 @@ async function previewInvoice(params) {
     });
   }
 
-  // 4c. Shipping label fee — pass-through cost + 10% markup
+  // 4c. Shipping label fee — pass-through cost + client.shipping_markup
   if (ss.totalCarrierCost > 0) {
-    const markup = 1.10;
-    const total = round2(ss.totalCarrierCost * markup);
+    const markupPct = parseFloat(client.shipping_markup);
+    const pct = isNaN(markupPct) ? 10 : markupPct;  // default 10% if not set
+    const multiplier = 1 + (pct / 100);
+    const total = round2(ss.totalCarrierCost * multiplier);
     lineItems.push({
       source:       "shipstation",
       service_code: "SLF",
-      service_name: "Shipping Label Fee (cost + 10%)",
+      service_name: `Shipping Label Fee (cost + ${pct}%)`,
       quantity:     1,
       unit:         "period",
       unit_rate:    total,
       line_total:   total,
-      detail:       `Carrier cost $${ss.totalCarrierCost.toFixed(2)} × 1.10 markup`,
+      detail:       `Carrier cost $${ss.totalCarrierCost.toFixed(2)} × ${multiplier.toFixed(2)} markup`,
     });
   }
 
@@ -235,17 +237,26 @@ async function previewInvoice(params) {
 
   return resp(200, {
     client: {
-      id:       client.id,
-      name:     client.name,
-      company:  client.company,
-      mmb:      mmb,
-      rate_overrides: client.rate_overrides || {},
-      billing_notes: client.billing_notes || "",
+      id:                  client.id,
+      name:                client.name,
+      company:             client.company,
+      mmb:                 mmb,
+      rate_overrides:      client.rate_overrides || {},
+      billing_notes:       client.billing_notes || "",
+      billing_source:      client.billing_source || null,
+      store_name:          client.store_name || null,
+      ss_custom_field_1:   client.ss_custom_field_1 || null,
+      shipping_markup:     client.shipping_markup,
+      aliases:             client.aliases || [],
     },
     period,
     period_start: periodStart,
     period_end:   periodEnd,
     sources: sourceCounts,
+    shipstation_match: {
+      mode:           ss.mode,
+      stores_matched: ss.storesMatched,
+    },
     line_items: lineItems,
     totals: {
       actuals_total:    actualsTotal,
@@ -458,9 +469,23 @@ async function loadShipments(clientId, from, to) {
 }
 
 async function loadShipStation(client, from, to) {
-  const result = { orderCount: 0, totalCarrierCost: 0, storesMatched: [] };
+  const result = { orderCount: 0, totalCarrierCost: 0, storesMatched: [], mode: null };
 
-  if (!SS_KEY || !SS_SECRET) return result;  // No ShipStation = skip silently
+  // Honor the contract from fr_clients.billing_source — the Clients App is
+  // the single source of truth. We do NOT invent matching logic here.
+  const billingSource = (client.billing_source || '').toLowerCase().trim();
+
+  // Mode: portal — client doesn't use ShipStation at all
+  if (billingSource === 'portal') {
+    result.mode = 'portal';
+    return result;
+  }
+
+  // No ShipStation API configured? Nothing we can do.
+  if (!SS_KEY || !SS_SECRET) {
+    result.mode = 'no_api';
+    return result;
+  }
 
   const auth = Buffer.from(`${SS_KEY}:${SS_SECRET}`).toString('base64');
   const ssHeaders = { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json' };
@@ -478,30 +503,51 @@ async function loadShipStation(client, from, to) {
       page++;
     } while (page <= totalPages && page <= 5);
 
-    // Match by store_name or store_id from fr_clients
-    const sId   = String(client.store_id || '').trim();
-    const sName = (client.store_name || client.name || '').toLowerCase().trim();
-    const cName = (client.name || '').toLowerCase().trim();
-    const cCmp  = (client.company || '').toLowerCase().trim();
+    // Mode: ss_store — match by storeName + aliases (canonical names from fr_clients)
+    if (billingSource === 'ss_store') {
+      result.mode = 'ss_store';
+      const targetNames = [
+        (client.store_name || '').toLowerCase().trim(),
+        ...(Array.isArray(client.aliases) ? client.aliases.map(a => String(a).toLowerCase().trim()) : []),
+      ].filter(Boolean);
 
-    const matched = allShipments.filter(s => {
-      const shipStore   = (s.storeName || '').toLowerCase();
-      const shipStoreId = String(s.advancedOptions?.storeId || '');
-      if (sId   && shipStoreId === sId) return true;
-      if (sName && shipStore.includes(sName)) return true;
-      if (cName && shipStore.includes(cName)) return true;
-      if (cCmp  && shipStore.includes(cCmp))  return true;
-      return false;
-    });
+      const matched = allShipments.filter(s => {
+        const shipStore = (s.storeName || '').toLowerCase().trim();
+        if (!shipStore) return false;
+        return targetNames.some(name => shipStore === name || shipStore.includes(name));
+      });
 
-    result.orderCount = matched.length;
-    result.totalCarrierCost = round2(matched.reduce((s, x) => s + (x.shipmentCost || 0), 0));
-    result.storesMatched = [...new Set(matched.map(s => s.storeName).filter(Boolean))];
+      result.orderCount       = matched.length;
+      result.totalCarrierCost = round2(matched.reduce((sum, x) => sum + (x.shipmentCost || 0), 0));
+      result.storesMatched    = [...new Set(matched.map(s => s.storeName).filter(Boolean))];
+      return result;
+    }
+
+    // Mode: ss_cf1 — match by Custom Field 1 from fr_clients.ss_custom_field_1
+    if (billingSource === 'ss_cf1') {
+      result.mode = 'ss_cf1';
+      const cf1Tag = (client.ss_custom_field_1 || '').toLowerCase().trim();
+      if (!cf1Tag) return result;
+
+      const matched = allShipments.filter(s => {
+        const cf1 = String(s.advancedOptions?.customField1 || '').toLowerCase().trim();
+        return cf1 === cf1Tag || cf1.includes(cf1Tag);
+      });
+
+      result.orderCount       = matched.length;
+      result.totalCarrierCost = round2(matched.reduce((sum, x) => sum + (x.shipmentCost || 0), 0));
+      result.storesMatched    = [...new Set(matched.map(s => s.storeName).filter(Boolean))];
+      return result;
+    }
+
+    // Unknown billing_source value — return empty rather than guess
+    result.mode = 'unknown:' + billingSource;
+    return result;
   } catch (e) {
     // Swallow ShipStation errors — show 0 orders, user can adjust manually
+    result.mode = 'error';
+    return result;
   }
-
-  return result;
 }
 
 async function checkExistingInvoice(clientId, period) {
