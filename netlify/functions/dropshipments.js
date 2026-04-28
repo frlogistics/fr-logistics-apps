@@ -34,6 +34,8 @@
 //   action=process_orphan   → upload PDF + fill outbound/order/content + transition orphan→received
 //                             (body: id, outbound_tracking, outbound_carrier, order_id, content,
 //                              label_filename, pdf_base64, operator)
+//   action=delete_orphan    → permanently delete an orphan row (status='orphan' only)
+//                             (body: id, operator) — for cleaning up bad scans
 
 const SUPABASE_URL  = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY  = Netlify.env.get("SUPABASE_SERVICE_KEY");
@@ -297,6 +299,42 @@ export default async function handler(req) {
           received_by:          operator
         }]);
         return jRes({ ok: true, action: "create_orphan", row: inserted[0] });
+      }
+
+      // ── delete_orphan: hard-delete an orphan row ──────────────────────
+      // Used to clean up bad scans (operator scanned a non-tracking barcode
+      // by accident). Restricted to status='orphan' as a hard safety guard:
+      // we never delete rows in any other status — those must be reverted
+      // or exception-flagged instead, since they may have downstream
+      // billing/shipping artifacts.
+      //
+      // Body: { id, operator }
+      if (act === "delete_orphan") {
+        const id = body.id;
+        if (!id) return jRes({ error: "id required" }, 400);
+
+        const cur = await sbSelect("dropshipments",
+          `?id=eq.${id}&select=id,status,tracking_number,client_id&limit=1`
+        );
+        if (!cur.length) return jRes({ error: "not found" }, 404);
+        if (cur[0].status !== "orphan") {
+          return jRes({
+            error: `delete_orphan only valid for status='orphan' (current: '${cur[0].status}')`,
+            hint: "non-orphan rows must be reverted or exception-flagged — never deleted"
+          }, 409);
+        }
+
+        const r = await fetch(`${SUPABASE_URL}/rest/v1/dropshipments?id=eq.${id}`, {
+          method: "DELETE",
+          headers: SB()
+        });
+        if (!r.ok) {
+          const detail = await r.text();
+          return jRes({ error: "delete failed", detail }, 500);
+        }
+
+        console.log(`[dropshipments.delete_orphan] ${operator} deleted orphan ${cur[0].tracking_number} (id=${id})`);
+        return jRes({ ok: true, action: "delete_orphan", deleted: cur[0] });
       }
 
       // ── process_orphan: complete an orphan record manually ──────────────
@@ -621,7 +659,7 @@ export default async function handler(req) {
       };
 
       const rule = LEGAL[act];
-      if (!rule) return jRes({ error: `unknown action '${act}'`, allowed: [...Object.keys(LEGAL), "create_orphan", "link_outbound", "unlink_outbound", "process_orphan"] }, 400);
+      if (!rule) return jRes({ error: `unknown action '${act}'`, allowed: [...Object.keys(LEGAL), "create_orphan", "link_outbound", "unlink_outbound", "process_orphan", "delete_orphan"] }, 400);
       if (!rule.from.includes(current.status)) {
         return jRes({ error: `cannot ${act} from status '${current.status}'`, allowed_from: rule.from }, 409);
       }
