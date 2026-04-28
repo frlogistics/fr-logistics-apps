@@ -1,269 +1,151 @@
 // ════════════════════════════════════════════════════════════════════════════
-// billing-generator.js — FR-Logistics Billing Generator API
-// Storage: Supabase + ShipStation API
-// Pattern: same as services-log.js / wa-clients.js
+// billing-generator.js — FR-Logistics Monthly Invoice Builder (Orchestrator)
+//
+// Architecture:
+//   This function is a THIN ORCHESTRATOR. It does NOT talk to ShipStation API
+//   directly, does NOT match shipments by string. Instead it composes the
+//   results of these existing specialized functions:
+//
+//   ┌─ billing-shipstation.js  → orders + carrierCost (mode store|cf1)
+//   ├─ billing-inbound.js      → cartons / RMA / drop-ship from shipments_general
+//   ├─ fr_services_pending_billing → manual services (Services Log)
+//   ├─ fr_clients              → contract: billing_source, mmb, shipping_markup, rate_overrides
+//   └─ billing_runs            → invoice persistence (extended with mmb, status, client_id)
 //
 // Endpoints:
-//   GET    ?action=preview&client_id=X&period=YYYY-MM
-//          → builds preview without persisting anything
-//          returns: { client, period, sources, line_items, totals, mmb_comparison }
-//
-//   POST   action=confirm
-//          body: { client_id, period, applied_amount, applied_method, notes, line_items, ... }
-//          → creates fr_invoices row (status=locked) AND marks fr_services_log as billed
-//          returns: { invoice_number, id, ...invoice }
-//
-//   GET    ?action=history&client_id=X&limit=N
-//          → list of past invoices for a client
-//
-//   GET    ?action=invoice&id=N
-//          → fetch a single invoice
+//   GET  ?action=preview&client_id=X&period=YYYY-MM  → preview with all sources
+//   POST ?action=confirm  body: { client_id, period, line_items, ... }  → lock invoice
+//   GET  ?action=history&client_id=X                 → past invoices
+//   GET  ?action=invoice&id=X                        → single invoice details
 // ════════════════════════════════════════════════════════════════════════════
 
-const SUPA_URL    = process.env.SUPABASE_URL;
-const SUPA_KEY    = process.env.SUPABASE_SERVICE_KEY;
-const SS_KEY      = process.env.SS_API_KEY;
-const SS_SECRET   = process.env.SS_API_SECRET;
-const SS_BASE     = "https://ssapi.shipstation.com";
+const SUPA_URL = process.env.SUPABASE_URL;
+const SUPA_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 const HEADERS_SUPA = {
-  "apikey":        SUPA_KEY,
+  "apikey":         SUPA_KEY,
   "Authorization": "Bearer " + SUPA_KEY,
   "Content-Type":  "application/json",
   "Prefer":        "return=representation",
 };
 
-const HEADERS_RESP = { "Content-Type": "application/json" };
+const HEADERS_RESP = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Content-Type": "application/json",
+};
 
-// ── handler ────────────────────────────────────────────────────────────────
+// Default rate card if billing-rates.js is unavailable
+const DEFAULT_RATES = {
+  PNP:    3.00,   // Pick & Pack
+  RPF:    5.00,   // Return Processing Fee
+  INBND_PKG:   2.50,   // Inbound Receiving (carton)
+  INBND_DROP:  6.00,   // Inbound Drop-Ship
+  INBND_PLT:  20.00,   // Inbound Pallet
+  OF_PKG:     2.00,    // Outbound Carton Fee
+  STG:        45.00,   // Storage per rack/month
+  WMS:        99.99,   // WMS subscription monthly
+  KIT:         0.75,   // Kitting per unit
+  LBL:         0.60,   // FNSKU/Label per unit
+  CP:         50.00,   // Custom Project
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// HANDLER
+// ════════════════════════════════════════════════════════════════════════════
 exports.handler = async (event) => {
-  if (!SUPA_URL || !SUPA_KEY) {
-    return resp(500, { error: "Supabase env vars missing" });
-  }
+  if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: HEADERS_RESP, body: "" };
+  if (!SUPA_URL || !SUPA_KEY)         return resp(500, { error: "Supabase env vars missing" });
 
-  const method = event.httpMethod;
   const params = event.queryStringParameters || {};
-  const action = params.action || (method === "POST" ? "confirm" : "preview");
+  const action = params.action;
 
   try {
-    if (method === "GET" && action === "preview")  return await previewInvoice(params);
-    if (method === "POST" && action === "confirm") return await confirmInvoice(safeJSON(event.body));
-    if (method === "GET" && action === "history")  return await getHistory(params);
-    if (method === "GET" && action === "invoice")  return await getInvoiceById(params);
-    return resp(405, { error: "Unknown action: " + action });
+    if (event.httpMethod === "GET" && action === "preview")  return await getPreview(params, event);
+    if (event.httpMethod === "POST" && action === "confirm") return await confirmInvoice(safeJSON(event.body));
+    if (event.httpMethod === "GET" && action === "history")  return await getHistory(params);
+    if (event.httpMethod === "GET" && action === "invoice")  return await getInvoice(params);
+    return resp(400, { error: "Unknown action. Try: preview | confirm | history | invoice" });
   } catch (err) {
+    console.error("billing-generator error:", err);
     return resp(500, { error: err.message || String(err) });
   }
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-// PREVIEW — pulls all 3 sources, applies rate card, returns line items
+// PREVIEW — orchestrates all sub-functions and builds a draft invoice
 // ════════════════════════════════════════════════════════════════════════════
-async function previewInvoice(params) {
+async function getPreview(params, event) {
   const clientId = params.client_id;
-  const period   = params.period;     // YYYY-MM
-
+  const period   = params.period;     // "YYYY-MM"
   if (!clientId) return resp(400, { error: "client_id required" });
-  if (!/^\d{4}-\d{2}$/.test(period)) return resp(400, { error: "period required as YYYY-MM" });
+  if (!period)   return resp(400, { error: "period required (YYYY-MM)" });
 
-  // 1. Load client + rate card snapshot
+  // 1. Load client from fr_clients (single source of truth)
   const client = await loadClient(clientId);
-  if (!client) return resp(404, { error: "Client not found" });
+  if (!client) return resp(404, { error: "Client not found in fr_clients" });
 
-  const catalog = await loadCatalog();
-  const rateCard = buildRateCard(client, catalog);
+  // 2. Determine period dates
+  const periodStart = `${period}-01`;
+  const periodEnd   = lastDayOfMonth(period);
 
-  // 2. Compute period boundaries
-  const [year, month] = period.split('-').map(Number);
-  const periodStart = `${year}-${String(month).padStart(2,'0')}-01`;
-  const lastDay = new Date(year, month, 0).getDate();
-  const periodEnd = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+  // 3. Build sub-function call URLs (use the request host so we work in any env)
+  const baseUrl = inferBaseUrl(event);
 
-  // 3. Read 3 sources in parallel
-  const [services, shipments, ss] = await Promise.all([
-    loadServicesLog(clientId, periodStart, periodEnd),
-    loadShipments(client.id, periodStart, periodEnd),
-    loadShipStation(client, periodStart, periodEnd),
-  ]);
+  // 4. Call billing-shipstation.js according to billing_source contract
+  const ssData = await callShipStation(baseUrl, client, periodStart, periodEnd);
 
-  // 4. Build line items from each source
-  const lineItems = [];
-  const sourceCounts = {
-    orders:           ss.orderCount,
-    shipping_cost:    ss.totalCarrierCost,
-    cartons_in:       shipments.cartonsIn,
-    cartons_out:      shipments.cartonsOut,
-    pallets_in:       shipments.palletsIn,
-    pallets_out:      shipments.palletsOut,
-    inbound_general:  shipments.inboundGeneral,
-    inbound_dropship: shipments.inboundDropship,
-    outbound_dropship: shipments.outboundDropship,
-    returns:          shipments.returns,
-    services_logged:  services.length,
-  };
+  // 5. Call billing-inbound.js
+  const inbData = await callInbound(baseUrl, client.name, periodStart, periodEnd);
 
-  // 4a. Manual services from log
-  for (const s of services) {
-    lineItems.push({
-      source:       "services_log",
-      service_code: s.service_code,
-      service_name: s.service_name,
-      quantity:     parseFloat(s.total_quantity),
-      unit:         s.unit,
-      unit_rate:    parseFloat(s.avg_unit_rate),
-      line_total:   parseFloat(s.total_amount),
-      detail:       `${s.entry_count} log entries · ${s.first_date} to ${s.last_date}`,
-      service_log_period: s.period,
-    });
-  }
+  // 6. Read Services Log (manually-logged warehouse services)
+  const services = await loadServices(clientId, period);
 
-  // 4b. ShipStation pick & pack
-  if (ss.orderCount > 0) {
-    const pnpRate = rateCard["PNP"] || 3.00;
-    lineItems.push({
-      source:       "shipstation",
-      service_code: "PNP",
-      service_name: "Pick & Pack — Fulfillment",
-      quantity:     ss.orderCount,
-      unit:         "orders",
-      unit_rate:    pnpRate,
-      line_total:   round2(ss.orderCount * pnpRate),
-      detail:       `${ss.orderCount} orders shipped · stores: ${ss.storesMatched.join(', ') || 'auto'}`,
-    });
-  }
+  // 7. Apply rate card (with per-client overrides)
+  const rateCard = buildRateCard(client.rate_overrides || {});
 
-  // 4c. Shipping label fee — pass-through cost + client.shipping_markup
-  if (ss.totalCarrierCost > 0) {
-    const markupPct = parseFloat(client.shipping_markup);
-    const pct = isNaN(markupPct) ? 10 : markupPct;  // default 10% if not set
-    const multiplier = 1 + (pct / 100);
-    const total = round2(ss.totalCarrierCost * multiplier);
-    lineItems.push({
-      source:       "shipstation",
-      service_code: "SLF",
-      service_name: `Shipping Label Fee (cost + ${pct}%)`,
-      quantity:     1,
-      unit:         "period",
-      unit_rate:    total,
-      line_total:   total,
-      detail:       `Carrier cost $${ss.totalCarrierCost.toFixed(2)} × ${multiplier.toFixed(2)} markup`,
-    });
-  }
+  // 8. Build line items
+  const lineItems = buildLineItems(client, ssData, inbData, services, rateCard);
 
-  // 4d. Inbound General — cartons received (excludes dropships and returns)
-  if (shipments.inboundGeneral > 0) {
-    const r = rateCard["INBND_PKG"] || rateCard["RECV_CARTON"] || 2.50;
-    lineItems.push({
-      source:       "shipments_general",
-      service_code: "INBND_PKG",
-      service_name: "Inbound Receiving — Cartons",
-      quantity:     shipments.inboundGeneral,
-      unit:         "cartons",
-      unit_rate:    r,
-      line_total:   round2(shipments.inboundGeneral * r),
-      detail:       `${shipments.inboundGeneral} general cartons received`,
-    });
-  }
-
-  // 4e. Inbound Drop-shipments — separate billable
-  if (shipments.inboundDropship > 0) {
-    const r = rateCard["INBND_DROP"] || rateCard["INBND_PKG"] || 6.00;
-    lineItems.push({
-      source:       "shipments_general",
-      service_code: "INBND_DROP",
-      service_name: "Inbound Drop-Shipment",
-      quantity:     shipments.inboundDropship,
-      unit:         "packages",
-      unit_rate:    r,
-      line_total:   round2(shipments.inboundDropship * r),
-      detail:       `${shipments.inboundDropship} dropship packages received`,
-    });
-  }
-
-  // 4f. Outbound shipments + dropshipments
-  if (shipments.cartonsOut > 0) {
-    const r = rateCard["OF_PKG"] || 2.00;
-    lineItems.push({
-      source:       "shipments_general",
-      service_code: "OF_PKG",
-      service_name: "Outbound Shipments",
-      quantity:     shipments.cartonsOut,
-      unit:         "cartons",
-      unit_rate:    r,
-      line_total:   round2(shipments.cartonsOut * r),
-      detail:       `${shipments.cartonsOut} cartons shipped${shipments.outboundDropship > 0 ? ` (${shipments.outboundDropship} dropships)` : ''}`,
-    });
-  }
-
-  // 4g. Returns (RMA)
-  if (shipments.returns > 0) {
-    const r = rateCard["RPF"] || 5.00;
-    lineItems.push({
-      source:       "shipments_general",
-      service_code: "RPF",
-      service_name: "Return Processing",
-      quantity:     shipments.returns,
-      unit:         "units",
-      unit_rate:    r,
-      line_total:   round2(shipments.returns * r),
-      detail:       `${shipments.returns} RMA returns processed`,
-    });
-  }
-
-  // 4h. Inbound pallets (legacy — keeps working if data has them)
-  if (shipments.palletsIn > 0) {
-    const r = rateCard["INBND_PLT"] || rateCard["RECV_PALLET"] || 20.00;
-    lineItems.push({
-      source:       "shipments_general",
-      service_code: "INBND_PLT",
-      service_name: "Inbound Pallets",
-      quantity:     shipments.palletsIn,
-      unit:         "pallets",
-      unit_rate:    r,
-      line_total:   round2(shipments.palletsIn * r),
-      detail:       `${shipments.palletsIn} pallets received in period`,
-    });
-  }
-
-  // 5. Totals + MMB comparison
+  // 9. Calculate totals + MMB comparison
   const actualsTotal = round2(lineItems.reduce((s, li) => s + li.line_total, 0));
   const mmb          = parseFloat(client.mmb || 0);
   const mmbApplies   = mmb > 0;
   const billable     = mmbApplies ? Math.max(actualsTotal, mmb) : actualsTotal;
-  const recommendedMethod = mmbApplies && mmb > actualsTotal ? "mmb" : "actuals";
+  const recommended  = mmbApplies && mmb > actualsTotal ? "mmb" : "actuals";
 
-  // 6. Check if invoice already exists (locked) for this period
-  const existing = await checkExistingInvoice(clientId, period);
+  // 10. Check for already-locked invoice in this period
+  const existing = await checkExistingInvoice(clientId, periodStart, periodEnd);
 
   return resp(200, {
     client: {
-      id:                  client.id,
-      name:                client.name,
-      company:             client.company,
-      mmb:                 mmb,
-      rate_overrides:      client.rate_overrides || {},
-      billing_notes:       client.billing_notes || "",
-      billing_source:      client.billing_source || null,
-      store_name:          client.store_name || null,
-      ss_custom_field_1:   client.ss_custom_field_1 || null,
-      shipping_markup:     client.shipping_markup,
-      aliases:             client.aliases || [],
+      id:                client.id,
+      name:              client.name,
+      company:           client.company,
+      billing_source:    client.billing_source,
+      store_name:        client.store_name,
+      ss_custom_field_1: client.ss_custom_field_1,
+      shipping_markup:   client.shipping_markup,
+      mmb:               mmb,
+      aliases:           client.aliases || [],
+      billing_notes:     client.billing_notes || "",
     },
     period,
     period_start: periodStart,
     period_end:   periodEnd,
-    sources: sourceCounts,
-    shipstation_match: {
-      mode:           ss.mode,
-      stores_matched: ss.storesMatched,
+    sources: {
+      shipstation: ssData,
+      inbound:     inbData,
+      services_logged: services.length,
     },
     line_items: lineItems,
     totals: {
-      actuals_total:    actualsTotal,
-      mmb_amount:       mmb,
-      mmb_applies:      mmbApplies,
-      mmb_difference:   round2(mmb - actualsTotal),
-      recommended:      recommendedMethod,
+      actuals_total:     actualsTotal,
+      mmb_amount:        mmb,
+      mmb_applies:       mmbApplies,
+      mmb_difference:    round2(mmb - actualsTotal),
+      recommended:       recommended,
       recommended_total: billable,
     },
     rate_card_used: rateCard,
@@ -272,303 +154,322 @@ async function previewInvoice(params) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// CONFIRM — locks invoice and marks services as billed
+// CONFIRM — locks invoice into billing_runs and marks services + shipments
 // ════════════════════════════════════════════════════════════════════════════
 async function confirmInvoice(body) {
   const required = ['client_id','period','line_items','actuals_total','applied_amount','applied_method'];
   for (const f of required) if (body[f] == null) return resp(400, { error: `${f} required` });
+  if (!['actuals','mmb'].includes(body.applied_method)) return resp(400, { error: "applied_method must be 'actuals' or 'mmb'" });
 
   // 1. Re-check no locked invoice exists for this client+period
-  const existing = await checkExistingInvoice(body.client_id, body.period);
+  const periodStart = `${body.period}-01`;
+  const periodEnd   = lastDayOfMonth(body.period);
+  const existing = await checkExistingInvoice(body.client_id, periodStart, periodEnd);
   if (existing) {
     return resp(409, {
-      error: "An invoice is already locked for this client and period",
-      invoice: existing
+      error: "Invoice already locked for this client and period",
+      existing_invoice: existing,
     });
   }
 
-  // 2. Get the next invoice number from the sequence
-  const seqRes = await fetch(`${SUPA_URL}/rest/v1/rpc/nextval_fr_invoice_seq`, {
-    method: "POST",
-    headers: HEADERS_SUPA,
-    body: "{}"
-  });
-  let invoiceNumber;
-  if (seqRes.ok) {
-    const seqVal = await seqRes.json();
-    invoiceNumber = `FRL-${new Date().getFullYear()}-${String(seqVal).padStart(4,'0')}`;
-  } else {
-    // Fallback if RPC not available — use timestamp-based number
-    invoiceNumber = `FRL-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
-  }
+  // 2. Load client for snapshot
+  const client = await loadClient(body.client_id);
+  if (!client) return resp(404, { error: "Client not found" });
 
-  // 3. Compute period dates
-  const [year, month] = body.period.split('-').map(Number);
-  const periodStart = `${year}-${String(month).padStart(2,'0')}-01`;
-  const lastDay = new Date(year, month, 0).getDate();
-  const periodEnd = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+  // 3. Generate invoice number
+  const invoiceNumber = await generateInvoiceNumber(client, body.period);
 
-  // 4. Insert invoice
-  const invoiceRow = {
-    invoice_number: invoiceNumber,
-    client_id:      body.client_id,
-    client_name:    body.client_name,
-    period:         body.period,
-    period_start:   periodStart,
-    period_end:     periodEnd,
-    actuals_total:  body.actuals_total,
-    mmb_amount:     body.mmb_amount || 0,
-    applied_amount: body.applied_amount,
-    applied_method: body.applied_method,
-    line_items:     body.line_items,
-    source_counts:  body.source_counts || {},
-    rate_card_used: body.rate_card_used || {},
-    status:         "locked",
-    notes:          body.notes || null,
-    generated_by:   body.generated_by || "Portal",
-    locked_at:      new Date().toISOString(),
+  // 4. Insert into billing_runs
+  const row = {
+    invoice_number:  invoiceNumber,
+    client:          client.name,
+    client_code:     deriveClientCode(client.name),
+    client_id:       body.client_id,
+    period_start:    periodStart,
+    period_end:      periodEnd,
+    total_usd:       body.applied_amount,
+    package_count:   body.line_items.reduce((n, li) => n + (parseInt(li.quantity, 10) || 0), 0),
+    line_items_json: body.line_items,
+    mmb_amount:      body.mmb_amount || 0,
+    applied_method:  body.applied_method,
+    status:          'locked',
+    rate_card_used:  body.rate_card_used || {},
+    generated_at:    new Date().toISOString(),
+    generated_by:    body.generated_by || 'billing-generator',
+    notes:           body.notes || null,
   };
 
-  const invoiceRes = await fetch(`${SUPA_URL}/rest/v1/fr_invoices`, {
-    method: "POST",
+  const insert = await fetch(`${SUPA_URL}/rest/v1/billing_runs`, {
+    method:  "POST",
     headers: HEADERS_SUPA,
-    body: JSON.stringify(invoiceRow),
+    body:    JSON.stringify(row),
   });
-  const invoiceData = await invoiceRes.json();
-  if (!Array.isArray(invoiceData) || !invoiceData[0]) {
-    return resp(500, { error: "Failed to create invoice", detail: invoiceData });
+  if (!insert.ok) {
+    const err = await insert.text();
+    return resp(500, { error: "Failed to insert invoice", detail: err });
   }
+  const inserted = await insert.json();
+  const newInvoice = Array.isArray(inserted) ? inserted[0] : inserted;
 
-  // 5. Mark services_log entries as billed
-  const markedAt = new Date().toISOString();
-  await fetch(
-    `${SUPA_URL}/rest/v1/fr_services_log?client_id=eq.${encodeURIComponent(body.client_id)}` +
-    `&service_date=gte.${periodStart}&service_date=lte.${periodEnd}&status=eq.logged`,
-    {
-      method: "PATCH",
-      headers: HEADERS_SUPA,
-      body: JSON.stringify({
-        status: "billed",
-        invoice_period: body.period,
-        invoice_id: invoiceNumber,
-        updated_at: markedAt,
-      }),
-    }
-  );
+  // 5. Mark services as billed (those linked to this period)
+  await markServicesBilled(body.client_id, body.period, newInvoice.id);
 
-  return resp(201, invoiceData[0]);
+  // 6. Mark shipments_general as billed (those that were invoiced)
+  // Only shipments in the period that were unbilled — preserves existing logic.
+  await markShipmentsBilled(body.client_id, periodStart, periodEnd, newInvoice.id);
+
+  return resp(200, { ok: true, invoice: newInvoice });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// HISTORY — list invoices for a client
+// HISTORY
 // ════════════════════════════════════════════════════════════════════════════
 async function getHistory(params) {
   const clientId = params.client_id;
-  const limit = Math.min(parseInt(params.limit || "50", 10), 200);
-  let url = `${SUPA_URL}/rest/v1/fr_invoices?order=period.desc,id.desc&limit=${limit}`;
+  let url = `${SUPA_URL}/rest/v1/billing_runs?order=generated_at.desc&limit=50`;
   if (clientId) url += `&client_id=eq.${encodeURIComponent(clientId)}`;
   const r = await fetch(url, { headers: HEADERS_SUPA });
   const data = await r.json();
-  if (!Array.isArray(data)) return resp(500, { error: data });
-  return resp(200, data);
+  return resp(200, Array.isArray(data) ? data : []);
 }
 
-async function getInvoiceById(params) {
-  if (!params.id) return resp(400, { error: "id required" });
-  const r = await fetch(`${SUPA_URL}/rest/v1/fr_invoices?id=eq.${params.id}`, { headers: HEADERS_SUPA });
+async function getInvoice(params) {
+  const id = params.id;
+  if (!id) return resp(400, { error: "id required" });
+  const r = await fetch(`${SUPA_URL}/rest/v1/billing_runs?id=eq.${id}&limit=1`, { headers: HEADERS_SUPA });
   const data = await r.json();
-  if (!Array.isArray(data) || !data[0]) return resp(404, { error: "Invoice not found" });
-  return resp(200, data[0]);
+  return resp(200, Array.isArray(data) && data[0] ? data[0] : null);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// LOADERS
+// SUB-FUNCTION CALLERS
+// ════════════════════════════════════════════════════════════════════════════
+async function callShipStation(baseUrl, client, from, to) {
+  const empty = { mode: 'skipped', count: 0, carrierCost: 0, storeMatched: false, storeNames: [] };
+  const billingSource = (client.billing_source || '').toLowerCase().trim();
+
+  // Mode: portal — client doesn't use ShipStation at all
+  if (billingSource === 'portal') {
+    return { ...empty, mode: 'portal' };
+  }
+
+  // Mode: ss_store — call billing-shipstation.js with store param
+  if (billingSource === 'ss_store') {
+    const storeName = (client.store_name || '').trim();
+    if (!storeName) return { ...empty, mode: 'ss_store', error: 'store_name not set on client' };
+    const url = `${baseUrl}/.netlify/functions/billing-shipstation?start=${from}&end=${to}&store=${encodeURIComponent(storeName)}`;
+    return await fetchSubFunction(url, empty);
+  }
+
+  // Mode: ss_cf1 — call billing-shipstation.js with cf1 param
+  if (billingSource === 'ss_cf1') {
+    const cf1 = (client.ss_custom_field_1 || '').trim();
+    if (!cf1) return { ...empty, mode: 'ss_cf1', error: 'ss_custom_field_1 not set on client' };
+    const url = `${baseUrl}/.netlify/functions/billing-shipstation?start=${from}&end=${to}&cf1=${encodeURIComponent(cf1)}`;
+    return await fetchSubFunction(url, empty);
+  }
+
+  return { ...empty, mode: 'unknown:' + billingSource };
+}
+
+async function callInbound(baseUrl, clientName, from, to) {
+  const empty = { count: 0, rmaCount: 0, dropShipCount: 0, billed: { count: 0, rmaCount: 0, dropShipCount: 0, invoices: [] } };
+  if (!clientName) return empty;
+  const url = `${baseUrl}/.netlify/functions/billing-inbound?client=${encodeURIComponent(clientName)}&start=${from}&end=${to}`;
+  return await fetchSubFunction(url, empty);
+}
+
+async function fetchSubFunction(url, fallback) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return { ...fallback, error: `HTTP ${r.status}` };
+    return await r.json();
+  } catch (err) {
+    return { ...fallback, error: err.message };
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// LINE ITEM BUILDER
+// ════════════════════════════════════════════════════════════════════════════
+function buildLineItems(client, ss, inb, services, rateCard) {
+  const items = [];
+
+  // Pick & Pack — based on ShipStation order count
+  if (ss.count > 0) {
+    const r = rateCard.PNP;
+    items.push({
+      source:       "shipstation",
+      service_code: "PNP",
+      service_name: "Pick & Pack",
+      quantity:     ss.count,
+      unit:         "orders",
+      unit_rate:    r,
+      line_total:   round2(ss.count * r),
+      detail:       `${ss.count} orders shipped${ss.mode ? ` (${ss.mode})` : ''}`,
+    });
+  }
+
+  // Shipping Label Fee — pass-through with per-client markup
+  if (ss.carrierCost > 0) {
+    const pct = isNaN(parseFloat(client.shipping_markup)) ? 10 : parseFloat(client.shipping_markup);
+    const multiplier = 1 + (pct / 100);
+    const total = round2(ss.carrierCost * multiplier);
+    items.push({
+      source:       "shipstation",
+      service_code: "SLF",
+      service_name: `Shipping Label Fee (cost + ${pct}%)`,
+      quantity:     1,
+      unit:         "period",
+      unit_rate:    total,
+      line_total:   total,
+      detail:       `Carrier cost $${ss.carrierCost.toFixed(2)} × ${multiplier.toFixed(2)} markup`,
+    });
+  }
+
+  // Manual services from Services Log
+  services.forEach(s => {
+    items.push({
+      source:       "services_log",
+      service_code: s.service_code,
+      service_name: s.service_name,
+      quantity:     parseFloat(s.total_quantity),
+      unit:         s.unit || "units",
+      unit_rate:    parseFloat(s.unit_rate),
+      line_total:   round2(parseFloat(s.line_total_subtotal)),
+      detail:       `${s.entry_count} log entries`,
+    });
+  });
+
+  // Inbound General cartons (count = inb.count, which excludes RMA and Drop)
+  if (inb.count > 0) {
+    const r = rateCard.INBND_PKG;
+    items.push({
+      source:       "shipments_general",
+      service_code: "INBND_PKG",
+      service_name: "Inbound Receiving — Cartons",
+      quantity:     inb.count,
+      unit:         "cartons",
+      unit_rate:    r,
+      line_total:   round2(inb.count * r),
+      detail:       `${inb.count} general cartons received`,
+    });
+  }
+
+  // Drop-shipments (Outbound type ILIKE *Drop*)
+  if (inb.dropShipCount > 0) {
+    const r = rateCard.INBND_DROP;
+    items.push({
+      source:       "shipments_general",
+      service_code: "INBND_DROP",
+      service_name: "Drop-Shipment Processing",
+      quantity:     inb.dropShipCount,
+      unit:         "packages",
+      unit_rate:    r,
+      line_total:   round2(inb.dropShipCount * r),
+      detail:       `${inb.dropShipCount} drop-shipments`,
+    });
+  }
+
+  // Returns (Inbound type ILIKE *RMA*)
+  if (inb.rmaCount > 0) {
+    const r = rateCard.RPF;
+    items.push({
+      source:       "shipments_general",
+      service_code: "RPF",
+      service_name: "Return Processing",
+      quantity:     inb.rmaCount,
+      unit:         "units",
+      unit_rate:    r,
+      line_total:   round2(inb.rmaCount * r),
+      detail:       `${inb.rmaCount} RMA returns processed`,
+    });
+  }
+
+  return items;
+}
+
+function buildRateCard(overrides) {
+  return { ...DEFAULT_RATES, ...overrides };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SUPABASE HELPERS
 // ════════════════════════════════════════════════════════════════════════════
 async function loadClient(id) {
-  const r = await fetch(`${SUPA_URL}/rest/v1/fr_clients?id=eq.${encodeURIComponent(id)}`, { headers: HEADERS_SUPA });
+  const url = `${SUPA_URL}/rest/v1/fr_clients?id=eq.${id}&limit=1`;
+  const r = await fetch(url, { headers: HEADERS_SUPA });
   const data = await r.json();
   return Array.isArray(data) && data[0] ? data[0] : null;
 }
 
-async function loadCatalog() {
-  const r = await fetch(`${SUPA_URL}/rest/v1/fr_service_catalog?active=eq.true`, { headers: HEADERS_SUPA });
-  const data = await r.json();
-  if (!Array.isArray(data)) return {};
-  const map = {};
-  data.forEach(s => { map[s.service_code] = parseFloat(s.default_rate); });
-  return map;
-}
-
-function buildRateCard(client, catalogMap) {
-  // start from catalog defaults, then apply per-client overrides
-  const rates = { ...catalogMap };
-  const overrides = client.rate_overrides || {};
-  Object.keys(overrides).forEach(code => { rates[code] = parseFloat(overrides[code]); });
-  return rates;
-}
-
-async function loadServicesLog(clientId, from, to) {
-  // Use the pending billing view we built in Services Log Phase 1
-  const url = `${SUPA_URL}/rest/v1/fr_services_pending_billing` +
-              `?client_id=eq.${encodeURIComponent(clientId)}&period=eq.${from.slice(0,7)}`;
+async function loadServices(clientId, period) {
+  const url = `${SUPA_URL}/rest/v1/fr_services_pending_billing?client_id=eq.${clientId}&period=eq.${period}`;
   const r = await fetch(url, { headers: HEADERS_SUPA });
   const data = await r.json();
   return Array.isArray(data) ? data : [];
 }
 
-async function loadShipments(clientId, from, to) {
-  // Canonical lookup by client_id (FK to fr_clients.id).
-  // Real types observed: "Outbound (Drop-Shipment)", "Inbound (Drop-Shipment)",
-  // "Inbound (General)", "RMA (Returns)", "Outbound (Shipment)".
-  // No quantity column — each row is one shipment, count rows.
-  const result = {
-    cartonsIn: 0, cartonsOut: 0, palletsIn: 0, palletsOut: 0, total: 0,
-    inboundDropship: 0, outboundDropship: 0, returns: 0, inboundGeneral: 0,
-  };
-
-  if (!clientId) return result;
-
-  const url = `${SUPA_URL}/rest/v1/shipments_general?` +
-              `client_id=eq.${encodeURIComponent(clientId)}&` +
-              `created_at=gte.${from}&created_at=lte.${to}T23:59:59&` +
-              `select=direction,type,tracking,carrier&limit=5000`;
-
-  const r = await fetch(url, { headers: HEADERS_SUPA });
-  const data = await r.json();
-  if (!Array.isArray(data)) return result;
-
-  data.forEach(s => {
-    const dir  = (s.direction || '').toLowerCase();
-    const type = (s.type || '').toLowerCase();
-
-    // Inbound family — receiving (count as cartons, default rate from catalog)
-    if (dir === 'inbound') {
-      if (type.includes('rma') || type.includes('return')) {
-        result.returns += 1;
-      } else if (type.includes('drop')) {
-        result.inboundDropship += 1;
-        result.cartonsIn += 1;
-      } else {
-        result.inboundGeneral += 1;
-        result.cartonsIn += 1;
-      }
-    }
-
-    // Outbound family — shipping out (count as cartons out)
-    if (dir === 'outbound') {
-      if (type.includes('drop')) {
-        result.outboundDropship += 1;
-      }
-      result.cartonsOut += 1;
-    }
-
-    result.total += 1;
-  });
-
-  return result;
-}
-
-async function loadShipStation(client, from, to) {
-  const result = { orderCount: 0, totalCarrierCost: 0, storesMatched: [], mode: null };
-
-  // Honor the contract from fr_clients.billing_source — the Clients App is
-  // the single source of truth. We do NOT invent matching logic here.
-  const billingSource = (client.billing_source || '').toLowerCase().trim();
-
-  // Mode: portal — client doesn't use ShipStation at all
-  if (billingSource === 'portal') {
-    result.mode = 'portal';
-    return result;
-  }
-
-  // No ShipStation API configured? Nothing we can do.
-  if (!SS_KEY || !SS_SECRET) {
-    result.mode = 'no_api';
-    return result;
-  }
-
-  const auth = Buffer.from(`${SS_KEY}:${SS_SECRET}`).toString('base64');
-  const ssHeaders = { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json' };
-
-  try {
-    let page = 1, totalPages = 1;
-    let allShipments = [];
-    do {
-      const url = `${SS_BASE}/shipments?shipDateStart=${from}&shipDateEnd=${to}&pageSize=500&page=${page}`;
-      const r = await fetch(url, { headers: ssHeaders });
-      if (!r.ok) break;
-      const d = await r.json();
-      allShipments = allShipments.concat(d.shipments || []);
-      totalPages = d.pages || 1;
-      page++;
-    } while (page <= totalPages && page <= 5);
-
-    // Mode: ss_store — match by storeName + aliases (canonical names from fr_clients)
-    if (billingSource === 'ss_store') {
-      result.mode = 'ss_store';
-      const targetNames = [
-        (client.store_name || '').toLowerCase().trim(),
-        ...(Array.isArray(client.aliases) ? client.aliases.map(a => String(a).toLowerCase().trim()) : []),
-      ].filter(Boolean);
-
-      const matched = allShipments.filter(s => {
-        const shipStore = (s.storeName || '').toLowerCase().trim();
-        if (!shipStore) return false;
-        return targetNames.some(name => shipStore === name || shipStore.includes(name));
-      });
-
-      result.orderCount       = matched.length;
-      result.totalCarrierCost = round2(matched.reduce((sum, x) => sum + (x.shipmentCost || 0), 0));
-      result.storesMatched    = [...new Set(matched.map(s => s.storeName).filter(Boolean))];
-      return result;
-    }
-
-    // Mode: ss_cf1 — match by Custom Field 1 from fr_clients.ss_custom_field_1
-    if (billingSource === 'ss_cf1') {
-      result.mode = 'ss_cf1';
-      const cf1Tag = (client.ss_custom_field_1 || '').toLowerCase().trim();
-      if (!cf1Tag) return result;
-
-      const matched = allShipments.filter(s => {
-        const cf1 = String(s.advancedOptions?.customField1 || '').toLowerCase().trim();
-        return cf1 === cf1Tag || cf1.includes(cf1Tag);
-      });
-
-      result.orderCount       = matched.length;
-      result.totalCarrierCost = round2(matched.reduce((sum, x) => sum + (x.shipmentCost || 0), 0));
-      result.storesMatched    = [...new Set(matched.map(s => s.storeName).filter(Boolean))];
-      return result;
-    }
-
-    // Unknown billing_source value — return empty rather than guess
-    result.mode = 'unknown:' + billingSource;
-    return result;
-  } catch (e) {
-    // Swallow ShipStation errors — show 0 orders, user can adjust manually
-    result.mode = 'error';
-    return result;
-  }
-}
-
-async function checkExistingInvoice(clientId, period) {
-  const url = `${SUPA_URL}/rest/v1/fr_invoices?client_id=eq.${encodeURIComponent(clientId)}` +
-              `&period=eq.${period}&status=in.(locked,sent,paid)&limit=1`;
+async function checkExistingInvoice(clientId, periodStart, periodEnd) {
+  const url = `${SUPA_URL}/rest/v1/billing_runs?client_id=eq.${clientId}` +
+              `&period_start=eq.${periodStart}&period_end=eq.${periodEnd}` +
+              `&status=in.(locked,sent,paid)&limit=1`;
   const r = await fetch(url, { headers: HEADERS_SUPA });
   const data = await r.json();
   return Array.isArray(data) && data[0] ? data[0] : null;
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// HELPERS
-// ════════════════════════════════════════════════════════════════════════════
-function resp(statusCode, payload) {
-  return { statusCode, headers: HEADERS_RESP, body: JSON.stringify(payload) };
+async function generateInvoiceNumber(client, period) {
+  // Format: INV-YYYY-MM-CODE   e.g. INV-2026-04-MIL
+  const code = deriveClientCode(client.name);
+  return `INV-${period}-${code}`;
 }
 
-function safeJSON(s) {
-  try { return JSON.parse(s || "{}"); } catch { return {}; }
+function deriveClientCode(name) {
+  if (!name) return 'XXX';
+  // Pull first 3 letters of first word, uppercase
+  const first = name.trim().split(/\s+/)[0] || '';
+  return first.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'XXX';
 }
 
-function round2(n) {
-  return Math.round((parseFloat(n) || 0) * 100) / 100;
+async function markServicesBilled(clientId, period, invoiceId) {
+  // Update fr_services_log rows for this client + period from 'logged' to 'billed'
+  const url = `${SUPA_URL}/rest/v1/fr_services_log?client_id=eq.${clientId}` +
+              `&period=eq.${period}&status=eq.logged`;
+  await fetch(url, {
+    method:  "PATCH",
+    headers: HEADERS_SUPA,
+    body:    JSON.stringify({ status: 'billed', billed_at: new Date().toISOString(), billing_id: invoiceId }),
+  });
 }
+
+async function markShipmentsBilled(clientId, periodStart, periodEnd, invoiceId) {
+  // Update unbilled shipments in shipments_general for this client + period
+  const url = `${SUPA_URL}/rest/v1/shipments_general?client_id=eq.${clientId}` +
+              `&created_at=gte.${periodStart}&created_at=lte.${periodEnd}T23:59:59` +
+              `&billed_at=is.null`;
+  await fetch(url, {
+    method:  "PATCH",
+    headers: HEADERS_SUPA,
+    body:    JSON.stringify({ billed_at: new Date().toISOString(), billing_id: invoiceId }),
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// UTILS
+// ════════════════════════════════════════════════════════════════════════════
+function inferBaseUrl(event) {
+  const proto = event.headers["x-forwarded-proto"] || "https";
+  const host  = event.headers["x-forwarded-host"] || event.headers.host || "apps.fr-logistics.net";
+  return `${proto}://${host}`;
+}
+
+function lastDayOfMonth(periodYM) {
+  const [y, m] = periodYM.split('-').map(Number);
+  const last = new Date(y, m, 0).getDate();
+  return `${periodYM}-${String(last).padStart(2,'0')}`;
+}
+
+function round2(n) { return Math.round((parseFloat(n) || 0) * 100) / 100; }
+function safeJSON(s) { try { return JSON.parse(s || "{}"); } catch { return {}; } }
+function resp(statusCode, payload) { return { statusCode, headers: HEADERS_RESP, body: JSON.stringify(payload) }; }
