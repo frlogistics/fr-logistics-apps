@@ -2390,6 +2390,7 @@
         return `<div class="action-bar">
           <button class="btn btn-primary btn-lg" onclick="openProcessOrphanModal('${id}')">🔗 Process orphan (manual link)</button>
           <button class="btn" onclick="doAction('${id}','receive')" title="Mark received without a label (rare — only if you'll re-label later)">📦 Receive without label</button>
+          <button class="btn btn-danger" onclick="deleteOrphan('${id}')" title="Permanently delete this orphan (mistaken scan)">🗑 Delete</button>
         </div>`;
 
       case "exception":
@@ -2414,6 +2415,42 @@
   }
   window.openLabelOnly = openLabelOnly;
   window.doAction = doAction;
+
+  // ─── Delete orphan (cleanup for bad scans) ───────────────────────────
+  // Hard-deletes a row in status='orphan'. Used when the operator scanned
+  // something that isn't actually a tracking number. Never works on rows
+  // that have moved past orphan — those need to be reverted/exception-flagged.
+  async function deleteOrphan(id) {
+    if (!requireOperator()) return;
+    const row = state.rows.find(r => r.id === id);
+    if (!row) { toast("Row not found", { error: true }); return; }
+    if (row.status !== "orphan") {
+      toast("Only orphan rows can be deleted", { error: true });
+      return;
+    }
+    const clientName = row.client?.company || row.client?.name || row.config?.display_name || "—";
+    const confirmMsg =
+      `Permanently delete this orphan?\n\n` +
+      `Tracking: ${row.tracking_number}\n` +
+      `Client:   ${clientName}\n\n` +
+      `This cannot be undone. Use this only for mistaken scans.`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      await apiPost({ action: "delete_orphan", id, operator: state.operator });
+      // Remove from local state
+      state.rows = state.rows.filter(r => r.id !== id);
+      // Also remove from any current batch selection
+      state.batchSelection.delete(id);
+      closeDetail();
+      renderRows();
+      renderCounts();
+      toast(`✓ Deleted orphan · ${shortTracking(row.tracking_number)}`);
+    } catch (e) {
+      toast("Delete failed: " + e.message, { error: true });
+    }
+  }
+  window.deleteOrphan = deleteOrphan;
 
   // ─── Smart scan handler — 3 paths based on what's scanned ───────────────
   // 1. Exists + status='pending'/'exception': confirm → mark received
@@ -2475,13 +2512,43 @@
       return;
     }
 
-    // Path 3: no match → prompt to create orphan
+    // Path 3: no match → validate the scan before prompting to create an orphan.
+    // This prevents accidentally creating orphan records from non-tracking
+    // barcodes (item codes, inner-pack barcodes, etc).
+    const validation = validateScanForOrphan(val);
+    if (!validation.ok) {
+      toast(`Not a valid tracking · ${validation.reason}`, { error: true });
+      return;
+    }
     openOrphanModal(val);
   });
 
   function shortTracking(t) {
     if (!t) return "";
     return t.length > 14 ? t.slice(0, 10) + "…" : t;
+  }
+
+  // Validate a scan before treating it as a tracking number for orphan creation.
+  // Real carrier tracking numbers are alphanumeric (with optional hyphens) and
+  // typically 8-40 chars. Anything else is almost certainly a non-tracking
+  // barcode (item barcode, inner-pack code, manufacturer ID, etc).
+  //
+  // Returns { ok: true } if valid, or { ok: false, reason: "..." } if not.
+  function validateScanForOrphan(val) {
+    if (val.length < 8) {
+      return { ok: false, reason: `too short (${val.length} chars, minimum 8)` };
+    }
+    if (val.length > 40) {
+      return { ok: false, reason: `too long (${val.length} chars, maximum 40)` };
+    }
+    // Real tracking numbers don't have underscores, dots, spaces, or slashes.
+    // Allow alphanumeric and hyphens only.
+    if (!/^[A-Za-z0-9-]+$/.test(val)) {
+      const badChars = Array.from(new Set(val.replace(/[A-Za-z0-9-]/g, "").split("")))
+        .map(c => c === " " ? "space" : `'${c}'`).join(", ");
+      return { ok: false, reason: `contains invalid character(s): ${badChars}` };
+    }
+    return { ok: true };
   }
 
   function highlightAndOpen(match) {
