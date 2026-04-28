@@ -82,20 +82,24 @@ async function previewInvoice(params) {
   // 3. Read 3 sources in parallel
   const [services, shipments, ss] = await Promise.all([
     loadServicesLog(clientId, periodStart, periodEnd),
-    loadShipments(client.name, client.company, periodStart, periodEnd),
+    loadShipments(client.id, periodStart, periodEnd),
     loadShipStation(client, periodStart, periodEnd),
   ]);
 
   // 4. Build line items from each source
   const lineItems = [];
   const sourceCounts = {
-    orders:        ss.orderCount,
-    shipping_cost: ss.totalCarrierCost,
-    cartons_in:    shipments.cartonsIn,
-    cartons_out:   shipments.cartonsOut,
-    pallets_in:    shipments.palletsIn,
-    pallets_out:   shipments.palletsOut,
-    services_logged: services.length,
+    orders:           ss.orderCount,
+    shipping_cost:    ss.totalCarrierCost,
+    cartons_in:       shipments.cartonsIn,
+    cartons_out:      shipments.cartonsOut,
+    pallets_in:       shipments.palletsIn,
+    pallets_out:      shipments.palletsOut,
+    inbound_general:  shipments.inboundGeneral,
+    inbound_dropship: shipments.inboundDropship,
+    outbound_dropship: shipments.outboundDropship,
+    returns:          shipments.returns,
+    services_logged:  services.length,
   };
 
   // 4a. Manual services from log
@@ -144,37 +148,67 @@ async function previewInvoice(params) {
     });
   }
 
-  // 4d. Inbound cartons
-  if (shipments.cartonsIn > 0) {
+  // 4d. Inbound General — cartons received (excludes dropships and returns)
+  if (shipments.inboundGeneral > 0) {
     const r = rateCard["INBND_PKG"] || rateCard["RECV_CARTON"] || 2.50;
     lineItems.push({
       source:       "shipments_general",
       service_code: "INBND_PKG",
       service_name: "Inbound Receiving — Cartons",
-      quantity:     shipments.cartonsIn,
+      quantity:     shipments.inboundGeneral,
       unit:         "cartons",
       unit_rate:    r,
-      line_total:   round2(shipments.cartonsIn * r),
-      detail:       `${shipments.cartonsIn} cartons received in period`,
+      line_total:   round2(shipments.inboundGeneral * r),
+      detail:       `${shipments.inboundGeneral} general cartons received`,
     });
   }
 
-  // 4e. Outbound cartons
+  // 4e. Inbound Drop-shipments — separate billable
+  if (shipments.inboundDropship > 0) {
+    const r = rateCard["INBND_DROP"] || rateCard["INBND_PKG"] || 6.00;
+    lineItems.push({
+      source:       "shipments_general",
+      service_code: "INBND_DROP",
+      service_name: "Inbound Drop-Shipment",
+      quantity:     shipments.inboundDropship,
+      unit:         "packages",
+      unit_rate:    r,
+      line_total:   round2(shipments.inboundDropship * r),
+      detail:       `${shipments.inboundDropship} dropship packages received`,
+    });
+  }
+
+  // 4f. Outbound shipments + dropshipments
   if (shipments.cartonsOut > 0) {
     const r = rateCard["OF_PKG"] || 2.00;
     lineItems.push({
       source:       "shipments_general",
       service_code: "OF_PKG",
-      service_name: "Outbound Carton Fee",
+      service_name: "Outbound Shipments",
       quantity:     shipments.cartonsOut,
       unit:         "cartons",
       unit_rate:    r,
       line_total:   round2(shipments.cartonsOut * r),
-      detail:       `${shipments.cartonsOut} cartons shipped out`,
+      detail:       `${shipments.cartonsOut} cartons shipped${shipments.outboundDropship > 0 ? ` (${shipments.outboundDropship} dropships)` : ''}`,
     });
   }
 
-  // 4f. Inbound pallets
+  // 4g. Returns (RMA)
+  if (shipments.returns > 0) {
+    const r = rateCard["RPF"] || 5.00;
+    lineItems.push({
+      source:       "shipments_general",
+      service_code: "RPF",
+      service_name: "Return Processing",
+      quantity:     shipments.returns,
+      unit:         "units",
+      unit_rate:    r,
+      line_total:   round2(shipments.returns * r),
+      detail:       `${shipments.returns} RMA returns processed`,
+    });
+  }
+
+  // 4h. Inbound pallets (legacy — keeps working if data has them)
   if (shipments.palletsIn > 0) {
     const r = rateCard["INBND_PLT"] || rateCard["RECV_PALLET"] || 20.00;
     lineItems.push({
@@ -371,15 +405,22 @@ async function loadServicesLog(clientId, from, to) {
   return Array.isArray(data) ? data : [];
 }
 
-async function loadShipments(name, company, from, to) {
-  // Match by client name OR company in shipments_general
-  const result = { cartonsIn: 0, cartonsOut: 0, palletsIn: 0, palletsOut: 0, total: 0 };
+async function loadShipments(clientId, from, to) {
+  // Canonical lookup by client_id (FK to fr_clients.id).
+  // Real types observed: "Outbound (Drop-Shipment)", "Inbound (Drop-Shipment)",
+  // "Inbound (General)", "RMA (Returns)", "Outbound (Shipment)".
+  // No quantity column — each row is one shipment, count rows.
+  const result = {
+    cartonsIn: 0, cartonsOut: 0, palletsIn: 0, palletsOut: 0, total: 0,
+    inboundDropship: 0, outboundDropship: 0, returns: 0, inboundGeneral: 0,
+  };
 
-  const namePattern = encodeURIComponent(`%${name}%`);
+  if (!clientId) return result;
+
   const url = `${SUPA_URL}/rest/v1/shipments_general?` +
-              `client=ilike.${namePattern}&` +
+              `client_id=eq.${encodeURIComponent(clientId)}&` +
               `created_at=gte.${from}&created_at=lte.${to}T23:59:59&` +
-              `select=direction,type,quantity&limit=5000`;
+              `select=direction,type,tracking,carrier&limit=5000`;
 
   const r = await fetch(url, { headers: HEADERS_SUPA });
   const data = await r.json();
@@ -388,12 +429,29 @@ async function loadShipments(name, company, from, to) {
   data.forEach(s => {
     const dir  = (s.direction || '').toLowerCase();
     const type = (s.type || '').toLowerCase();
-    const qty  = parseInt(s.quantity || 1, 10);
-    if (dir === 'inbound' && type === 'carton')  result.cartonsIn  += qty;
-    if (dir === 'outbound' && type === 'carton') result.cartonsOut += qty;
-    if (dir === 'inbound' && type === 'pallet')  result.palletsIn  += qty;
-    if (dir === 'outbound' && type === 'pallet') result.palletsOut += qty;
-    result.total += qty;
+
+    // Inbound family — receiving (count as cartons, default rate from catalog)
+    if (dir === 'inbound') {
+      if (type.includes('rma') || type.includes('return')) {
+        result.returns += 1;
+      } else if (type.includes('drop')) {
+        result.inboundDropship += 1;
+        result.cartonsIn += 1;
+      } else {
+        result.inboundGeneral += 1;
+        result.cartonsIn += 1;
+      }
+    }
+
+    // Outbound family — shipping out (count as cartons out)
+    if (dir === 'outbound') {
+      if (type.includes('drop')) {
+        result.outboundDropship += 1;
+      }
+      result.cartonsOut += 1;
+    }
+
+    result.total += 1;
   });
 
   return result;
