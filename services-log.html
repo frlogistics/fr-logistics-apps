@@ -504,7 +504,7 @@ function onServiceChange() {
     updateEstimate();
     return;
   }
-  document.getElementById('f-unit').value = `${svc.unit} · ${formatMoney(svc.default_rate)}/${svc.unit}`;
+  document.getElementById('f-unit').value = `${svc.unit} · ${formatMoney(svc.default_rate)} per ${unitSingular(svc.unit)}`;
   updateEstimate();
 }
 
@@ -646,6 +646,12 @@ function setMonthDefaultFilters() {
 function formatMoney(n) {
   const v = parseFloat(n || 0);
   return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function unitSingular(unit) {
+  // "units" → "unit", "hours" → "hour", "boxes" → "box", "pallets" → "pallet"
+  if (!unit) return 'unit';
+  if (unit === 'boxes') return 'box';
+  return unit.endsWith('s') ? unit.slice(0, -1) : unit;
 }
 function formatQty(n) {
   const v = parseFloat(n || 0);

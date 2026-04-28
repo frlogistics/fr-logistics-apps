@@ -231,8 +231,8 @@
     <div id="existing-warning" class="alert-existing hidden"></div>
 
     <!-- Sources card -->
-    <div class="card">
-      <h2>2. Period sources</h2>
+    <div class="card" data-step="true">
+      <h2><span class="step-num">2</span>. Period sources</h2>
       <p class="card-sub" id="period-label">—</p>
 
       <div class="source-cards" id="source-cards">
@@ -241,8 +241,8 @@
     </div>
 
     <!-- MMB comparison (only shown if client has MMB) -->
-    <div class="card hidden" id="mmb-card">
-      <h2>3. Actuals vs Minimum Monthly Billing</h2>
+    <div class="card hidden" id="mmb-card" data-step="true">
+      <h2><span class="step-num">3</span>. Actuals vs Minimum Monthly Billing</h2>
       <p class="card-sub">Click the side you want to invoice. Recommendation is highlighted.</p>
 
       <div class="mmb-compare">
@@ -261,8 +261,8 @@
     </div>
 
     <!-- Line items -->
-    <div class="card">
-      <h2>4. Line items breakdown</h2>
+    <div class="card" data-step="true">
+      <h2><span class="step-num">4</span>. Line items breakdown</h2>
       <p class="card-sub">Each row is one billable service. Edit quantities or rates if you spotted an issue before locking.</p>
 
       <div class="table-wrap">
@@ -291,8 +291,8 @@
     </div>
 
     <!-- Confirm + exports -->
-    <div class="card">
-      <h2>5. Confirm and export</h2>
+    <div class="card" data-step="true">
+      <h2><span class="step-num">5</span>. Confirm and export</h2>
       <p class="card-sub">Once locked, the matching warehouse log entries become read-only and cannot be re-billed</p>
 
       <div class="field" style="margin-bottom:14px">
@@ -433,6 +433,9 @@ function renderPreview() {
     APPLIED_METHOD = 'actuals';
     APPLIED_AMOUNT = p.totals.actuals_total;
   }
+
+  // Renumber steps based on visible cards
+  renumberSteps();
 
   // Line items
   const tbody = document.getElementById('items-body');
@@ -672,6 +675,18 @@ function exportPDF() {
 // ════════════════════════════════════════════════════════════════════
 // HELPERS
 // ════════════════════════════════════════════════════════════════════
+function renumberSteps() {
+  // Step 1 (selector) is always shown. Renumber the cards in #preview-section
+  // skipping any hidden ones — so when MMB is hidden, the others get 1, 2, 3, 4
+  const cards = document.querySelectorAll('#preview-section .card[data-step="true"]');
+  let n = 2; // selector card is step 1
+  cards.forEach(card => {
+    if (card.classList.contains('hidden')) return;
+    const numEl = card.querySelector('.step-num');
+    if (numEl) numEl.textContent = n;
+    n++;
+  });
+}
 function formatMoney(n) {
   return '$' + (parseFloat(n)||0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
