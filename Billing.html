@@ -1,713 +1,695 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FR-Logistics | Billing Generator</title>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FR-Logistics · Billing Generator</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  :root{
-    --bg:#f1f5f9; --surface:#ffffff; --panel:#f8fafc;
-    --border:#e2e8f0; --border-strong:#cbd5e1;
-    --text:#0f172a; --muted:#64748b; --hint:#94a3b8;
-    --g1:#0ea55f; --g2:#16a34a; --g3:#15803d; --gdk:#065f46;
-    --glt:#ecfdf5; --gmd:#d1fae5; --gbr:#bbf7d0;
-    --amber-bg:#fef3c7; --amber-tx:#92400e;
-    --red-bg:#fee2e2; --red-tx:#991b1b;
-    --gray-bg:#f1f5f9; --gray-tx:#475569;
-    --blue-bg:#dbeafe; --blue-tx:#1e40af;
-    --shadow:0 1px 3px rgba(0,0,0,.07),0 4px 14px rgba(0,0,0,.05);
-    --shadow2:0 8px 30px rgba(0,0,0,.10);
-  }
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  body{
-    font-family:'DM Sans',system-ui,sans-serif;
-    background:var(--bg);color:var(--text);
-    min-height:100vh;line-height:1.5;-webkit-font-smoothing:antialiased;
-  }
-  h1,h2,h3{font-family:'Syne',sans-serif;letter-spacing:-.01em}
+:root{
+  --bg:#f5f7fa;--surface:#ffffff;--panel:#f8fafc;--border:#e5e9f0;
+  --text:#0f172a;--muted:#64748b;--line:#eaecef;
+  --primary:#0F6E56;--primary-lt:#E1F5EE;--primary-dk:#085041;
+  --warn:#854F0B;--warn-lt:#FAEEDA;--warn-md:#E5C893;
+  --danger:#791F1F;--danger-lt:#FCEBEB;--info:#0C447C;--info-lt:#E6F1FB;
+  --shadow:0 1px 3px rgba(0,0,0,.05),0 4px 12px rgba(0,0,0,.04);--r:10px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
+.wrap{max-width:1640px;margin:0 auto;padding:18px 22px}
+.hdr{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 22px;background:#fff;
+     border:1px solid var(--border);border-top:3px solid var(--primary);border-radius:var(--r);margin-bottom:18px;box-shadow:var(--shadow)}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:42px;height:42px;background:var(--primary);border-radius:8px;display:flex;align-items:center;
+      justify-content:center;color:#fff;font-weight:700;font-size:14px}
+.title{font-size:18px;font-weight:600;letter-spacing:-0.01em}
+.subtitle{font-size:12px;color:var(--muted);margin-top:2px}
+.back-btn{padding:8px 14px;background:#fff;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;text-decoration:none}
+.back-btn:hover{background:var(--panel)}
 
-  .topbar{
-    background:var(--surface);border-bottom:1px solid var(--border);
-    padding:14px 24px;display:flex;justify-content:space-between;align-items:center;
-    position:sticky;top:0;z-index:50;
-  }
-  .brand{display:flex;align-items:center;gap:12px}
-  .brand-mark{
-    width:34px;height:34px;border-radius:8px;
-    background:linear-gradient(135deg,var(--g1),var(--gdk));
-    color:#fff;font-family:'Syne',sans-serif;font-weight:800;font-size:15px;
-    display:flex;align-items:center;justify-content:center;letter-spacing:-.02em;
-  }
-  .brand-text{font-family:'Syne',sans-serif;font-weight:700;font-size:16px;color:var(--text)}
-  .brand-sub{font-size:11px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
-  .back-link{
-    color:var(--muted);text-decoration:none;font-size:13px;font-weight:500;
-    padding:8px 14px;border-radius:8px;border:1px solid var(--border);
-    transition:all .15s;
-  }
-  .back-link:hover{background:var(--panel);color:var(--text);border-color:var(--border-strong)}
+.grid{display:grid;grid-template-columns:340px 1fr 380px;gap:16px}
+@media(max-width:1280px){.grid{grid-template-columns:1fr}}
 
-  .wrap{max-width:1200px;margin:0 auto;padding:24px}
-  .page-head{margin-bottom:20px}
-  .page-head h1{font-size:26px;font-weight:700;margin-bottom:4px}
-  .page-head p{color:var(--muted);font-size:14px}
+.card{background:#fff;border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+.card-head{padding:14px 18px;border-bottom:1px solid var(--border);background:var(--panel);display:flex;align-items:center;justify-content:space-between}
+.card-head h3{font-size:13px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:0.5px}
+.card-body{padding:16px 18px}
 
-  .card{
-    background:var(--surface);border:1px solid var(--border);border-radius:12px;
-    padding:20px 22px;box-shadow:var(--shadow);margin-bottom:20px;
-  }
-  .card h2{font-size:17px;font-weight:600;margin-bottom:4px;color:var(--text)}
-  .card .card-sub{font-size:13px;color:var(--muted);margin-bottom:18px}
+.field{margin-bottom:14px}
+.field:last-child{margin-bottom:0}
+.field label{display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px}
+.field input,.field select{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif;background:#fff;color:var(--text)}
+.field input:focus,.field select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-lt)}
 
-  .grid-3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px;align-items:end}
-  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-  .field{display:flex;flex-direction:column;gap:5px}
-  .field label{font-size:11px;font-weight:600;color:var(--muted);
-    text-transform:uppercase;letter-spacing:.04em}
-  .field input,.field select{
-    font:inherit;font-size:14px;color:var(--text);
-    background:var(--surface);border:1px solid var(--border);border-radius:8px;
-    padding:9px 12px;outline:none;transition:border-color .15s,box-shadow .15s;
-    width:100%;
-  }
-  .field input:focus,.field select:focus{
-    border-color:var(--g2);box-shadow:0 0 0 3px rgba(22,163,74,.12);
-  }
+.btn{padding:10px 16px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid transparent;font-family:'Inter',sans-serif;transition:all .15s}
+.btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+.btn-primary:hover{background:var(--primary-dk)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.btn-secondary{background:#fff;color:var(--text);border-color:var(--border)}
+.btn-secondary:hover{background:var(--panel)}
+.btn-danger{background:#fff;color:var(--danger);border-color:var(--border)}
+.btn-danger:hover{background:var(--danger-lt)}
+.btn-block{width:100%}
+.btn-sm{padding:7px 12px;font-size:12px}
 
-  .btn{
-    font:inherit;font-size:13px;font-weight:600;
-    padding:9px 18px;border-radius:8px;cursor:pointer;
-    border:1px solid transparent;transition:all .15s;
-  }
-  .btn-primary{background:var(--g2);color:#fff;border-color:var(--g2)}
-  .btn-primary:hover{background:var(--g3);border-color:var(--g3)}
-  .btn-primary:disabled{background:var(--hint);border-color:var(--hint);cursor:not-allowed}
-  .btn-ghost{background:transparent;color:var(--muted);border-color:var(--border)}
-  .btn-ghost:hover{background:var(--panel);color:var(--text);border-color:var(--border-strong)}
-  .btn-danger{background:var(--red-tx);color:#fff;border-color:var(--red-tx)}
-  .btn-row{display:flex;gap:10px;flex-wrap:wrap}
+.li-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 18px;background:#fafbfc;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted)}
+.li-legend{display:flex;gap:14px;font-size:11px}
+.li-legend span{display:flex;align-items:center;gap:5px}
+.li-legend i{width:8px;height:8px;border-radius:2px;display:inline-block}
+.li-table{width:100%;border-collapse:collapse}
+.li-table th{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);background:#fafbfc}
+.li-table th.num{text-align:right}
+.li-table td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:13px}
+.li-table tr.movement{background:#F4FBF8}
+.li-table tr.fixed{background:#FEFAEF}
+.li-table tr.zero{color:var(--muted)}
+.li-table tr:hover{background:var(--primary-lt)}
+.li-table tr.zero:hover{background:#f5f7fa}
 
-  /* Source badges */
-  .source-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
-  .source-card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px}
-  .source-card .src-label{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
-  .source-card .src-value{font-family:'Syne',sans-serif;font-size:20px;font-weight:700;color:var(--text)}
-  .source-card .src-detail{font-size:11px;color:var(--hint);margin-top:2px}
-  .source-card.svc{border-left:3px solid #15803d}
-  .source-card.ss{border-left:3px solid #1e40af}
-  .source-card.io{border-left:3px solid #6d28d9}
+.li-name{font-weight:500;color:var(--text)}
+.li-name.zero{color:var(--muted)}
+.li-detail{font-size:11px;color:var(--muted);margin-top:2px}
+.badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;margin-left:6px}
+.badge-mvmt{background:var(--primary-lt);color:var(--primary-dk)}
+.badge-fixed{background:var(--warn-lt);color:var(--warn)}
+.badge-zero{background:#f1f3f6;color:#94a3b8}
 
-  /* MMB comparison */
-  .mmb-compare{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin-bottom:18px}
-  .mmb-side{
-    background:var(--surface);border:2px solid var(--border);border-radius:12px;
-    padding:16px;text-align:center;cursor:pointer;transition:all .15s;
-  }
-  .mmb-side:hover{border-color:var(--border-strong)}
-  .mmb-side.selected{border-color:var(--g2);background:var(--glt)}
-  .mmb-side .ms-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-  .mmb-side .ms-value{font-family:'Syne',sans-serif;font-size:28px;font-weight:700;color:var(--text);margin:8px 0 4px}
-  .mmb-side .ms-sub{font-size:12px;color:var(--hint)}
-  .mmb-vs{display:flex;align-items:center;color:var(--hint);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.qty-input,.rate-input{width:80px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:'DM Mono',monospace;text-align:right;background:#fff}
+.qty-input:focus,.rate-input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-lt)}
+.subtotal{font-family:'DM Mono',monospace;font-weight:600;font-size:13px;text-align:right}
+.unit-label{font-size:11px;color:var(--muted)}
 
-  /* Line items table */
-  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  thead{background:var(--panel)}
-  th{
-    text-align:left;padding:10px 12px;font-size:11px;font-weight:600;
-    color:var(--muted);text-transform:uppercase;letter-spacing:.04em;
-    border-bottom:1px solid var(--border);white-space:nowrap;
-  }
-  th.num,td.num{text-align:right}
-  th.ctr,td.ctr{text-align:center}
-  td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:top}
-  tbody tr:last-child td{border-bottom:none}
-  tbody tr:hover{background:var(--panel)}
-  td.muted{color:var(--muted)}
-  td.detail{font-size:11px;color:var(--hint)}
-  tr.totals-row td{background:var(--panel);font-weight:600;border-top:2px solid var(--border-strong)}
+.summary-row{display:flex;justify-content:space-between;padding:8px 0;font-size:13px}
+.summary-row.divider{border-top:1px solid var(--line);margin-top:6px;padding-top:12px}
+.summary-row.total{font-size:16px;font-weight:700;color:var(--primary-dk);padding-top:14px;border-top:2px solid var(--primary)}
+.summary-row .lbl{color:var(--muted)}
+.summary-row .val{font-family:'DM Mono',monospace;font-weight:500;color:var(--text)}
+.mmb-banner{background:var(--info-lt);border:1px solid #BFE0F8;border-radius:8px;padding:10px 12px;font-size:12px;color:var(--info);margin-top:10px}
+.mmb-banner.applies{background:var(--warn-lt);border-color:var(--warn-md);color:var(--warn)}
 
-  .badge{
-    display:inline-block;padding:2px 8px;border-radius:6px;
-    font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;
-  }
-  .badge-svc{background:var(--gmd);color:var(--gdk)}
-  .badge-ss{background:var(--blue-bg);color:var(--blue-tx)}
-  .badge-io{background:#ede9fe;color:#5b21b6}
-  .badge-locked{background:var(--gmd);color:var(--gdk)}
-  .badge-warn{background:var(--amber-bg);color:var(--amber-tx)}
+.method-toggle{display:flex;gap:6px;margin:10px 0}
+.method-toggle button{flex:1;padding:8px 12px;border:1px solid var(--border);background:#fff;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500}
+.method-toggle button.active{background:var(--primary);color:#fff;border-color:var(--primary)}
 
-  .empty{padding:40px 20px;text-align:center;color:var(--muted);font-size:14px}
-  .loading{padding:40px 20px;text-align:center;color:var(--hint);font-size:14px}
+.warn-banner{background:var(--danger-lt);border:1px solid #F3CFCF;color:var(--danger);padding:10px 12px;border-radius:8px;font-size:12px;margin-top:10px}
+.success-banner{background:var(--primary-lt);border:1px solid #9FE1CB;color:var(--primary-dk);padding:12px 14px;border-radius:8px;font-size:12px;margin-top:10px}
 
-  /* Toast */
-  #toast{
-    position:fixed;bottom:24px;right:24px;z-index:200;
-    background:var(--text);color:#fff;padding:12px 18px;border-radius:8px;
-    font-size:13px;font-weight:500;box-shadow:var(--shadow2);
-    transform:translateY(100px);opacity:0;transition:all .25s;max-width:340px;
-  }
-  #toast.show{transform:translateY(0);opacity:1}
-  #toast.error{background:var(--red-tx)}
-  #toast.success{background:var(--g3)}
+.empty{padding:30px 18px;text-align:center;color:var(--muted);font-size:13px}
+.loading{padding:18px;text-align:center;color:var(--muted);font-size:13px}
+.shimmer{background:linear-gradient(90deg,#f1f3f6 0%,#fafbfc 50%,#f1f3f6 100%);background-size:200% 100%;animation:sh 1.5s infinite;height:14px;border-radius:4px;margin:6px 0}
+@keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
-  /* Existing invoice warning */
-  .alert-existing{
-    background:var(--amber-bg);border:1px solid #fcd34d;color:var(--amber-tx);
-    padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:13px;
-  }
-  .alert-existing strong{font-weight:700}
+.kpi-mini{padding:10px 12px;background:var(--panel);border-radius:8px;margin-bottom:8px}
+.kpi-mini-lbl{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px}
+.kpi-mini-val{font-size:14px;font-weight:600;color:var(--text);margin-top:2px;font-family:'DM Mono',monospace}
 
-  /* Summary footer */
-  .totals-summary{
-    display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;
-    margin-top:18px;padding-top:14px;border-top:1px solid var(--border);
-  }
-  .totals-summary .ts-amount{
-    font-family:'Syne',sans-serif;font-size:32px;font-weight:700;color:var(--gdk);
-  }
-  .totals-summary .ts-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.post-lock{margin-top:14px;padding:14px;background:#F4FBF8;border:1px dashed #9FE1CB;border-radius:8px;display:none}
+.post-lock.active{display:block}
+.post-lock-label{font-size:11px;font-weight:600;color:var(--primary-dk);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px}
+.post-lock-row{display:flex;gap:6px;margin-top:6px}
+.post-lock-row .btn{flex:1;font-size:11px;padding:7px 10px}
 
-  @media(max-width:780px){
-    .grid-3,.grid-2{grid-template-columns:1fr}
-    .mmb-compare{grid-template-columns:1fr;gap:10px}
-    .mmb-vs{justify-content:center}
-  }
-
-  .hidden{display:none!important}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--primary-dk);color:#fff;padding:12px 18px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.2);font-size:13px;font-weight:500;z-index:9999;display:none}
+.toast.show{display:block;animation:slideIn .2s ease}
+@keyframes slideIn{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
 </style>
 </head>
 <body>
-
-<div class="topbar">
-  <div class="brand">
-    <div class="brand-mark">FR</div>
-    <div>
-      <div class="brand-text">Billing Generator</div>
-      <div class="brand-sub">FR-Logistics Operations</div>
-    </div>
-  </div>
-  <a href="portal.html" class="back-link">← Back to portal</a>
-</div>
-
 <div class="wrap">
 
-  <div class="page-head">
-    <h1>Monthly Invoice Builder</h1>
-    <p>Pull actuals from ShipStation, the warehouse log, and inbound/outbound — review, adjust, lock</p>
-  </div>
-
-  <!-- Step 1: select client + period ──────────────────────────── -->
-  <div class="card">
-    <h2>1. Select client and period</h2>
-    <p class="card-sub">Pick a client and the month you want to invoice</p>
-
-    <div class="grid-3">
-      <div class="field">
-        <label for="f-client">Client</label>
-        <select id="f-client">
-          <option value="">Loading clients…</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="f-period">Period (YYYY-MM)</label>
-        <input type="month" id="f-period">
-      </div>
-      <div class="field">
-        <label>&nbsp;</label>
-        <button class="btn btn-primary" id="btn-preview">Generate preview</button>
+  <div class="hdr">
+    <div class="brand">
+      <div class="logo">FR</div>
+      <div>
+        <div class="title">Billing Generator</div>
+        <div class="subtitle">Monthly Invoice Builder · Live data from ShipStation, warehouse log, and services log</div>
       </div>
     </div>
+    <div><a href="portal.html" class="back-btn">← Back to portal</a></div>
   </div>
 
-  <!-- Step 2: preview ─────────────────────────────────────────── -->
-  <div id="preview-section" class="hidden">
+  <div class="grid">
 
-    <div id="existing-warning" class="alert-existing hidden"></div>
-
-    <!-- Sources card -->
-    <div class="card" data-step="true">
-      <h2><span class="step-num">2</span>. Period sources</h2>
-      <p class="card-sub" id="period-label">—</p>
-
-      <div class="source-cards" id="source-cards">
-        <!-- populated dynamically -->
-      </div>
-    </div>
-
-    <!-- MMB comparison (only shown if client has MMB) -->
-    <div class="card hidden" id="mmb-card" data-step="true">
-      <h2><span class="step-num">3</span>. Actuals vs Minimum Monthly Billing</h2>
-      <p class="card-sub">Click the side you want to invoice. Recommendation is highlighted.</p>
-
-      <div class="mmb-compare">
-        <div class="mmb-side" id="side-actuals" data-method="actuals">
-          <div class="ms-label">Actuals</div>
-          <div class="ms-value" id="actuals-amt">$0.00</div>
-          <div class="ms-sub">Sum of line items</div>
+    <!-- COL 1 — CLIENT + PERIOD -->
+    <div class="card">
+      <div class="card-head"><h3>1 · Client & Period</h3></div>
+      <div class="card-body">
+        <div class="field">
+          <label>Client</label>
+          <select id="clientSelect"><option value="">Loading clients…</option></select>
         </div>
-        <div class="mmb-vs">VS</div>
-        <div class="mmb-side" id="side-mmb" data-method="mmb">
-          <div class="ms-label">Minimum Monthly Billing</div>
-          <div class="ms-value" id="mmb-amt">$0.00</div>
-          <div class="ms-sub">Per contract</div>
+        <div class="field">
+          <label>Period (YYYY-MM)</label>
+          <input type="month" id="periodInput" value="">
+        </div>
+        <button class="btn btn-primary btn-block" id="loadBtn" onclick="loadPreview()">Load period data</button>
+
+        <div id="clientInfo" style="margin-top:14px;display:none">
+          <div class="kpi-mini"><div class="kpi-mini-lbl">Billing Source</div><div class="kpi-mini-val" id="kpiBs">—</div></div>
+          <div class="kpi-mini"><div class="kpi-mini-lbl">SS Reference</div><div class="kpi-mini-val" id="kpiSs">—</div></div>
+          <div class="kpi-mini"><div class="kpi-mini-lbl">Shipping Markup</div><div class="kpi-mini-val" id="kpiMk">—</div></div>
+          <div class="kpi-mini"><div class="kpi-mini-lbl">MMB</div><div class="kpi-mini-val" id="kpiMm">—</div></div>
+          <div class="kpi-mini"><div class="kpi-mini-lbl">Contact Email</div><div class="kpi-mini-val" id="kpiEm" style="font-size:11px">—</div></div>
         </div>
       </div>
     </div>
 
-    <!-- Line items -->
-    <div class="card" data-step="true">
-      <h2><span class="step-num">4</span>. Line items breakdown</h2>
-      <p class="card-sub">Each row is one billable service. Edit quantities or rates if you spotted an issue before locking.</p>
-
-      <div class="table-wrap">
-        <table id="items-table">
-          <thead>
-            <tr>
-              <th>Source</th>
-              <th>Service</th>
-              <th class="num">Qty</th>
-              <th>Unit</th>
-              <th class="num">Rate</th>
-              <th class="num">Subtotal</th>
-            </tr>
-          </thead>
-          <tbody id="items-body"></tbody>
-        </table>
+    <!-- COL 2 — LINE ITEMS -->
+    <div class="card">
+      <div class="card-head">
+        <h3>2 · Line items (editable)</h3>
+        <button class="btn btn-secondary btn-sm" id="addLineBtn" onclick="addCustomLine()" disabled>+ Custom line</button>
       </div>
-
-      <div class="totals-summary">
-        <div>
-          <div class="ts-label" id="applied-method-label">Total to invoice</div>
-          <div style="font-size:11px;color:var(--hint);margin-top:2px" id="applied-method-detail"></div>
+      <div class="li-toolbar" id="liToolbar" style="display:none">
+        <div class="li-legend">
+          <span><i style="background:#0F6E56"></i> Has movement</span>
+          <span><i style="background:#E5C893"></i> Fixed monthly</span>
+          <span><i style="background:#cbd5e1"></i> Zero (editable)</span>
         </div>
-        <div class="ts-amount" id="applied-total">$0.00</div>
+        <div id="liCount">—</div>
+      </div>
+      <div id="liContainer">
+        <div class="empty">Select a client and period, then click <strong>Load period data</strong>.</div>
       </div>
     </div>
 
-    <!-- Confirm + exports -->
-    <div class="card" data-step="true">
-      <h2><span class="step-num">5</span>. Confirm and export</h2>
-      <p class="card-sub">Once locked, the matching warehouse log entries become read-only and cannot be re-billed</p>
+    <!-- COL 3 — LIVE SUMMARY -->
+    <div class="card">
+      <div class="card-head"><h3>3 · Live Summary</h3></div>
+      <div class="card-body">
+        <div class="summary-row"><span class="lbl">Lines with values</span><span class="val" id="sumLines">0</span></div>
+        <div class="summary-row"><span class="lbl">Actuals subtotal</span><span class="val" id="sumActuals">$0.00</span></div>
+        <div class="summary-row"><span class="lbl">MMB applicable</span><span class="val" id="sumMmb">$0.00</span></div>
 
-      <div class="field" style="margin-bottom:14px">
-        <label for="f-notes">Internal notes (optional)</label>
-        <input type="text" id="f-notes" placeholder="e.g. MMB applied due to slow inventory month">
-      </div>
+        <div id="mmbBanner" class="mmb-banner" style="display:none"></div>
 
-      <div class="btn-row">
-        <button class="btn btn-primary" id="btn-confirm">Confirm and lock invoice</button>
-        <button class="btn btn-ghost" id="btn-export-xlsx">Download Excel</button>
-        <button class="btn btn-ghost" id="btn-export-pdf">Download PDF</button>
-        <button class="btn btn-ghost" id="btn-reset">Start over</button>
+        <div class="method-toggle" id="methodToggle" style="display:none">
+          <button class="active" data-method="actuals" onclick="setMethod('actuals')">Use actuals</button>
+          <button data-method="mmb" onclick="setMethod('mmb')">Apply MMB</button>
+        </div>
+
+        <div class="summary-row total"><span>Total to invoice</span><span class="val" id="sumTotal">$0.00</span></div>
+
+        <div id="warnBanner" class="warn-banner" style="display:none"></div>
+
+        <div style="margin-top:18px;display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-primary btn-block" id="lockBtn" onclick="confirmLock()" disabled>
+            Confirm and lock invoice
+          </button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary" style="flex:1" id="xlsBtn" onclick="exportExcel()" disabled>📊 Excel</button>
+            <button class="btn btn-secondary" style="flex:1" id="pdfBtn" onclick="exportPDF()" disabled>📄 PDF</button>
+          </div>
+          <button class="btn btn-danger btn-sm" onclick="resetAll()">✕ Reset</button>
+        </div>
+
+        <!-- POST-LOCK: appears after invoice is locked -->
+        <div class="post-lock" id="postLock">
+          <div class="post-lock-label">✓ Invoice locked — send to client</div>
+          <button class="btn btn-primary btn-block" onclick="generateBillingEmail()" style="text-align:left;display:flex;justify-content:space-between;align-items:center">
+            <span>📧 Generate billing email</span>
+            <span style="font-size:10px;opacity:0.85">opens Gmail draft</span>
+          </button>
+          <div class="post-lock-row">
+            <button class="btn btn-secondary" onclick="exportPDF()">📄 PDF</button>
+            <button class="btn btn-secondary" onclick="copyQBOCSV()">📋 Copy QBO CSV</button>
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:14px">
+          <label>Internal notes (optional)</label>
+          <input type="text" id="notesInput" placeholder="e.g. MMB applied due to slow inventory month">
+        </div>
       </div>
     </div>
 
   </div>
-
 </div>
 
-<div id="toast"></div>
+<div class="toast" id="toast"></div>
 
 <script>
-const API_BILLING  = '/.netlify/functions/billing-generator';
-const API_CLIENTS  = '/.netlify/functions/wa-clients';
+let preview = null;
+let lineItems = [];
+let appliedMethod = 'actuals';
+let lockedInvoice = null;
 
-let CLIENTS = [];
-let PREVIEW = null;       // current preview payload
-let APPLIED_METHOD = 'actuals';
-let APPLIED_AMOUNT = 0;
-
-document.addEventListener('DOMContentLoaded', () => {
-  // Default period: previous month (most common use case — billing happens after month close)
-  const d = new Date();
-  d.setDate(1); d.setMonth(d.getMonth() - 1);
-  document.getElementById('f-period').value = d.toISOString().slice(0,7);
-
-  loadClients().catch(err => toast('Init error: ' + err.message, 'error'));
-
-  document.getElementById('btn-preview').addEventListener('click', loadPreview);
-  document.getElementById('btn-confirm').addEventListener('click', confirmInvoice);
-  document.getElementById('btn-reset').addEventListener('click', resetForm);
-  document.getElementById('btn-export-xlsx').addEventListener('click', exportExcel);
-  document.getElementById('btn-export-pdf').addEventListener('click', exportPDF);
-
-  document.getElementById('side-actuals').addEventListener('click', () => selectMethod('actuals'));
-  document.getElementById('side-mmb').addEventListener('click', () => selectMethod('mmb'));
+window.addEventListener('DOMContentLoaded', async () => {
+  const now = new Date();
+  document.getElementById('periodInput').value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  await loadClients();
 });
 
 async function loadClients() {
-  const r = await fetch(API_CLIENTS);
-  const data = await r.json();
-  if (!Array.isArray(data)) throw new Error('Failed to load clients');
-  CLIENTS = data
-    .filter(c => (c.status === 'Active') || c.active === true)
-    .sort((a,b) => (a.name||'').localeCompare(b.name||''));
-
-  const opts = '<option value="">— Select client —</option>' +
-    CLIENTS.map(c => `<option value="${c.id}">${escapeHTML(c.name)}${c.company ? ' · ' + escapeHTML(c.company) : ''}</option>`).join('');
-  document.getElementById('f-client').innerHTML = opts;
+  try {
+    const r = await fetch('/.netlify/functions/clients-list');
+    if (!r.ok) throw new Error('Failed to load clients');
+    const data = await r.json();
+    const sel = document.getElementById('clientSelect');
+    sel.innerHTML = '<option value="">— Select a client —</option>';
+    data.sort((a,b)=>a.name.localeCompare(b.name)).forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.company ? `${c.name} · ${c.company}` : c.name;
+      sel.appendChild(opt);
+    });
+  } catch (err) {
+    document.getElementById('clientSelect').innerHTML = '<option value="">⚠ Failed to load clients</option>';
+  }
 }
 
 async function loadPreview() {
-  const clientId = document.getElementById('f-client').value;
-  const period   = document.getElementById('f-period').value;
+  const clientId = document.getElementById('clientSelect').value;
+  const period   = document.getElementById('periodInput').value;
+  if (!clientId) return alert('Select a client first');
+  if (!period)   return alert('Select a period first');
 
-  if (!clientId) return toast('Select a client', 'error');
-  if (!period)   return toast('Select a period', 'error');
+  const btn = document.getElementById('loadBtn');
+  btn.disabled = true; btn.textContent = 'Loading…';
+  document.getElementById('postLock').classList.remove('active');
+  lockedInvoice = null;
 
-  const btn = document.getElementById('btn-preview');
-  btn.disabled = true; btn.textContent = 'Building preview…';
+  document.getElementById('liContainer').innerHTML = `
+    <div class="loading">
+      <div class="shimmer" style="width:80%;margin:0 auto"></div>
+      <div class="shimmer" style="width:60%;margin:8px auto"></div>
+      <div class="shimmer" style="width:70%;margin:8px auto"></div>
+      <div style="margin-top:12px">Querying ShipStation, warehouse log, and rate card…</div>
+    </div>`;
 
   try {
-    const url = `${API_BILLING}?action=preview&client_id=${encodeURIComponent(clientId)}&period=${period}`;
+    const url = `/.netlify/functions/billing-generator?action=preview&client_id=${clientId}&period=${period}`;
     const r = await fetch(url);
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || 'Preview failed');
-    PREVIEW = data;
-    renderPreview();
-    document.getElementById('preview-section').classList.remove('hidden');
-    document.getElementById('preview-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    preview = data;
+    lineItems = JSON.parse(JSON.stringify(data.line_items || []));
+    renderClientInfo();
+    renderLineItems();
+    renderSummary();
+    document.getElementById('liToolbar').style.display = 'flex';
+    document.getElementById('addLineBtn').disabled = false;
+    document.getElementById('lockBtn').disabled = false;
+    document.getElementById('xlsBtn').disabled = false;
+    document.getElementById('pdfBtn').disabled = false;
+
+    const wb = document.getElementById('warnBanner');
+    if (data.existing_invoice) {
+      wb.style.display = 'block';
+      wb.textContent = `⚠ Already locked: invoice ${data.existing_invoice.invoice_number} for $${data.existing_invoice.total_usd}. Locking again is blocked.`;
+      document.getElementById('lockBtn').disabled = true;
+      lockedInvoice = data.existing_invoice;
+      document.getElementById('postLock').classList.add('active');
+    } else {
+      wb.style.display = 'none';
+    }
   } catch (err) {
-    toast('Error: ' + err.message, 'error');
+    document.getElementById('liContainer').innerHTML = `<div class="warn-banner">Error: ${err.message}</div>`;
   } finally {
-    btn.disabled = false; btn.textContent = 'Generate preview';
+    btn.disabled = false; btn.textContent = 'Load period data';
   }
 }
 
-function renderPreview() {
-  const p = PREVIEW;
-
-  document.getElementById('period-label').textContent =
-    `${p.client.name} · ${p.period_start} to ${p.period_end}`;
-
-  // Existing invoice warning
-  const warn = document.getElementById('existing-warning');
-  if (p.existing_invoice) {
-    warn.innerHTML = `<strong>⚠ Invoice already locked for this period:</strong> ${escapeHTML(p.existing_invoice.invoice_number)} · $${p.existing_invoice.applied_amount} · ${escapeHTML(p.existing_invoice.status)}. You cannot lock another one for ${p.period}.`;
-    warn.classList.remove('hidden');
-  } else {
-    warn.classList.add('hidden');
-  }
-
-  // Sources cards
-  const sc = p.sources;
-  const sourceHTML = `
-    <div class="source-card svc">
-      <div class="src-label">Services Log</div>
-      <div class="src-value">${sc.services_logged}</div>
-      <div class="src-detail">manual entries</div>
-    </div>
-    <div class="source-card ss">
-      <div class="src-label">ShipStation Orders</div>
-      <div class="src-value">${sc.orders}</div>
-      <div class="src-detail">$${(sc.shipping_cost||0).toFixed(2)} carrier cost</div>
-    </div>
-    <div class="source-card io">
-      <div class="src-label">Cartons In / Out</div>
-      <div class="src-value">${sc.cartons_in} / ${sc.cartons_out}</div>
-      <div class="src-detail">received / shipped</div>
-    </div>
-    <div class="source-card io">
-      <div class="src-label">Pallets In / Out</div>
-      <div class="src-value">${sc.pallets_in} / ${sc.pallets_out}</div>
-      <div class="src-detail">received / shipped</div>
-    </div>
-  `;
-  document.getElementById('source-cards').innerHTML = sourceHTML;
-
-  // MMB comparison
-  const mmbCard = document.getElementById('mmb-card');
-  if (p.totals.mmb_applies) {
-    mmbCard.classList.remove('hidden');
-    document.getElementById('actuals-amt').textContent = formatMoney(p.totals.actuals_total);
-    document.getElementById('mmb-amt').textContent = formatMoney(p.totals.mmb_amount);
-    selectMethod(p.totals.recommended);
-  } else {
-    mmbCard.classList.add('hidden');
-    APPLIED_METHOD = 'actuals';
-    APPLIED_AMOUNT = p.totals.actuals_total;
-  }
-
-  // Renumber steps based on visible cards
-  renumberSteps();
-
-  // Line items
-  const tbody = document.getElementById('items-body');
-  if (!p.line_items.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">No billable items in this period</td></tr>';
-  } else {
-    tbody.innerHTML = p.line_items.map(li => {
-      const srcBadge = {
-        services_log:    'badge-svc',
-        shipstation:     'badge-ss',
-        shipments_general: 'badge-io',
-      }[li.source] || 'badge-io';
-      const srcLabel = {
-        services_log:    'Log',
-        shipstation:     'ShipStation',
-        shipments_general: 'I/O',
-      }[li.source] || li.source;
-      return `
-        <tr>
-          <td><span class="badge ${srcBadge}">${srcLabel}</span></td>
-          <td>
-            <div>${escapeHTML(li.service_name)}</div>
-            ${li.detail ? `<div class="detail">${escapeHTML(li.detail)}</div>` : ''}
-          </td>
-          <td class="num">${formatQty(li.quantity)}</td>
-          <td class="muted">${escapeHTML(li.unit)}</td>
-          <td class="num muted">${formatMoney(li.unit_rate)}</td>
-          <td class="num"><strong>${formatMoney(li.line_total)}</strong></td>
-        </tr>`;
-    }).join('') + `
-      <tr class="totals-row">
-        <td colspan="5" class="num">Actuals subtotal</td>
-        <td class="num">${formatMoney(p.totals.actuals_total)}</td>
-      </tr>`;
-  }
-
-  updateAppliedTotal();
+function renderClientInfo() {
+  if (!preview) return;
+  const c = preview.client;
+  document.getElementById('clientInfo').style.display = 'block';
+  document.getElementById('kpiBs').textContent = c.billing_source || '—';
+  let ssRef = '—';
+  if (c.billing_source === 'ss_store') ssRef = c.store_name || '(not set)';
+  else if (c.billing_source === 'ss_cf1') ssRef = `CF1: ${c.ss_custom_field_1 || '(not set)'}`;
+  else if (c.billing_source === 'portal') ssRef = 'Portal only';
+  document.getElementById('kpiSs').textContent = ssRef;
+  document.getElementById('kpiMk').textContent = (c.shipping_markup || 0) + '%';
+  document.getElementById('kpiMm').textContent = c.mmb > 0 ? '$' + Number(c.mmb).toFixed(2) : 'No MMB';
+  document.getElementById('kpiEm').textContent = c.contact_email || '(not set)';
 }
 
-function selectMethod(method) {
-  if (!PREVIEW) return;
-  APPLIED_METHOD = method;
-  APPLIED_AMOUNT = method === 'mmb' ? PREVIEW.totals.mmb_amount : PREVIEW.totals.actuals_total;
+function renderLineItems() {
+  const c = document.getElementById('liContainer');
+  if (!lineItems.length) { c.innerHTML = '<div class="empty">No services configured.</div>'; return; }
+  let html = `<table class="li-table">
+    <thead><tr><th>Service</th><th class="num" style="width:90px">Qty</th><th style="width:50px">Unit</th><th class="num" style="width:90px">Rate</th><th class="num" style="width:100px">Subtotal</th></tr></thead><tbody>`;
+  lineItems.forEach((li, idx) => {
+    const rowClass = li.has_movement ? 'movement' : (li.is_fixed ? 'fixed' : 'zero');
+    const badge = li.has_movement ? '<span class="badge badge-mvmt">Movement</span>'
+                : (li.is_fixed ? '<span class="badge badge-fixed">Fixed</span>' : '<span class="badge badge-zero">Zero</span>');
+    html += `<tr class="${rowClass}">
+      <td>
+        <div class="li-name${li.quantity===0?' zero':''}">${li.service_name}${badge}</div>
+        ${li.detail ? `<div class="li-detail">${li.detail}</div>` : ''}
+      </td>
+      <td class="num"><input type="number" class="qty-input" min="0" step="0.01" value="${li.quantity}" onchange="updateQty(${idx}, this.value)"></td>
+      <td><span class="unit-label">${li.unit}</span></td>
+      <td class="num"><input type="number" class="rate-input" min="0" step="0.01" value="${li.unit_rate}" onchange="updateRate(${idx}, this.value)"></td>
+      <td class="subtotal" id="sub-${idx}">$${li.line_total.toFixed(2)}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  c.innerHTML = html;
 
-  document.getElementById('side-actuals').classList.toggle('selected', method === 'actuals');
-  document.getElementById('side-mmb').classList.toggle('selected', method === 'mmb');
-
-  updateAppliedTotal();
+  const movement = lineItems.filter(li => li.has_movement).length;
+  const fixed    = lineItems.filter(li => li.is_fixed && li.quantity > 0).length;
+  const zero     = lineItems.filter(li => li.quantity === 0).length;
+  document.getElementById('liCount').innerHTML =
+    `<strong>${lineItems.length}</strong> services · <span style="color:#0F6E56">${movement} with movement</span> · <span style="color:#854F0B">${fixed} fixed</span> · <span style="color:#94a3b8">${zero} zero</span>`;
 }
 
-function updateAppliedTotal() {
-  document.getElementById('applied-total').textContent = formatMoney(APPLIED_AMOUNT);
-  const labelEl = document.getElementById('applied-method-label');
-  const detailEl = document.getElementById('applied-method-detail');
-  if (APPLIED_METHOD === 'mmb') {
-    labelEl.textContent = 'Total to invoice (MMB applied)';
-    detailEl.textContent = `Actuals were ${formatMoney(PREVIEW.totals.actuals_total)}, MMB floor of ${formatMoney(PREVIEW.totals.mmb_amount)} applies`;
+function updateQty(idx, val) {
+  const q = parseFloat(val) || 0;
+  lineItems[idx].quantity = q;
+  lineItems[idx].line_total = round2(q * (parseFloat(lineItems[idx].unit_rate) || 0));
+  document.getElementById('sub-'+idx).textContent = '$' + lineItems[idx].line_total.toFixed(2);
+  renderSummary();
+}
+
+function updateRate(idx, val) {
+  const r = parseFloat(val) || 0;
+  lineItems[idx].unit_rate = r;
+  lineItems[idx].line_total = round2((parseFloat(lineItems[idx].quantity) || 0) * r);
+  document.getElementById('sub-'+idx).textContent = '$' + lineItems[idx].line_total.toFixed(2);
+  renderSummary();
+}
+
+function addCustomLine() {
+  lineItems.push({
+    service_code: 'CP', service_name: 'Custom Project', qbo_name: 'Custom Project',
+    source: 'manual', unit: 'project', quantity: 0, unit_rate: 0, line_total: 0,
+    detail: 'Manually added line', has_movement: false, is_fixed: false, optional: true,
+  });
+  renderLineItems();
+  renderSummary();
+}
+
+function renderSummary() {
+  if (!preview) return;
+  const lines = lineItems.filter(li => li.line_total > 0).length;
+  const actuals = round2(lineItems.reduce((s,li) => s + (parseFloat(li.line_total) || 0), 0));
+  const mmb = parseFloat(preview.client.mmb) || 0;
+  const mmbApp = mmb > 0;
+  const total = appliedMethod === 'mmb' && mmbApp ? Math.max(actuals, mmb) : actuals;
+
+  document.getElementById('sumLines').textContent = lines;
+  document.getElementById('sumActuals').textContent = '$' + actuals.toFixed(2);
+  document.getElementById('sumMmb').textContent = mmbApp ? '$' + mmb.toFixed(2) : '— (no MMB)';
+  document.getElementById('sumTotal').textContent = '$' + total.toFixed(2);
+
+  const tog = document.getElementById('methodToggle');
+  tog.style.display = mmbApp ? 'flex' : 'none';
+  if (mmbApp) {
+    tog.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.method === appliedMethod));
+  }
+
+  const mb = document.getElementById('mmbBanner');
+  if (mmbApp) {
+    mb.style.display = 'block';
+    if (mmb > actuals) {
+      mb.className = 'mmb-banner applies';
+      mb.innerHTML = `MMB applies: actuals ($${actuals.toFixed(2)}) below MMB ($${mmb.toFixed(2)}). Recommended: <strong>Apply MMB</strong>.`;
+    } else {
+      mb.className = 'mmb-banner';
+      mb.innerHTML = `MMB satisfied: actuals ($${actuals.toFixed(2)}) exceed MMB ($${mmb.toFixed(2)}). Recommended: <strong>Use actuals</strong>.`;
+    }
   } else {
-    labelEl.textContent = 'Total to invoice (Actuals)';
-    detailEl.textContent = PREVIEW.totals.mmb_applies
-      ? `MMB of ${formatMoney(PREVIEW.totals.mmb_amount)} not applied — actuals are higher`
-      : 'No MMB on this client';
+    mb.style.display = 'none';
   }
 }
 
-async function confirmInvoice() {
-  if (!PREVIEW) return;
-  if (PREVIEW.existing_invoice) {
-    return toast('An invoice is already locked for this period', 'error');
-  }
-  if (!confirm(`Lock invoice for ${PREVIEW.client.name} · ${PREVIEW.period} at ${formatMoney(APPLIED_AMOUNT)}?\n\nThis will mark all warehouse log entries as billed. The action cannot be undone.`)) return;
+function setMethod(m) { appliedMethod = m; renderSummary(); }
 
-  const btn = document.getElementById('btn-confirm');
+async function confirmLock() {
+  if (!preview) return;
+  const actuals = round2(lineItems.reduce((s,li) => s + (parseFloat(li.line_total) || 0), 0));
+  const mmb = parseFloat(preview.client.mmb) || 0;
+  const applied = appliedMethod === 'mmb' && mmb > 0 ? Math.max(actuals, mmb) : actuals;
+  const notes = document.getElementById('notesInput').value.trim();
+
+  if (!confirm(`Lock invoice for ${preview.client.name} (${preview.period})?\n\nApplied: $${applied.toFixed(2)} (${appliedMethod})\n\nThis cannot be undone.`)) return;
+
+  const btn = document.getElementById('lockBtn');
   btn.disabled = true; btn.textContent = 'Locking…';
 
-  const payload = {
-    client_id:      PREVIEW.client.id,
-    client_name:    PREVIEW.client.name,
-    period:         PREVIEW.period,
-    actuals_total:  PREVIEW.totals.actuals_total,
-    mmb_amount:     PREVIEW.totals.mmb_amount,
-    applied_amount: APPLIED_AMOUNT,
-    applied_method: APPLIED_METHOD,
-    line_items:     PREVIEW.line_items,
-    source_counts:  PREVIEW.sources,
-    rate_card_used: PREVIEW.rate_card_used,
-    notes:          document.getElementById('f-notes').value.trim() || null,
-    generated_by:   'Portal',
-  };
-
   try {
-    const r = await fetch(API_BILLING + '?action=confirm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+    const r = await fetch('/.netlify/functions/billing-generator?action=confirm', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: preview.client.id, period: preview.period, line_items: lineItems,
+        actuals_total: actuals, applied_amount: applied, applied_method: appliedMethod,
+        mmb_amount: mmb, rate_card_used: preview.rate_card_used, notes: notes || null,
+      }),
     });
     const data = await r.json();
-    if (!r.ok) throw new Error(data.error || 'Confirm failed');
-    toast(`Invoice ${data.invoice_number} locked successfully`, 'success');
-    // Re-load preview to reflect existing-invoice state
-    await loadPreview();
+    if (!r.ok) throw new Error(data.error || 'Lock failed');
+    lockedInvoice = data.invoice;
+    btn.textContent = '✓ Invoice locked';
+    document.getElementById('postLock').classList.add('active');
+    showToast(`✓ Invoice ${data.invoice.invoice_number} locked · $${data.invoice.total_usd}`);
   } catch (err) {
-    toast('Error: ' + err.message, 'error');
-  } finally {
+    alert('Lock failed: ' + err.message);
     btn.disabled = false; btn.textContent = 'Confirm and lock invoice';
   }
 }
 
-function resetForm() {
-  PREVIEW = null;
-  document.getElementById('preview-section').classList.add('hidden');
-  document.getElementById('f-client').value = '';
-  document.getElementById('f-notes').value = '';
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+// ════════════════════════════════════════════════════════════════════════════
+// POST-LOCK: Generate billing email (opens Gmail Compose with HTML + PDF)
+// ════════════════════════════════════════════════════════════════════════════
+async function generateBillingEmail() {
+  if (!lockedInvoice) return alert('Lock the invoice first');
+  showToast('Generating email template…');
+
+  try {
+    // 1. Get the branded HTML template + subject from backend
+    const r = await fetch(`/.netlify/functions/billing-generator?action=email-template&id=${lockedInvoice.id}`);
+    const t = await r.json();
+    if (!r.ok) throw new Error(t.error || 'Template fetch failed');
+
+    // 2. Generate the PDF as a Blob to download alongside (Gmail Compose URL doesn't support attachments,
+    //    so we trigger the PDF download — user attaches it manually to the draft)
+    exportPDF();
+
+    // 3. Open Gmail Compose with subject and HTML body pre-filled
+    const to      = encodeURIComponent(t.contact_email || '');
+    const subject = encodeURIComponent(t.subject || '');
+    // Gmail Compose URL accepts plain text body via `body=` — we put a marker telling the user
+    // to paste the HTML, plus the plain version as fallback
+    const plainBody = buildPlainTextBody(lockedInvoice, t);
+    const body = encodeURIComponent(plainBody);
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${subject}&body=${body}`;
+    window.open(gmailUrl, '_blank');
+
+    showToast('✓ Gmail Compose opened · PDF downloaded · attach manually');
+  } catch (err) {
+    alert('Email generation failed: ' + err.message);
+  }
 }
 
-// ════════════════════════════════════════════════════════════════════
-// EXPORTS
-// ════════════════════════════════════════════════════════════════════
+function buildPlainTextBody(inv, t) {
+  const lines = (inv.line_items_json || []);
+  const period = `${formatDate(inv.period_start)} – ${formatDate(inv.period_end)}`;
+  let body = `Dear ${inv.client},\n\n`;
+  body += `Please find below your billing summary for the period ${period}. The PDF is attached for your records.\n\n`;
+  body += `─────────────────────────────────\n`;
+  body += `BILLING SUMMARY · ${inv.invoice_number}\n`;
+  body += `Period: ${period}\n`;
+  body += `─────────────────────────────────\n\n`;
+  lines.forEach(li => {
+    body += `${(li.qbo_name || li.service_name).padEnd(40)} ${String(li.quantity).padStart(6)} ${li.unit.padEnd(8)} $${Number(li.line_total).toFixed(2)}\n`;
+  });
+  body += `\n─────────────────────────────────\n`;
+  body += `INVOICE TOTAL:                                          $${Number(inv.total_usd).toFixed(2)}\n`;
+  body += `─────────────────────────────────\n\n`;
+  body += `View Invoice Online (QBO):\n→ [paste QBO invoice link here] ←\n\n`;
+  body += `Questions? Reply to this email or call (786) 300-1443.\n\n`;
+  body += `Jose Fuentes — Operations Manager\n`;
+  body += `FR-Logistics · Miami, FL 33172\n`;
+  body += `(786) 300-1443 · info@fr-logistics.net\n`;
+  return body;
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  const [y,m,d] = iso.split('-');
+  return `${m}/${d}/${y}`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// COPY QBO CSV
+// ════════════════════════════════════════════════════════════════════════════
+function copyQBOCSV() {
+  if (!lockedInvoice) return alert('Lock the invoice first');
+  const lines = (lockedInvoice.line_items_json || []).filter(li => parseFloat(li.quantity) > 0);
+  if (!lines.length) return alert('No billable lines');
+
+  // QBO CSV format: *InvoiceNo,*Customer,*InvoiceDate,*DueDate,Item(Product/Service),ItemDescription,ItemQuantity,ItemRate,*ItemAmount
+  const headers = '*InvoiceNo,*Customer,*InvoiceDate,*DueDate,Item(Product/Service),ItemDescription,ItemQuantity,ItemRate,*ItemAmount';
+  const today = new Date().toISOString().slice(0,10);
+  const due = new Date(); due.setDate(due.getDate() + 15);
+  const dueStr = due.toISOString().slice(0,10);
+
+  const csvLines = [headers];
+  lines.forEach(li => {
+    const cols = [
+      lockedInvoice.invoice_number,
+      `"${lockedInvoice.client}"`,
+      today,
+      dueStr,
+      `"${(li.qbo_name || li.service_name).replace(/"/g,'""')}"`,
+      `"${(li.detail || '').replace(/"/g,'""')}"`,
+      li.quantity,
+      Number(li.unit_rate).toFixed(2),
+      Number(li.line_total).toFixed(2),
+    ];
+    csvLines.push(cols.join(','));
+  });
+
+  const csv = csvLines.join('\n');
+  navigator.clipboard.writeText(csv).then(() => {
+    showToast(`✓ QBO CSV copied to clipboard · ${lines.length} lines`);
+  }).catch(() => {
+    // Fallback: download as file
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `QBO_${lockedInvoice.invoice_number}.csv`;
+    a.click();
+    showToast(`✓ QBO CSV downloaded · ${lines.length} lines`);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// EXPORTS — Excel + PDF
+// ════════════════════════════════════════════════════════════════════════════
 function exportExcel() {
-  if (!PREVIEW) return toast('Generate a preview first', 'error');
+  const inv = lockedInvoice || preview;
+  if (!inv) return;
+  const lines = lockedInvoice ? lockedInvoice.line_items_json : lineItems;
+  const clientName = lockedInvoice ? lockedInvoice.client : preview.client.name;
+  const period = lockedInvoice ? `${lockedInvoice.period_start} to ${lockedInvoice.period_end}` : `${preview.period_start} to ${preview.period_end}`;
+  const total = lockedInvoice ? Number(lockedInvoice.total_usd) : (appliedMethod === 'mmb' && (preview.client.mmb || 0) > 0 ? Math.max(round2(lineItems.reduce((s,li)=>s+li.line_total,0)), preview.client.mmb) : round2(lineItems.reduce((s,li)=>s+li.line_total,0)));
 
   const wb = XLSX.utils.book_new();
-
-  // Sheet 1: Invoice
-  const inv = [
-    ['FR-Logistics Miami'],
-    ['10893 NW 17th St, Unit 121, Doral FL 33172'],
-    ['warehouse@fr-logistics.net · +1 (786) 300-1443'],
+  const data = [
+    ['FR-Logistics · Invoice'],
+    [lockedInvoice ? `Invoice: ${lockedInvoice.invoice_number}` : 'Preview'],
+    [`Client: ${clientName}`],
+    [`Period: ${period}`],
     [],
-    ['INVOICE PREVIEW'],
-    ['Client',  PREVIEW.client.name],
-    ['Company', PREVIEW.client.company || ''],
-    ['Period',  `${PREVIEW.period_start} to ${PREVIEW.period_end}`],
-    [],
-    ['Source','Service','Qty','Unit','Rate','Subtotal'],
-    ...PREVIEW.line_items.map(li => [
-      li.source, li.service_name, li.quantity, li.unit, li.unit_rate, li.line_total
-    ]),
-    [],
-    ['', '', '', '', 'Actuals total', PREVIEW.totals.actuals_total],
-    ['', '', '', '', 'MMB amount',    PREVIEW.totals.mmb_amount],
-    ['', '', '', '', 'Method',        APPLIED_METHOD],
-    ['', '', '', '', 'TOTAL TO INVOICE', APPLIED_AMOUNT],
+    ['Service', 'Qty', 'Unit', 'Rate', 'Subtotal', 'Source'],
   ];
-  const ws1 = XLSX.utils.aoa_to_sheet(inv);
-  ws1['!cols'] = [{wch:14},{wch:38},{wch:10},{wch:12},{wch:12},{wch:14}];
-  XLSX.utils.book_append_sheet(wb, ws1, 'Invoice');
+  lines.filter(li => li.line_total > 0).forEach(li => {
+    data.push([li.qbo_name || li.service_name, li.quantity, li.unit, li.unit_rate, li.line_total, li.source || '']);
+  });
+  data.push([]);
+  data.push(['', '', '', 'TOTAL', total]);
 
-  // Sheet 2: Sources
-  const src = [
-    ['Source','Count'],
-    ['Services Log entries', PREVIEW.sources.services_logged],
-    ['ShipStation orders',   PREVIEW.sources.orders],
-    ['Carrier cost (raw)',   PREVIEW.sources.shipping_cost],
-    ['Cartons in',           PREVIEW.sources.cartons_in],
-    ['Cartons out',          PREVIEW.sources.cartons_out],
-    ['Pallets in',           PREVIEW.sources.pallets_in],
-    ['Pallets out',          PREVIEW.sources.pallets_out],
-  ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(src), 'Sources');
-
-  // Sheet 3: Rate card snapshot
-  const rc = [['Service code','Rate applied'], ...Object.entries(PREVIEW.rate_card_used).map(([k,v]) => [k,v])];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rc), 'Rate Card');
-
-  const filename = `Invoice_${slug(PREVIEW.client.name)}_${PREVIEW.period}.xlsx`;
-  XLSX.writeFile(wb, filename);
-  toast('Excel exported', 'success');
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [{wch:40},{wch:10},{wch:10},{wch:10},{wch:12},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Invoice');
+  XLSX.writeFile(wb, `Invoice_${clientName.replace(/\W+/g,'_')}_${(lockedInvoice||preview).period || preview.period}.xlsx`);
 }
 
 function exportPDF() {
-  if (!PREVIEW) return toast('Generate a preview first', 'error');
+  const inv = lockedInvoice || preview;
+  if (!inv) return;
+  const lines = lockedInvoice ? lockedInvoice.line_items_json : lineItems;
+  const clientName = lockedInvoice ? lockedInvoice.client : preview.client.name;
+  const periodLabel = lockedInvoice ? `${formatDate(lockedInvoice.period_start)} – ${formatDate(lockedInvoice.period_end)}` : `${preview.period_start} to ${preview.period_end}`;
+  const invNum = lockedInvoice ? lockedInvoice.invoice_number : 'PREVIEW';
+  const total = lockedInvoice ? Number(lockedInvoice.total_usd) : (appliedMethod === 'mmb' && (preview.client.mmb || 0) > 0 ? Math.max(round2(lineItems.reduce((s,li)=>s+li.line_total,0)), preview.client.mmb) : round2(lineItems.reduce((s,li)=>s+li.line_total,0)));
 
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  const doc = new jsPDF();
 
-  // Header
+  // Header band
+  doc.setFillColor(15, 110, 86);
+  doc.rect(0, 0, 210, 30, 'F');
+  doc.setTextColor(255,255,255);
   doc.setFont('helvetica','bold'); doc.setFontSize(16);
-  doc.text('FR-Logistics Miami', 40, 50);
-  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100);
-  doc.text('10893 NW 17th St, Unit 121, Doral FL 33172', 40, 65);
-  doc.text('warehouse@fr-logistics.net · +1 (786) 300-1443', 40, 78);
-
-  doc.setFontSize(20); doc.setTextColor(15, 110, 86); doc.setFont('helvetica','bold');
-  doc.text('INVOICE PREVIEW', 415, 60);
-
-  // Client block
-  doc.setTextColor(0,0,0); doc.setFontSize(10); doc.setFont('helvetica','bold');
-  doc.text('Bill to:', 40, 115);
-  doc.setFont('helvetica','normal');
-  doc.text(PREVIEW.client.name, 40, 130);
-  if (PREVIEW.client.company) doc.text(PREVIEW.client.company, 40, 144);
-
-  doc.setFont('helvetica','bold');
-  doc.text('Period:', 415, 115);
-  doc.setFont('helvetica','normal');
-  doc.text(`${PREVIEW.period_start} to ${PREVIEW.period_end}`, 415, 130);
-
-  // Line items table
-  doc.autoTable({
-    startY: 175,
-    head: [['Source','Service','Qty','Unit','Rate','Subtotal']],
-    body: PREVIEW.line_items.map(li => [
-      li.source.replace('shipments_general','I/O').replace('shipstation','ShipStation').replace('services_log','Log'),
-      li.service_name + (li.detail ? '\n' + li.detail : ''),
-      formatQty(li.quantity),
-      li.unit,
-      formatMoney(li.unit_rate),
-      formatMoney(li.line_total),
-    ]),
-    headStyles: { fillColor: [15, 110, 86], textColor: 255, fontSize: 9 },
-    bodyStyles: { fontSize: 9 },
-    columnStyles: { 2: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
-    theme: 'grid',
-  });
-
-  // Totals
-  let y = doc.lastAutoTable.finalY + 20;
+  doc.text('FR-Logistics', 14, 14);
   doc.setFont('helvetica','normal'); doc.setFontSize(10);
-  doc.text('Actuals subtotal:', 380, y);
-  doc.text(formatMoney(PREVIEW.totals.actuals_total), 540, y, { align: 'right' });
-  if (PREVIEW.totals.mmb_applies) {
-    y += 16;
-    doc.text('MMB:', 380, y);
-    doc.text(formatMoney(PREVIEW.totals.mmb_amount), 540, y, { align: 'right' });
-  }
-  y += 22;
-  doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(15, 110, 86);
-  doc.text(`TOTAL (${APPLIED_METHOD}):`, 380, y);
-  doc.text(formatMoney(APPLIED_AMOUNT), 540, y, { align: 'right' });
+  doc.text('Billing Summary', 14, 21);
 
-  doc.save(`Invoice_${slug(PREVIEW.client.name)}_${PREVIEW.period}.pdf`);
-  toast('PDF exported', 'success');
-}
+  doc.setFontSize(9);
+  doc.text(invNum, 196, 14, { align: 'right' });
+  doc.text(periodLabel, 196, 21, { align: 'right' });
 
-// ════════════════════════════════════════════════════════════════════
-// HELPERS
-// ════════════════════════════════════════════════════════════════════
-function renumberSteps() {
-  // Step 1 (selector) is always shown. Renumber the cards in #preview-section
-  // skipping any hidden ones — so when MMB is hidden, the others get 1, 2, 3, 4
-  const cards = document.querySelectorAll('#preview-section .card[data-step="true"]');
-  let n = 2; // selector card is step 1
-  cards.forEach(card => {
-    if (card.classList.contains('hidden')) return;
-    const numEl = card.querySelector('.step-num');
-    if (numEl) numEl.textContent = n;
-    n++;
+  // Body
+  doc.setTextColor(20,20,20);
+  let y = 42;
+  doc.setFont('helvetica','normal'); doc.setFontSize(11);
+  doc.text(`Bill to: ${clientName}`, 14, y); y += 10;
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setFillColor(248,250,252);
+  doc.rect(14, y-5, 182, 7, 'F');
+  doc.text('SERVICE', 16, y);
+  doc.text('QTY', 130, y, { align: 'right' });
+  doc.text('RATE', 158, y, { align: 'right' });
+  doc.text('AMOUNT', 194, y, { align: 'right' });
+  y += 5;
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  lines.filter(li => li.line_total > 0).forEach(li => {
+    if (y > 270) { doc.addPage(); y = 20; }
+    doc.text((li.qbo_name || li.service_name).slice(0, 50), 16, y);
+    doc.text(`${li.quantity} ${li.unit||''}`, 130, y, { align: 'right' });
+    doc.text('$'+Number(li.unit_rate).toFixed(2), 158, y, { align: 'right' });
+    doc.text('$'+Number(li.line_total).toFixed(2), 194, y, { align: 'right' });
+    y += 6;
   });
-}
-function formatMoney(n) {
-  return '$' + (parseFloat(n)||0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function formatQty(n) {
-  const v = parseFloat(n)||0;
-  return v % 1 === 0 ? v.toFixed(0) : v.toFixed(2);
-}
-function escapeHTML(s) {
-  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-function slug(s) {
-  return String(s).replace(/[^A-Za-z0-9]+/g,'_').replace(/^_|_$/g,'');
-}
-function toast(msg, type) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'show ' + (type || '');
-  clearTimeout(el._t);
-  el._t = setTimeout(() => { el.className = ''; }, 3500);
-}
-</script>
 
+  y += 4;
+  doc.setDrawColor(15, 110, 86); doc.setLineWidth(0.8);
+  doc.line(14, y, 196, y); y += 8;
+  doc.setFont('helvetica','bold'); doc.setFontSize(13);
+  doc.setTextColor(15, 110, 86);
+  doc.text('INVOICE TOTAL', 14, y);
+  doc.text('$'+total.toFixed(2), 194, y, { align: 'right' });
+
+  // Footer
+  doc.setTextColor(120,120,120); doc.setFontSize(8); doc.setFont('helvetica','normal');
+  doc.text('FR-Logistics · 10893 NW 17th St, Unit 121 · Doral, FL 33172 · (786) 300-1443 · info@fr-logistics.net', 105, 285, { align: 'center' });
+
+  doc.save(`Invoice_${clientName.replace(/\W+/g,'_')}_${(lockedInvoice||preview).period || preview.period}.pdf`);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// UTILS
+// ════════════════════════════════════════════════════════════════════════════
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+function resetAll() {
+  preview = null; lineItems = []; appliedMethod = 'actuals'; lockedInvoice = null;
+  document.getElementById('clientInfo').style.display = 'none';
+  document.getElementById('liToolbar').style.display = 'none';
+  document.getElementById('postLock').classList.remove('active');
+  document.getElementById('addLineBtn').disabled = true;
+  document.getElementById('lockBtn').disabled = true;
+  document.getElementById('lockBtn').textContent = 'Confirm and lock invoice';
+  document.getElementById('xlsBtn').disabled = true;
+  document.getElementById('pdfBtn').disabled = true;
+  document.getElementById('liContainer').innerHTML =
+    '<div class="empty">Select a client and period, then click <strong>Load period data</strong>.</div>';
+  document.getElementById('sumLines').textContent = '0';
+  document.getElementById('sumActuals').textContent = '$0.00';
+  document.getElementById('sumMmb').textContent = '$0.00';
+  document.getElementById('sumTotal').textContent = '$0.00';
+  document.getElementById('mmbBanner').style.display = 'none';
+  document.getElementById('warnBanner').style.display = 'none';
+  document.getElementById('methodToggle').style.display = 'none';
+  document.getElementById('notesInput').value = '';
+}
+
+function round2(n){return Math.round((parseFloat(n)||0)*100)/100}
+</script>
 </body>
 </html>
