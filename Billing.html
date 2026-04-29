@@ -359,6 +359,7 @@ let _client  = null; // current client object
 let _lines   = [];   // billing line items
 let _ssCarrierCost = 0;
 let _invoicedMarkable = false; // Day 4: true after PDF/CSV is generated, enables Mark-as-Invoiced button
+let _capturedSSOrders = [];    // Sprint 1: ShipStation orderIds captured in loadBilling, sent to billed_orders on Mark Invoiced
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const g   = id => document.getElementById(id);
@@ -376,6 +377,7 @@ function resetUI() {
   // Hide all billing output sections and reset global state
   _lines = [];
   _ssCarrierCost = 0;
+  _capturedSSOrders = [];  // Sprint 1: clear ShipStation orderIds captured for billed_orders tracking
   g('billingCard').style.display    = 'none';
   g('kpiSection').style.display     = 'none';
   g('shippingMarkupRow').style.display = 'none';
@@ -665,7 +667,8 @@ async function loadBilling() {
   } else if (bsrc === 'ss_store' && _client.ssStore) {
     // Mode 1: filter by store name
     try {
-      const url = `${SS_API}?start=${start}&end=${end}&store=${encodeURIComponent(_client.ssStore)}`;
+      // Sprint 1: pass client_id so backend filters out already-billed orderIds via billed_orders table
+      const url = `${SS_API}?start=${start}&end=${end}&store=${encodeURIComponent(_client.ssStore)}&client_id=${encodeURIComponent(_client.id || '')}`;
       const res = await fetch(url);
       const d   = await res.json();
       if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
@@ -673,7 +676,13 @@ async function loadBilling() {
       if (d.storeMatched) {
         ordersCount  = d.count || 0;
         carrierCost  = d.carrierCost || 0;
-        ssStatus     = `✅ ShipStation (store "${_client.ssStore}"): <b>${ordersCount} orders</b> · Carrier: <b>${fc(carrierCost)}</b>`;
+        // Sprint 1: capture orderIds for billed_orders tracking on Mark Invoiced
+        _capturedSSOrders = (d.orderIds || []).map(o => ({...o, source: 'shipstation_pp'}));
+        // Sprint 1: show informative billed count if any orders were filtered out
+        const billedExtra = (d.billed && d.billed.count > 0)
+          ? ` <span style="color:#92400e">· ${d.billed.count} ya facturado(s)</span>`
+          : '';
+        ssStatus = `✅ ShipStation (store "${_client.ssStore}"): <b>${ordersCount} orders</b> · Carrier: <b>${fc(carrierCost)}</b>${billedExtra}`;
       } else {
         const found = (d.storeNames || []).join(', ') || 'none';
         ssStatus = `⚠️ Store "${_client.ssStore}" not found. Active stores: [${found}] — enter orders manually`;
@@ -686,16 +695,23 @@ async function loadBilling() {
     // Mode 2: filter by Custom Field 1
     const cf1 = _client.ssCustomField1.trim();
     try {
-      const url = `${SS_API}?start=${start}&end=${end}&cf1=${encodeURIComponent(cf1)}`;
+      // Sprint 1: pass client_id so backend filters out already-billed orderIds via billed_orders table
+      const url = `${SS_API}?start=${start}&end=${end}&cf1=${encodeURIComponent(cf1)}&client_id=${encodeURIComponent(_client.id || '')}`;
       const res = await fetch(url);
       const d   = await res.json();
       if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
 
       ordersCount = d.count || 0;
       carrierCost = d.carrierCost || 0;
+      // Sprint 1: capture orderIds for billed_orders tracking on Mark Invoiced
+      _capturedSSOrders = (d.orderIds || []).map(o => ({...o, source: 'shipstation_cf1'}));
 
       if (ordersCount > 0) {
-        ssStatus = `✅ ShipStation (CF1="${cf1}"): <b>${ordersCount} orders</b> · Carrier: <b>${fc(carrierCost)}</b>`;
+        // Sprint 1: show informative billed count if any orders were filtered out
+        const billedExtra = (d.billed && d.billed.count > 0)
+          ? ` <span style="color:#92400e">· ${d.billed.count} ya facturado(s)</span>`
+          : '';
+        ssStatus = `✅ ShipStation (CF1="${cf1}"): <b>${ordersCount} orders</b> · Carrier: <b>${fc(carrierCost)}</b>${billedExtra}`;
       } else {
         ssStatus = `⚠️ No orders found with CF1="${cf1}" shipped this period.<br>Tag orders in ShipStation with this exact value in Custom Field 1.`;
       }
@@ -1197,6 +1213,7 @@ function updateMarkInvoicedBtn() {
 
 // Create a billing_runs entry in Supabase and mark all unbilled
 // shipments_general rows of this client+period as invoiced.
+// Sprint 1: also tracks ShipStation orderIds in billed_orders to prevent double-billing.
 async function markAsInvoiced() {
   if (!_client || !_lines.length) { alert('Load billing data first.'); return; }
   if (!_invoicedMarkable)         { alert('Generate a PDF or CSV first.'); return; }
@@ -1220,13 +1237,24 @@ async function markAsInvoiced() {
     .filter(l => +l.qty > 0)
     .map(l => ({ id: l.id, name: l.name, qty: l.qty, rate: l.rate, total: l.qty * l.rate }));
 
+  // Sprint 1: build shipstation_orders payload from the orderIds captured during loadBilling
+  const shipstationOrders = _capturedSSOrders.map(o => ({
+    order_id:     o.order_id,
+    source:       o.source || 'shipstation_pp',
+    carrier_cost: Number(o.carrier_cost) || 0
+  }));
+
+  const ssOrdersLabel = shipstationOrders.length > 0
+    ? `\nShipStation orders to track: ${shipstationOrders.length}`
+    : '';
+
   const confirmMsg = [
     `Mark as invoiced?`,
     ``,
     `Client: ${_client.displayName}`,
     `Period: ${fD(start)} – ${fD(end)}`,
     `Invoice: ${invNum}`,
-    `Total: ${fc(total)}`,
+    `Total: ${fc(total)}${ssOrdersLabel}`,
     ``,
     `This will create invoice ${invNum} and mark all unbilled packages`,
     `in this period as invoiced. This action is NOT reversible from the UI.`
@@ -1241,15 +1269,17 @@ async function markAsInvoiced() {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        client:         _client.ssStore || _client.ssCustomField1 || _client.name,
-        client_code:    clientCode,
-        period_start:   start,
-        period_end:     end,
-        total_usd:      total,
-        package_count:  packageCount,
-        line_items:     lineItems,
-        operator:       (window._operator || ''),
-        invoice_number: invNum   // backend auto-generates if empty
+        client:             _client.ssStore || _client.ssCustomField1 || _client.name,
+        client_id:          _client.id || null,        // Sprint 1: UUID for billed_orders FK
+        client_code:        clientCode,
+        period_start:       start,
+        period_end:         end,
+        total_usd:          total,
+        package_count:      packageCount,
+        line_items:         lineItems,
+        operator:           (window._operator || ''),
+        invoice_number:     invNum,                    // backend auto-generates if empty
+        shipstation_orders: shipstationOrders          // Sprint 1: track ShipStation orders in billed_orders
       })
     });
 
@@ -1269,10 +1299,12 @@ async function markAsInvoiced() {
       return;
     }
 
+    // Sprint 1: success alert now shows shipstation_marked count
     alert(
       `✅ Invoiced successfully\n\n` +
       `Invoice: ${data.invoice_number}\n` +
       `Shipments invoiced (DB rows): ${data.marked_count}\n` +
+      `ShipStation orders tracked: ${data.shipstation_marked || 0}\n` +
       `Total billed: ${fc(data.total_usd)}`
     );
 
