@@ -996,7 +996,8 @@ function buildPDFDoc() {
     doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...DG);
     doc.text(lbl.toUpperCase(),xi+4,yi+6);
     doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...DN);
-    doc.text(String(val),xi+4,yi+12);
+    // maxWidth ensures long emails (e.g. tisseraobras@gmail.com) don't overflow the green info box
+    doc.text(String(val),xi+4,yi+12,{maxWidth: cw2-8});
   });
   y+=48;
 
@@ -1016,10 +1017,11 @@ function buildPDFDoc() {
     if(!l.qty || l.qty === 0) return;  // skip zero-qty lines
     const tot=l.qty*l.rate;
     if(l.cat!==lastCat){
+      if (lastCat) y+=3;  // breathing room before each new category (except the very first)
       doc.setFillColor(...LG); doc.setDrawColor(...BD); doc.setLineWidth(.2);
-      doc.rect(ML,y,W,6,'FD');
-      doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...DG);
-      doc.text(l.cat.toUpperCase(),ML+3,y+4.5); y+=6; lastCat=l.cat;
+      doc.rect(ML,y,W,8,'FD');
+      doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...DG);
+      doc.text(l.cat.toUpperCase(),ML+4,y+5.5); y+=8; lastCat=l.cat;
     }
     const rh=9;
     doc.setFillColor(...(i%2===0?WH:[248,250,252]));
@@ -1073,7 +1075,7 @@ function buildPDFDoc() {
   // Footer
   const PH=doc.internal.pageSize.getHeight();
   doc.setFillColor(15,23,42); doc.rect(0,PH-22,PW,22,'F');
-  doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(100,116,139);
+  doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(226,232,240);  // slate-200, legible on dark navy
   doc.text('FR-Logistics  |  10893 NW 17th St, Unit 121, Miami, FL 33172  |  (786) 300-1443  |  info@fr-logistics.net  |  www.fr-logistics.net',PW/2,PH-9,{align:'center'});
 
   const fname = `FR_Billing_${(_client.displayName||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.pdf`;
@@ -1270,8 +1272,8 @@ async function markAsInvoiced() {
     alert(
       `✅ Invoiced successfully\n\n` +
       `Invoice: ${data.invoice_number}\n` +
-      `Packages marked: ${data.marked_count}\n` +
-      `Total: ${fc(data.total_usd)}`
+      `Shipments invoiced (DB rows): ${data.marked_count}\n` +
+      `Total billed: ${fc(data.total_usd)}`
     );
 
     // Refresh to show the just-invoiced packages in the "billed" banner
