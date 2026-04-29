@@ -748,7 +748,11 @@ async function loadBilling() {
       const slRes = await fetch(slUrl);
       if (slRes.ok) {
         const slData = await slRes.json();
-        (slData.entries || slData || []).forEach(e => {
+        // Backend may return either: array directly, or {entries: [...]}, or {data: [...]}
+        const entries = Array.isArray(slData)
+          ? slData
+          : (slData.entries || slData.data || []);
+        entries.forEach(e => {
           const key = (e.service_code || '').toLowerCase();
           if (!svcLogEntries[key]) svcLogEntries[key] = { qty: 0, rate: 0, count: 0 };
           svcLogEntries[key].qty   += parseFloat(e.total_quantity || e.quantity || 0);
@@ -757,7 +761,9 @@ async function loadBilling() {
         });
       }
     }
-  } catch (_) { /* non-critical — manual entry fallback */ }
+  } catch (err) {
+    console.warn('[Services Log] fetch failed:', err);  // surface errors instead of swallowing
+  }
 
   // ── Step 3: Build billing table ───────────────────────────────────────────
   _ssCarrierCost = carrierCost;
