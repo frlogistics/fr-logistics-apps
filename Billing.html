@@ -1162,7 +1162,7 @@ function genCSV() {
       i === 0 ? 'Net 15' : '',                  // Terms — only on first row
       i === 0 ? `FR-Logistics Billing ${period}` : '', // Memo — only on first row
       serviceName,                              // Item(Product/Service) — QBO service name
-      `${l.name} — ${period}`,                  // ItemDescription
+      `${l.name} - ${period}`,                  // ItemDescription
       l.qty,                                    // ItemQuantity
       l.rate.toFixed(2),                        // ItemRate
       amount,                                   // *ItemAmount
