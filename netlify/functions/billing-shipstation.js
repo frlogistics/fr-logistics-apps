@@ -3,12 +3,19 @@
 // Mode 2 (cf1):   get ALL recent orders, filter by advancedOptions.customField1 client-side,
 //                 then cross-reference with period shipments by orderId
 //
+// NEW (Sprint 1 — billed_orders):
+// When client_id is provided, queries billed_orders table and excludes order_ids
+// already invoiced. Also returns orderIds array so the frontend can pass them
+// back to billing-mark-invoiced for tracking.
+//
 // WHY client-side filter on orders (not shipments):
-// - ShipStation /orders?customField1= API filter does NOT work (returns all orders regardless)
-// - shipments.advancedOptions.customField1 is captured at label-creation time (before CF1 was set)
-// - orders.advancedOptions.customField1 reflects the CURRENT state after retroactive tagging
+// - ShipStation /orders?customField1= API filter does NOT work
+// - shipments.advancedOptions.customField1 is captured at label-creation time
+// - orders.advancedOptions.customField1 reflects CURRENT state after retroactive tagging
 
 const SS = 'https://ssapi.shipstation.com';
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 async function ssGet(url, auth) {
   const r = await fetch(url, { headers: auth });
@@ -28,6 +35,33 @@ async function fetchAllPages(url, auth) {
   return out;
 }
 
+// NEW: Fetch billed order_ids for a client from Supabase
+// Returns Set<string> of order_ids already in billed_orders for this client.
+// Fails gracefully (returns empty Set) if Supabase unreachable — never blocks billing.
+async function getBilledOrderIds(clientId) {
+  if (!clientId || !SUPABASE_URL || !SUPABASE_KEY) return new Set();
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/billed_orders?client_id=eq.${clientId}&select=order_id`,
+      {
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+        }
+      }
+    );
+    if (!r.ok) {
+      console.warn(`billed_orders fetch failed: ${r.status}`);
+      return new Set();
+    }
+    const rows = await r.json();
+    return new Set(rows.map(r => String(r.order_id)));
+  } catch (err) {
+    console.warn(`billed_orders query error: ${err.message}`);
+    return new Set();
+  }
+}
+
 exports.handler = async (event) => {
   const h = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: h, body: '' };
@@ -36,21 +70,23 @@ exports.handler = async (event) => {
   const sec = process.env.SS_API_SECRET;
   if (!key || !sec) return { statusCode: 500, headers: h, body: JSON.stringify({ error: 'SS credentials missing' }) };
 
-  const auth  = { 'Authorization': `Basic ${Buffer.from(`${key}:${sec}`).toString('base64')}` };
-  const p     = event.queryStringParameters || {};
-  const start = (p.start || '').trim();
-  const end   = (p.end   || '').trim();
-  const store = (p.store || '').trim();
-  const cf1   = (p.cf1   || '').trim();
+  const auth     = { 'Authorization': `Basic ${Buffer.from(`${key}:${sec}`).toString('base64')}` };
+  const p        = event.queryStringParameters || {};
+  const start    = (p.start || '').trim();
+  const end      = (p.end   || '').trim();
+  const store    = (p.store || '').trim();
+  const cf1      = (p.cf1   || '').trim();
+  const clientId = (p.client_id || '').trim();  // NEW
 
   if (!start || !end)      return { statusCode: 400, headers: h, body: JSON.stringify({ error: 'start and end required' }) };
   if (!store && !cf1)      return { statusCode: 400, headers: h, body: JSON.stringify({ error: 'store or cf1 required' }) };
 
   try {
-    // ── Always fetch period shipments (used by both modes) ────────────────
-    const [allShipments, storeList] = await Promise.all([
+    // Fetch shipments + stores list + billed orders set in parallel
+    const [allShipments, storeList, billedSet] = await Promise.all([
       fetchAllPages(`${SS}/shipments?shipDateStart=${start}&shipDateEnd=${end}`, auth),
       ssGet(`${SS}/stores?showInactive=false`, auth).catch(() => []),
+      getBilledOrderIds(clientId),  // NEW
     ]);
 
     // Build storeId → storeName map
@@ -59,7 +95,7 @@ exports.handler = async (event) => {
       storeMap[s.storeId] = (s.storeName || '').toLowerCase();
     });
 
-    // Resolve storeName for each shipment (use stored name or resolve via storeId)
+    // Resolve storeName for each shipment
     const enriched = allShipments.map(s => ({
       ...s,
       _store: (s.storeName || storeMap[s.advancedOptions?.storeId] || '').toLowerCase(),
@@ -69,9 +105,10 @@ exports.handler = async (event) => {
 
     // ══ MODE 1: Store filter ═══════════════════════════════════════════════
     if (store) {
-      const pat      = store.toLowerCase();
-      const filtered = enriched.filter(s => s._store === pat);
-      const matched  = filtered.length > 0;
+      const pat        = store.toLowerCase();
+      const allMatched = enriched.filter(s => s._store === pat);
+      const unbilled   = allMatched.filter(s => !billedSet.has(String(s.orderId)));
+      const billed     = allMatched.filter(s =>  billedSet.has(String(s.orderId)));
 
       return {
         statusCode: 200,
@@ -79,23 +116,29 @@ exports.handler = async (event) => {
         body: JSON.stringify({
           mode:         'store',
           store,
-          count:        filtered.length,
+          count:        unbilled.length,
           totalCount:   enriched.length,
-          carrierCost:  round(filtered.reduce((s, x) => s + (x.shipmentCost || 0), 0)),
-          storeMatched: matched,
+          carrierCost:  round(unbilled.reduce((s, x) => s + (x.shipmentCost || 0), 0)),
+          storeMatched: allMatched.length > 0,
           storeNames:   allStoreNames,
+          // NEW: order IDs for billed_orders tracking
+          orderIds: unbilled.map(s => ({
+            order_id:     String(s.orderId),
+            carrier_cost: round(s.shipmentCost || 0),
+          })),
+          // NEW: informative billed counter
+          billed: {
+            count:       billed.length,
+            carrierCost: round(billed.reduce((s, x) => s + (x.shipmentCost || 0), 0)),
+          },
         })
       };
     }
 
     // ══ MODE 2: Custom Field 1 filter ══════════════════════════════════════
-    // Step A: Get ALL shipped orders and filter by CF1 on the order object
-    // This reads the CURRENT CF1 value — works even if tagged after label creation
-    const allOrders = await fetchAllPages(
-      `${SS}/orders?orderStatus=shipped`, auth
-    );
+    const allOrders = await fetchAllPages(`${SS}/orders?orderStatus=shipped`, auth);
+    const cf1Lower  = cf1.toLowerCase();
 
-    const cf1Lower = cf1.toLowerCase();
     const matchedOrders = allOrders.filter(o =>
       (o.advancedOptions?.customField1 || '').toLowerCase() === cf1Lower
     );
@@ -111,15 +154,17 @@ exports.handler = async (event) => {
           carrierCost: 0,
           totalCount:  enriched.length,
           storeNames:  allStoreNames,
+          orderIds:    [],
+          billed:      { count: 0, carrierCost: 0 },
           note:        `No shipped orders found with Custom Field 1 = "${cf1}". Tag orders in ShipStation.`,
         })
       };
     }
 
-    // Step B: Cross-reference with period shipments by orderId
-    const orderIdSet       = new Set(matchedOrders.map(o => o.orderId));
-    const matchedShipments = enriched.filter(s => orderIdSet.has(s.orderId));
-    const carrierCost      = matchedShipments.reduce((sum, s) => sum + (s.shipmentCost || 0), 0);
+    const orderIdSet        = new Set(matchedOrders.map(o => o.orderId));
+    const matchedShipments  = enriched.filter(s => orderIdSet.has(s.orderId));
+    const unbilledShipments = matchedShipments.filter(s => !billedSet.has(String(s.orderId)));
+    const billedShipments   = matchedShipments.filter(s =>  billedSet.has(String(s.orderId)));
 
     return {
       statusCode: 200,
@@ -127,11 +172,21 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         mode:         'cf1',
         cf1,
-        count:        matchedShipments.length,
+        count:        unbilledShipments.length,
         ordersTagged: matchedOrders.length,
         totalCount:   enriched.length,
-        carrierCost:  round(carrierCost),
+        carrierCost:  round(unbilledShipments.reduce((sum, s) => sum + (s.shipmentCost || 0), 0)),
         storeNames:   allStoreNames,
+        // NEW
+        orderIds: unbilledShipments.map(s => ({
+          order_id:     String(s.orderId),
+          carrier_cost: round(s.shipmentCost || 0),
+        })),
+        // NEW
+        billed: {
+          count:       billedShipments.length,
+          carrierCost: round(billedShipments.reduce((s, x) => s + (x.shipmentCost || 0), 0)),
+        },
       })
     };
 
