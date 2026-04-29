@@ -701,7 +701,10 @@ async function loadBilling() {
   let outboundCount = 0;          // Patch B: regular outbound packages (not drops)
   let inboundDropshipCount = 0;   // Patch B: inbound drop-shipments
   try {
-    const url = `${INBOUND_API}?client=${encodeURIComponent(searchTerm)}&start=${start}&end=${end}`;
+    // Use client_id (UUID) as primary key — per architecture-fix from 04/27,
+    // shipments_general.client_id is the canonical foreign key. Fall back to client text only if UUID missing.
+    const cidParam = _client.id ? `client_id=${encodeURIComponent(_client.id)}` : `client=${encodeURIComponent(searchTerm)}`;
+    const url = `${INBOUND_API}?${cidParam}&start=${start}&end=${end}`;
     const res = await fetch(url);
     if (res.ok) {
       const d     = await res.json();
