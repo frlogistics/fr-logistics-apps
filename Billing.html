@@ -740,11 +740,17 @@ async function loadBilling() {
   } catch (_) { /* non-critical — manual entry fallback */ }
 
   // ── Patch C: Auto-load Services Log entries ───────────────────────────────
+  // Backend (services-log.js) accepts: client_id, status, from, to.
+  // We filter to status='logged' to exclude voided AND billed entries —
+  // voided = anulada por el operador; billed = ya cobrada en un invoice anterior.
   let svcLogEntries = {};  // keyed by service_code → {qty, rate, count}
   try {
-    const period = `${start.slice(0,7)}`;  // YYYY-MM
-    const slUrl = `/.netlify/functions/services-log?action=pending&client_id=${_client.id || ''}&period=${period}`;
     if (_client.id) {
+      const slUrl = `/.netlify/functions/services-log` +
+                    `?client_id=${encodeURIComponent(_client.id)}` +
+                    `&status=logged` +
+                    `&from=${start}` +
+                    `&to=${end}`;
       const slRes = await fetch(slUrl);
       if (slRes.ok) {
         const slData = await slRes.json();
@@ -752,13 +758,16 @@ async function loadBilling() {
         const entries = Array.isArray(slData)
           ? slData
           : (slData.entries || slData.data || []);
-        entries.forEach(e => {
-          const key = (e.service_code || '').toLowerCase();
-          if (!svcLogEntries[key]) svcLogEntries[key] = { qty: 0, rate: 0, count: 0 };
-          svcLogEntries[key].qty   += parseFloat(e.total_quantity || e.quantity || 0);
-          svcLogEntries[key].rate   = parseFloat(e.unit_rate || svcLogEntries[key].rate);
-          svcLogEntries[key].count += parseInt(e.entry_count || 1);
-        });
+        // Defensive double-filter: even if backend changes someday, never bill voided/billed
+        entries
+          .filter(e => (e.status || 'logged') === 'logged' && !e.invoice_id)
+          .forEach(e => {
+            const key = (e.service_code || '').toLowerCase();
+            if (!svcLogEntries[key]) svcLogEntries[key] = { qty: 0, rate: 0, count: 0 };
+            svcLogEntries[key].qty   += parseFloat(e.total_quantity || e.quantity || 0);
+            svcLogEntries[key].rate   = parseFloat(e.unit_rate || svcLogEntries[key].rate);
+            svcLogEntries[key].count += parseInt(e.entry_count || 1);
+          });
       }
     }
   } catch (err) {
