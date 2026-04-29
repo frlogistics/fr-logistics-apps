@@ -345,36 +345,12 @@ const CUSTOM_RATES = {
   'KMAT Supply LLC':               {pick_pack:3.00,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:99.99},
 };
 
-// ─── CLIENT SEED (fallback when Supabase is unavailable) ──────────────────────
-const CLIENT_SEED = [
-  {name:"A&V Products Corp",company:"A&V Products Corp",qboName:"A&V PRODUCTS CORP",group:"other",ssStore:"",email:"avproductsusa@gmail.com",phone:"(786) 775-7331",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Altis Wholesale LLC",company:"Altis Wholesale LLC",qboName:"Marcelo Caceres",group:"other",ssStore:"",email:"marcelo@altiswholesale.com",phone:"(307) 317-3251",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Ape Beverages, Inc",company:"Ape Beverages, Inc",qboName:"Ape Beverages, INC",group:"other",ssStore:"",email:"jay@apebeverages.com",phone:"+63 961 405 3953",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Arkansas Transload, LLC",company:"Arkansas Transload, LLC",qboName:"Arkansas Transload, LLC.",group:"other",ssStore:"",email:"genny.goens@arkansastransloads.com",phone:"(501) 306-0278",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Brainoa LLC",company:"Brainoa LLC",qboName:"Brainoa LLC",group:"other",ssStore:"",email:"hamilton@brainoa.com",phone:"(510) 890-9664",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Curly Lovers by Susi",company:"Curly Lovers by Susi",qboName:"Curly Lovers by Susi",group:"other",ssStore:"",email:"Susi@curlylovers.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Dosistea, LLC",company:"Dosistea, LLC",qboName:"Dosistea, LLC",group:"other",ssStore:"",email:"hello@dosistea.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Drinks Chef Ltd",company:"Drinks Chef Ltd",qboName:"Drinks Chef Ltd",group:"other",ssStore:"",email:"sarah@drinkschef.com",phone:"(+256) 7714496196",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Greywolfe Investing LLC",company:"Greywolfe Investing LLC",qboName:"Greywolfe Investing LLC",group:"other",ssStore:"",email:"heilinb@greywolfeinvesting.com",phone:"(293) 653-8858",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"JDK Network, LLC",company:"JDK Network, LLC",qboName:"JDK NETWORK, LLC",group:"internal",ssStore:"",email:"info@jdknetwork.store",phone:"(786) 775-7331",mmb:0,shippingMarkup:0,status:"Active"},
-  {name:"KMAT Supply LLC",company:"KMAT Supply LLC",qboName:"KMAT Supply LLC",group:"active",ssStore:"",email:"",phone:"",mmb:0,shippingMarkup:10,status:"Onboarding",wmsIntegration:false,ssCustomField1:"KMAT Supply LLC"},
-  {name:"Klear Protein",company:"Klear Protein",qboName:"Klear Protein",group:"other",ssStore:"",email:"kyle@klearprotein.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Koriledge Construction, Inc",company:"Koriledge Construction, Inc",qboName:"Koriledge Construction, Inc",group:"other",ssStore:"",email:"gwoodruff@koriledge.com",phone:"(800) 316-0565",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"LN Store, LLC",company:"LN Store, LLC",qboName:"LN STORE, LLC",group:"active",ssStore:"",email:"tisseraobras@gmail.com",phone:"+5492644538942",mmb:0,shippingMarkup:10,status:"Active",wmsIntegration:false,ssCustomField1:""},
-  {name:"LRE Holding (Route of Heroes)",company:"LRE Holding",qboName:"LRE Holding",group:"active",ssStore:"",email:"",phone:"",mmb:3250,shippingMarkup:10,status:"Onboarding",wmsIntegration:false,ssCustomField1:"LRE Holding"},
-  {name:"Maquillaje Al Por Mayor Inc",company:"Maquillaje Al Por Mayor Inc",qboName:"MAQUILLAJE AL POR MAYOR INC",group:"other",ssStore:"",email:"info@maquillajealpormayor.pe",phone:"(786) 707-5677",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Milano Brands LLC",company:"Milano Brands LLC",qboName:"Milano Brands LLC",group:"active",ssStore:"Daizzy Gear",email:"julieta@milanobrands.us",phone:"",mmb:0,shippingMarkup:10,status:"Active",wmsIntegration:true,ssCustomField1:""},
-  {name:"Mouratoglou Apparel USA",company:"Mouratoglou Apparel USA",qboName:"Mouratoglou Apparel USA",group:"other",ssStore:"",email:"flavien.raveau@mouratoglou.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"MXS Overseas Ltd",company:"MXS Overseas Ltd",qboName:"MXS Overseas Ltd",group:"active",ssStore:"",email:"mxsoverseas@gmail.com",phone:"",mmb:0,shippingMarkup:10,status:"Active",wmsIntegration:false,ssCustomField1:"MXS Overseas Ltd"},
-  {name:"Pacific Horizon Investments",company:"Pacific Horizon Investments",qboName:"PACIFIC HORIZON INVESTMENTS LLC",group:"other",ssStore:"",email:"trade.logistics@fdmperu.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Simplex",company:"Simplex",qboName:"Simplex",group:"other",ssStore:"",email:"fc@simplexvili.com.ar",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"Soluciones Mas X Menos",company:"Soluciones Mas X Menos",qboName:"Soluciones Mas X Menos",group:"active",ssStore:"",email:"solucionesmasxmenos23@gmail.com",phone:"",mmb:0,shippingMarkup:10,status:"Active",wmsIntegration:false,ssCustomField1:"Soluciones Mas X Menos"},
-  {name:"Streamlined Efficiency",company:"Streamlined Efficiency",qboName:"Streamlined Efficiency",group:"other",ssStore:"",email:"cristina@1streamline.com",phone:"(203) 717-5056",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"The Product Bar LLC",company:"The Product Bar LLC",qboName:"THE PRODUCT BAR LLC",group:"active",ssStore:"",email:"adolfoalamo@gmail.com",phone:"(786) 633-1807",mmb:0,shippingMarkup:10,status:"Active",wmsIntegration:false,ssCustomField1:"The Product Bar LLC"},
-  {name:"Tome Dog Toys",company:"Tome Dog Toys",qboName:"Tome Dog Toys",group:"other",ssStore:"",email:"info@tomedogtoys.com",phone:"",mmb:0,shippingMarkup:10,status:"Active"},
-  {name:"UNOde50",company:"UNOde50",qboName:"UNOde50",group:"active",ssStore:"",email:"",phone:"",mmb:5250,shippingMarkup:0,status:"Active",wmsIntegration:false,ssCustomField1:"UNOde50"},
-  {name:"WeKeep Travel Services LLC",company:"WeKeep Travel Services LLC",qboName:"WeKeep Travel Services, LLC",group:"other",ssStore:"",email:"sofia.gaggi@wekeep.app",phone:"+541132884589",mmb:0,shippingMarkup:10,status:"Active"}
-];
+// ─── ARCHITECTURAL RULE ───────────────────────────────────────────────────────
+// Per FR-Logistics architecture-fix (2026-04-17):
+// All clients MUST come from `fr_clients` Supabase table via /.netlify/functions/clients-list.
+// NO hardcoded CLIENT_SEED arrays — they cause stale data, missing onboardings, and
+// wrong billing_cadence (e.g. Fernando Tissera/LN Store, LLC weekly bug, 2026-04-29).
+// If Supabase is unreachable, the dropdown shows an error rather than serving stale data.
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let _clients = [];   // all clients from API
@@ -410,95 +386,126 @@ function resetUI() {
 
 // ─── CLIENT SETUP ─────────────────────────────────────────────────────────────
 function normalizeClient(c) {
-  const name = c.name || '';
+  const name             = c.name || '';
+  const company          = c.company || '';
+  const ssCustomField1   = c.ssCustomField1   || c.ss_custom_field_1   || '';
+  const wmsIntegration   = c.wmsIntegration   ?? c.wms_integration     ?? false;
+  const billingSource    = c.billingSource    || c.billing_source      || '';
+  // displayName: prefer company (e.g. "LN Store, LLC") over contact name (e.g. "Fernando Tissera").
+  // This is what the user sees in dropdowns, status messages, PDF, email subject, etc.
+  // The underlying `name` field stays as the legal contact, used only for back-end joins.
+  const displayName      = company || name;
+
+  // Group derivation — data-driven, NOT a hardcoded list.
+  // - `internal`  → JDK Network and similar internal entities (no external billing)
+  // - `active`    → has WMS integration OR ssCustomField1 OR billingSource configured
+  //                 (i.e. real 3PL clients with a defined billing pipeline)
+  // - `other`     → onboarding leads / inactive / future clients
+  let group = c.group;
+  if (!group) {
+    const lower = `${name} ${company}`.toLowerCase();
+    if (lower.includes('jdk')) {
+      group = 'internal';
+    } else if (wmsIntegration || ssCustomField1 || billingSource) {
+      group = 'active';
+    } else {
+      group = 'other';
+    }
+  }
+
   return {
     ...c,
-    // Map Supabase snake_case → camelCase
-    ssStore:         c.ssStore         || c.store_name          || '',
-    shippingMarkup:  c.shippingMarkup  ?? c.shipping_markup     ?? 10,
-    mmb:             c.mmb             ?? 0,
-    // WMS integration: only clients with direct ShipStation store integration
-    // Stored as wms_integration boolean in fr_clients table
-    wmsIntegration:  c.wmsIntegration  ?? c.wms_integration     ?? false,
-    // Custom Field 1 tag: used in ShipStation for manual order identification
-    ssCustomField1:  c.ssCustomField1  || c.ss_custom_field_1   || '',
-    billingSource:   c.billingSource   || c.billing_source     || '',
+    name,
+    company,
+    displayName,
+    qboName:         c.qboName         || c.qbo_name              || company || name,
+    ssStore:         c.ssStore         || c.store_name            || '',
+    shippingMarkup:  c.shippingMarkup  ?? c.shipping_markup       ?? 10,
+    mmb:             c.mmb             ?? c.min_monthly_billing   ?? 0,
+    wmsIntegration,
+    ssCustomField1,
+    billingSource,
     // Billing cadence: weekly|monthly (drives invoice number format)
-    billingCadence:  c.billingCadence  || c.billing_cadence    || 'monthly',
+    billingCadence:  c.billingCadence  || c.billing_cadence       || 'monthly',
     // Inbound client name for portal search
-    inboundClient:   c.inboundClient   || c.store_name          || name,
-    // Determine group
-    group: c.group || (
-      ['Milano Brands LLC','MXS Overseas Ltd','LN Store, LLC',
-       'LRE Holding (Route of Heroes)','UNOde50','KMAT Supply LLC',
-       'Soluciones Mas X Menos','The Product Bar LLC'].includes(name)
-        ? 'active'
-        : name.toLowerCase().includes('jdk') ? 'internal' : 'other'
-    ),
+    inboundClient:   c.inboundClient   || c.store_name            || displayName,
+    group,
   };
 }
 
 async function loadClients() {
   const sel = g('selClient');
   sel.innerHTML = '<option value="">⏳ Loading clients...</option>';
+  sel.disabled  = true;
 
   try {
     const resp = await fetch(CLIENTS_API);
-    if (resp.ok) {
-      const raw = await resp.json();
-      // Merge API data with seed: API is source of truth, seed fills gaps
-      const apiNames = new Set(raw.map(c => c.name));
-      const seedOnly = CLIENT_SEED.filter(c => !apiNames.has(c.name));
-      _clients = [...raw, ...seedOnly].map(normalizeClient);
-    } else {
-      throw new Error('API ' + resp.status);
+    if (!resp.ok) throw new Error(`API ${resp.status}`);
+    const raw = await resp.json();
+    if (!Array.isArray(raw) || raw.length === 0) {
+      throw new Error('fr_clients returned no rows');
     }
-  } catch(e) {
-    _clients = CLIENT_SEED.map(normalizeClient);
+    _clients = raw.map(normalizeClient);
+  } catch (e) {
+    sel.innerHTML = `<option value="">⚠️ Could not load clients (${e.message})</option>`;
+    sel.disabled  = false;
+    setStatus(
+      `❌ Could not load clients from <code>fr_clients</code>: ${e.message}<br>` +
+      `Refresh the page or check Supabase connectivity. ` +
+      `Per architectural rule, billing will not run with stale or hardcoded data.`,
+      'err'
+    );
+    return;
   }
 
-  if (!_clients.length) _clients = CLIENT_SEED.map(normalizeClient);
+  // Sort alphabetically by displayName, case-insensitive
+  _clients.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
 
-  // Sort alphabetically, case-insensitive
-  _clients.sort((a,b) => (a.name||'').localeCompare(b.name||''));
-
-  // Group
+  // Group by data-derived category (set in normalizeClient)
   const active   = _clients.filter(c => c.group === 'active');
   const internal = _clients.filter(c => c.group === 'internal');
-  const others   = _clients.filter(c => c.group === 'other' || (!['active','internal'].includes(c.group)));
+  const others   = _clients.filter(c => !['active', 'internal'].includes(c.group));
+
+  // Dropdown value = client UUID (canonical FK, robust to name/company changes).
+  // Dropdown label = displayName (company || name).
+  const optHtml = c => `<option value="${c.id || ''}">${c.displayName}</option>`;
 
   let html = '<option value="">— Select client —</option>';
-
   if (active.length) {
     html += '<optgroup label="── Active 3PL Clients ──">';
-    active.forEach(c => { html += `<option value="${c.name}">${c.name}</option>`; });
+    active.forEach(c => { html += optHtml(c); });
     html += '</optgroup>';
   }
   if (internal.length) {
     html += '<optgroup label="── Internal ──">';
-    internal.forEach(c => { html += `<option value="${c.name}">${c.name}</option>`; });
+    internal.forEach(c => { html += optHtml(c); });
     html += '</optgroup>';
   }
   if (others.length) {
     html += '<optgroup label="── Other Clients ──">';
-    others.forEach(c => { html += `<option value="${c.name}">${c.name}</option>`; });
+    others.forEach(c => { html += optHtml(c); });
     html += '</optgroup>';
   }
 
   sel.innerHTML = html;
-  sel.disabled = false;
+  sel.disabled  = false;
 }
 
 function onClientChange() {
-  const k = g('selClient').value;
-  if (!k) return;
+  const k = g('selClient').value;  // UUID, not name
+  if (!k) { _client = null; resetUI(); return; }
 
-  // 1. Set client from loaded list (normalizeClient maps all Supabase fields)
-  _client = normalizeClient(
-    _clients.find(c => c.name === k) ||
-    CLIENT_SEED.find(c => c.name === k) ||
-    { name: k, mmb: 0, shippingMarkup: 10, ssStore: '', ssCustomField1: '', billingSource: '', group: 'other' }
-  );
+  // 1. Find client by UUID — sole source of truth is fr_clients via API
+  const found = _clients.find(c => c.id === k);
+  if (!found) {
+    setStatus(
+      `❌ Client UUID <code>${k}</code> not found in loaded list. Refresh the page.`,
+      'err'
+    );
+    _client = null;
+    return;
+  }
+  _client = normalizeClient(found);  // re-normalize defensively
 
   // 2. Reset all UI immediately — no stale data from previous client
   resetUI();
@@ -508,19 +515,24 @@ function onClientChange() {
   g('shippingMarkupPct').value = _client.shippingMarkup ?? 10;
 
   // 4. Load rate card async (non-blocking — billing can still work with STD_RATES)
+  //    Pass displayName to RATES_API since rate cards in Supabase are keyed by company name
   _rates = {};
-  fetch(`${RATES_API}?client=${encodeURIComponent(k)}`)
+  fetch(`${RATES_API}?client=${encodeURIComponent(_client.displayName)}`)
     .then(r => r.ok ? r.json() : null)
     .then(data => {
       if (data?.rates) _rates = data.rates;
       const src = data?.hasCustomRates ? 'Custom rate card' : 'Default rates';
+      const cad = (_client.billingCadence || 'monthly').toLowerCase();
+      const cadLbl = cad === 'weekly' ? '🔄 Weekly' : '📅 Monthly';
       setStatus(
-        `👤 <b>${_client.name}</b> · ${src} · MMB: ${_client.mmb > 0 ? fc(_client.mmb) : 'None'} · Markup: ${_client.shippingMarkup ?? 10}%`,
+        `👤 <b>${_client.displayName}</b> · ${cadLbl} · ${src} · ` +
+        `MMB: ${_client.mmb > 0 ? fc(_client.mmb) : 'None'} · ` +
+        `Markup: ${_client.shippingMarkup ?? 10}%`,
         'info'
       );
     })
     .catch(() => {
-      setStatus(`👤 <b>${_client.name}</b> · Default rates (offline)`, 'info');
+      setStatus(`👤 <b>${_client.displayName}</b> · Default rates (offline)`, 'info');
     });
 }
 
@@ -528,8 +540,11 @@ function onClientChange() {
 // weekly  → INV-YYYY-MM-DD-XXX  (DD = period_end day, e.g. INV-2026-04-27-LSL)
 // monthly → INV-YYYY-MM-XXX     (e.g. INV-2026-04-MIL)
 function recomputeInvoiceNumber() {
-  if (!_client || !_client.name) return;
-  const ini = _client.name.replace(/[^A-Za-z ]/g,'').trim().split(' ').map(w => w[0]||'').join('').toUpperCase().slice(0,3);
+  if (!_client) return;
+  // Use displayName (company || name) for initials so e.g.
+  // "LN Store, LLC" → LSL  (not Fernando Tissera → FT)
+  const labelForInitials = _client.displayName || _client.name || '';
+  const ini = labelForInitials.replace(/[^A-Za-z ]/g,'').trim().split(' ').map(w => w[0]||'').join('').toUpperCase().slice(0,3);
   const cadence = (_client.billingCadence || _client.billing_cadence || 'monthly').toLowerCase();
   const dateEnd = g('dateEnd').value;
 
@@ -549,19 +564,21 @@ function recomputeInvoiceNumber() {
 }
 
 // ─── RATE CARDS ───────────────────────────────────────────────────────────────
-function getClientRates(clientName) {
-  // If Supabase rates are loaded (_rates), use them
-  // Otherwise fall back to hardcoded STD_RATES + CUSTOM_RATES
+function getClientRates(client) {
+  // If Supabase rates are loaded (_rates), use them — keyed nothing, already-loaded for current client
   if (_rates && Object.keys(_rates).length > 0) {
     return {...STD_RATES, ..._rates};
   }
-  const custom = CUSTOM_RATES[clientName] || {};
+  // Offline fallback: CUSTOM_RATES is keyed by company name (e.g. "LN Store, LLC", "Milano Brands LLC").
+  // Use displayName (company || name) so e.g. Fernando Tissera's row matches "LN Store, LLC".
+  const key    = (typeof client === 'string') ? client : (client?.displayName || client?.name || '');
+  const custom = CUSTOM_RATES[key] || {};
   return Object.assign({...STD_RATES}, custom);
 }
 
-function getBillingLines(clientName, clientObj) {
-  const r = getClientRates(clientName);
-  const wmsEnabled = clientObj?.wmsIntegration || clientObj?.wms_integration || false;
+function getBillingLines(client) {
+  const r = getClientRates(client);
+  const wmsEnabled = client?.wmsIntegration || client?.wms_integration || false;
   return [
     // INBOUND
     {cat:'Inbound / Receiving', id:'inbound_carton', name:'Inbound — Cartons / Boxes', sku:'Inbound Package', unit:'cartons', rate:r.inbound_carton, qty:0, auto:true, tip:'Auto from Inbound/Outbound portal'},
@@ -618,8 +635,8 @@ async function loadBilling() {
   if (!g('selClient').value) { alert('Select a client first'); return; }
   if (!g('dateStart').value || !g('dateEnd').value) { alert('Set billing period dates'); return; }
 
-  // Ensure _client is in sync with dropdown
-  if (!_client || _client.name !== g('selClient').value) onClientChange();
+  // Ensure _client is in sync with dropdown (dropdown value is UUID per architectural rule)
+  if (!_client || _client.id !== g('selClient').value) onClientChange();
 
   const start = g('dateStart').value;
   const end   = g('dateEnd').value;
@@ -688,11 +705,11 @@ async function loadBilling() {
 
   } else if (bsrc === 'ss_cf1' && !(_client.ssCustomField1 || '').trim()) {
     // CF1 mode but tag is empty
-    ssStatus = `⚠️ Custom Field 1 tag is empty for ${_client.name}.<br>Go to <b>Clients → Edit → Billing Configuration → SS Custom Field 1 Tag</b>`;
+    ssStatus = `⚠️ Custom Field 1 tag is empty for ${_client.displayName}.<br>Go to <b>Clients → Edit → Billing Configuration → SS Custom Field 1 Tag</b>`;
 
   } else {
     // No billing source configured
-    ssStatus = `⚠️ Billing source not configured for ${_client.name}.<br>Go to <b>Clients → Edit → Billing Configuration</b>`;
+    ssStatus = `⚠️ Billing source not configured for ${_client.displayName}.<br>Go to <b>Clients → Edit → Billing Configuration</b>`;
   }
 
   // ── Step 2: Portal data (Inbound/Outbound app) ────────────────────────────
@@ -747,7 +764,7 @@ async function loadBilling() {
   const markup   = +g('shippingMarkupPct').value || _client.shippingMarkup || 10;
   const shippingCharge = carrierCost > 0 ? Math.round(carrierCost * (1 + markup / 100) * 100) / 100 : 0;
 
-  _lines = getBillingLines(_client.name, _client);
+  _lines = getBillingLines(_client);
   _lines.forEach(l => {
     if (l.id === 'pick_pack')          l.qty = ordersCount;
     if (l.id === 'inbound_carton')     l.qty = inboundCount;
@@ -804,7 +821,7 @@ async function loadBilling() {
   g('kpiSection').style.display       = 'grid';
   g('kpiOrders').textContent          = ordersCount;
   g('kpiCartons').textContent         = inboundCount || '—';
-  g('billingPeriodLabel').textContent = `${_client.name} · ${fD(start)} – ${fD(end)}`;
+  g('billingPeriodLabel').textContent = `${_client.displayName} · ${fD(start)} – ${fD(end)}`;
   recalc();
 
   // ── Day 4: Already-invoiced banner ──────────────────────────────────────
@@ -953,7 +970,7 @@ function buildPDFDoc() {
 
   // Client + period info
   doc.setFillColor(...WH); doc.rect(0,y,PW,44,'F');
-  const info=[['Client',_client.name],['Contact Email',_client.email||'—'],
+  const info=[['Client',_client.displayName],['Contact Email',_client.email||'—'],
               ['Billing Period',`${fD(g('dateStart').value)} – ${fD(g('dateEnd').value)}`],
               ['Prepared By','Jose Fuentes - Operations Manager']];
   const cw2=W/2;
@@ -1044,14 +1061,14 @@ function buildPDFDoc() {
   doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(100,116,139);
   doc.text('FR-Logistics  |  10893 NW 17th St, Unit 121, Miami, FL 33172  |  (786) 300-1443  |  info@fr-logistics.net  |  www.fr-logistics.net',PW/2,PH-9,{align:'center'});
 
-  const fname = `FR_Billing_${(_client.name||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.pdf`;
+  const fname = `FR_Billing_${(_client.displayName||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.pdf`;
   return doc;
 }
 
 function genPDF() {
   const doc = buildPDFDoc();
   if (!doc) return;
-  const fname = `FR_Billing_${(_client.name||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.pdf`;
+  const fname = `FR_Billing_${(_client.displayName||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.pdf`;
   doc.save(fname);
   // Day 4: enable "Mark as Invoiced" — user has now produced a deliverable
   _invoicedMarkable = true;
@@ -1176,10 +1193,10 @@ async function markAsInvoiced() {
   if (!total)         { alert('Invoice total is zero — nothing to mark.'); return; }
 
   // Derive a short client_code for the auto-generated invoice number.
-  // Use the first 2-3 letters of the company name, or the qboName if set.
+  // Use displayName (company || name) so e.g. "LN Store, LLC" → LSL, not "Fernando Tissera" → FER.
   const clientCode =
     (_client.clientCode || _client.client_code ||
-     (_client.name || '').split(/\s+/)[0].slice(0, 3).toUpperCase() || 'UNK');
+     (_client.displayName || _client.name || '').split(/\s+/)[0].slice(0, 3).toUpperCase() || 'UNK');
 
   const packageCount = _lines.reduce((s, l) => s + (+l.qty || 0), 0);
   const lineItems    = _lines
@@ -1189,7 +1206,7 @@ async function markAsInvoiced() {
   const confirmMsg = [
     `Mark as invoiced?`,
     ``,
-    `Client: ${_client.name}`,
+    `Client: ${_client.displayName}`,
     `Period: ${fD(start)} – ${fD(end)}`,
     `Invoice: ${invNum}`,
     `Total: ${fc(total)}`,
@@ -1274,7 +1291,7 @@ async function showPastInvoices() {
       content.innerHTML = `
         <div style="text-align:center;color:#64748b;padding:30px;">
           <div style="font-size:32px;margin-bottom:8px;">📭</div>
-          <div>No past invoices for <strong>${_client.name}</strong></div>
+          <div>No past invoices for <strong>${_client.displayName}</strong></div>
           <div style="font-size:11px;margin-top:8px;">They will appear here after you click "Mark as Invoiced".</div>
         </div>`;
       return;
@@ -1297,7 +1314,7 @@ async function showPastInvoices() {
 
     content.innerHTML = `
       <div style="margin-bottom:12px;color:#64748b;font-size:12px;">
-        Showing last ${d.invoices.length} invoice(s) for <strong>${_client.name}</strong>
+        Showing last ${d.invoices.length} invoice(s) for <strong>${_client.displayName}</strong>
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
         <thead>
@@ -1343,7 +1360,7 @@ async function sendDraft() {
     // Also triggers local download for user's records
     const doc = buildPDFDoc();  // shared helper — see genPDF
     const pdfBase64 = doc.output('datauristring').split(',')[1];
-    const pdfFilename = `FR_Billing_${(_client.name||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.pdf`;
+    const pdfFilename = `FR_Billing_${(_client.displayName||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.pdf`;
     doc.save(pdfFilename);  // download locally
 
     // Also send via Netlify
@@ -1368,7 +1385,7 @@ async function sendDraft() {
   <div style="font-size:9px;color:rgba(209,250,229,.8);margin-top:3px;text-transform:uppercase">${invNo} &nbsp;&middot;&nbsp; ${period}</div>
 </td></tr>
 <tr><td style="background:#fff;padding:24px 30px">
-  <p style="font-size:14px;color:#0f172a;margin:0 0 6px">Dear ${_client.name},</p>
+  <p style="font-size:14px;color:#0f172a;margin:0 0 6px">Dear ${_client.displayName},</p>
   <p style="font-size:12.5px;color:#475569;margin:0 0 18px;line-height:1.5">Please find below your billing summary for the period <b>${period}</b>. The PDF is attached for your records.</p>
   <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px">
     <tr style="background:#f8fafc"><th style="padding:8px 10px;font-size:10px;text-align:left;color:#64748b;text-transform:uppercase">Service</th><th style="padding:8px 10px;font-size:10px;text-align:left;color:#64748b;text-transform:uppercase">Qty</th><th style="padding:8px 10px;font-size:10px;text-align:right;color:#64748b;text-transform:uppercase">Amount</th></tr>
@@ -1396,14 +1413,14 @@ async function sendDraft() {
 </td></tr>
 </table></body></html>`;
 
-    const textBody = `Dear ${_client.name},\n\nPlease find your billing summary for ${period}.\n\nInvoice Total: ${fc(total)}\n\nPDF attached.\n\nBest regards,\nJose Fuentes - Operations Manager\nFR-Logistics | (786) 300-1443`;
+    const textBody = `Dear ${_client.displayName},\n\nPlease find your billing summary for ${period}.\n\nInvoice Total: ${fc(total)}\n\nPDF attached.\n\nBest regards,\nJose Fuentes - Operations Manager\nFR-Logistics | (786) 300-1443`;
 
     const resp = await fetch(NETLIFY_EMAIL, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
         to:      _client.email || 'josefuentes@fr-logistics.net',
-        subject: `Billing Summary ${invNo} — ${_client.name} | ${period}`,
+        subject: `Billing Summary ${invNo} — ${_client.displayName} | ${period}`,
         htmlBody, textBody,
         attachments: [{
           base64:   pdfBase64,    // Apps Script: Utilities.base64Decode(a.base64)
@@ -1423,11 +1440,11 @@ async function sendDraft() {
 
 function resetAll() {
   g('selClient').value = '';
-  g('invNum').value = '';
-  g('billingCard').style.display = 'none';
-  g('kpiSection').style.display = 'none';
-  g('statusBar').style.display = 'none';
-  _lines = []; _client = null; _ssOrders = 0;
+  g('invNum').value    = '';
+  g('invNumBadge').innerHTML = '';
+  _client = null;
+  _rates  = {};
+  resetUI();  // hides cards, clears _lines and _ssCarrierCost
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
