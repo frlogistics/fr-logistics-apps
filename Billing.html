@@ -957,6 +957,14 @@ function updateQty(id, val) {
   if (l) { l.qty = +val || 0; recalc(); }
 }
 
+// FIX: rate input on manual lines (Custom/Other, Shipping Label Fee when carrier=0,
+// or any rate-card line with no preset rate). Without this, oninput="updateCustomRate(...)"
+// in renderBillingTable threw a ReferenceError silently and l.rate stayed at 0.
+function updateCustomRate(idx, val) {
+  const l = _lines[idx];
+  if (l) { l.rate = +val || 0; recalc(); }
+}
+
 function updateShippingLine() {
   if (!_lines.length || _ssCarrierCost <= 0) return;
   const markup = +g('shippingMarkupPct').value || 0;
