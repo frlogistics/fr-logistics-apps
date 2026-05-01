@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WA Lead Capture · FR-Logistics Portal</title>
+<style>
+  /* ════════════════════════════════════════════════════════════════════
+     WA Lead Capture · standalone tab for apps.fr-logistics.net portal
+     UI in English (per FR portal convention)
+     Brand palette from /assets/styles.css
+     ════════════════════════════════════════════════════════════════════ */
+  :root {
+    --brand-green:      #10B981;
+    --brand-green-dark: #059669;
+    --brand-teal:       #14B8A6;
+    --brand-cyan:       #0EA5E9;
+    --gradient-brand:   linear-gradient(90deg,#10B981 0%,#14B8A6 50%,#0EA5E9 100%);
+
+    --bg:           #FFFFFF;
+    --bg-soft:      #F8FAFC;
+    --bg-muted:     #F1F5F9;
+    --border:       #E2E8F0;
+    --border-strong:#CBD5E1;
+    --text:         #0F172A;
+    --text-2:       #475569;
+    --text-muted:   #94A3B8;
+
+    --ok:    #16A34A;
+    --warn:  #DC2626;
+    --info:  #0EA5E9;
+
+    --radius:    12px;
+    --radius-sm: 8px;
+    --shadow:    0 4px 16px rgba(15,23,42,.08);
+    --shadow-sm: 0 2px 6px rgba(15,23,42,.06);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: var(--text);
+    background: var(--bg-soft);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .wa-tab {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: minmax(360px, 420px) 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+  @media (max-width: 980px) {
+    .wa-tab { grid-template-columns: 1fr; }
+  }
+
+  /* ─── Cards ─── */
+  .card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+  }
+  .card-head {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+  .card-head h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .card-head .sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .card-body { padding: 20px; }
+
+  /* Brand stripe */
+  .card.has-stripe { position: relative; overflow: hidden; }
+  .card.has-stripe::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: var(--gradient-brand);
+  }
+
+  /* ─── Form ─── */
+  .form-grid { display: grid; gap: 14px; }
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 520px) { .row-2 { grid-template-columns: 1fr; } }
+
+  label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-weight: 700;
+    color: var(--text-2);
+    margin-bottom: 6px;
+  }
+  label .req { color: var(--warn); }
+
+  input, select, textarea {
+    width: 100%;
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 9px 12px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--brand-green);
+    box-shadow: 0 0 0 3px rgba(16,185,129,.15);
+  }
+  textarea { resize: vertical; min-height: 70px; font-family: inherit; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 16px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: transform .1s, box-shadow .15s, background .15s;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary {
+    background: var(--brand-green-dark);
+    color: white;
+  }
+  .btn-primary:hover { background: var(--brand-green); }
+  .btn-primary:disabled {
+    background: var(--border-strong); color: white; cursor: not-allowed;
+  }
+  .btn-ghost {
+    background: transparent; color: var(--text-2);
+    border-color: var(--border-strong);
+  }
+  .btn-ghost:hover { background: var(--bg-muted); color: var(--text); }
+  .btn-sm { padding: 6px 10px; font-size: 12px; }
+
+  .form-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 8px;
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+
+  /* ─── Toast ─── */
+  .toast {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    line-height: 1.5;
+    display: none;
+  }
+  .toast.show { display: block; }
+  .toast.ok   { background: #ECFDF5; border: 1px solid #A7F3D0; color: #065F46; }
+  .toast.warn { background: #FFFBEB; border: 1px solid #FDE68A; color: #92400E; }
+  .toast.err  { background: #FEF2F2; border: 1px solid #FECACA; color: #991B1B; }
+
+  /* ─── Pipeline table ─── */
+  .pipe-toolbar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .pipe-toolbar select, .pipe-toolbar input {
+    width: auto;
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  .pipe-search { flex: 1; min-width: 180px; }
+
+  .pipe-table-wrap {
+    overflow-x: auto;
+    border-radius: var(--radius);
+  }
+  table.pipe {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  table.pipe th {
+    text-align: left;
+    padding: 10px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-weight: 700;
+    color: var(--text-muted);
+    background: var(--bg-soft);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0;
+    z-index: 1;
+  }
+  table.pipe td {
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  table.pipe tr:hover td { background: var(--bg-soft); }
+  table.pipe .lead-name { font-weight: 600; color: var(--text); }
+  table.pipe .lead-meta { color: var(--text-muted); font-size: 12px; }
+  table.pipe a { color: var(--brand-green-dark); text-decoration: none; font-weight: 500; }
+  table.pipe a:hover { text-decoration: underline; }
+
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 100px;
+    letter-spacing: .02em;
+  }
+  .badge-new          { background: #F1F5F9; color: #475569; }
+  .badge-qualifying   { background: #FEF3C7; color: #92400E; }
+  .badge-sent_to_sales{ background: #DBEAFE; color: #1E40AF; }
+  .badge-won          { background: #D1FAE5; color: #065F46; }
+  .badge-lost         { background: #FEE2E2; color: #991B1B; }
+
+  .status-select {
+    padding: 4px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    width: auto;
+  }
+
+  .empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+  .empty-icon { font-size: 32px; margin-bottom: 8px; opacity: .5; }
+
+  .loading {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid var(--border-strong);
+    border-top-color: var(--brand-green);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-soft);
+  }
+  .kpi {
+    text-align: center;
+    padding: 8px;
+  }
+  .kpi-num { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1; }
+  .kpi-num.green { color: var(--brand-green-dark); }
+  .kpi-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-top: 4px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="wa-tab">
+
+  <!-- ═════════════ LEFT: CAPTURE FORM ═════════════ -->
+  <section class="card has-stripe">
+    <div class="card-head">
+      <div>
+        <h2>📲 WA Lead Capture</h2>
+        <div class="sub">From WhatsApp +1 786-300-1443 · LIAM flow step 5</div>
+      </div>
+    </div>
+
+    <div class="card-body">
+      <form id="waLeadForm" class="form-grid">
+        <!-- Identity -->
+        <div class="row-2">
+          <div>
+            <label>Name <span class="req">*</span></label>
+            <input name="name" required placeholder="Juan Pérez" autocomplete="off">
+          </div>
+          <div>
+            <label>Country</label>
+            <input name="country" placeholder="MX, CO, BR…" maxlength="3" autocomplete="off">
+          </div>
+        </div>
+
+        <div>
+          <label>Email <span class="req">*</span></label>
+          <input name="email" type="email" required placeholder="lead@company.com" autocomplete="off">
+        </div>
+
+        <div class="row-2">
+          <div>
+            <label>WhatsApp <span class="req">*</span></label>
+            <input name="phone" required placeholder="+5491122535379" autocomplete="off">
+          </div>
+          <div>
+            <label>Language</label>
+            <select name="language">
+              <option value="en">EN · English</option>
+              <option value="es">ES · Spanish</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Service -->
+        <div>
+          <label>Service interest <span class="req">*</span></label>
+          <select name="service" required>
+            <option value="fba_prep">📦 Amazon FBA Prep</option>
+            <option value="shopify_dtc">🛒 Shopify / DTC Fulfillment</option>
+            <option value="cross_dock_latam">🌎 LATAM Cross-Docking</option>
+            <option value="ecopack_plus">📬 EcoPack+ Package Reception</option>
+            <option value="hold_for_pickup">🚚 Receive + Hold for Pickup</option>
+            <option value="fnsku_relabel">🏷️ FNSKU Relabel + Removal</option>
+            <option value="freight_inbound">✈️ Freight Inbound (China, etc.)</option>
+            <option value="storage_only">🏬 Storage Only</option>
+            <option value="other">💬 Other</option>
+          </select>
+        </div>
+
+        <!-- Qualification -->
+        <div class="row-2">
+          <div>
+            <label>Monthly volume</label>
+            <input name="monthly_volume" placeholder="e.g. 500-1000 units/mo">
+          </div>
+          <div>
+            <label>SKUs</label>
+            <input name="skus" placeholder="e.g. 12 SKUs">
+          </div>
+        </div>
+
+        <div class="row-2">
+          <div>
+            <label>Origin</label>
+            <input name="origin" placeholder="e.g. China, Argentina">
+          </div>
+          <div>
+            <label>Destination</label>
+            <input name="destination" placeholder="e.g. FBA, MELI, DTC">
+          </div>
+        </div>
+
+        <div>
+          <label>Product type</label>
+          <input name="product_type" placeholder="e.g. general / fragile / hazmat">
+        </div>
+
+        <div>
+          <label>Conversation summary</label>
+          <textarea name="conversation_summary" placeholder="Key points from the WhatsApp chat — what they need, when, any objections…" rows="3"></textarea>
+        </div>
+
+        <div>
+          <label>Internal notes</label>
+          <textarea name="notes" placeholder="Anything sales should know that's not for the lead's eyes" rows="2"></textarea>
+        </div>
+
+        <div>
+          <label>Captured by</label>
+          <select name="captured_by" id="capturedBy">
+            <option value="josefuentes@fr-logistics.net">Jose Fuentes (Operations Manager)</option>
+            <option value="warehouse@fr-logistics.net">Joe Raymond (Warehouse)</option>
+          </select>
+        </div>
+
+        <div id="formToast" class="toast"></div>
+
+        <div class="form-actions">
+          <button type="reset" class="btn btn-ghost">Reset</button>
+          <button type="submit" class="btn btn-primary" id="submitBtn">
+            <span id="submitLabel">📩 Capture & Forward to Sales</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ═════════════ RIGHT: PIPELINE ═════════════ -->
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>📊 Pipeline</h2>
+        <div class="sub">Last 50 captured leads · sorted newest first</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="refreshBtn">🔄 Refresh</button>
+    </div>
+
+    <div class="kpis" id="kpis">
+      <div class="kpi"><div class="kpi-num" id="kpiTotal">—</div><div class="kpi-lbl">Total</div></div>
+      <div class="kpi"><div class="kpi-num" id="kpiNew">—</div><div class="kpi-lbl">New</div></div>
+      <div class="kpi"><div class="kpi-num" id="kpiSent">—</div><div class="kpi-lbl">Sent</div></div>
+      <div class="kpi"><div class="kpi-num green" id="kpiWon">—</div><div class="kpi-lbl">Won</div></div>
+      <div class="kpi"><div class="kpi-num" id="kpiLost">—</div><div class="kpi-lbl">Lost</div></div>
+    </div>
+
+    <div class="card-body" style="padding: 14px 20px;">
+      <div class="pipe-toolbar">
+        <select id="filterStatus">
+          <option value="">All statuses</option>
+          <option value="new">New</option>
+          <option value="qualifying">Qualifying</option>
+          <option value="sent_to_sales">Sent to Sales</option>
+          <option value="won">Won</option>
+          <option value="lost">Lost</option>
+        </select>
+        <select id="filterService">
+          <option value="">All services</option>
+          <option value="fba_prep">📦 FBA Prep</option>
+          <option value="shopify_dtc">🛒 Shopify/DTC</option>
+          <option value="cross_dock_latam">🌎 LATAM</option>
+          <option value="ecopack_plus">📬 EcoPack+</option>
+          <option value="hold_for_pickup">🚚 Hold-for-pickup</option>
+          <option value="fnsku_relabel">🏷️ FNSKU</option>
+          <option value="freight_inbound">✈️ Freight</option>
+          <option value="storage_only">🏬 Storage</option>
+          <option value="other">💬 Other</option>
+        </select>
+        <input type="search" class="pipe-search" id="searchInput" placeholder="🔍 Search name, email, phone…">
+      </div>
+    </div>
+
+    <div class="pipe-table-wrap">
+      <table class="pipe">
+        <thead>
+          <tr>
+            <th>Lead</th>
+            <th>Service</th>
+            <th>Captured</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="pipeBody">
+          <tr><td colspan="5" class="empty"><span class="loading"></span> Loading leads…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ─── CONFIG ─────────────────────────────────────────────────────────
+  const API_CREATE = '/.netlify/functions/wa-leads-create';
+  const API_LIST   = '/.netlify/functions/wa-leads-list';
+  const API_UPDATE = '/.netlify/functions/wa-leads-update';
+
+  // ─── OPERATOR PERSISTENCE ──────────────────────────────────────────
+  // Remember who's capturing leads across sessions (localStorage)
+  const STORAGE_KEY = 'fr_wa_operator';
+  const operatorSelect = document.getElementById('capturedBy');
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) operatorSelect.value = saved;
+  } catch (e) { /* localStorage may be blocked, fine */ }
+  operatorSelect.addEventListener('change', () => {
+    try { localStorage.setItem(STORAGE_KEY, operatorSelect.value); } catch (e) {}
+  });
+
+  // ─── FORM SUBMIT ────────────────────────────────────────────────────
+  const form        = document.getElementById('waLeadForm');
+  const submitBtn   = document.getElementById('submitBtn');
+  const submitLabel = document.getElementById('submitLabel');
+  const toast       = document.getElementById('formToast');
+
+  function showToast(kind, msg) {
+    toast.className = 'toast show ' + kind;
+    toast.innerHTML = msg;
+  }
+  function hideToast() {
+    toast.className = 'toast';
+    toast.innerHTML = '';
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideToast();
+
+    const fd = new FormData(form);
+    const payload = Object.fromEntries(fd.entries());
+
+    submitBtn.disabled = true;
+    submitLabel.innerHTML = '<span class="loading"></span> Sending…';
+
+    try {
+      const res = await fetch(API_CREATE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (!res.ok && res.status !== 207) {
+        showToast('err', `❌ ${data.error || 'Server error'}` +
+          (data.details ? `<br><small>${Array.isArray(data.details) ? data.details.join(', ') : data.details}</small>` : ''));
+        return;
+      }
+
+      if (data.email_sent) {
+        showToast('ok', `✅ Lead captured and forwarded to <strong>info@fr-logistics.net</strong>.<br><small>Lead ID: ${data.id} · Status: <strong>sent_to_sales</strong></small>`);
+      } else {
+        showToast('warn', `⚠️ Lead saved to database, but email forward failed.<br><small>${data.email_error || 'Check Resend logs'}</small><br><small>Lead ID: ${data.id}</small>`);
+      }
+
+      form.reset();
+      // Restore saved operator after reset
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) operatorSelect.value = saved;
+      } catch (e) {}
+      loadPipeline();
+    } catch (err) {
+      showToast('err', `❌ Network error: ${err.message}`);
+    } finally {
+      submitBtn.disabled = false;
+      submitLabel.textContent = '📩 Capture & Forward to Sales';
+    }
+  });
+
+  // ─── PIPELINE ───────────────────────────────────────────────────────
+  const pipeBody       = document.getElementById('pipeBody');
+  const filterStatus   = document.getElementById('filterStatus');
+  const filterService  = document.getElementById('filterService');
+  const searchInput    = document.getElementById('searchInput');
+  const refreshBtn     = document.getElementById('refreshBtn');
+
+  let currentLeads = [];
+  let searchTimer = null;
+
+  async function loadPipeline() {
+    pipeBody.innerHTML = '<tr><td colspan="5" class="empty"><span class="loading"></span> Loading…</td></tr>';
+    const params = new URLSearchParams();
+    if (filterStatus.value)  params.set('status', filterStatus.value);
+    if (filterService.value) params.set('service', filterService.value);
+    if (searchInput.value.trim()) params.set('q', searchInput.value.trim());
+
+    try {
+      const res = await fetch(`${API_LIST}?${params}`);
+      const data = await res.json();
+      if (!res.ok) {
+        pipeBody.innerHTML = `<tr><td colspan="5" class="empty">❌ ${data.error || 'Load failed'}</td></tr>`;
+        return;
+      }
+      currentLeads = data.leads || [];
+      renderPipeline(currentLeads);
+      updateKpis(currentLeads);
+    } catch (err) {
+      pipeBody.innerHTML = `<tr><td colspan="5" class="empty">❌ Network error: ${err.message}</td></tr>`;
+    }
+  }
+
+  const SERVICE_CHIPS = {
+    fba_prep:         '📦 FBA Prep',
+    shopify_dtc:      '🛒 Shopify/DTC',
+    cross_dock_latam: '🌎 LATAM',
+    ecopack_plus:     '📬 EcoPack+',
+    hold_for_pickup:  '🚚 Hold pickup',
+    fnsku_relabel:    '🏷️ FNSKU',
+    freight_inbound:  '✈️ Freight',
+    storage_only:     '🏬 Storage',
+    other:            '💬 Other',
+  };
+
+  const STATUSES = ['new', 'qualifying', 'sent_to_sales', 'won', 'lost'];
+  const STATUS_LABEL = {
+    new:           'New',
+    qualifying:    'Qualifying',
+    sent_to_sales: 'Sent to Sales',
+    won:           'Won',
+    lost:          'Lost',
+  };
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+    })[c]);
+  }
+
+  function relativeTime(iso) {
+    if (!iso) return '';
+    const ms = Date.now() - new Date(iso).getTime();
+    const min = Math.floor(ms / 60000);
+    if (min < 1)   return 'just now';
+    if (min < 60)  return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24)   return `${hr}h ago`;
+    const d = Math.floor(hr / 24);
+    if (d < 7)     return `${d}d ago`;
+    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  function renderPipeline(leads) {
+    if (!leads.length) {
+      pipeBody.innerHTML = '<tr><td colspan="5" class="empty"><div class="empty-icon">📭</div>No leads yet — capture your first one on the left.</td></tr>';
+      return;
+    }
+    pipeBody.innerHTML = leads.map(l => {
+      const phoneClean = String(l.phone || '').replace(/[^0-9]/g, '');
+      const waLink = `https://wa.me/${phoneClean}`;
+      const statusOpts = STATUSES.map(s =>
+        `<option value="${s}"${s === l.status ? ' selected' : ''}>${STATUS_LABEL[s]}</option>`
+      ).join('');
+      return `
+        <tr data-id="${l.id}">
+          <td>
+            <div class="lead-name">${escapeHtml(l.name)}</div>
+            <div class="lead-meta">${escapeHtml(l.email)}</div>
+            <div class="lead-meta">${escapeHtml(l.phone)}${l.country ? ' · ' + escapeHtml(l.country) : ''} · ${l.language === 'es' ? '🇪🇸' : '🇺🇸'}</div>
+          </td>
+          <td>${SERVICE_CHIPS[l.service] || '💬 Other'}</td>
+          <td><div class="lead-meta">${relativeTime(l.created_at)}</div></td>
+          <td>
+            <select class="status-select badge badge-${l.status}" data-id="${l.id}">
+              ${statusOpts}
+            </select>
+          </td>
+          <td><a href="${waLink}" target="_blank" rel="noopener">💬 WA</a></td>
+        </tr>
+      `;
+    }).join('');
+
+    // Wire up status changes
+    pipeBody.querySelectorAll('.status-select').forEach(sel => {
+      sel.addEventListener('change', async (e) => {
+        const id = e.target.dataset.id;
+        const newStatus = e.target.value;
+        e.target.disabled = true;
+        try {
+          const res = await fetch(API_UPDATE, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, status: newStatus }),
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            alert(`Update failed: ${err.error || res.status}`);
+            return;
+          }
+          // Update badge class
+          e.target.className = `status-select badge badge-${newStatus}`;
+          // Update local cache + KPIs
+          const lead = currentLeads.find(l => l.id === id);
+          if (lead) lead.status = newStatus;
+          updateKpis(currentLeads);
+        } finally {
+          e.target.disabled = false;
+        }
+      });
+    });
+  }
+
+  function updateKpis(leads) {
+    const counts = { total: leads.length, new: 0, qualifying: 0, sent_to_sales: 0, won: 0, lost: 0 };
+    leads.forEach(l => { if (l.status in counts) counts[l.status]++; });
+    document.getElementById('kpiTotal').textContent = counts.total;
+    document.getElementById('kpiNew').textContent   = counts.new;
+    document.getElementById('kpiSent').textContent  = counts.sent_to_sales;
+    document.getElementById('kpiWon').textContent   = counts.won;
+    document.getElementById('kpiLost').textContent  = counts.lost;
+  }
+
+  filterStatus.addEventListener('change', loadPipeline);
+  filterService.addEventListener('change', loadPipeline);
+  refreshBtn.addEventListener('click', loadPipeline);
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(loadPipeline, 250);
+  });
+
+  // Initial load
+  loadPipeline();
+
+  // Auto-refresh every 60s
+  setInterval(loadPipeline, 60000);
+})();
+</script>
+</body>
+</html>
