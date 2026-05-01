@@ -33,3 +33,5 @@
   from = "/portal"
   to = "/portal.html"
   status = 302 
+[functions."wa-leads-weekly-report"]
+     schedule = "0 23 * * 1"
