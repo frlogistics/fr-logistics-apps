@@ -2,7 +2,12 @@
 // PURPOSE: Count portal records by type for billing, separated by billing status
 //
 // v2 (2026-04-28): Captures Outbound (Shipment) packages separately from
-//                  drop-shipments, so all outbound packages get counted correctly.
+// drop-shipments, so all outbound packages get counted correctly.
+//
+// v3 (2026-05-04): Date filters now use Miami timezone (America/New_York)
+// instead of UTC, so rows created at the boundary of a billing period
+// (Sun night / Mon morning) are bucketed in the correct invoice week.
+// Offset is computed dynamically and works across DST (EDT -04:00 / EST -05:00).
 
 const SB_BASE = `${process.env.SUPABASE_URL}/rest/v1/shipments_general`;
 
@@ -11,15 +16,41 @@ function sbHeaders() {
   return { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' };
 }
 
+// Returns the Miami (America/New_York) UTC offset string for a given date,
+// e.g. '-04:00' during EDT or '-05:00' during EST. Used to anchor created_at
+// filters in client-local time rather than UTC, so rows at the midnight
+// boundary of a billing period land in the correct week.
+// Falls back to '' (empty offset = UTC, prior buggy behavior) on parse error,
+// so an invalid date param never breaks the function.
+function miamiOffset(dateStr) {
+  if (!dateStr) return '';
+  try {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    if (!y || !m || !d) return '';
+    // Use noon UTC as a sentinel — safely inside the same calendar day
+    // in Miami regardless of DST transition direction.
+    const sentinel = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      timeZoneName: 'longOffset'
+    });
+    const offsetPart = fmt.formatToParts(sentinel)
+      .find(p => p.type === 'timeZoneName').value;
+    return offsetPart.replace('GMT', ''); // "GMT-04:00" → "-04:00"
+  } catch {
+    return '';
+  }
+}
+
 exports.handler = async (event) => {
   const h = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: h, body: '' };
 
-  const p         = event.queryStringParameters || {};
-  const client    = (p.client    || '').trim();
-  const clientId  = (p.client_id || '').trim();
-  const start     = p.start || '';
-  const end       = p.end   || '';
+  const p = event.queryStringParameters || {};
+  const client = (p.client || '').trim();
+  const clientId = (p.client_id || '').trim();
+  const start = p.start || '';
+  const end = p.end || '';
 
   if (!client && !clientId) {
     return { statusCode: 400, headers: h, body: JSON.stringify({ error: 'client or client_id required' }) };
@@ -28,8 +59,10 @@ exports.handler = async (event) => {
   const clientFilter = clientId
     ? `&client_id=eq.${encodeURIComponent(clientId)}`
     : `&client=ilike.*${encodeURIComponent(client)}*`;
-  const dFilter = `${start ? `&created_at=gte.${start}T00:00:00` : ''}${end ? `&created_at=lte.${end}T23:59:59` : ''}`;
-  const lim     = '&limit=500';
+
+  const dFilter = `${start ? `&created_at=gte.${start}T00:00:00${miamiOffset(start)}` : ''}${end ? `&created_at=lte.${end}T23:59:59${miamiOffset(end)}` : ''}`;
+  const lim = '&limit=500';
+
   const headers = sbHeaders();
 
   const buildUrl = (direction, typeCondition, billedCondition) => {
@@ -50,16 +83,16 @@ exports.handler = async (event) => {
       r_inGen_u, r_rma_u, r_inDrop_u, r_outShip_u, r_outDrop_u,
       r_inGen_b, r_rma_b, r_inDrop_b, r_outShip_b, r_outDrop_b,
     ] = await Promise.all([
-      fetch(buildUrl('Inbound',  '&type=not.ilike.*RMA*&type=not.ilike.*Drop*', 'is.null'), { headers }),
-      fetch(buildUrl('Inbound',  '&type=ilike.*RMA*',                            'is.null'), { headers }),
-      fetch(buildUrl('Inbound',  '&type=ilike.*Drop*',                           'is.null'), { headers }),
-      fetch(buildUrl('Outbound', '&type=not.ilike.*Drop*',                       'is.null'), { headers }),
-      fetch(buildUrl('Outbound', '&type=ilike.*Drop*',                           'is.null'), { headers }),
-      fetch(buildUrl('Inbound',  '&type=not.ilike.*RMA*&type=not.ilike.*Drop*', 'not.is.null'), { headers }),
-      fetch(buildUrl('Inbound',  '&type=ilike.*RMA*',                            'not.is.null'), { headers }),
-      fetch(buildUrl('Inbound',  '&type=ilike.*Drop*',                           'not.is.null'), { headers }),
-      fetch(buildUrl('Outbound', '&type=not.ilike.*Drop*',                       'not.is.null'), { headers }),
-      fetch(buildUrl('Outbound', '&type=ilike.*Drop*',                           'not.is.null'), { headers }),
+      fetch(buildUrl('Inbound', '&type=not.ilike.*RMA*&type=not.ilike.*Drop*', 'is.null'), { headers }),
+      fetch(buildUrl('Inbound', '&type=ilike.*RMA*', 'is.null'), { headers }),
+      fetch(buildUrl('Inbound', '&type=ilike.*Drop*', 'is.null'), { headers }),
+      fetch(buildUrl('Outbound', '&type=not.ilike.*Drop*', 'is.null'), { headers }),
+      fetch(buildUrl('Outbound', '&type=ilike.*Drop*', 'is.null'), { headers }),
+      fetch(buildUrl('Inbound', '&type=not.ilike.*RMA*&type=not.ilike.*Drop*', 'not.is.null'), { headers }),
+      fetch(buildUrl('Inbound', '&type=ilike.*RMA*', 'not.is.null'), { headers }),
+      fetch(buildUrl('Inbound', '&type=ilike.*Drop*', 'not.is.null'), { headers }),
+      fetch(buildUrl('Outbound', '&type=not.ilike.*Drop*', 'not.is.null'), { headers }),
+      fetch(buildUrl('Outbound', '&type=ilike.*Drop*', 'not.is.null'), { headers }),
     ]);
 
     const allRes = [r_inGen_u, r_rma_u, r_inDrop_u, r_outShip_u, r_outDrop_u, r_inGen_b, r_rma_b, r_inDrop_b, r_outShip_b, r_outDrop_b];
@@ -89,27 +122,27 @@ exports.handler = async (event) => {
       statusCode: 200,
       headers: h,
       body: JSON.stringify({
-        count:                   u_inGen.length,
-        rmaCount:                u_rma.length,
-        dropShipCount:           u_outDrop.length,
-        inboundDropshipCount:    u_inDrop.length,
-        outboundCount:           u_outShip.length,
-        outboundDropshipCount:   u_outDrop.length,
+        count: u_inGen.length,
+        rmaCount: u_rma.length,
+        dropShipCount: u_outDrop.length,
+        inboundDropshipCount: u_inDrop.length,
+        outboundCount: u_outShip.length,
+        outboundDropshipCount: u_outDrop.length,
         billed: {
-          count:                 b_inGen.length,
-          rmaCount:              b_rma.length,
-          dropShipCount:         b_outDrop.length,
-          inboundDropshipCount:  b_inDrop.length,
-          outboundCount:         b_outShip.length,
+          count: b_inGen.length,
+          rmaCount: b_rma.length,
+          dropShipCount: b_outDrop.length,
+          inboundDropshipCount: b_inDrop.length,
+          outboundCount: b_outShip.length,
           outboundDropshipCount: b_outDrop.length,
-          invoices:              billedInvoices,
+          invoices: billedInvoices,
         },
         total: {
-          count:                 u_inGen.length + b_inGen.length,
-          rmaCount:              u_rma.length   + b_rma.length,
-          dropShipCount:         u_outDrop.length + b_outDrop.length,
-          inboundDropshipCount:  u_inDrop.length + b_inDrop.length,
-          outboundCount:         u_outShip.length + b_outShip.length,
+          count: u_inGen.length + b_inGen.length,
+          rmaCount: u_rma.length + b_rma.length,
+          dropShipCount: u_outDrop.length + b_outDrop.length,
+          inboundDropshipCount: u_inDrop.length + b_inDrop.length,
+          outboundCount: u_outShip.length + b_outShip.length,
           outboundDropshipCount: u_outDrop.length + b_outDrop.length,
         },
         client, client_id: clientId, start, end,
