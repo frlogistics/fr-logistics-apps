@@ -480,14 +480,15 @@ export default async function handler(req) {
         try {
           const cfg = cfgRows[0];
           if (cfg?.client_name_billing) {
-            const sgRow = {
-              tracking:  current.tracking_number,
-              direction: "Inbound",
-              type:      "Inbound (Drop-Shipment)",
-              carrier:   "Other",
-              client:    cfg.client_name_billing,
-              notes:     `Order: ${orderId || "—"}${content ? ` · ${content}` : ""} · processed from orphan`
-            };
+         const sgRow = {
+            tracking:  current.tracking_number,
+            direction: "Inbound",
+            type:      "Inbound (Drop-Shipment)",
+            carrier:   "Other",
+            client:    cfg.client_name_billing,
+            client_id: current.client_id,
+            notes:     `Order: ${orderId || "—"}${content ? ` · ${content}` : ""} · processed from orphan`
+          };
             try {
               await sbInsert("shipments_general", sgRow);
               console.log(`[dropshipments.process_orphan] synced to shipments_general: Inbound ${sgRow.tracking}`);
@@ -720,6 +721,7 @@ export default async function handler(req) {
                   type:      "Inbound (Drop-Shipment)",
                   carrier:   current.carrier || "Other",
                   client:    cfg.client_name_billing,
+                  client_id: current.client_id,
                   notes:     `Order: ${current.order_id || "—"}${current.content ? ` · ${current.content}` : ""}`
                 }
               : {
@@ -728,9 +730,9 @@ export default async function handler(req) {
                   type:      "Outbound (Drop-Shipment)",
                   carrier:   current.outbound_carrier || cfg.outbound_carrier || "MailAmericas",
                   client:    cfg.client_name_billing,
+                  client_id: current.client_id,
                   notes:     `Order: ${current.order_id || "—"}`
                 };
-
             if (!sgRow.tracking) {
               console.warn(`[dropshipments.${act}] no tracking to sync (id=${id}) — skipping shipments_general sync`);
             } else {
