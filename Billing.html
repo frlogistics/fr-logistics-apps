@@ -309,12 +309,6 @@ button:active{transform:scale(.97)}
 </div><!-- /wrap -->
 
 <script>
-
-
-
-
-
-
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const CLIENTS_API  = '/.netlify/functions/clients-list';
 const RATES_API    = '/.netlify/functions/billing-rates';
@@ -324,37 +318,93 @@ const MARK_API     = '/.netlify/functions/billing-mark-invoiced';
 const HISTORY_API  = '/.netlify/functions/billing-history';
 const NETLIFY_EMAIL = 'https://apps.fr-logistics.net/.netlify/functions/send-onboard-email';
 
-// ─── RATES ────────────────────────────────────────────────────────────────────
-const STD_RATES = {
-  inbound_carton:2.50, inbound_pallet:20.00, storage_rack:45.00, storage_lbin:5.00,
-  storage_sbin:3.00,   storage_lt:60.00,     pick_pack:3.00,     boxing:0.15,
-  labeling:1.00,       qc:50.00,             poly_bag:1.00,      kitting:0.75,
-  palletizing:5.00,    stretch_wrap:4.00,    label_removal:1.00, refurb:4.00,
-  disposal:3.00,       return_proc:5.00,     outbound_carton:2.00,outbound_pallet:25.00,
-  oversized_pallet:60.00, xdock_pkg:2.50,   xdock_pal:20.00,    order_consol:2.00,
-  pal_repack:25.00,    carrier_pickup:14.99, retail_dist:10.00,  sorting:1.00,
-  shipping_label_app:0.50, wms:0,            marketplace:150.00, custom:50.00
-};
-
-const CUSTOM_RATES = {
-  'Milano Brands LLC':            {pick_pack:3.00,qc:45.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:99.99},
-  'LN Store, LLC':                {pick_pack:3.00,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:99.99},
-  'MXS Overseas Ltd':             {pick_pack:3.00,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:0},
-  'LRE Holding (Route of Heroes)':{pick_pack:0.90,qc:50.00,inbound_pallet:15.00,storage_rack:18.00,return_proc:2.50,outbound_pallet:5.00,wms:0},
-  'UNOde50':                      {pick_pack:10.50,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:0},
-  'KMAT Supply LLC':               {pick_pack:3.00,qc:50.00,inbound_pallet:20.00,storage_rack:45.00,return_proc:5.00,outbound_pallet:25.00,wms:99.99},
+// ════════════════════════════════════════════════════════════════════════════
+// CANONICAL SERVICE CODE → LEGACY LINE KEY MAPPING
+// (Phase 3.2 refactor 2026-05-07)
+//
+// The billing-rates API v2 returns rates keyed by canonical code:
+//   { rates: { "QC_HOUR": {rate: 45, name: "...", unit: "..."}, ... } }
+//
+// This file's getBillingLines() uses legacy keys (qc, boxing, labeling, etc.)
+// for backward compatibility with renderBillingTable / genCSV / genPDF.
+//
+// Map below translates canonical codes (API) → legacy keys (line items).
+// ════════════════════════════════════════════════════════════════════════════
+const API_KEY_TO_LINE_KEY = {
+  // Inbound
+  'INB_CARTON':    'inbound_carton',
+  'INB_PALLET':    'inbound_pallet',
+  'INB_FLOOR':     'inbound_floor',
+  'INB_ECO':       'ecopack',
+  'INB_XDOCK_PKG': 'xdock_pkg',
+  'INB_XDOCK_PAL': 'xdock_pal',
+  // Storage
+  'STO_RACK':      'storage_rack',
+  'STO_LBIN':      'storage_lbin',
+  'STO_SBIN':      'storage_sbin',
+  'STO_LT':        'storage_lt',
+  // Prep
+  'PRP_FNSKU':     'labeling',
+  'PRP_POLY':      'poly_bag',
+  'PRP_BUBBLE':    'bubble_wrap',
+  'PRP_BOXING':    'boxing',
+  'PRP_KIT':       'kitting',
+  'PRP_BUNDLE':    'complex_bundle',
+  'PRP_SORT_UNIT': 'sorting',
+  'PRP_SORT_BOX':  'sorting_box',
+  'PRP_ROL':       'label_removal',
+  'PRP_PALLETIZE': 'palletizing',
+  'PRP_STRETCH':   'stretch_wrap',
+  'PRP_PALREPACK': 'pal_repack',
+  'PRP_HANGTAG':   'hang_tag',
+  'PRP_INSERT':    'marketing_insert',
+  // QC
+  'QC_HOUR':       'qc',
+  'QC_PHOTO':      'qc_photo',
+  'QC_SAMPLE':     'sku_intake',
+  // Fulfillment
+  'FUL_PP1':       'pick_pack',
+  'FUL_PPN':       'pick_pack_add',
+  'FUL_OUT_CART':  'outbound_carton',
+  'FUL_OUT_PAL':   'outbound_pallet',
+  'FUL_OUT_OVS':   'oversized_pallet',
+  'FUL_OUT_DROP':  'drop_shipment',
+  'FUL_PICKUP':    'carrier_pickup',
+  'FUL_LABEL_APP': 'shipping_label_app',
+  'FUL_CONSOL':    'order_consol',
+  'FUL_RUSH':      'rush_surcharge',
+  'FUL_HEAVY':     'heavy_surcharge',
+  'FUL_BOX_UP':    'box_upgrade',
+  'FUL_ADDR_FIX':  'address_correction',
+  // Returns
+  'RET_PROC':      'return_proc',
+  'RET_REFURB':    'refurb',
+  'RET_DISPOSE':   'disposal',
+  'RET_REMOVAL':   'removal_order',
+  // B2B
+  'B2B_CART':      'b2b_master_carton',
+  'B2B_PALLET':    'b2b_pallet_build',
+  'B2B_RETAIL':    'retail_dist',
+  // Technology
+  'TEC_WMS':       'wms',
+  'TEC_INTEG':     'marketplace',
+  'TEC_SETUP':     'setup_fee',
+  'TEC_AMZ_PLAN':  'amz_shipment_plan',
+  'TEC_CUSTOM':    'custom',
+  // Special
+  'SPC_SKU_SUR':   'sku_surcharge'
 };
 
 // ─── ARCHITECTURAL RULE ───────────────────────────────────────────────────────
-// Per FR-Logistics architecture-fix (2026-04-17):
-// All clients MUST come from `fr_clients` Supabase table via /.netlify/functions/clients-list.
-// NO hardcoded CLIENT_SEED arrays — they cause stale data, missing onboardings, and
-// wrong billing_cadence (e.g. Fernando Tissera/LN Store, LLC weekly bug, 2026-04-29).
-// If Supabase is unreachable, the dropdown shows an error rather than serving stale data.
+// Per FR-Logistics architecture-fix (2026-04-17 + Phase 3 refactor 2026-05-07):
+// - All clients MUST come from `fr_clients` Supabase table via /.netlify/functions/clients-list.
+// - All rates MUST come from billing-rates API (single source of truth: fr_client_rates).
+// - NO hardcoded STD_RATES / CUSTOM_RATES arrays. If Supabase is unreachable, the UI
+//   shows an error — billing will not run with stale or hardcoded data.
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let _clients = [];   // all clients from API
-let _rates   = {};   // rate card from Supabase for current client
+let _rates   = {};   // rate card from API (legacy-key format, populated by mapApiRatesToLegacy)
 let _client  = null; // current client object
 let _lines   = [];   // billing line items
 let _ssCarrierCost = 0;
@@ -394,15 +444,9 @@ function normalizeClient(c) {
   const wmsIntegration   = c.wmsIntegration   ?? c.wms_integration     ?? false;
   const billingSource    = c.billingSource    || c.billing_source      || '';
   // displayName: prefer company (e.g. "LN Store, LLC") over contact name (e.g. "Fernando Tissera").
-  // This is what the user sees in dropdowns, status messages, PDF, email subject, etc.
-  // The underlying `name` field stays as the legal contact, used only for back-end joins.
   const displayName      = company || name;
 
   // Group derivation — data-driven, NOT a hardcoded list.
-  // - `internal`  → JDK Network and similar internal entities (no external billing)
-  // - `active`    → has WMS integration OR ssCustomField1 OR billingSource configured
-  //                 (i.e. real 3PL clients with a defined billing pipeline)
-  // - `other`     → onboarding leads / inactive / future clients
   let group = c.group;
   if (!group) {
     const lower = `${name} ${company}`.toLowerCase();
@@ -427,9 +471,7 @@ function normalizeClient(c) {
     wmsIntegration,
     ssCustomField1,
     billingSource,
-    // Billing cadence: weekly|monthly (drives invoice number format)
     billingCadence:  c.billingCadence  || c.billing_cadence       || 'monthly',
-    // Inbound client name for portal search
     inboundClient:   c.inboundClient   || c.store_name            || displayName,
     group,
   };
@@ -468,8 +510,6 @@ async function loadClients() {
   const internal = _clients.filter(c => c.group === 'internal');
   const others   = _clients.filter(c => !['active', 'internal'].includes(c.group));
 
-  // Dropdown value = client UUID (canonical FK, robust to name/company changes).
-  // Dropdown label = displayName (company || name).
   const optHtml = c => `<option value="${c.id || ''}">${c.displayName}</option>`;
 
   let html = '<option value="">— Select client —</option>';
@@ -497,7 +537,6 @@ function onClientChange() {
   const k = g('selClient').value;  // UUID, not name
   if (!k) { _client = null; resetUI(); return; }
 
-  // 1. Find client by UUID — sole source of truth is fr_clients via API
   const found = _clients.find(c => c.id === k);
   if (!found) {
     setStatus(
@@ -507,23 +546,26 @@ function onClientChange() {
     _client = null;
     return;
   }
-  _client = normalizeClient(found);  // re-normalize defensively
+  _client = normalizeClient(found);
 
-  // 2. Reset all UI immediately — no stale data from previous client
   resetUI();
 
-  // 3. Set invoice number and markup (cadence-aware: weekly clients append day)
   recomputeInvoiceNumber();
   g('shippingMarkupPct').value = _client.shippingMarkup ?? 10;
 
-  // 4. Load rate card async (non-blocking — billing can still work with STD_RATES)
-  //    Pass displayName to RATES_API since rate cards in Supabase are keyed by company name
+  // Load rate card async (non-blocking — billing can still work with empty _rates and zeros)
+  // Pass displayName (matches fr_client_rates.client_name) to RATES_API.
+  // The API may also receive a name from fr_clients lookup matching the table.
   _rates = {};
   fetch(`${RATES_API}?client=${encodeURIComponent(_client.displayName)}`)
     .then(r => r.ok ? r.json() : null)
     .then(data => {
-      if (data?.rates) _rates = data.rates;
-      const src = data?.hasCustomRates ? 'Custom rate card' : 'Default rates';
+      if (data?.rates) {
+        // ── Phase 3.2 refactor: API now returns canonical-keyed objects.
+        //    Convert {QC_HOUR:{rate:45,...}} to {qc:45} so getBillingLines works.
+        _rates = mapApiRatesToLegacy(data.rates);
+      }
+      const src = data?.has_custom_rates ? 'Custom rate card' : 'Default rates';
       const cad = (_client.billingCadence || 'monthly').toLowerCase();
       const cadLbl = cad === 'weekly' ? '🔄 Weekly' : '📅 Monthly';
       setStatus(
@@ -539,12 +581,8 @@ function onClientChange() {
 }
 
 // ─── INVOICE NUMBER (cadence-aware) ────────────────────────────────────────────
-// weekly  → INV-YYYY-MM-DD-XXX  (DD = period_end day, e.g. INV-2026-04-27-LSL)
-// monthly → INV-YYYY-MM-XXX     (e.g. INV-2026-04-MIL)
 function recomputeInvoiceNumber() {
   if (!_client) return;
-  // Use displayName (company || name) for initials so e.g.
-  // "LN Store, LLC" → LSL  (not Fernando Tissera → FT)
   const labelForInitials = _client.displayName || _client.name || '';
   const ini = labelForInitials.replace(/[^A-Za-z ]/g,'').trim().split(' ').map(w => w[0]||'').join('').toUpperCase().slice(0,3);
   const cadence = (_client.billingCadence || _client.billing_cadence || 'monthly').toLowerCase();
@@ -552,12 +590,10 @@ function recomputeInvoiceNumber() {
 
   let invNum;
   if (cadence === 'weekly' && dateEnd) {
-    // Use period_end date
     const [yy, mm, dd] = dateEnd.split('-');
     invNum = `INV-${yy}-${mm}-${dd}-${ini}`;
     g('invNumBadge').innerHTML = '<span class="cad-weekly">🔄 Weekly</span>';
   } else {
-    // Default monthly: use current year-month
     const now = new Date();
     invNum = `INV-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${ini}`;
     g('invNumBadge').innerHTML = '<span class="cad-monthly">📅 Monthly</span>';
@@ -565,70 +601,115 @@ function recomputeInvoiceNumber() {
   g('invNum').value = invNum;
 }
 
-// ─── RATE CARDS ───────────────────────────────────────────────────────────────
-function getClientRates(client) {
-  // If Supabase rates are loaded (_rates), use them — keyed nothing, already-loaded for current client
-  if (_rates && Object.keys(_rates).length > 0) {
-    return {...STD_RATES, ..._rates};
+// ════════════════════════════════════════════════════════════════════════════
+// RATE CARDS — driven by billing-rates API (Phase 3.2 refactor 2026-05-07)
+// ════════════════════════════════════════════════════════════════════════════
+
+// Translate API canonical-key response { QC_HOUR: {rate:45,...} } to legacy
+// flat shape { qc: 45 } that getBillingLines expects.
+// Codes not in API_KEY_TO_LINE_KEY are silently ignored (e.g. INB_DROP, INB_FBA aliases).
+function mapApiRatesToLegacy(apiRates) {
+  const out = {};
+  for (const code in apiRates) {
+    const lineKey = API_KEY_TO_LINE_KEY[code];
+    if (!lineKey) continue;  // Skip codes without line key (aliases, special services)
+    const entry = apiRates[code];
+    // entry shape: {code, name, unit, rate, category, source}
+    if (entry && entry.rate != null) {
+      out[lineKey] = parseFloat(entry.rate);
+    }
   }
-  // Offline fallback: CUSTOM_RATES is keyed by company name (e.g. "LN Store, LLC", "Milano Brands LLC").
-  // Use displayName (company || name) so e.g. Fernando Tissera's row matches "LN Store, LLC".
-  const key    = (typeof client === 'string') ? client : (client?.displayName || client?.name || '');
-  const custom = CUSTOM_RATES[key] || {};
-  return Object.assign({...STD_RATES}, custom);
+  return out;
+}
+
+function getClientRates(client) {
+  // _rates is already populated from API in onClientChange via mapApiRatesToLegacy.
+  // If _rates is empty (race condition or API failure), all rates default to 0 —
+  // user sees the issue immediately rather than getting stale hardcoded values.
+  return {..._rates};
 }
 
 function getBillingLines(client) {
   const r = getClientRates(client);
   const wmsEnabled = client?.wmsIntegration || client?.wms_integration || false;
   return [
-    // INBOUND
-    {cat:'Inbound / Receiving', id:'inbound_carton', name:'Inbound — Cartons / Boxes', sku:'Inbound Package', unit:'cartons', rate:r.inbound_carton, qty:0, auto:true, tip:'Auto from Inbound/Outbound portal'},
-    {cat:'Inbound / Receiving', id:'inbound_pallet', name:'Inbound — Pallets', sku:'Inbound Pallet', unit:'pallets', rate:r.inbound_pallet, qty:0, auto:false, tip:'Enter pallets received'},
-    // STORAGE
-    {cat:'Storage', id:'storage_rack', name:'Storage — Rack Position', sku:'SFRP', unit:'racks/mo', rate:r.storage_rack, qty:0, auto:false, tip:'Enter occupied rack positions'},
-    {cat:'Storage', id:'storage_lbin', name:'Storage — Large Bin', sku:'STLB', unit:'bins/mo', rate:r.storage_lbin, qty:0, auto:false, tip:'Enter occupied large bins'},
-    {cat:'Storage', id:'storage_sbin', name:'Storage — Small Bin', sku:'SFSB', unit:'bins/mo', rate:r.storage_sbin, qty:0, auto:false, tip:'Enter occupied small bins'},
-    {cat:'Storage', id:'storage_lt', name:'Long-Term Storage (120+ days)', sku:'LTSF', unit:'racks/mo', rate:r.storage_lt, qty:0, auto:false, tip:'Inventory >120 days without movement'},
-    // FULFILLMENT
-    {cat:'Fulfillment', id:'pick_pack', name:'Pick & Pack (Orders)', sku:'FP', unit:'orders', rate:r.pick_pack, qty:0, auto:true, tip:'Auto from ShipStation shipped orders'},
-    {cat:'Fulfillment', id:'boxing', name:'Boxing / Collating Units', sku:'BCUIB', unit:'units', rate:r.boxing, qty:0, auto:false, tip:'Enter total units boxed/collated'},
-    {cat:'Fulfillment', id:'sorting', name:'Sorting and Categorizing', sku:'S&C_Per_Box', unit:'boxes', rate:r.sorting, qty:0, auto:false, tip:'Enter boxes sorted/categorized'},
-    // PREP
-    {cat:'Prep Services', id:'labeling', name:'Amazon SPN Labeling', sku:'Label ASIN or UPC', unit:'units', rate:r.labeling, qty:0, auto:false, tip:'Enter units labeled (Amazon FBA / UPC)'},
-    {cat:'Prep Services', id:'qc', name:'QC / Product Inspection', sku:'PIF', unit:'hours', rate:r.qc, qty:0, auto:false, tip:'Enter total QC inspection hours'},
-    {cat:'Prep Services', id:'poly_bag', name:'Poly Bagging', sku:'PBF', unit:'units', rate:r.poly_bag, qty:0, auto:false, tip:'Enter units poly-bagged'},
-    {cat:'Prep Services', id:'kitting', name:'Kitting & Bundling', sku:'KIT', unit:'units', rate:r.kitting, qty:0, auto:false, tip:'Enter units kitted/bundled'},
-    {cat:'Prep Services', id:'palletizing', name:'Palletizing Labor', sku:'PL01', unit:'pallets', rate:r.palletizing, qty:0, auto:false, tip:'Enter pallets palletized'},
-    {cat:'Prep Services', id:'stretch_wrap', name:'Stretch Wrapping', sku:'SW01', unit:'pallets', rate:r.stretch_wrap, qty:0, auto:false, tip:'Enter pallets stretch-wrapped'},
-    {cat:'Prep Services', id:'label_removal', name:'Removal of Old Labels', sku:'ROL', unit:'units', rate:r.label_removal, qty:0, auto:false, tip:'Enter units with labels removed'},
-    // SHIPPING
-    {cat:'Shipping', id:'shipping_label_fee', name:'Shipping Label Fee', sku:'SLF', unit:'period total', rate:0, qty:1, auto:true, tip:'Carrier cost from ShipStation + markup %. Edit markup % above.'},
-    {cat:'Shipping', id:'shipping_label_app', name:'Shipping Label Application', sku:'SLA', unit:'labels', rate:r.shipping_label_app, qty:0, auto:false, tip:'Enter labels applied (not via ShipStation)'},
-    // RETURNS
-    {cat:'Returns', id:'return_proc', name:'Return Processing', sku:'RPF', unit:'units', rate:r.return_proc, qty:0, auto:true, tip:'Auto from Inbound/Outbound portal (RMA records only)'},
-    {cat:'Returns', id:'refurb', name:'Refurbishing & Repackaging', sku:'R&R', unit:'units', rate:r.refurb, qty:0, auto:false, tip:'Enter units refurbished/repackaged'},
-    {cat:'Returns', id:'disposal', name:'Disposal & Recycling', sku:'D&R', unit:'units', rate:r.disposal, qty:0, auto:false, tip:'Enter units disposed/recycled'},
-    // OUTBOUND
-    {cat:'Outbound', id:'drop_shipment', name:'Drop-Shipment Service', sku:'Inbound-Dropshipment', unit:'packages',
-     rate:r.drop_shipment || 6.00, qty:0, auto:true,
-     tip:'Auto from Inbound/Outbound portal (Outbound Drop-Shipment records)'},
-    {cat:'Outbound', id:'outbound_carton', name:'Outbound — Cartons', sku:'OFPackage', unit:'cartons', rate:r.outbound_carton, qty:0, auto:false, tip:'Enter outbound cartons shipped'},
-    {cat:'Outbound', id:'outbound_pallet', name:'Outbound — Pallets', sku:'OFP', unit:'pallets', rate:r.outbound_pallet, qty:0, auto:false, tip:'Enter outbound pallets shipped'},
-    {cat:'Outbound', id:'oversized_pallet', name:'Oversized Pallet', sku:'OPR', unit:'pallets', rate:r.oversized_pallet, qty:0, auto:false, tip:'Exceeds 40x48", >70" ht, or >1500 lbs'},
-    // CROSS-DOCKING
-    {cat:'Cross-Docking', id:'xdock_pkg', name:'Cross-Dock — Packages', sku:'CD-Inbound Package', unit:'cartons', rate:r.xdock_pkg, qty:0, auto:false, tip:'Inbound for cross-dock (no storage)'},
-    {cat:'Cross-Docking', id:'xdock_pal', name:'Cross-Dock — Pallets', sku:'CD-Inbound Pallet', unit:'pallets', rate:r.xdock_pal, qty:0, auto:false, tip:'Inbound pallets for cross-dock'},
-    {cat:'Cross-Docking', id:'order_consol', name:'Order Consolidation', sku:'O&C', unit:'orders', rate:r.order_consol, qty:0, auto:false, tip:'Merging multiple shipments into one'},
-    {cat:'Cross-Docking', id:'pal_repack', name:'Pallet Repacking & Labeling', sku:'PR&L', unit:'pallets', rate:r.pal_repack, qty:0, auto:false, tip:'Repack + label pallet for carrier'},
-    {cat:'Cross-Docking', id:'carrier_pickup', name:'Carrier Facility Pickup', sku:'CFP', unit:'requests', rate:r.carrier_pickup, qty:0, auto:false, tip:'LTL/FTL carrier pickup coordination'},
-    // B2B
-    {cat:'B2B / Wholesale', id:'retail_dist', name:'Retail Distribution', sku:'RD', unit:'shipments', rate:r.retail_dist, qty:0, auto:false, tip:'Bulk shipments to retail locations'},
-    // TECHNOLOGY
-    {cat:'Technology', id:'wms', name:'WMS / Automated Fee', sku:'WMS', unit:'month', rate:r.wms, qty:wmsEnabled && r.wms>0 ? 1 : 0, auto:true, tip:wmsEnabled ? 'Monthly WMS fee — ShipStation integration active' : 'WMS not applicable — no direct ShipStation integration for this client'},
-    {cat:'Technology', id:'marketplace', name:'Marketplace Integration', sku:'MI', unit:'one-time', rate:r.marketplace, qty:0, auto:false, tip:'One-time marketplace setup fee'},
-    // OTHER
-    {cat:'Other', id:'custom', name:'Custom / Other Charges', sku:'CP', unit:'—', rate:0, qty:0, auto:false, tip:'Enter rate × qty for any custom charge'},
+    // ─── INBOUND / RECEIVING ────────────────────────────────────────────────
+    {cat:'Inbound / Receiving', id:'inbound_carton', name:'Inbound — Cartons / Boxes', sku:'INB_CARTON', unit:'cartons', rate:r.inbound_carton||0, qty:0, auto:true,  tip:'Auto from Inbound/Outbound portal'},
+    {cat:'Inbound / Receiving', id:'inbound_pallet', name:'Inbound — Pallets',         sku:'INB_PALLET', unit:'pallets', rate:r.inbound_pallet||0, qty:0, auto:false, tip:'Enter pallets received'},
+    {cat:'Inbound / Receiving', id:'inbound_floor',  name:'Inbound — Pallet Floor-Load', sku:'INB_FLOOR', unit:'pallets', rate:r.inbound_floor||0,  qty:0, auto:false, tip:'Floor-loaded container unloading', optional:true},
+    {cat:'Inbound / Receiving', id:'ecopack',        name:'EcoPack+ Reception',          sku:'INB_ECO',   unit:'packages', rate:r.ecopack||0,        qty:0, auto:false, tip:'EcoPack+ pickup service for residents', optional:true},
+
+    // ─── STORAGE ────────────────────────────────────────────────────────────
+    {cat:'Storage', id:'storage_rack', name:'Storage — Rack Position',       sku:'STO_RACK', unit:'racks/mo', rate:r.storage_rack||0, qty:0, auto:false, tip:'Enter occupied rack positions'},
+    {cat:'Storage', id:'storage_lbin', name:'Storage — Large Bin',           sku:'STO_LBIN', unit:'bins/mo',  rate:r.storage_lbin||0, qty:0, auto:false, tip:'Enter occupied large bins'},
+    {cat:'Storage', id:'storage_sbin', name:'Storage — Small Bin',           sku:'STO_SBIN', unit:'bins/mo',  rate:r.storage_sbin||0, qty:0, auto:false, tip:'Enter occupied small bins'},
+    {cat:'Storage', id:'storage_lt',   name:'Long-Term Storage (180+ days)', sku:'STO_LT',   unit:'racks/mo', rate:r.storage_lt||0,   qty:0, auto:false, tip:'Inventory >180 days without movement', optional:true},
+
+    // ─── FULFILLMENT ────────────────────────────────────────────────────────
+    {cat:'Fulfillment', id:'pick_pack',     name:'Pick & Pack — 1st Item',     sku:'FUL_PP1', unit:'orders', rate:r.pick_pack||0,     qty:0, auto:true,  tip:'Auto from ShipStation shipped orders'},
+    {cat:'Fulfillment', id:'pick_pack_add', name:'Pick & Pack — Additional',   sku:'FUL_PPN', unit:'items',  rate:r.pick_pack_add||0, qty:0, auto:false, tip:'2nd+ item per order', optional:true},
+    {cat:'Fulfillment', id:'boxing',        name:'Boxing / Collating Units',   sku:'PRP_BOXING', unit:'units', rate:r.boxing||0,     qty:0, auto:false, tip:'Enter total units boxed/collated'},
+    {cat:'Fulfillment', id:'sorting',       name:'Sorting (per unit)',         sku:'PRP_SORT_UNIT', unit:'units', rate:r.sorting||0,  qty:0, auto:false, tip:'Fine sorting per unit', optional:true},
+    {cat:'Fulfillment', id:'sorting_box',   name:'Categorizing (per box)',     sku:'PRP_SORT_BOX',  unit:'boxes', rate:r.sorting_box||0, qty:0, auto:false, tip:'Bulk categorization per box', optional:true},
+
+    // ─── PREP SERVICES ──────────────────────────────────────────────────────
+    {cat:'Prep Services', id:'labeling',         name:'FNSKU Labeling',                 sku:'PRP_FNSKU',     unit:'units',   rate:r.labeling||0,         qty:0, auto:false, tip:'Enter units labeled (FNSKU)'},
+    {cat:'Prep Services', id:'qc',               name:'QC / Product Inspection',        sku:'QC_HOUR',       unit:'hours',   rate:r.qc||0,               qty:0, auto:false, tip:'Enter total QC inspection hours'},
+    {cat:'Prep Services', id:'qc_photo',         name:'QC Photo Verification',          sku:'QC_PHOTO',      unit:'units',   rate:r.qc_photo||0,         qty:0, auto:false, tip:'QC by photo (alternative to per-hour)', optional:true},
+    {cat:'Prep Services', id:'sku_intake',       name:'Sample Intake / New SKU',        sku:'QC_SAMPLE',     unit:'SKUs',    rate:r.sku_intake||0,       qty:0, auto:false, tip:'New SKU onboarding fee', optional:true},
+    {cat:'Prep Services', id:'poly_bag',         name:'Poly Bagging',                   sku:'PRP_POLY',      unit:'units',   rate:r.poly_bag||0,         qty:0, auto:false, tip:'Enter units poly-bagged'},
+    {cat:'Prep Services', id:'bubble_wrap',      name:'Bubble Wrap Protection',         sku:'PRP_BUBBLE',    unit:'units',   rate:r.bubble_wrap||0,      qty:0, auto:false, tip:'Enter units bubble-wrapped', optional:true},
+    {cat:'Prep Services', id:'kitting',          name:'Kitting & Bundling (per unit)',  sku:'PRP_KIT',       unit:'units',   rate:r.kitting||0,          qty:0, auto:false, tip:'Enter units kitted/bundled (2 components)'},
+    {cat:'Prep Services', id:'complex_bundle',   name:'Complex Bundle (3+ components)', sku:'PRP_BUNDLE',    unit:'bundles', rate:r.complex_bundle||0,   qty:0, auto:false, tip:'Bundles with 3+ components', optional:true},
+    {cat:'Prep Services', id:'palletizing',      name:'Palletizing Labor',              sku:'PRP_PALLETIZE', unit:'pallets', rate:r.palletizing||0,      qty:0, auto:false, tip:'Enter pallets palletized'},
+    {cat:'Prep Services', id:'stretch_wrap',     name:'Stretch Wrapping',               sku:'PRP_STRETCH',   unit:'pallets', rate:r.stretch_wrap||0,     qty:0, auto:false, tip:'Enter pallets stretch-wrapped'},
+    {cat:'Prep Services', id:'pal_repack',       name:'Pallet Repacking & Labeling',    sku:'PRP_PALREPACK', unit:'pallets', rate:r.pal_repack||0,       qty:0, auto:false, tip:'Repack + label pallet for carrier', optional:true},
+    {cat:'Prep Services', id:'label_removal',    name:'Removal of Old Labels',          sku:'PRP_ROL',       unit:'units',   rate:r.label_removal||0,    qty:0, auto:false, tip:'Enter units with labels removed'},
+    {cat:'Prep Services', id:'hang_tag',         name:'Hang Tag / Branded Insert',      sku:'PRP_HANGTAG',   unit:'units',   rate:r.hang_tag||0,         qty:0, auto:false, tip:'DTC premium service', optional:true},
+    {cat:'Prep Services', id:'marketing_insert', name:'Marketing Material Insert',      sku:'PRP_INSERT',    unit:'inserts', rate:r.marketing_insert||0, qty:0, auto:false, tip:'Per insert added to package', optional:true},
+
+    // ─── SHIPPING ───────────────────────────────────────────────────────────
+    {cat:'Shipping', id:'shipping_label_fee', name:'Shipping Label Fee',          sku:'FUL_LABEL_MARKUP', unit:'period total', rate:0,                       qty:1, auto:true,  tip:'Carrier cost from ShipStation + markup %. Edit markup % above.'},
+    {cat:'Shipping', id:'shipping_label_app', name:'Shipping Label Application',  sku:'FUL_LABEL_APP',    unit:'labels',       rate:r.shipping_label_app||0, qty:0, auto:false, tip:'Enter labels applied (not via ShipStation)'},
+    {cat:'Shipping', id:'rush_surcharge',     name:'Same-Day Rush Surcharge',     sku:'FUL_RUSH',         unit:'orders',       rate:r.rush_surcharge||0,     qty:0, auto:false, tip:'Same-day rush processing', optional:true},
+    {cat:'Shipping', id:'heavy_surcharge',    name:'Heavy Order Surcharge',       sku:'FUL_HEAVY',        unit:'orders',       rate:r.heavy_surcharge||0,    qty:0, auto:false, tip:'Heavy order surcharge', optional:true},
+    {cat:'Shipping', id:'box_upgrade',        name:'Box Upgrade / Double-Boxing', sku:'FUL_BOX_UP',       unit:'orders',       rate:r.box_upgrade||0,        qty:0, auto:false, tip:'Premium packaging for high-value items', optional:true},
+    {cat:'Shipping', id:'address_correction', name:'Address Correction',          sku:'FUL_ADDR_FIX',     unit:'occurrences',  rate:r.address_correction||0, qty:0, auto:false, tip:'Post-label address fix', optional:true},
+
+    // ─── RETURNS ────────────────────────────────────────────────────────────
+    {cat:'Returns', id:'return_proc',    name:'Return Processing',           sku:'RET_PROC',    unit:'units', rate:r.return_proc||0,    qty:0, auto:true,  tip:'Auto from Inbound/Outbound portal (RMA records only)'},
+    {cat:'Returns', id:'refurb',         name:'Refurbishing & Repackaging',  sku:'RET_REFURB',  unit:'units', rate:r.refurb||0,         qty:0, auto:false, tip:'Enter units refurbished/repackaged', optional:true},
+    {cat:'Returns', id:'disposal',       name:'Disposal & Recycling',        sku:'RET_DISPOSE', unit:'units', rate:r.disposal||0,       qty:0, auto:false, tip:'Enter units disposed/recycled', optional:true},
+    {cat:'Returns', id:'removal_order',  name:'FBA Removal Order Processing', sku:'RET_REMOVAL', unit:'units', rate:r.removal_order||0,  qty:0, auto:false, tip:'FBA returns to 3PL warehouse', optional:true},
+
+    // ─── OUTBOUND ───────────────────────────────────────────────────────────
+    {cat:'Outbound', id:'drop_shipment',    name:'Drop-Shipment Service', sku:'FUL_OUT_DROP', unit:'packages', rate:r.drop_shipment||6.00, qty:0, auto:true,  tip:'Auto from Inbound/Outbound portal (Outbound Drop-Shipment records)'},
+    {cat:'Outbound', id:'outbound_carton',  name:'Outbound — Cartons',    sku:'FUL_OUT_CART', unit:'cartons',  rate:r.outbound_carton||0,  qty:0, auto:false, tip:'Enter outbound cartons shipped'},
+    {cat:'Outbound', id:'outbound_pallet',  name:'Outbound — Pallets',    sku:'FUL_OUT_PAL',  unit:'pallets',  rate:r.outbound_pallet||0,  qty:0, auto:false, tip:'Enter outbound pallets shipped'},
+    {cat:'Outbound', id:'oversized_pallet', name:'Oversized Pallet',      sku:'FUL_OUT_OVS',  unit:'pallets',  rate:r.oversized_pallet||0, qty:0, auto:false, tip:'Exceeds 40x48", >70" ht, or >1500 lbs', optional:true},
+
+    // ─── CROSS-DOCKING ──────────────────────────────────────────────────────
+    {cat:'Cross-Docking', id:'xdock_pkg',     name:'Cross-Dock — Packages', sku:'INB_XDOCK_PKG', unit:'cartons',  rate:r.xdock_pkg||0,     qty:0, auto:false, tip:'Inbound for cross-dock (no storage)'},
+    {cat:'Cross-Docking', id:'xdock_pal',     name:'Cross-Dock — Pallets',  sku:'INB_XDOCK_PAL', unit:'pallets',  rate:r.xdock_pal||0,     qty:0, auto:false, tip:'Inbound pallets for cross-dock'},
+    {cat:'Cross-Docking', id:'order_consol',  name:'Order Consolidation',   sku:'FUL_CONSOL',    unit:'orders',   rate:r.order_consol||0,  qty:0, auto:false, tip:'Merging multiple shipments into one'},
+    {cat:'Cross-Docking', id:'carrier_pickup', name:'Carrier Facility Pickup', sku:'FUL_PICKUP', unit:'requests', rate:r.carrier_pickup||0, qty:0, auto:false, tip:'LTL/FTL carrier pickup coordination'},
+
+    // ─── B2B / WHOLESALE ────────────────────────────────────────────────────
+    {cat:'B2B / Wholesale', id:'b2b_master_carton', name:'B2B Master Carton Pick',  sku:'B2B_CART',   unit:'cartons',  rate:r.b2b_master_carton||0, qty:0, auto:false, tip:'B2B carton pick (LRE rate card)', optional:true},
+    {cat:'B2B / Wholesale', id:'b2b_pallet_build',  name:'B2B Pallet Build & Wrap', sku:'B2B_PALLET', unit:'pallets',  rate:r.b2b_pallet_build||0,  qty:0, auto:false, tip:'B2B pallet build (LRE rate card)', optional:true},
+    {cat:'B2B / Wholesale', id:'retail_dist',       name:'Retail Distribution',      sku:'B2B_RETAIL', unit:'shipments', rate:r.retail_dist||0,      qty:0, auto:false, tip:'Bulk shipments to retail locations', optional:true},
+
+    // ─── TECHNOLOGY ─────────────────────────────────────────────────────────
+    {cat:'Technology', id:'wms',               name:'WMS / Automated Fee',          sku:'TEC_WMS',      unit:'month',    rate:r.wms||0,               qty:wmsEnabled && (r.wms||0)>0 ? 1 : 0, auto:true, tip:wmsEnabled ? 'Monthly WMS fee — ShipStation integration active' : 'WMS not applicable — no direct ShipStation integration for this client'},
+    {cat:'Technology', id:'marketplace',       name:'Marketplace Integration',      sku:'TEC_INTEG',    unit:'one-time', rate:r.marketplace||0,       qty:0, auto:false, tip:'One-time marketplace setup fee', optional:true},
+    {cat:'Technology', id:'setup_fee',         name:'Account Setup / Onboarding',   sku:'TEC_SETUP',    unit:'one-time', rate:r.setup_fee||0,         qty:0, auto:false, tip:'One-time account onboarding fee', optional:true},
+    {cat:'Technology', id:'amz_shipment_plan', name:'Amazon Shipment Plan Creation', sku:'TEC_AMZ_PLAN', unit:'plans',    rate:r.amz_shipment_plan||0, qty:0, auto:false, tip:'Per shipment plan created in Seller Central', optional:true},
+
+    // ─── SPECIAL ────────────────────────────────────────────────────────────
+    {cat:'Special', id:'sku_surcharge', name:'SKU Surcharge (>20 SKUs)', sku:'SPC_SKU_SUR', unit:'SKUs added', rate:r.sku_surcharge||0, qty:0, auto:false, tip:'Surcharge for shipments with >20 SKUs', optional:true},
+
+    // ─── OTHER (manual line for custom charges) ─────────────────────────────
+    {cat:'Other', id:'custom', name:'Custom / Other Charges', sku:'TEC_CUSTOM', unit:'—', rate:0, qty:0, auto:false, tip:'Enter rate × qty for any custom charge'},
   ];
 }
 
@@ -648,7 +729,6 @@ async function loadBilling() {
   g('loadSpinWrap').innerHTML = '<span class="spin"></span>';
 
   // ── Determine billing source ──────────────────────────────────────────────
-  // Priority: read from Supabase field (billing_source), fallback to infer from store/CF1
   const bsrc = (_client.billingSource || _client.billing_source || '').toLowerCase().trim();
 
   let ordersCount   = 0;
@@ -660,14 +740,11 @@ async function loadBilling() {
 
   // ── Step 1: ShipStation ───────────────────────────────────────────────────
   if (bsrc === 'portal') {
-    // Portal-only client: no ShipStation involvement
     ssStatus = `ℹ️ Portal-only client — ShipStation: N/A`;
     g('shippingMarkupRow').style.display = 'none';
 
   } else if (bsrc === 'ss_store' && _client.ssStore) {
-    // Mode 1: filter by store name
     try {
-      // Sprint 1: pass client_id so backend filters out already-billed orderIds via billed_orders table
       const url = `${SS_API}?start=${start}&end=${end}&store=${encodeURIComponent(_client.ssStore)}&client_id=${encodeURIComponent(_client.id || '')}`;
       const res = await fetch(url);
       const d   = await res.json();
@@ -676,9 +753,7 @@ async function loadBilling() {
       if (d.storeMatched) {
         ordersCount  = d.count || 0;
         carrierCost  = d.carrierCost || 0;
-        // Sprint 1: capture orderIds for billed_orders tracking on Mark Invoiced
         _capturedSSOrders = (d.orderIds || []).map(o => ({...o, source: 'shipstation_pp'}));
-        // Sprint 1: show informative billed count if any orders were filtered out
         const billedExtra = (d.billed && d.billed.count > 0)
           ? ` <span style="color:#92400e">· ${d.billed.count} ya facturado(s)</span>`
           : '';
@@ -692,10 +767,8 @@ async function loadBilling() {
     }
 
   } else if (bsrc === 'ss_cf1' && (_client.ssCustomField1 || '').trim()) {
-    // Mode 2: filter by Custom Field 1
     const cf1 = _client.ssCustomField1.trim();
     try {
-      // Sprint 1: pass client_id so backend filters out already-billed orderIds via billed_orders table
       const url = `${SS_API}?start=${start}&end=${end}&cf1=${encodeURIComponent(cf1)}&client_id=${encodeURIComponent(_client.id || '')}`;
       const res = await fetch(url);
       const d   = await res.json();
@@ -703,11 +776,9 @@ async function loadBilling() {
 
       ordersCount = d.count || 0;
       carrierCost = d.carrierCost || 0;
-      // Sprint 1: capture orderIds for billed_orders tracking on Mark Invoiced
       _capturedSSOrders = (d.orderIds || []).map(o => ({...o, source: 'shipstation_cf1'}));
 
       if (ordersCount > 0) {
-        // Sprint 1: show informative billed count if any orders were filtered out
         const billedExtra = (d.billed && d.billed.count > 0)
           ? ` <span style="color:#92400e">· ${d.billed.count} ya facturado(s)</span>`
           : '';
@@ -720,46 +791,38 @@ async function loadBilling() {
     }
 
   } else if (bsrc === 'ss_cf1' && !(_client.ssCustomField1 || '').trim()) {
-    // CF1 mode but tag is empty
     ssStatus = `⚠️ Custom Field 1 tag is empty for ${_client.displayName}.<br>Go to <b>Clients → Edit → Billing Configuration → SS Custom Field 1 Tag</b>`;
 
   } else {
-    // No billing source configured
     ssStatus = `⚠️ Billing source not configured for ${_client.displayName}.<br>Go to <b>Clients → Edit → Billing Configuration</b>`;
   }
 
   // ── Step 2: Portal data (Inbound/Outbound app) ────────────────────────────
   const searchTerm = _client.ssStore || _client.ssCustomField1 || _client.name;
-  let billedInfo = null;  // Day 4: info about already-invoiced packages in this period
-  let outboundCount = 0;          // Patch B: regular outbound packages (not drops)
-  let inboundDropshipCount = 0;   // Patch B: inbound drop-shipments
+  let billedInfo = null;
+  let outboundCount = 0;
+  let inboundDropshipCount = 0;
   try {
-    // Use client_id (UUID) as primary key — per architecture-fix from 04/27,
-    // shipments_general.client_id is the canonical foreign key. Fall back to client text only if UUID missing.
     const cidParam = _client.id ? `client_id=${encodeURIComponent(_client.id)}` : `client=${encodeURIComponent(searchTerm)}`;
     const url = `${INBOUND_API}?${cidParam}&start=${start}&end=${end}`;
     const res = await fetch(url);
     if (res.ok) {
       const d     = await res.json();
-      // These fields are now UNBILLED-only (backwards compatible field names)
       inboundCount = d.count         || 0;
       rmaCount     = d.rmaCount      || 0;
       dropCount    = d.dropShipCount || 0;
-      // Patch B: new v2 fields from billing-inbound.js v2
       outboundCount        = d.outboundCount        || 0;
       inboundDropshipCount = d.inboundDropshipCount || 0;
-      // New: already-invoiced breakdown
       if (d.billed && (d.billed.count || d.billed.rmaCount || d.billed.dropShipCount)) {
         billedInfo = d.billed;
       }
     }
   } catch (_) { /* non-critical — manual entry fallback */ }
 
-  // ── Patch C: Auto-load Services Log entries ───────────────────────────────
+  // ── Patch C: Auto-load Services Log entries (canonical codes 2026-05-07) ──
   // Backend (services-log.js) accepts: client_id, status, from, to.
-  // We filter to status='logged' to exclude voided AND billed entries —
-  // voided = anulada por el operador; billed = ya cobrada en un invoice anterior.
-  let svcLogEntries = {};  // keyed by service_code → {qty, rate, count}
+  // We filter to status='logged' to exclude voided AND billed entries.
+  let svcLogEntries = {};  // keyed by canonical service_code (uppercase)
   try {
     if (_client.id) {
       const slUrl = `/.netlify/functions/services-log` +
@@ -770,15 +833,16 @@ async function loadBilling() {
       const slRes = await fetch(slUrl);
       if (slRes.ok) {
         const slData = await slRes.json();
-        // Backend may return either: array directly, or {entries: [...]}, or {data: [...]}
         const entries = Array.isArray(slData)
           ? slData
           : (slData.entries || slData.data || []);
-        // Defensive double-filter: even if backend changes someday, never bill voided/billed
         entries
           .filter(e => (e.status || 'logged') === 'logged' && !e.invoice_id)
           .forEach(e => {
-            const key = (e.service_code || '').toLowerCase();
+            // Phase 3.2: service_code is now CANONICAL (PRP_BOXING, QC_HOUR, etc.)
+            // post Phase 1.5 migration. Keep keys uppercase to match.
+            const key = (e.service_code || '').toUpperCase();
+            if (!key) return;
             if (!svcLogEntries[key]) svcLogEntries[key] = { qty: 0, rate: 0, count: 0 };
             svcLogEntries[key].qty   += parseFloat(e.total_quantity || e.quantity || 0);
             svcLogEntries[key].rate   = parseFloat(e.unit_rate || svcLogEntries[key].rate);
@@ -787,7 +851,7 @@ async function loadBilling() {
       }
     }
   } catch (err) {
-    console.warn('[Services Log] fetch failed:', err);  // surface errors instead of swallowing
+    console.warn('[Services Log] fetch failed:', err);
   }
 
   // ── Step 3: Build billing table ───────────────────────────────────────────
@@ -796,31 +860,56 @@ async function loadBilling() {
   const shippingCharge = carrierCost > 0 ? Math.round(carrierCost * (1 + markup / 100) * 100) / 100 : 0;
 
   _lines = getBillingLines(_client);
+
+  // Phase 3.2: services_log map uses CANONICAL codes.
+  // line.id (legacy key) → canonical service_code (uppercase, matches API_KEY_TO_LINE_KEY reversed).
+  const SVC_LOG_MAP = {
+    'qc':                  'QC_HOUR',
+    'qc_photo':            'QC_PHOTO',
+    'sku_intake':          'QC_SAMPLE',
+    'boxing':              'PRP_BOXING',
+    'sorting':             'PRP_SORT_UNIT',
+    'sorting_box':         'PRP_SORT_BOX',
+    'labeling':            'PRP_FNSKU',
+    'poly_bag':            'PRP_POLY',
+    'bubble_wrap':         'PRP_BUBBLE',
+    'kitting':             'PRP_KIT',
+    'complex_bundle':      'PRP_BUNDLE',
+    'palletizing':         'PRP_PALLETIZE',
+    'stretch_wrap':        'PRP_STRETCH',
+    'pal_repack':          'PRP_PALREPACK',
+    'label_removal':       'PRP_ROL',
+    'hang_tag':            'PRP_HANGTAG',
+    'marketing_insert':    'PRP_INSERT',
+    'refurb':              'RET_REFURB',
+    'disposal':            'RET_DISPOSE',
+    'removal_order':       'RET_REMOVAL',
+    'carrier_pickup':      'FUL_PICKUP',
+    'shipping_label_app':  'FUL_LABEL_APP',
+    'address_correction':  'FUL_ADDR_FIX',
+    'amz_shipment_plan':   'TEC_AMZ_PLAN',
+    'custom':              'TEC_CUSTOM',
+  };
+
   _lines.forEach(l => {
     if (l.id === 'pick_pack')          l.qty = ordersCount;
     if (l.id === 'inbound_carton')     l.qty = inboundCount;
     if (l.id === 'return_proc')        l.qty = rmaCount;
     if (l.id === 'drop_shipment')      l.qty = dropCount;
-    // Patch B: auto-populate outbound packages (not drops)
     if (l.id === 'outbound_carton')    { l.qty = outboundCount; l.auto = outboundCount > 0; }
     if (l.id === 'wms')                l.qty = (_client.wmsIntegration || _client.wms_integration) && l.rate > 0 ? 1 : 0;
-    // Patch C: auto-populate from Services Log entries
-    const slMap = {
-      'qc': 'pif', 'boxing': 'bcuib', 'sorting': 'sorting',
-      'labeling': 'lbl', 'poly_bag': 'poly', 'kitting': 'kit',
-      'palletizing': 'paletize', 'stretch_wrap': 'stretch',
-      'label_removal': 'lbl_rem', 'refurb': 'refurb', 'disposal': 'disposal',
-      'carrier_pickup': 'pickup', 'shipping_label_app': 'sla',
-    };
-    const slKey = slMap[l.id];
-    if (slKey && svcLogEntries[slKey]) {
-      const e = svcLogEntries[slKey];
+
+    // Phase 3.2: Auto-populate from Services Log entries (canonical codes)
+    const canonicalCode = SVC_LOG_MAP[l.id];
+    if (canonicalCode && svcLogEntries[canonicalCode]) {
+      const e = svcLogEntries[canonicalCode];
       l.qty  = e.qty;
       if (e.rate > 0) l.rate = e.rate;
       l.auto = true;
       l.tip  = `From Services Log: ${e.count} entries`;
       l.fromServicesLog = true;
     }
+
     if (l.id === 'shipping_label_fee') {
       const isPortal = bsrc === 'portal';
       l.rate = isPortal ? 0 : shippingCharge;
@@ -832,7 +921,7 @@ async function loadBilling() {
   });
 
   // ── Step 4: Show results ──────────────────────────────────────────────────
-  const wmsLbl = (_client.wmsIntegration || _client.wms_integration) ? ` · WMS: <b>${fc(99.99)}</b>` : ' · WMS: N/A';
+  const wmsLbl = (_client.wmsIntegration || _client.wms_integration) ? ` · WMS: <b>${fc(_rates.wms || 99.99)}</b>` : ' · WMS: N/A';
   const outLbl = outboundCount > 0 ? ` · Outbound: <b>${outboundCount}</b>` : '';
   const slCount = Object.keys(svcLogEntries).length;
   const slLbl = slCount > 0 ? ` · Services Log: <b>${slCount} entries</b>` : '';
@@ -855,7 +944,7 @@ async function loadBilling() {
   g('billingPeriodLabel').textContent = `${_client.displayName} · ${fD(start)} – ${fD(end)}`;
   recalc();
 
-  // ── Day 4: Already-invoiced banner ──────────────────────────────────────
+  // ── Already-invoiced banner ────────────────────────────────────────────
   const banner = g('billedBanner');
   if (billedInfo) {
     const parts = [];
@@ -884,7 +973,11 @@ function renderBillingTable() {
   tb.innerHTML = '';
   let lastCat = '';
 
-  _lines.forEach((l, idx) => {
+  // Filter optional lines with qty=0 AND rate=0 (keeps invoice clean)
+  // but ALWAYS show non-optional lines and lines with activity.
+  const visibleLines = _lines.filter(l => !(l.optional && (l.qty || 0) === 0 && (l.rate || 0) === 0));
+
+  visibleLines.forEach((l, idx) => {
     if (l.cat !== lastCat) {
       const tr = document.createElement('tr');
       tr.className = 'cat-hdr';
@@ -902,7 +995,9 @@ function renderBillingTable() {
       srcBadge = '<span class="source-badge src-manual">MANUAL</span>';
     }
     const readOnly = (l.id === 'wms' && l.rate > 0) || l.fromServicesLog ? 'readonly' : '';
-    const rateDisp = l.rate > 0 ? fc(l.rate) : '<input type="number" min="0" step="0.01" class="qty-inp" style="width:90px" placeholder="rate" oninput="updateCustomRate('+idx+',this.value)" title="Enter rate"/>';
+    // Find the index in _lines (not visibleLines) for updateCustomRate
+    const realIdx = _lines.indexOf(l);
+    const rateDisp = l.rate > 0 ? fc(l.rate) : '<input type="number" min="0" step="0.01" class="qty-inp" style="width:90px" placeholder="rate" oninput="updateCustomRate('+realIdx+',this.value)" title="Enter rate"/>';
     tr.innerHTML = `
       <td>
         <div class="svc-name">${l.name}</div>
@@ -957,9 +1052,6 @@ function updateQty(id, val) {
   if (l) { l.qty = +val || 0; recalc(); }
 }
 
-// FIX: rate input on manual lines (Custom/Other, Shipping Label Fee when carrier=0,
-// or any rate-card line with no preset rate). Without this, oninput="updateCustomRate(...)"
-// in renderBillingTable threw a ReferenceError silently and l.rate stayed at 0.
 function updateCustomRate(idx, val) {
   const l = _lines[idx];
   if (l) { l.rate = +val || 0; recalc(); }
@@ -974,7 +1066,6 @@ function updateShippingLine() {
     l.rate = charge;
     l.qty  = charge > 0 ? 1 : 0;
     l.tip  = `Carrier cost ${fc(_ssCarrierCost)} × (1 + ${markup}% markup) = ${fc(charge)}`;
-    // Update cell directly without re-rendering full table
     const totEl = document.getElementById('tot_shipping_label_fee');
     const qtyEl = document.getElementById('qty_shipping_label_fee');
     const tipEl = document.querySelector('[data-tip="shipping_label_fee"]');
@@ -1020,7 +1111,6 @@ function buildPDFDoc() {
     doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...DG);
     doc.text(lbl.toUpperCase(),xi+4,yi+6);
     doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...DN);
-    // maxWidth ensures long emails (e.g. tisseraobras@gmail.com) don't overflow the green info box
     doc.text(String(val),xi+4,yi+12,{maxWidth: cw2-8});
   });
   y+=48;
@@ -1041,7 +1131,7 @@ function buildPDFDoc() {
     if(!l.qty || l.qty === 0) return;  // skip zero-qty lines
     const tot=l.qty*l.rate;
     if(l.cat!==lastCat){
-      if (lastCat) y+=3;  // breathing room before each new category (except the very first)
+      if (lastCat) y+=3;
       doc.setFillColor(...LG); doc.setDrawColor(...BD); doc.setLineWidth(.2);
       doc.rect(ML,y,W,8,'FD');
       doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...DG);
@@ -1099,10 +1189,9 @@ function buildPDFDoc() {
   // Footer
   const PH=doc.internal.pageSize.getHeight();
   doc.setFillColor(15,23,42); doc.rect(0,PH-22,PW,22,'F');
-  doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(226,232,240);  // slate-200, legible on dark navy
+  doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(226,232,240);
   doc.text('FR-Logistics  |  10893 NW 17th St, Unit 121, Miami, FL 33172  |  (786) 300-1443  |  info@fr-logistics.net  |  www.fr-logistics.net',PW/2,PH-9,{align:'center'});
 
-  const fname = `FR_Billing_${(_client.displayName||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.pdf`;
   return doc;
 }
 
@@ -1111,7 +1200,6 @@ function genPDF() {
   if (!doc) return;
   const fname = `FR_Billing_${(_client.displayName||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.pdf`;
   doc.save(fname);
-  // Day 4: enable "Mark as Invoiced" — user has now produced a deliverable
   _invoicedMarkable = true;
   updateMarkInvoicedBtn();
 }
@@ -1126,45 +1214,72 @@ function genCSV() {
   const period  = `${fD(g('dateStart').value)} - ${fD(g('dateEnd').value)}`;
   const customer = (_client.qboName || _client.name || '').trim();
 
-  // QBO service name map: SKU → "Category:Name" (exact format required by QBO import)
-  // Source: ProductsServicesList_FR_LOGISTICS_MIAMI_INC exported from QBO
-  // Format: Category:Product/Service Name (both must match exactly as in QBO)
+  // QBO service name map: canonical SKU → "Category:Name" (exact format required by QBO import)
+  // Phase 3.2: Updated keys to canonical (PRP_BOXING vs old BCUIB, etc.)
   const QBO_NAMES = {
-    'Inbound Package':    'Storage & Warehousing:Inbound Fees Packages',
-    'Inbound Pallet':     'Storage & Warehousing:Inbound Fees Pallets',
-    'SFRP':               'Storage & Warehousing:Storage Fees Rack Position',
-    'STLB':               'Storage & Warehousing:Storage Fees Large Bin',
-    'SFSB':               'Storage & Warehousing:Storage Fees Small Bin',
-    'LTSF':               'Storage & Warehousing:Long-Term Storage Fees',
-    'OFPackage':          'Storage & Warehousing:Outbound Fees Package',
-    'OFP':                'Storage & Warehousing:Outbound Fees Pallets',
-    'OPR':                'Storage & Warehousing:Oversized Pallet',
-    'FP':                 'Fulfillment Service:Fulfillment Process (Pick & Pack)',
-    'SLF':                'Fulfillment Service:Shipping Label Fee',
-    'S&C_Per_Box':        'Fulfillment Service:Sorting and Categorizing',
-    'BCUIB':              'Prep Services:Boxing / collating units into boxes',
-    'Label ASIN or UPC':  'Prep Services:Labeling Fees',
-    'PIF':                'Prep Services:Product Inspection Fees',
-    'PBF':                'Prep Services:Poly Bagging Fees',
-    'KIT':                'Prep Services:Kitting & Bundling',
-    'PL01':               'Prep Services:Palletizing Labor',
-    'SW01':               'Prep Services:Stretch Wrapping',
-    'ROL':                'Prep Services:Removal of Old Labels',
-    'SLA':                'Cross-Docking:Shipping Label Application',
-    'Inbound-Dropshipment':'Cross-Docking:Inbound-Dropshipment',
-    'CD-Inbound Package': 'Cross-Docking:CD-Inbound Fees Packages',
-    'CD-Inbound Pallet':  'Cross-Docking:CD-Inbound Fees Pallets',
-    'O&C':                'Cross-Docking:Order Consolidation',
-    'PR&L':               'Cross-Docking:Pallet Repacking  & Labeling',
-    'CFP':                'Cross-Docking:Carrier Facility Pickup',
-    'RPF':                'Returns & Reverse Logistics:Return Processing Fees',
-    'R&R':                'Returns & Reverse Logistics:Refurbishing & Repackaging',
-    'D&R':                'Returns & Reverse Logistics:Disposal & Recycling',
-    'RD':                 'B2B & Wholesale Fulfillment:Retail Distribution',
-    'WMS':                'eCommerce Technology:Automated WMS',
-    'MI':                 'eCommerce Technology:Marketplace Integration',
-    'In&Out-Eco':         'Storage & Warehousing:EcoPack+',
-    'CP':                 'Subscription & Special Projects:Custom Projects',
+    // Inbound
+    'INB_CARTON':       'Storage & Warehousing:Inbound Fees Packages',
+    'INB_PALLET':       'Storage & Warehousing:Inbound Fees Pallets',
+    'INB_FLOOR':        'Storage & Warehousing:Inbound Floor-Load',
+    'INB_ECO':          'Storage & Warehousing:EcoPack+',
+    'INB_XDOCK_PKG':    'Cross-Docking:CD-Inbound Fees Packages',
+    'INB_XDOCK_PAL':    'Cross-Docking:CD-Inbound Fees Pallets',
+    // Storage
+    'STO_RACK':         'Storage & Warehousing:Storage Fees Rack Position',
+    'STO_LBIN':         'Storage & Warehousing:Storage Fees Large Bin',
+    'STO_SBIN':         'Storage & Warehousing:Storage Fees Small Bin',
+    'STO_LT':           'Storage & Warehousing:Long-Term Storage Fees',
+    // Fulfillment
+    'FUL_PP1':          'Fulfillment Service:Fulfillment Process (Pick & Pack)',
+    'FUL_PPN':          'Fulfillment Service:Pick & Pack Additional Item',
+    'FUL_OUT_CART':     'Storage & Warehousing:Outbound Fees Package',
+    'FUL_OUT_PAL':      'Storage & Warehousing:Outbound Fees Pallets',
+    'FUL_OUT_OVS':      'Storage & Warehousing:Oversized Pallet',
+    'FUL_OUT_DROP':     'Cross-Docking:Inbound-Dropshipment',
+    'FUL_LABEL_MARKUP': 'Fulfillment Service:Shipping Label Fee',
+    'FUL_LABEL_APP':    'Cross-Docking:Shipping Label Application',
+    'FUL_PICKUP':       'Cross-Docking:Carrier Facility Pickup',
+    'FUL_CONSOL':       'Cross-Docking:Order Consolidation',
+    'FUL_RUSH':         'Fulfillment Service:Same-Day Rush Surcharge',
+    'FUL_HEAVY':        'Fulfillment Service:Heavy Order Surcharge',
+    'FUL_BOX_UP':       'Fulfillment Service:Box Upgrade',
+    'FUL_ADDR_FIX':     'Fulfillment Service:Address Correction',
+    // Prep
+    'PRP_FNSKU':        'Prep Services:Labeling Fees',
+    'PRP_POLY':         'Prep Services:Poly Bagging Fees',
+    'PRP_BUBBLE':       'Prep Services:Bubble Wrap Protection',
+    'PRP_BOXING':       'Prep Services:Boxing / collating units into boxes',
+    'PRP_KIT':          'Prep Services:Kitting & Bundling',
+    'PRP_BUNDLE':       'Prep Services:Complex Bundle Creation',
+    'PRP_SORT_UNIT':    'Fulfillment Service:Sorting and Categorizing',
+    'PRP_SORT_BOX':     'Fulfillment Service:Sorting per Box',
+    'PRP_ROL':          'Prep Services:Removal of Old Labels',
+    'PRP_PALLETIZE':    'Prep Services:Palletizing Labor',
+    'PRP_STRETCH':      'Prep Services:Stretch Wrapping',
+    'PRP_PALREPACK':    'Cross-Docking:Pallet Repacking & Labeling',
+    'PRP_HANGTAG':      'Prep Services:Hang Tag / Branded Insert',
+    'PRP_INSERT':       'Prep Services:Marketing Material Insert',
+    // QC
+    'QC_HOUR':          'Prep Services:Product Inspection Fees',
+    'QC_PHOTO':         'Prep Services:QC Photo Verification',
+    'QC_SAMPLE':        'Prep Services:Sample Intake',
+    // Returns
+    'RET_PROC':         'Returns & Reverse Logistics:Return Processing Fees',
+    'RET_REFURB':       'Returns & Reverse Logistics:Refurbishing & Repackaging',
+    'RET_DISPOSE':      'Returns & Reverse Logistics:Disposal & Recycling',
+    'RET_REMOVAL':      'Returns & Reverse Logistics:FBA Removal Order',
+    // B2B
+    'B2B_CART':         'B2B & Wholesale Fulfillment:B2B Master Carton Pick',
+    'B2B_PALLET':       'B2B & Wholesale Fulfillment:B2B Pallet Build & Wrap',
+    'B2B_RETAIL':       'B2B & Wholesale Fulfillment:Retail Distribution',
+    // Technology
+    'TEC_WMS':          'eCommerce Technology:Automated WMS',
+    'TEC_INTEG':        'eCommerce Technology:Marketplace Integration',
+    'TEC_SETUP':        'eCommerce Technology:Account Setup Onboarding',
+    'TEC_AMZ_PLAN':     'Prep Services:Amazon Shipment Plan Creation',
+    'TEC_CUSTOM':       'Subscription & Special Projects:Custom Projects',
+    // Special
+    'SPC_SKU_SUR':      'Prep Services:SKU Surcharge',
   };
 
   // QBO-compliant headers — exact names required by QBO invoice import
@@ -1181,13 +1296,13 @@ function genCSV() {
     const serviceName = QBO_NAMES[l.sku] || l.sku || l.name;
     const amount      = (l.qty * l.rate).toFixed(2);
     rows.push([
-      invNo,                                    // *InvoiceNo — repeat on every row
-      i === 0 ? customer : '',                  // *Customer — only on first row
-      i === 0 ? invDate  : '',                  // *InvoiceDate — only on first row
-      i === 0 ? dueDate  : '',                  // *DueDate — only on first row
-      i === 0 ? 'Net 15' : '',                  // Terms — only on first row
-      i === 0 ? `FR-Logistics Billing ${period}` : '', // Memo — only on first row
-      serviceName,                              // Item(Product/Service) — QBO service name
+      invNo,                                    // *InvoiceNo
+      i === 0 ? customer : '',                  // *Customer
+      i === 0 ? invDate  : '',                  // *InvoiceDate
+      i === 0 ? dueDate  : '',                  // *DueDate
+      i === 0 ? 'Net 15' : '',                  // Terms
+      i === 0 ? `FR-Logistics Billing ${period}` : '', // Memo
+      serviceName,                              // Item(Product/Service)
       `${l.name} - ${period}`,                  // ItemDescription
       l.qty,                                    // ItemQuantity
       l.rate.toFixed(2),                        // ItemRate
@@ -1201,15 +1316,11 @@ function genCSV() {
   a.href     = URL.createObjectURL(blob);
   a.download = `QBO_Import_${(customer || 'Client').replace(/[^a-z0-9]+/gi, '_')}_${g('dateStart').value}.csv`;
   a.click();
-  // Day 4: enable "Mark as Invoiced" — user has now produced a deliverable
   _invoicedMarkable = true;
   updateMarkInvoicedBtn();
 }
 
-// ─── BILLING ROLLUP · Mark as Invoiced + Past Invoices (Day 4) ────────────────
-
-// Toggle the "Mark as Invoiced" button between enabled / disabled look.
-// Enabled only when: client+lines loaded AND user has generated a PDF or CSV.
+// ─── BILLING ROLLUP · Mark as Invoiced + Past Invoices ────────────────────────
 function updateMarkInvoicedBtn() {
   const btn   = g('markInvoicedBtn');
   if (!btn) return;
@@ -1219,9 +1330,6 @@ function updateMarkInvoicedBtn() {
   btn.style.cursor    = ready ? 'pointer' : 'not-allowed';
 }
 
-// Create a billing_runs entry in Supabase and mark all unbilled
-// shipments_general rows of this client+period as invoiced.
-// Sprint 1: also tracks ShipStation orderIds in billed_orders to prevent double-billing.
 async function markAsInvoiced() {
   if (!_client || !_lines.length) { alert('Load billing data first.'); return; }
   if (!_invoicedMarkable)         { alert('Generate a PDF or CSV first.'); return; }
@@ -1234,8 +1342,6 @@ async function markAsInvoiced() {
   if (!start || !end) { alert('Set billing period dates.'); return; }
   if (!total)         { alert('Invoice total is zero — nothing to mark.'); return; }
 
-  // Derive a short client_code for the auto-generated invoice number.
-  // Use displayName (company || name) so e.g. "LN Store, LLC" → LSL, not "Fernando Tissera" → FER.
   const clientCode =
     (_client.clientCode || _client.client_code ||
      (_client.displayName || _client.name || '').split(/\s+/)[0].slice(0, 3).toUpperCase() || 'UNK');
@@ -1245,7 +1351,6 @@ async function markAsInvoiced() {
     .filter(l => +l.qty > 0)
     .map(l => ({ id: l.id, name: l.name, qty: l.qty, rate: l.rate, total: l.qty * l.rate }));
 
-  // Sprint 1: build shipstation_orders payload from the orderIds captured during loadBilling
   const shipstationOrders = _capturedSSOrders.map(o => ({
     order_id:     o.order_id,
     source:       o.source || 'shipstation_pp',
@@ -1278,7 +1383,7 @@ async function markAsInvoiced() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         client:             _client.ssStore || _client.ssCustomField1 || _client.name,
-        client_id:          _client.id || null,        // Sprint 1: UUID for billed_orders FK
+        client_id:          _client.id || null,
         client_code:        clientCode,
         period_start:       start,
         period_end:         end,
@@ -1286,8 +1391,8 @@ async function markAsInvoiced() {
         package_count:      packageCount,
         line_items:         lineItems,
         operator:           (window._operator || ''),
-        invoice_number:     invNum,                    // backend auto-generates if empty
-        shipstation_orders: shipstationOrders          // Sprint 1: track ShipStation orders in billed_orders
+        invoice_number:     invNum,
+        shipstation_orders: shipstationOrders
       })
     });
 
@@ -1307,7 +1412,6 @@ async function markAsInvoiced() {
       return;
     }
 
-    // Sprint 1: success alert now shows shipstation_marked count
     alert(
       `✅ Invoiced successfully\n\n` +
       `Invoice: ${data.invoice_number}\n` +
@@ -1316,7 +1420,6 @@ async function markAsInvoiced() {
       `Total billed: ${fc(data.total_usd)}`
     );
 
-    // Refresh to show the just-invoiced packages in the "billed" banner
     await loadBilling();
   } catch (err) {
     alert(`Network error: ${err.message}`);
@@ -1325,7 +1428,6 @@ async function markAsInvoiced() {
   }
 }
 
-// Open the Past Invoices modal and fetch recent billing_runs for this client.
 async function showPastInvoices() {
   if (!_client) { alert('Select a client first.'); return; }
 
@@ -1394,7 +1496,6 @@ function closePastInvoices() {
   g('pastInvoicesModal').style.display = 'none';
 }
 
-// Close modal on click-outside or Escape
 document.addEventListener('click', (e) => {
   const m = g('pastInvoicesModal');
   if (m && e.target === m) closePastInvoices();
@@ -1411,16 +1512,11 @@ async function sendDraft() {
   g('draftStatus').textContent = 'Creating draft...';
 
   try {
-    const {jsPDF} = window.jspdf;
-
-    // Generate PDF in memory as base64 (for email attachment)
-    // Also triggers local download for user's records
-    const doc = buildPDFDoc();  // shared helper — see genPDF
+    const doc = buildPDFDoc();
     const pdfBase64 = doc.output('datauristring').split(',')[1];
     const pdfFilename = `FR_Billing_${(_client.displayName||'Client').replace(/[^a-z0-9]+/gi,'_')}_${g('dateStart').value}.pdf`;
-    doc.save(pdfFilename);  // download locally
+    doc.save(pdfFilename);
 
-    // Also send via Netlify
     const period  = `${fD(g('dateStart').value)} – ${fD(g('dateEnd').value)}`;
     const invNo   = g('invNum').value || 'INV-001';
     const sub     = _lines.reduce((a,l)=>a+l.qty*l.rate,0);
@@ -1480,9 +1576,9 @@ async function sendDraft() {
         subject: `Billing Summary ${invNo} — ${_client.displayName} | ${period}`,
         htmlBody, textBody,
         attachments: [{
-          base64:   pdfBase64,    // Apps Script: Utilities.base64Decode(a.base64)
-          name:     pdfFilename,  // Apps Script: a.name
-          mimeType: 'application/pdf', // Apps Script: a.mimeType
+          base64:   pdfBase64,
+          name:     pdfFilename,
+          mimeType: 'application/pdf',
         }]
       })
     });
@@ -1501,7 +1597,7 @@ function resetAll() {
   g('invNumBadge').innerHTML = '';
   _client = null;
   _rates  = {};
-  resetUI();  // hides cards, clears _lines and _ssCarrierCost
+  resetUI();
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
@@ -1512,13 +1608,6 @@ function resetAll() {
   g('dateStart').value = new Date(y, m, 1).toISOString().slice(0, 10);
   g('dateEnd').value   = new Date(y, m+1, 0).toISOString().slice(0, 10);
 })();
-
-
-
-
-
-
-
 </script>
 </body>
 </html>
