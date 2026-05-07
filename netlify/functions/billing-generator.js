@@ -1,5 +1,6 @@
 // ════════════════════════════════════════════════════════════════════════════
 // billing-generator.js — FR-Logistics Monthly Invoice Builder
+// REFACTORED 2026-05-07 (Phase 3.1) — Now consumes billing-rates API v2
 //
 // Endpoints:
 //   GET  ?action=preview&client_id=X&period=YYYY-MM   → preview line items
@@ -7,6 +8,14 @@
 //   GET  ?action=history                              → list past invoices
 //   GET  ?action=invoice&id=X                         → fetch one invoice
 //   GET  ?action=email-template&id=X                  → branded HTML for Gmail
+//
+// CHANGES IN THIS VERSION:
+//   - SERVICE_CATALOG expanded from 26 → 53 canonical services
+//   - service_code values are now CANONICAL (PRP_BOXING vs old BCUIB, etc.)
+//     to match fr_service_catalog VIEW and fr_services_log post-migration
+//   - buildLineItem reads new billing-rates API format: rateCard[code].rate
+//     (was: rateCard[rate_col] — which broke after Phase 2 deploy)
+//   - rate_col field DEPRECATED (kept for reference only — not used in lookups)
 // ════════════════════════════════════════════════════════════════════════════
 
 const SUPA_URL = process.env.SUPABASE_URL;
@@ -27,36 +36,94 @@ const HEADERS_RESP = {
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-// SERVICE CATALOG — maps fr_client_rates columns to billing line items
-// service_code is also the QBO service name reference (used in CSV export)
+// SERVICE CATALOG — 53 canonical services
+//
+// `code` matches the canonical service_code in fr_service_catalog VIEW and
+//  fr_services_log entries (post Phase 1.5 migration).
+// `qbo_name` is what shows up on the QBO invoice line.
+// `source` determines where the quantity comes from:
+//   - 'fixed':         quantity = 1 if rate>0, else 0 (e.g. WMS subscription)
+//   - 'inbound':       quantity from billing-inbound function (warehouse log)
+//   - 'shipstation':   quantity from billing-shipstation function (ShipStation API)
+//   - 'services_log':  quantity from fr_services_pending_billing view (manual entries)
+//   - 'manual':        quantity entered by Jose in billing.html UI
+// `auto_qty` only used when source = 'inbound' or 'shipstation'.
+// `optional`: line is hidden when qty=0 AND rate=0 (keeps invoice clean).
+// `__shipping_label__` and `__custom__` are special rate sources (not from rate_col).
 // ════════════════════════════════════════════════════════════════════════════
 const SERVICE_CATALOG = [
-  { code: 'WMS',        rate_col: 'wms',                qbo_name: 'Automated WMS',                          name: 'Automated WMS Fees',                unit: 'month',   source: 'fixed',       fixed: true },
-  { code: 'STG_RACK',   rate_col: 'storage_rack',       qbo_name: 'Storage Fees Rack Position',             name: 'Storage — Rack Position',           unit: 'rack',    source: 'fixed',       fixed: true },
-  { code: 'STG_LBIN',   rate_col: 'storage_lbin',       qbo_name: 'Storage Fees Large Bin',                 name: 'Storage — Large Bin',               unit: 'bin',     source: 'fixed',       fixed: true, optional: true },
-  { code: 'STG_SBIN',   rate_col: 'storage_sbin',       qbo_name: 'Storage Fees Small Bin',                 name: 'Storage — Small Bin',               unit: 'bin',     source: 'fixed',       fixed: true, optional: true },
-  { code: 'INBND_PKG',  rate_col: 'inbound_carton',     qbo_name: 'Inbound Fees Packages',                  name: 'Inbound Receiving — Packages',      unit: 'cartons', source: 'inbound',     auto_qty: 'count' },
-  { code: 'INBND_DROP', rate_col: 'drop_shipment',      qbo_name: 'Inbound-Dropshipment',                   name: 'Inbound Drop-Shipment',             unit: 'pkg',     source: 'inbound',     auto_qty: 'inboundDropshipCount' },
-  { code: 'INBND_PLT',  rate_col: 'inbound_pallet',     qbo_name: 'Inbound Fees Pallets',                   name: 'Inbound — Pallets',                 unit: 'pallet',  source: 'manual',      optional: true },
-  { code: 'OUT_PKG',    rate_col: 'outbound_carton',    qbo_name: 'Outbound Fees Package',                  name: 'Outbound Fees — Package',           unit: 'pkg',     source: 'inbound',     auto_qty: 'outboundCount' },
-  { code: 'OUT_DROP',   rate_col: 'drop_shipment',      qbo_name: 'Drop-Shipment Service',                  name: 'Outbound Drop-Shipment',            unit: 'pkg',     source: 'inbound',     auto_qty: 'outboundDropshipCount' },
-  { code: 'OUT_PLT',    rate_col: 'outbound_pallet',    qbo_name: 'Outbound Fees Pallets',                  name: 'Outbound — Pallets',                unit: 'pallet',  source: 'manual',      optional: true },
-  { code: 'RPF',        rate_col: 'return_proc',        qbo_name: 'Return Processing Fees',                 name: 'Return Processing',                 unit: 'unit',    source: 'inbound',     auto_qty: 'rmaCount' },
-  { code: 'PNP',        rate_col: 'pick_pack',          qbo_name: 'Fulfillment Process (Pick & Pack)',      name: 'Fulfillment Process (Pick & Pack)', unit: 'order',   source: 'shipstation', auto_qty: 'orderCount' },
-  { code: 'SLF',        rate_col: '__shipping_label__', qbo_name: 'Shipping Label Fee',                     name: 'Shipping Label Fee (cost + markup)', unit: 'period', source: 'shipstation', auto_qty: 'shippingLabel' },
-  { code: 'PIF',        rate_col: 'qc',                 qbo_name: 'Product Inspection Fees',                name: 'Product Inspection (QC)',           unit: 'hour',    source: 'services_log' },
-  { code: 'BCUIB',      rate_col: 'boxing',             qbo_name: 'Boxing / collating units into boxes',    name: 'Boxing / Collating Units',          unit: 'unit',    source: 'services_log' },
-  { code: 'KIT',        rate_col: 'kitting',            qbo_name: 'Kitting & Bundling',                     name: 'Kitting & Bundling',                unit: 'unit',    source: 'services_log' },
-  { code: 'POLY',       rate_col: 'poly_bag',           qbo_name: 'Poly Bagging',                           name: 'Poly Bagging',                      unit: 'unit',    source: 'services_log' },
-  { code: 'LBL',        rate_col: 'labeling',           qbo_name: 'Labeling Fees',                          name: 'Labeling — ASIN / UPC',             unit: 'unit',    source: 'services_log' },
-  { code: 'LBL_REM',    rate_col: 'label_removal',      qbo_name: 'Removal of Old Labels',                  name: 'Removal of Old Labels',             unit: 'unit',    source: 'services_log' },
-  { code: 'PALETIZE',   rate_col: 'palletizing',        qbo_name: 'Palletizing Labor',                      name: 'Palletizing Labor',                 unit: 'pallet',  source: 'services_log' },
-  { code: 'STRETCH',    rate_col: 'stretch_wrap',       qbo_name: 'Stretch Wrapping',                       name: 'Stretch Wrapping',                  unit: 'pallet',  source: 'services_log' },
-  { code: 'SORT',       rate_col: 'sorting',            qbo_name: 'Sorting',                                name: 'Sorting',                           unit: 'unit',    source: 'services_log', optional: true },
-  { code: 'REFURB',     rate_col: 'refurb',             qbo_name: 'Refurbishment',                          name: 'Refurbishment',                     unit: 'unit',    source: 'services_log', optional: true },
-  { code: 'DISPOSAL',   rate_col: 'disposal',           qbo_name: 'Disposal',                               name: 'Disposal',                          unit: 'unit',    source: 'services_log', optional: true },
-  { code: 'PICKUP',     rate_col: 'carrier_pickup',     qbo_name: 'Carrier Pickup',                         name: 'Carrier Pickup',                    unit: 'pickup',  source: 'services_log', optional: true },
-  { code: 'CP',         rate_col: '__custom__',         qbo_name: 'Custom Project',                         name: 'Custom Project',                    unit: 'project', source: 'services_log', optional: true },
+  // ── FIXED MONTHLY ────────────────────────────────────────────────────────
+  { code: 'TEC_WMS',       qbo_name: 'Automated WMS',                              name: 'Automated WMS Fees',                  unit: 'month',          source: 'fixed',       fixed: true },
+  { code: 'STO_RACK',      qbo_name: 'Storage Fees Rack Position',                 name: 'Storage — Rack Position',             unit: 'rack',           source: 'fixed',       fixed: true, optional: true },
+  { code: 'STO_LBIN',      qbo_name: 'Storage Fees Large Bin',                     name: 'Storage — Large Bin',                 unit: 'bin',            source: 'fixed',       fixed: true, optional: true },
+  { code: 'STO_SBIN',      qbo_name: 'Storage Fees Small Bin',                     name: 'Storage — Small Bin',                 unit: 'bin',            source: 'fixed',       fixed: true, optional: true },
+  { code: 'STO_LT',        qbo_name: 'Long-Term Storage',                          name: 'Storage — Long-Term (>180d)',         unit: 'rack',           source: 'fixed',       fixed: true, optional: true },
+
+  // ── INBOUND (from warehouse log via billing-inbound) ─────────────────────
+  { code: 'INB_CARTON',    qbo_name: 'Inbound Fees Packages',                      name: 'Inbound Receiving — Packages',        unit: 'cartons',        source: 'inbound',     auto_qty: 'count' },
+  { code: 'INB_DROP',      qbo_name: 'Inbound-Dropshipment',                       name: 'Inbound Drop-Shipment',               unit: 'pkg',            source: 'inbound',     auto_qty: 'inboundDropshipCount', optional: true },
+  { code: 'INB_PALLET',    qbo_name: 'Inbound Fees Pallets',                       name: 'Inbound — Pallets',                   unit: 'pallet',         source: 'manual',      optional: true },
+  { code: 'INB_FLOOR',     qbo_name: 'Inbound Floor-Load',                         name: 'Inbound — Pallet Floor-Load',         unit: 'pallet',         source: 'manual',      optional: true },
+  { code: 'INB_ECO',       qbo_name: 'In&Out-Eco',                                 name: 'Inbound — EcoPack+',                  unit: 'pkg',            source: 'manual',      optional: true },
+  { code: 'INB_XDOCK_PKG', qbo_name: 'CD-Inbound-Pkg',                             name: 'Cross-Docking (package)',             unit: 'pkg',            source: 'manual',      optional: true },
+  { code: 'INB_XDOCK_PAL', qbo_name: 'CD-Inbound-Pal',                             name: 'Cross-Docking (pallet)',              unit: 'pallet',         source: 'manual',      optional: true },
+
+  // ── FULFILLMENT / OUTBOUND ────────────────────────────────────────────────
+  { code: 'FUL_PP1',       qbo_name: 'Fulfillment Process (Pick & Pack)',          name: 'Pick & Pack — 1st Item',              unit: 'order',          source: 'shipstation', auto_qty: 'orderCount' },
+  { code: 'FUL_PPN',       qbo_name: 'Pick & Pack Additional Item',                name: 'Pick & Pack — Additional Item',       unit: 'item',           source: 'manual',      optional: true },
+  { code: 'FUL_LABEL_MARKUP', qbo_name: 'Shipping Label Fee',                      name: 'Shipping Label Fee (cost + markup)',  unit: 'period',         source: 'shipstation', auto_qty: 'shippingLabel', specialRate: '__shipping_label__' },
+  { code: 'FUL_OUT_CART',  qbo_name: 'Outbound Fees Package',                      name: 'Outbound Fees — Package',             unit: 'pkg',            source: 'inbound',     auto_qty: 'outboundCount' },
+  { code: 'FUL_OUT_DROP',  qbo_name: 'Drop-Shipment Service',                      name: 'Outbound Drop-Shipment',              unit: 'pkg',            source: 'inbound',     auto_qty: 'outboundDropshipCount' },
+  { code: 'FUL_OUT_PAL',   qbo_name: 'Outbound Fees Pallets',                      name: 'Outbound — Pallets',                  unit: 'pallet',         source: 'manual',      optional: true },
+  { code: 'FUL_OUT_OVS',   qbo_name: 'Outbound Oversized',                         name: 'Outbound — Oversized Pallet',         unit: 'pallet',         source: 'manual',      optional: true },
+  { code: 'FUL_PICKUP',    qbo_name: 'Carrier-Pickup',                             name: 'Carrier Pickup Coordination',         unit: 'pickup',         source: 'services_log', optional: true },
+  { code: 'FUL_LABEL_APP', qbo_name: 'Shipping-Label-App',                         name: 'Shipping Label Application',          unit: 'label',          source: 'manual',      optional: true },
+  { code: 'FUL_CONSOL',    qbo_name: 'Order-Consol',                               name: 'Order Consolidation',                 unit: 'order',          source: 'manual',      optional: true },
+  { code: 'FUL_RUSH',      qbo_name: 'Rush-Surcharge',                             name: 'Same-Day Rush Surcharge',             unit: 'order',          source: 'manual',      optional: true },
+  { code: 'FUL_HEAVY',     qbo_name: 'Heavy-Surcharge',                            name: 'Heavy Order Surcharge',               unit: 'order',          source: 'manual',      optional: true },
+  { code: 'FUL_BOX_UP',    qbo_name: 'Box-Upgrade',                                name: 'Box Upgrade / Double-Boxing',         unit: 'order',          source: 'manual',      optional: true },
+  { code: 'FUL_ADDR_FIX',  qbo_name: 'Address-Correction',                         name: 'Address Correction (post-label)',     unit: 'occurrence',     source: 'services_log', optional: true },
+
+  // ── PREP / VALUE-ADDED (from services_log) ───────────────────────────────
+  { code: 'PRP_FNSKU',     qbo_name: 'FNSKU Label',                                name: 'FNSKU Labeling',                      unit: 'unit',           source: 'services_log' },
+  { code: 'PRP_POLY',      qbo_name: 'Poly Bag',                                   name: 'Poly Bagging',                        unit: 'unit',           source: 'services_log' },
+  { code: 'PRP_BUBBLE',    qbo_name: 'Bubble Wrap',                                name: 'Bubble Wrap Protection',              unit: 'unit',           source: 'services_log', optional: true },
+  { code: 'PRP_BOXING',    qbo_name: 'Boxing-Collating',                           name: 'Boxing / Collating Units',            unit: 'unit',           source: 'services_log' },
+  { code: 'PRP_KIT',       qbo_name: 'Kitting & Bundling',                         name: 'Kitting & Bundling',                  unit: 'unit',           source: 'services_log' },
+  { code: 'PRP_BUNDLE',    qbo_name: 'Bundle Creation',                            name: 'Complex Bundle Creation',             unit: 'bundle',         source: 'services_log', optional: true },
+  { code: 'PRP_SORT_UNIT', qbo_name: 'Sorting-Unit',                               name: 'Sorting (per unit)',                  unit: 'unit',           source: 'services_log', optional: true },
+  { code: 'PRP_SORT_BOX',  qbo_name: 'Sorting-Box',                                name: 'Categorizing (per box)',              unit: 'box',            source: 'services_log', optional: true },
+  { code: 'PRP_ROL',       qbo_name: 'Label Removal',                              name: 'Removal of Old Labels',               unit: 'unit',           source: 'services_log', optional: true },
+  { code: 'PRP_PALLETIZE', qbo_name: 'Palletizing',                                name: 'Palletizing Labor',                   unit: 'pallet',         source: 'services_log', optional: true },
+  { code: 'PRP_STRETCH',   qbo_name: 'Stretch Wrap',                               name: 'Stretch Wrapping',                    unit: 'pallet',         source: 'services_log', optional: true },
+  { code: 'PRP_PALREPACK', qbo_name: 'Pallet Repack',                              name: 'Pallet Repack',                       unit: 'pallet',         source: 'services_log', optional: true },
+  { code: 'PRP_HANGTAG',   qbo_name: 'Hang Tag',                                   name: 'Hang Tag / Branded Insert',           unit: 'unit',           source: 'services_log', optional: true },
+  { code: 'PRP_INSERT',    qbo_name: 'Marketing Insert',                           name: 'Marketing Material Insert',           unit: 'insert',         source: 'services_log', optional: true },
+
+  // ── QC / INSPECTION (from services_log) ──────────────────────────────────
+  { code: 'QC_HOUR',       qbo_name: 'PIF',                                        name: 'Product Inspection (QC)',             unit: 'hour',           source: 'services_log' },
+  { code: 'QC_PHOTO',      qbo_name: 'QC-Photo',                                   name: 'QC Photo Verification',               unit: 'unit',           source: 'services_log', optional: true },
+  { code: 'QC_SAMPLE',     qbo_name: 'SKU-Intake',                                 name: 'Sample Intake / New SKU',             unit: 'SKU',            source: 'services_log', optional: true },
+
+  // ── RETURNS ──────────────────────────────────────────────────────────────
+  { code: 'RET_PROC',      qbo_name: 'RPF',                                        name: 'Return Processing',                   unit: 'unit',           source: 'inbound',     auto_qty: 'rmaCount' },
+  { code: 'RET_REFURB',    qbo_name: 'R&R',                                        name: 'Return — Refurb / Recover',           unit: 'unit',           source: 'services_log', optional: true },
+  { code: 'RET_DISPOSE',   qbo_name: 'Disposal',                                   name: 'Return — Disposal',                   unit: 'unit',           source: 'services_log', optional: true },
+  { code: 'RET_REMOVAL',   qbo_name: 'Removal-Order',                              name: 'FBA Removal Order Processing',        unit: 'unit',           source: 'services_log', optional: true },
+
+  // ── B2B / WHOLESALE ──────────────────────────────────────────────────────
+  { code: 'B2B_CART',      qbo_name: 'B2B-Master-Carton',                          name: 'B2B Master Carton Pick',              unit: 'carton',         source: 'manual',      optional: true },
+  { code: 'B2B_PALLET',    qbo_name: 'B2B-Pallet-Build',                           name: 'B2B Pallet Build & Wrap',             unit: 'pallet',         source: 'manual',      optional: true },
+  { code: 'B2B_RETAIL',    qbo_name: 'Retail-Dist',                                name: 'Retail Distribution',                 unit: 'order',          source: 'manual',      optional: true },
+
+  // ── TECHNOLOGY / ONE-TIME ────────────────────────────────────────────────
+  { code: 'TEC_INTEG',     qbo_name: 'Integration-Setup',                          name: 'Marketplace Integration (one-time)',  unit: 'one-time',       source: 'manual',      optional: true },
+  { code: 'TEC_SETUP',     qbo_name: 'Setup-Fee',                                  name: 'Account Setup / Onboarding',          unit: 'one-time',       source: 'manual',      optional: true },
+  { code: 'TEC_AMZ_PLAN',  qbo_name: 'AMZ-Shipment-Plan',                          name: 'Amazon Shipment Plan Creation',       unit: 'plan',           source: 'services_log', optional: true },
+  { code: 'TEC_CUSTOM',    qbo_name: 'Custom Project',                             name: 'Custom Project',                      unit: 'project',        source: 'services_log', optional: true, specialRate: '__custom__' },
+
+  // ── SPECIAL ──────────────────────────────────────────────────────────────
+  { code: 'SPC_SKU_SUR',   qbo_name: 'SKU-Surcharge',                              name: 'SKU Surcharge (>20 SKUs)',            unit: 'SKU added',      source: 'manual',      optional: true },
 ];
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -159,21 +226,31 @@ async function getPreview(params, event) {
   });
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// buildLineItem — REFACTORED for billing-rates API v2
+//
+// Old format:  rateCard.qc            → 45.00
+// New format:  rateCard.QC_HOUR.rate  → 45.00 (also: name, unit, category, source)
+// ────────────────────────────────────────────────────────────────────────────
 function buildLineItem(svc, rateCard, sources, servicesByCode, client) {
   let rate = 0;
-  if (svc.rate_col === '__shipping_label__') {
+
+  // Special rate sources (computed, not from rateCard)
+  if (svc.specialRate === '__shipping_label__') {
     const pct = parseFloat(client.shipping_markup) || 10;
     rate = round2(sources.carrierCost * (1 + pct / 100));
-  } else if (svc.rate_col === '__custom__') {
-    rate = 0;
+  } else if (svc.specialRate === '__custom__') {
+    rate = 0;  // user enters in billing.html UI
   } else {
-    rate = parseFloat(rateCard[svc.rate_col]) || 0;
+    // Read rate from billing-rates API v2 response: rateCard[code].rate
+    const entry = rateCard[svc.code];
+    rate = entry && entry.rate != null ? parseFloat(entry.rate) : 0;
   }
 
   let quantity = 0, detail = '', hasMovement = false;
 
   if (svc.fixed) {
-    if (svc.code === 'WMS') {
+    if (svc.code === 'TEC_WMS') {
       quantity = rate > 0 ? 1 : 0;
     } else {
       quantity = 0; // Storage stays 0 until SKUVault hookup or manual entry
@@ -182,7 +259,7 @@ function buildLineItem(svc, rateCard, sources, servicesByCode, client) {
     hasMovement = quantity > 0;
   }
   else if (svc.source === 'shipstation') {
-    if (svc.code === 'SLF') {
+    if (svc.specialRate === '__shipping_label__') {
       quantity = sources.shippingLabel;
       detail = sources.carrierCost > 0
         ? `Carrier cost $${sources.carrierCost.toFixed(2)} × ${(1 + (parseFloat(client.shipping_markup) || 10) / 100).toFixed(2)} markup`
@@ -203,11 +280,13 @@ function buildLineItem(svc, rateCard, sources, servicesByCode, client) {
     const sl = servicesByCode[svc.code];
     quantity = sl ? parseFloat(sl.total_quantity) || 0 : 0;
     if (sl) {
+      // services_log entries snapshot the rate at log-time — prefer that over current rate
       if (sl.unit_rate && parseFloat(sl.unit_rate) > 0) rate = parseFloat(sl.unit_rate);
       detail = `${sl.entry_count || 1} entries logged`;
     }
     hasMovement = quantity > 0;
   }
+  // 'manual' source: quantity stays 0, Jose enters in billing.html UI
 
   return {
     service_code:  svc.code,
