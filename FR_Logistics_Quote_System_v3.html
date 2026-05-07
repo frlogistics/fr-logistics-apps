@@ -62,10 +62,6 @@
     input:focus,select:focus,textarea:focus{border-color:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.1)}
     input::placeholder{color:#94a3b8}
     textarea{resize:vertical;min-height:76px}
-    .tr2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-    .tp{background:var(--glt);border:1px solid #bbf7d0;border-radius:9px;padding:9px 12px}
-    .tp .tpl{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#059669}
-    .tp .tpv{font-size:12.5px;font-weight:700;color:var(--gdk);margin-top:3px}
     .sl{display:grid;gap:8px;max-height:1020px;overflow-y:auto;padding-right:2px;scrollbar-width:thin;scrollbar-color:#bbf7d0 transparent}
     .cat{font-family:'Syne',sans-serif;font-size:10px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;
          color:#059669;padding:5px 2px 2px;border-bottom:1px solid #d1fae5;margin-top:4px}
@@ -105,20 +101,21 @@
     .ni{border-radius:8px;padding:9px 13px;font-size:12px;line-height:1.5}
     .ni-i{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
     .ni-w{background:#fffbeb;border:1px solid #fde68a;color:#92400e}
-    .tt{width:100%;border-collapse:collapse;font-size:11.5px}
-    .tt th,.tt td{padding:6px 9px;border-bottom:1px solid var(--border);text-align:left}
-    .tt th{color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.4px;background:var(--panel)}
-    .tt tr.at td{background:var(--glt);color:var(--gdk);font-weight:700}
-    .tt td:last-child{text-align:right}
+    .ni-e{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
     .footer{text-align:center;padding:22px 0 10px;font-size:11px;color:#94a3b8}
     ::-webkit-scrollbar{width:4px}
     ::-webkit-scrollbar-thumb{background:#bbf7d0;border-radius:99px}
 
+    /* RATES LOADING STATE */
+    .rates-loading{padding:24px;text-align:center;color:var(--muted);font-size:13px}
+    .rates-spinner{display:inline-block;width:18px;height:18px;border:2px solid #e2e8f0;
+                   border-top-color:var(--g1);border-radius:50%;animation:spin .7s linear infinite;
+                   margin-right:8px;vertical-align:middle}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
     /* EMAIL MODAL ANIMATIONS */
     @keyframes overlayIn{from{opacity:0}to{opacity:1}}
     @keyframes modalSlideUp{from{opacity:0;transform:translateY(28px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
-    @keyframes shimmer{0%{background-position:200% center}100%{background-position:-200% center}}
-    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
 
     #emailModal{animation:overlayIn .18s ease}
     #emailModalCard{animation:modalSlideUp .22s cubic-bezier(.34,1.28,.64,1)}
@@ -198,25 +195,15 @@
             </div>
           </div>
           <div class="f"><label>Prepared By</label><input id="prepBy" value="Jose Fuentes – Operations Manager" oninput="saveDraft()"/></div>
-          <div class="ni ni-i">📦 Set monthly volumes below — pricing tiers auto-calculate.</div>
+          <div class="ni ni-i">📦 Set monthly volumes below — Pick &amp; Pack and Labeling auto-populate.</div>
           <div class="fr3">
             <div class="f"><label>Orders / Mo</label><input id="orders" type="number" min="0" value="500" oninput="refreshDP()"/></div>
             <div class="f"><label>Pallets / Mo</label><input id="pallets" type="number" min="0" value="8" oninput="refreshDP()"/></div>
             <div class="f"><label>Label Units</label><input id="units" type="number" min="0" value="1200" oninput="refreshDP()"/></div>
           </div>
-          <div class="tr2">
-            <div class="tp"><div class="tpl">⚡ Fulfillment Rate</div><div class="tpv" id="fRatePrev">—</div></div>
-            <div class="tp"><div class="tpl">🏷 Labeling Rate</div><div class="tpv" id="lRatePrev">—</div></div>
-          </div>
           <div class="f"><label>Min. Monthly Billing (USD)</label><input id="minBill" type="number" min="0" value="0" oninput="syncSummary();saveDraft()"/></div>
           <div class="f"><label>Scope / Notes</label><textarea id="notes" placeholder="Special requirements, SKU complexity, SLAs..."></textarea></div>
-          <details>
-            <summary style="cursor:pointer;font-size:12px;color:var(--muted);user-select:none;padding:3px 0;">📊 View Volume Pricing Tiers</summary>
-            <div style="margin-top:10px;display:grid;gap:10px;">
-              <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:4px;">Pick &amp; Pack – Fulfillment</div><table class="tt" id="fTierTbl"></table></div>
-              <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:4px;">Amazon SPN – Labeling</div><table class="tt" id="lTierTbl"></table></div>
-            </div>
-          </details>
+          <div id="ratesStatusBox" class="ni ni-i" style="display:none">📊 Rates loaded from FR-Logistics service catalog</div>
         </div>
       </div>
     </div>
@@ -231,7 +218,11 @@
             <button class="bg sm" onclick="toggleAll(false)">None</button>
           </div>
         </div>
-        <div class="cb" style="padding-top:10px"><div id="svcList" class="sl"></div></div>
+        <div class="cb" style="padding-top:10px">
+          <div id="svcList" class="sl">
+            <div class="rates-loading"><span class="rates-spinner"></span>Loading rates from FR-Logistics catalog…</div>
+          </div>
+        </div>
         <div class="ab">
           <button class="bp" onclick="genQuote()">⚡ Generate Quote</button>
           <button class="bs" onclick="dlExcel()">📊 Excel</button>
@@ -262,7 +253,6 @@
             <div class="dr"><div class="dk">Client</div><div class="dv" id="dClient">—</div></div>
             <div class="dr"><div class="dk">Channel</div><div class="dv" id="dChannel">—</div></div>
             <div class="dr"><div class="dk">Volume</div><div class="dv" id="dVol">—</div></div>
-            <div class="dr"><div class="dk">Auto-Price</div><div class="dv" id="dAuto">—</div></div>
             <div class="dr"><div class="dk">Notes</div><div class="dv" id="dNotes">—</div></div>
           </div>
           <div id="qLines" class="ql"><div style="color:var(--muted);text-align:center;padding:20px 0;font-size:13px">Press <strong>⚡ Generate Quote</strong> to see breakdown.</div></div>
@@ -287,7 +277,6 @@
     <div style="background:linear-gradient(135deg,#065f46 0%,#0ea55f 60%,#22c55e 100%);
                 padding:18px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
                 position:relative;overflow:hidden">
-      <!-- decorative rings -->
       <div style="position:absolute;right:-30px;top:-30px;width:120px;height:120px;border-radius:50%;
                   border:1px solid rgba(255,255,255,.15)"></div>
       <div style="position:absolute;right:10px;top:10px;width:60px;height:60px;border-radius:50%;
@@ -302,7 +291,6 @@
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;z-index:1">
-        <!-- Lang toggle -->
         <div style="background:rgba(0,0,0,.2);border-radius:999px;padding:3px;display:flex;gap:3px">
           <button id="langEN" class="em-lang-btn active" onclick="setEmailLang('en')">🇺🇸 EN</button>
           <button id="langES" class="em-lang-btn inactive" onclick="setEmailLang('es')">🇪🇸 ES</button>
@@ -315,7 +303,7 @@
       </div>
     </div>
 
-    <!-- ── META BAR (To / Subject) ── -->
+    <!-- ── META BAR ── -->
     <div style="padding:10px 20px;border-bottom:1px solid #e2e8f0;background:#f8fafc;
                 display:grid;gap:4px;flex-shrink:0">
       <div style="display:flex;align-items:center;gap:8px;font-size:11.5px">
@@ -328,12 +316,11 @@
       </div>
     </div>
 
-    <!-- ── EMAIL PREVIEW (HTML rendered) ── -->
+    <!-- ── EMAIL PREVIEW ── -->
     <div style="flex:1;overflow-y:auto;background:#f1f5f9;padding:16px">
       <div id="emailPreview" style="background:#fff;border-radius:12px;overflow:hidden;
            box-shadow:0 2px 16px rgba(0,0,0,.08);border:1px solid #e2e8f0;font-family:'DM Sans',sans-serif">
 
-        <!-- email header banner -->
         <div style="background:linear-gradient(135deg,#065f46,#16a34a);padding:20px 24px;
                     display:flex;align-items:center;gap:14px">
           <div style="width:42px;height:42px;background:rgba(255,255,255,.2);border-radius:10px;
@@ -349,12 +336,10 @@
           </div>
         </div>
 
-        <!-- greeting + intro -->
         <div style="padding:22px 24px 0">
           <p id="ep_greeting" style="font-size:14px;font-weight:600;color:#0f172a;margin:0 0 6px"></p>
           <p id="ep_intro" style="font-size:13px;color:#475569;margin:0 0 18px;line-height:1.6"></p>
 
-          <!-- info pills -->
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px">
             <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 13px">
               <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#059669">Quote #</div>
@@ -366,14 +351,11 @@
             </div>
           </div>
 
-          <!-- section label -->
           <div id="ep_svc_label" style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;
                color:#059669;border-bottom:1px solid #d1fae5;padding-bottom:6px;margin-bottom:10px"></div>
 
-          <!-- service rows -->
           <div id="ep_services" style="display:grid;gap:6px;margin-bottom:14px"></div>
 
-          <!-- totals -->
           <div style="border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:18px">
             <div style="display:flex;justify-content:space-between;padding:9px 14px;font-size:12.5px;
                         background:#f8fafc;border-bottom:1px solid #e2e8f0">
@@ -386,7 +368,6 @@
             </div>
           </div>
 
-          <!-- CTA -->
           <div id="ep_cta_box" style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid #bfdbfe;
                border-radius:12px;padding:16px;text-align:center;margin-bottom:18px">
             <p id="ep_cta_text" style="font-size:13px;color:#1e40af;margin:0 0 10px;font-weight:500"></p>
@@ -396,14 +377,12 @@
                       box-shadow:0 3px 10px rgba(14,165,95,.3)">Schedule a Call &rarr;</a>
           </div>
 
-          <!-- commercial note -->
           <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;
                padding:10px 13px;margin-bottom:20px">
             <p id="ep_note" style="font-size:11px;color:#92400e;margin:0;line-height:1.5;font-style:italic"></p>
           </div>
         </div>
 
-        <!-- email footer -->
         <div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:14px 24px;
                     display:flex;align-items:center;justify-content:space-between;gap:12px">
           <div>
@@ -415,7 +394,7 @@
           </div>
         </div>
 
-      </div><!-- /email preview card -->
+      </div>
     </div>
 
     <!-- ── ACTIONS ── -->
@@ -438,68 +417,198 @@
       </div>
     </div>
 
-  </div><!-- /modal card -->
+  </div>
 </div>
 
 <script>
-const SK='fr_q_v3';
+// ════════════════════════════════════════════════════════════════════════════
+// FR-LOGISTICS QUOTE BUILDER v4 — API-driven (Phase 3.3 refactor 2026-05-07)
+//
+// Architectural changes from v3:
+// - SVCS array now built dynamically from /.netlify/functions/billing-rates?client=DEFAULT
+// - Eliminated FT/LT tier tables — Pick & Pack flat $3 (D4), Labeling flat $0.55 (D3)
+// - Eliminated buildTiers(), gT(), gR(), gL(), applyAuto() tier helpers
+// - Added 13 new services (Bubble Wrap, B2B, Hang Tag, etc.)
+// - Fixed urgent rates: Returns $1.25→$5 (D8), EcoPack $2→$2.50 (D5),
+//   Outbound carton $1→$2 (D7), AMZ Plan $50→$8 (D10)
+// ════════════════════════════════════════════════════════════════════════════
+
+const SK='fr_q_v4';  // bumped from v3 to invalidate old localStorage drafts
+const RATES_API = '/.netlify/functions/billing-rates';
 const CO={name:'FR-Logistics',address:'10893 NW 17th Street, Unit 121, Miami, FL 33172',
           phone:'(786) 300-1443',email:'info@fr-logistics.net',website:'www.fr-logistics.net',
           tagline:'3PL Fulfillment · Amazon FBA Prep · E-Commerce Logistics'};
 
-const SVCS=[
-  {id:'ST_PALLET',   name:'Pallet Storage',               cat:'Storage',               unit:'per pallet / mo',     rate:45.00,  auto:false,src:'pallets',     dq:1},
-  {id:'ST_BIN',      name:'Bin Storage',                  cat:'Storage',               unit:'per small-bin / mo',  rate:5.00,   auto:false,src:null,          dq:1},
-  {id:'FULF_PICK1',  name:'Pick & Pack – 1st Item',       cat:'DTC / FBM Fulfillment', unit:'per order',           rate:2.50,   auto:true, src:'orders',       dq:0,desc:'Order preparation for the first item (Shopify / Amazon FBM). Volume-tiered.',note:'Volume-tiered auto-price'},
-  {id:'FULF_ADD',    name:'Additional Item',              cat:'DTC / FBM Fulfillment', unit:'each',                rate:0.50,   auto:false,src:null,           dq:0},
-  {id:'FULF_SD',     name:'Same-Day Dispatch',            cat:'DTC / FBM Fulfillment', unit:'per order',           rate:2.50,   auto:false,src:null,           dq:0,note:'Add-on'},
-  {id:'FBA_LABEL',   name:'Amazon SPN – Labeling Pro',    cat:'Amazon FBA Prep',       unit:'per unit',            rate:1.00,   auto:true, src:'units',        dq:0,desc:'Amazon FBA-compliant labeling under SPN standards. Volume-tiered.',note:'Volume-tiered auto-price'},
-  {id:'AMZ_PLAN',    name:'Amazon Shipment Plan (Prep)',  cat:'Amazon FBA Prep',       unit:'per plan',            rate:50.00,  auto:false,src:null,           dq:0,note:'Included if using labeling'},
-  {id:'FBA_KIT',     name:'Kitting & Bundling',           cat:'Value-Added',           unit:'per unit',            rate:0.75,   auto:false,src:null,           dq:0},
-  {id:'FBA_POLY',    name:'Polybag / Repack',             cat:'Value-Added',           unit:'per unit',            rate:0.50,   auto:false,src:null,           dq:0},
-  {id:'ECO_PACK',    name:'EcoPack+',                     cat:'Sustainable',           unit:'per order',           rate:2.00,   auto:false,src:null,           dq:0,note:'FR-Logistics exclusive'},
-  {id:'XDOCK',       name:'Cross-Docking & Transloading', cat:'Inbound / Outbound',    unit:'per pallet',          rate:25.00,  auto:false,src:'pallets',      dq:0,note:'May vary by workflow'},
-  {id:'PAL_INOUT',   name:'Pallet In / Out',              cat:'Warehouse Ops',         unit:'per pallet',          rate:15.00,  auto:false,src:'pallets',      dq:0},
-  {id:'QC_HR',       name:'Quality Control (QC)',         cat:'Warehouse Ops',         unit:'per hour',            rate:35.00,  auto:false,src:null,           dq:0},
-  {id:'RETURNS',     name:'Returns / Reverse Logistics',  cat:'Returns',               unit:'per unit',            rate:1.25,   auto:false,src:null,           dq:0,note:'Based on volume'},
-  {id:'INTEGRATION', name:'Shopify / Amazon Integration', cat:'Technology',            unit:'one-time',            rate:199.99, auto:false,src:null,           dq:1},
-  {id:'WMS',         name:'WMS & Tech Fee',               cat:'Technology',            unit:'per month',           rate:99.99,  auto:false,src:null,           dq:1},
-  {id:'WZ_HEAVY',    name:'Heavy Order Surcharge',        cat:'Wizard Driver',         unit:'per heavy order',     rate:2.00,   auto:false,src:null,           dq:0,note:'Edit rate as needed'},
-  {id:'WZ_OUT',      name:'Outbound Processing',          cat:'Wizard Driver',         unit:'per order',           rate:1.00,   auto:false,src:null,           dq:0,note:'Edit rate as needed'},
-  {id:'WZ_CART',     name:'Outbound Carton Fee',          cat:'Wizard Driver',         unit:'per carton',          rate:1.00,   auto:false,src:null,           dq:0,note:'Edit rate as needed'},
-  {id:'IN_CART',     name:'Inbound Carton Fee',           cat:'Wizard Driver',         unit:'per carton',          rate:2.50,   auto:false,src:null,           dq:0,note:'Edit rate as needed'},
+// ─── SERVICE CATALOG TEMPLATE ─────────────────────────────────────────────────
+// Defines display metadata (categories, descriptions, units, source bindings).
+// Rates are NEVER hardcoded here — they're fetched from billing-rates API and
+// injected into the .rate field at runtime via mergeRatesIntoCatalog().
+//
+// Field guide:
+//   id      = stable internal ID for localStorage / DOM bindings
+//   code    = canonical service_code matching billing-rates API (key for rate lookup)
+//   name    = display label
+//   cat     = UI category grouping
+//   unit    = display unit (e.g. "per order", "per unit")
+//   src     = volume input ID for auto-population ('orders'|'pallets'|'units'|null)
+//   dq      = default qty when src is null (1 = enabled by default for fixed services)
+//   desc    = customer-facing description
+//   note    = optional badge/tooltip
+//   auto    = true if rate auto-populates from monthly volume input (P&P, Labeling)
+// ─────────────────────────────────────────────────────────────────────────────
+const SVCS_TEMPLATE = [
+  // ─── STORAGE ────────────────────────────────────────────────────────────
+  {id:'STO_RACK',     code:'STO_RACK',     name:'Pallet Rack Storage',           cat:'Storage', unit:'per rack / mo',   src:'pallets', dq:1, desc:'Standard rack position storage'},
+  {id:'STO_LBIN',     code:'STO_LBIN',     name:'Large Bin Storage',             cat:'Storage', unit:'per bin / mo',    src:null,      dq:1, desc:'Large shelf bin storage'},
+  {id:'STO_SBIN',     code:'STO_SBIN',     name:'Small Bin Storage',             cat:'Storage', unit:'per bin / mo',    src:null,      dq:1, desc:'Small shelf bin storage'},
+  {id:'STO_LT',       code:'STO_LT',       name:'Long-Term Storage (180+ days)', cat:'Storage', unit:'per rack / mo',   src:null,      dq:0, desc:'Inventory >180 days without movement', note:'Surcharge applied to aged inventory'},
+
+  // ─── INBOUND / RECEIVING ────────────────────────────────────────────────
+  {id:'INB_CARTON',   code:'INB_CARTON',   name:'Inbound Cartons',               cat:'Inbound / Receiving', unit:'per carton', src:null, dq:0, desc:'Receiving fee per inbound carton'},
+  {id:'INB_PALLET',   code:'INB_PALLET',   name:'Inbound Pallets',               cat:'Inbound / Receiving', unit:'per pallet', src:'pallets', dq:0, desc:'Receiving fee per inbound pallet'},
+  {id:'INB_FLOOR',    code:'INB_FLOOR',    name:'Inbound Floor-Load',            cat:'Inbound / Receiving', unit:'per pallet equiv.', src:null, dq:0, desc:'Floor-loaded container unloading', note:'For container shipments without pallets'},
+  {id:'INB_ECO',      code:'INB_ECO',      name:'EcoPack+ Reception',            cat:'Inbound / Receiving', unit:'per package', src:null, dq:0, desc:'EcoPack+ pickup service for residents', note:'FR-Logistics exclusive'},
+
+  // ─── DTC / FBM FULFILLMENT ──────────────────────────────────────────────
+  {id:'FUL_PP1',      code:'FUL_PP1',      name:'Pick & Pack — 1st Item',        cat:'DTC / FBM Fulfillment', unit:'per order', src:'orders', dq:0, auto:true, desc:'Order preparation for the first item (Shopify / Amazon FBM)'},
+  {id:'FUL_PPN',      code:'FUL_PPN',      name:'Additional Item per Order',     cat:'DTC / FBM Fulfillment', unit:'each',      src:null,     dq:0, desc:'Each item beyond the first in same order'},
+  {id:'FUL_RUSH',     code:'FUL_RUSH',     name:'Same-Day Rush Surcharge',       cat:'DTC / FBM Fulfillment', unit:'per order', src:null,     dq:0, desc:'Same-day dispatch for urgent orders', note:'Add-on'},
+  {id:'FUL_HEAVY',    code:'FUL_HEAVY',    name:'Heavy Order Surcharge',         cat:'DTC / FBM Fulfillment', unit:'per heavy order', src:null, dq:0, desc:'Surcharge for orders requiring 2-person handling', note:'Items >50 lbs'},
+  {id:'FUL_BOX_UP',   code:'FUL_BOX_UP',   name:'Box Upgrade / Double-Boxing',   cat:'DTC / FBM Fulfillment', unit:'per order', src:null,     dq:0, desc:'Premium packaging for high-value items'},
+  {id:'FUL_ADDR_FIX', code:'FUL_ADDR_FIX', name:'Address Correction',            cat:'DTC / FBM Fulfillment', unit:'per occurrence', src:null,dq:0, desc:'Post-label address fix when carrier flags shipment'},
+
+  // ─── AMAZON FBA PREP ────────────────────────────────────────────────────
+  {id:'PRP_FNSKU',    code:'PRP_FNSKU',    name:'Amazon FNSKU Labeling',         cat:'Amazon FBA Prep', unit:'per unit', src:'units', dq:0, auto:true, desc:'Amazon SPN-compliant FNSKU labeling'},
+  {id:'TEC_AMZ_PLAN', code:'TEC_AMZ_PLAN', name:'Amazon Shipment Plan Creation', cat:'Amazon FBA Prep', unit:'per plan', src:null, dq:0, desc:'Per shipment plan created in Seller Central'},
+  {id:'RET_REMOVAL',  code:'RET_REMOVAL',  name:'FBA Removal Order Processing',  cat:'Amazon FBA Prep', unit:'per unit', src:null, dq:0, desc:'FBA returns to 3PL warehouse'},
+
+  // ─── PREP / VALUE-ADDED ─────────────────────────────────────────────────
+  {id:'PRP_KIT',      code:'PRP_KIT',      name:'Kitting & Bundling (per unit)', cat:'Prep / Value-Added', unit:'per unit', src:null, dq:0, desc:'Standard 2-component kit/bundle'},
+  {id:'PRP_BUNDLE',   code:'PRP_BUNDLE',   name:'Complex Bundle (3+ components)',cat:'Prep / Value-Added', unit:'per bundle', src:null, dq:0, desc:'Bundles with 3+ components'},
+  {id:'PRP_POLY',     code:'PRP_POLY',     name:'Poly Bagging',                  cat:'Prep / Value-Added', unit:'per unit', src:null, dq:0, desc:'Suffocation warning poly bag'},
+  {id:'PRP_BUBBLE',   code:'PRP_BUBBLE',   name:'Bubble Wrap Protection',        cat:'Prep / Value-Added', unit:'per unit', src:null, dq:0, desc:'Fragile-item bubble wrap protection'},
+  {id:'PRP_BOXING',   code:'PRP_BOXING',   name:'Boxing / Collating Units',      cat:'Prep / Value-Added', unit:'per unit', src:null, dq:0, desc:'Boxing or collating units into shipping boxes'},
+  {id:'PRP_SORT_UNIT',code:'PRP_SORT_UNIT',name:'Sorting (per unit)',            cat:'Prep / Value-Added', unit:'per unit', src:null, dq:0, desc:'Fine sorting per unit'},
+  {id:'PRP_SORT_BOX', code:'PRP_SORT_BOX', name:'Categorizing (per box)',        cat:'Prep / Value-Added', unit:'per box',  src:null, dq:0, desc:'Bulk categorization per box'},
+  {id:'PRP_ROL',      code:'PRP_ROL',      name:'Removal of Old Labels',         cat:'Prep / Value-Added', unit:'per unit', src:null, dq:0, desc:'Strip and prep units for relabeling'},
+  {id:'PRP_HANGTAG',  code:'PRP_HANGTAG',  name:'Hang Tag / Branded Insert',     cat:'Prep / Value-Added', unit:'per unit', src:null, dq:0, desc:'DTC premium service for branded products'},
+  {id:'PRP_INSERT',   code:'PRP_INSERT',   name:'Marketing Material Insert',     cat:'Prep / Value-Added', unit:'per insert', src:null, dq:0, desc:'Per insert added to package'},
+  {id:'PRP_PALLETIZE',code:'PRP_PALLETIZE',name:'Palletizing Labor',             cat:'Prep / Value-Added', unit:'per pallet', src:null, dq:0, desc:'Build and stage pallet'},
+  {id:'PRP_STRETCH',  code:'PRP_STRETCH',  name:'Stretch Wrapping',              cat:'Prep / Value-Added', unit:'per pallet', src:null, dq:0, desc:'Stretch wrap pallet for transport'},
+
+  // ─── QUALITY CONTROL ────────────────────────────────────────────────────
+  {id:'QC_HOUR',      code:'QC_HOUR',      name:'QC / Product Inspection',       cat:'Quality Control', unit:'per hour',  src:null, dq:0, desc:'Hands-on QC and product inspection'},
+  {id:'QC_PHOTO',     code:'QC_PHOTO',     name:'QC Photo Verification',         cat:'Quality Control', unit:'per unit',  src:null, dq:0, desc:'Photo verification per unit (alternative to per-hour)'},
+  {id:'QC_SAMPLE',    code:'QC_SAMPLE',    name:'Sample Intake / New SKU',       cat:'Quality Control', unit:'per SKU',   src:null, dq:0, desc:'New SKU onboarding fee for catalog setup'},
+
+  // ─── RETURNS & REVERSE LOGISTICS ────────────────────────────────────────
+  {id:'RET_PROC',     code:'RET_PROC',     name:'Return Processing',             cat:'Returns', unit:'per unit', src:null, dq:0, desc:'Inspect, restock, or dispose of returned items'},
+  {id:'RET_REFURB',   code:'RET_REFURB',   name:'Refurbishing & Repackaging',    cat:'Returns', unit:'per unit', src:null, dq:0, desc:'Refurbish and repack returned items'},
+  {id:'RET_DISPOSE',  code:'RET_DISPOSE',  name:'Disposal & Recycling',          cat:'Returns', unit:'per unit', src:null, dq:0, desc:'Eco-friendly disposal of unsalvageable returns'},
+
+  // ─── OUTBOUND ───────────────────────────────────────────────────────────
+  {id:'FUL_OUT_DROP', code:'FUL_OUT_DROP', name:'Drop-Shipment Service',         cat:'Outbound', unit:'per package', src:null,      dq:0, desc:'Direct drop-shipment without storage'},
+  {id:'FUL_OUT_CART', code:'FUL_OUT_CART', name:'Outbound — Cartons',            cat:'Outbound', unit:'per carton',  src:null,      dq:0, desc:'Outbound carton fee for B2B/wholesale'},
+  {id:'FUL_OUT_PAL',  code:'FUL_OUT_PAL',  name:'Outbound — Pallets',            cat:'Outbound', unit:'per pallet',  src:'pallets', dq:0, desc:'Outbound pallet shipping fee'},
+  {id:'FUL_OUT_OVS',  code:'FUL_OUT_OVS',  name:'Oversized Pallet',              cat:'Outbound', unit:'per pallet',  src:null,      dq:0, desc:'Exceeds 40x48", >70" ht, or >1500 lbs'},
+
+  // ─── CROSS-DOCKING ──────────────────────────────────────────────────────
+  {id:'INB_XDOCK_PKG',code:'INB_XDOCK_PKG',name:'Cross-Dock — Packages',         cat:'Cross-Docking', unit:'per carton', src:null, dq:0, desc:'Inbound for cross-dock (no storage)'},
+  {id:'INB_XDOCK_PAL',code:'INB_XDOCK_PAL',name:'Cross-Dock — Pallets',          cat:'Cross-Docking', unit:'per pallet', src:'pallets', dq:0, desc:'Inbound pallets for cross-dock'},
+  {id:'FUL_CONSOL',   code:'FUL_CONSOL',   name:'Order Consolidation',           cat:'Cross-Docking', unit:'per order',  src:null, dq:0, desc:'Merging multiple shipments into one'},
+  {id:'PRP_PALREPACK',code:'PRP_PALREPACK',name:'Pallet Repacking & Labeling',   cat:'Cross-Docking', unit:'per pallet', src:null, dq:0, desc:'Repack and label pallet for carrier'},
+  {id:'FUL_PICKUP',   code:'FUL_PICKUP',   name:'Carrier Facility Pickup',       cat:'Cross-Docking', unit:'per request',src:null, dq:0, desc:'LTL/FTL carrier pickup coordination'},
+  {id:'FUL_LABEL_APP',code:'FUL_LABEL_APP',name:'Shipping Label Application',    cat:'Cross-Docking', unit:'per label',  src:null, dq:0, desc:'Apply pre-printed shipping labels'},
+
+  // ─── B2B / WHOLESALE ────────────────────────────────────────────────────
+  {id:'B2B_CART',     code:'B2B_CART',     name:'B2B Master Carton Pick',        cat:'B2B / Wholesale', unit:'per carton',   src:null, dq:0, desc:'B2B carton pick for wholesale orders'},
+  {id:'B2B_PALLET',   code:'B2B_PALLET',   name:'B2B Pallet Build & Wrap',       cat:'B2B / Wholesale', unit:'per pallet',   src:null, dq:0, desc:'Build, wrap, and label B2B pallet'},
+  {id:'B2B_RETAIL',   code:'B2B_RETAIL',   name:'Retail Distribution',           cat:'B2B / Wholesale', unit:'per shipment', src:null, dq:0, desc:'Bulk shipments to retail locations'},
+
+  // ─── TECHNOLOGY ─────────────────────────────────────────────────────────
+  {id:'TEC_WMS',      code:'TEC_WMS',      name:'WMS / Automated Tech Fee',      cat:'Technology', unit:'per month',   src:null, dq:1, desc:'Monthly WMS access fee with ShipStation integration'},
+  {id:'TEC_INTEG',    code:'TEC_INTEG',    name:'Marketplace Integration',       cat:'Technology', unit:'one-time',    src:null, dq:1, desc:'One-time setup of Shopify / Amazon / marketplace integration'},
+  {id:'TEC_SETUP',    code:'TEC_SETUP',    name:'Account Setup / Onboarding',    cat:'Technology', unit:'one-time',    src:null, dq:0, desc:'One-time account onboarding and configuration'},
+
+  // ─── SPECIAL ────────────────────────────────────────────────────────────
+  {id:'SPC_SKU_SUR',  code:'SPC_SKU_SUR',  name:'SKU Surcharge (>20 SKUs)',      cat:'Special', unit:'per SKU added', src:null, dq:0, desc:'Surcharge for shipments with >20 distinct SKUs'},
 ];
-SVCS.forEach(s=>{ if(!s.desc) s.desc=s.name+' — '+s.unit; if(!s.note) s.note=''; });
 
-const FT=[{l:'Beginner',mn:1,mx:500,r:2.50},{l:'Standard',mn:501,mx:1000,r:2.25},{l:'Advanced',mn:1001,mx:2500,r:2.00},{l:'Expert',mn:2501,mx:5000,r:1.75},{l:'Pro',mn:5001,mx:10000,r:1.50},{l:'Mastery',mn:10001,mx:999999,r:0.0}];
-const LT=[{l:'1–50',mn:1,mx:50,r:1.00},{l:'51–100',mn:51,mx:100,r:0.90},{l:'101–500',mn:101,mx:500,r:0.75},{l:'501–1,000',mn:501,mx:1000,r:0.65},{l:'1,001–5,000',mn:1001,mx:5000,r:0.60},{l:'5,001+',mn:5001,mx:999999,r:0.50}];
+let SVCS = [];   // populated by buildCatalog() after rates fetch
+let CQ = null;   // current quote
+let _ratesLoaded = false;
 
-let CQ=null;
 const $=id=>document.getElementById(id);
 const fmt=v=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(+v||0);
 const today=()=>{const d=new Date();return new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,10)};
 const fmtD=iso=>{if(!iso)return'—';const[y,m,d]=iso.split('-');return`${m}/${d}/${y}`};
 const safe=s=>(s||'Quote').replace(/[^a-z0-9]+/gi,'_').replace(/^_|_$/g,'');
-const gT=(t,q)=>t.find(x=>+q>=x.mn&&+q<=x.mx);
-const gR=(t,q)=>{const x=gT(t,q);return x?x.r:0};
-const gL=(t,q)=>{const x=gT(t,q);return x?x.l:'—'};
 
+// ════════════════════════════════════════════════════════════════════════════
+// RATES LOADING — fetches DEFAULT rates from billing-rates API on init
+// ════════════════════════════════════════════════════════════════════════════
+async function loadRates(){
+  try{
+    const resp = await fetch(`${RATES_API}?client=DEFAULT`);
+    if(!resp.ok) throw new Error(`API ${resp.status}`);
+    const data = await resp.json();
+    if(!data || !data.rates) throw new Error('Empty rates response');
+    return data.rates;  // { CODE: {rate, name, unit, ...}, ... }
+  }catch(err){
+    console.error('[Quote Builder] Failed to load rates:', err);
+    showRatesError(err.message);
+    return null;
+  }
+}
+
+function showRatesError(msg){
+  const el = $('svcList');
+  el.innerHTML = `
+    <div class="ni ni-e" style="margin:12px 0">
+      <strong>⚠️ Could not load rates from FR-Logistics catalog.</strong><br>
+      ${msg}<br>
+      <span style="font-size:11px">Refresh the page or check Netlify function status. Quote Builder cannot run with stale or hardcoded rates per architectural rule.</span>
+    </div>`;
+}
+
+function showRatesOk(){
+  const box = $('ratesStatusBox');
+  if(box){
+    box.style.display = 'block';
+    box.className = 'ni ni-i';
+    box.innerHTML = `📊 ${SVCS.length} services loaded from FR-Logistics catalog`;
+  }
+}
+
+// Build the SVCS array by merging template metadata with API rates.
+// Services without a matching rate code in the API response are skipped silently.
+function buildCatalog(apiRates){
+  SVCS = SVCS_TEMPLATE
+    .map(t => {
+      const apiEntry = apiRates[t.code];
+      if(!apiEntry || apiEntry.rate == null) return null;
+      return {
+        ...t,
+        rate: parseFloat(apiEntry.rate)
+      };
+    })
+    .filter(Boolean);
+  _ratesLoaded = true;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// QUOTE NUMBER + UI HELPERS
+// ════════════════════════════════════════════════════════════════════════════
 function updateQID(){
   const n=($('clientName').value||'').replace(/\s+/g,'_').toUpperCase().slice(0,8)||'QUOTE';
   $('qid').textContent=n+'-'+today().replace(/-/g,'').slice(2);
 }
 
-function buildTiers(){
-  const o=+$('orders').value||0, u=+$('units').value||0;
-  const mk=(el,t,q)=>{
-    const at=gT(t,q);
-    el.innerHTML='<tr><th>Tier</th><th>Volume</th><th>Rate</th></tr>'+
-      t.map(x=>`<tr class="${at===x?'at':''}"><td>${x.l}</td><td>${x.mx===999999?'5,001+':x.mn+'–'+x.mx}</td><td>${fmt(x.r)}</td></tr>`).join('');
-  };
-  mk($('fTierTbl'),FT,o); mk($('lTierTbl'),LT,u);
-}
-
 function renderSvcs(){
+  if(!_ratesLoaded){
+    $('svcList').innerHTML = '<div class="rates-loading"><span class="rates-spinner"></span>Loading rates from FR-Logistics catalog…</div>';
+    return;
+  }
   const cats=[...new Set(SVCS.map(s=>s.cat))];
   let h='';
   cats.forEach(cat=>{
@@ -525,7 +634,8 @@ function renderSvcs(){
     });
   });
   $('svcList').innerHTML=h;
-  applyAuto(); syncSummary();
+  applyVolumeBindings();
+  syncSummary();
 }
 
 function onChk(id){
@@ -536,21 +646,30 @@ function onChk(id){
 
 function getDQ(s){return s.src?(+$(s.src)?.value||0):s.dq}
 
-function applyAuto(){
-  const o=+$('orders').value||0, u=+$('units').value||0;
-  const fr=gR(FT,o), lr=gR(LT,u);
-  const fi=$('rate_FULF_PICK1'),fq=$('qty_FULF_PICK1');
-  const li=$('rate_FBA_LABEL'), lq=$('qty_FBA_LABEL');
-  if(fi)fi.value=fr.toFixed(2); if(fq)fq.value=o;
-  if(li)li.value=lr.toFixed(2); if(lq)lq.value=u;
-  $('fRatePrev').textContent=`${fmt(fr)} · ${gL(FT,o)}`;
-  $('lRatePrev').textContent=`${fmt(lr)} · ${gL(LT,u)}`;
-  buildTiers(); syncSummary(); if(CQ)genQuote();
+// ════════════════════════════════════════════════════════════════════════════
+// VOLUME BINDINGS — auto-populate qty for services bound to volume inputs
+// (replaces v3's applyAuto() tier logic — rates are now flat from API)
+// ════════════════════════════════════════════════════════════════════════════
+function applyVolumeBindings(){
+  if(!_ratesLoaded) return;
+  const o=+$('orders').value||0;
+  const u=+$('units').value||0;
+  const p=+$('pallets').value||0;
+  // Auto-fill qty for the two flagship auto services
+  const fq=$('qty_FUL_PP1'),  lq=$('qty_PRP_FNSKU');
+  if(fq)fq.value=o;
+  if(lq)lq.value=u;
+  syncSummary();
+  if(CQ) genQuote();
 }
 
 function refreshDP(){
-  SVCS.forEach(s=>{const e=$(`qty_${s.id}`);if(e&&s.src)e.value=getDQ(s)});
-  applyAuto();
+  if(!_ratesLoaded) return;
+  SVCS.forEach(s=>{
+    const e=$(`qty_${s.id}`);
+    if(e&&s.src) e.value=getDQ(s);
+  });
+  applyVolumeBindings();
 }
 
 function getClient(){
@@ -569,7 +688,7 @@ function getLines(){
     .map(s=>{
       const qty=+$(`qty_${s.id}`).value||0,rate=+$(`rate_${s.id}`).value||0;
       const desc=$(`desc_${s.id}`).value.trim()||s.desc;
-      return{id:s.id,service:s.name,cat:s.cat,desc,unit:s.unit,qty,rate,total:qty*rate,auto:s.auto?'Yes':'No'};
+      return{id:s.id,code:s.code,service:s.name,cat:s.cat,desc,unit:s.unit,qty,rate,total:qty*rate,auto:s.auto?'Yes':'No'};
     }).filter(l=>l.qty>0||l.rate>0);
 }
 
@@ -581,13 +700,13 @@ function syncSummary(){
 }
 
 function genQuote(){
+  if(!_ratesLoaded){alert('Rates still loading. Try again in a second.');return;}
   const c=getClient(),L=getLines();
   const sub=L.reduce((a,l)=>a+l.total,0),sug=Math.max(sub,c.minBill);
-  CQ={c,L,sub,sug,fTier:gL(FT,c.orders),fRate:gR(FT,c.orders),lTier:gL(LT,c.units),lRate:gR(LT,c.units)};
+  CQ={c,L,sub,sug};
   $('dClient').textContent=c.clientName||'—';
   $('dChannel').textContent=`${c.channel} · ${c.opType}`;
   $('dVol').textContent=`${c.orders} orders / ${c.pallets} pallets / ${c.units} units`;
-  $('dAuto').textContent=`${CQ.fTier}@${fmt(CQ.fRate)} | ${CQ.lTier}@${fmt(CQ.lRate)}`;
   $('dNotes').textContent=c.notes||'—';
   const ql=$('qLines');
   if(!L.length){ql.innerHTML='<div style="color:var(--muted);text-align:center;padding:16px 0;font-size:13px">No services selected.</div>';syncSummary();checkEmailBtn();return;}
@@ -616,6 +735,7 @@ function toggleAll(f){
 }
 
 function saveDraft(){
+  if(!_ratesLoaded) return;  // don't save during initial load
   try{localStorage.setItem(SK,JSON.stringify({client:getClient(),ss:SVCS.map(s=>({id:s.id,ch:$(`chk_${s.id}`)?.checked||false,q:$(`qty_${s.id}`)?.value||'',r:$(`rate_${s.id}`)?.value||'',d:$(`desc_${s.id}`)?.value||''}))}));}catch(e){}
 }
 
@@ -641,7 +761,8 @@ function loadDraft(){
       });
     }
   }catch(e){}
-  applyAuto(); syncSummary();
+  applyVolumeBindings();
+  syncSummary();
 }
 
 function clearQ(){
@@ -653,13 +774,13 @@ function clearQ(){
   $('orders').value=500; $('pallets').value=8; $('units').value=1200; $('minBill').value=0;
   $('validity').value='30 days'; CQ=null; updateQID(); renderSvcs(); checkEmailBtn();
   $('qLines').innerHTML='<div style="color:var(--muted);text-align:center;padding:20px 0;font-size:13px">Press <strong>⚡ Generate Quote</strong> to see breakdown.</div>';
-  ['dClient','dChannel','dVol','dAuto','dNotes'].forEach(id=>$(id).textContent='—');
+  ['dClient','dChannel','dVol','dNotes'].forEach(id=>$(id).textContent='—');
 }
 
 function ensureQ(){if(!CQ)genQuote();return CQ?.L?.length>0;}
 
 /* ═══════════════════════════════════════════════
-   EMAIL DRAFT v3 — HTML Email + Gmail Fix + PDF
+   EMAIL DRAFT — HTML Email + Gmail Fix + PDF
    Account: josefuentes@fr-logistics.net
 ═══════════════════════════════════════════════ */
 const FR_GMAIL = 'josefuentes@fr-logistics.net';
@@ -668,7 +789,6 @@ let _emailLang = 'en';
 let _emailTextBody = '';
 let _emailHtmlBody = '';
 
-/* ── TOAST NOTIFICATION ── */
 function showToast(msg, dur=4000){
   let t=$('frToast');
   if(!t){
@@ -704,7 +824,6 @@ function setEmailLang(lang){
   renderEmailPreview();
 }
 
-/* ── HELPERS ── */
 function getQNum(c){
   return(c.clientName||'CLIENT').replace(/\s+/g,'_').toUpperCase().slice(0,8)
         +'-'+(c.quoteDate||today()).replace(/-/g,'').slice(2);
@@ -715,12 +834,10 @@ function getValidUntil(c){
   return fmtD(new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,10));
 }
 
-/* ── BUILD HTML EMAIL (for clipboard — renders in Gmail when pasted) ── */
 function buildEmailHTML(q,lang){
   const c=q.c;
   const qNum=getQNum(c);
   const validUntil=getValidUntil(c);
-  // Only services with total > 0
   const billableLines=q.L.filter(l=>l.total>0);
   const es=lang==='es';
 
@@ -758,7 +875,6 @@ function buildEmailHTML(q,lang){
   const noteText    = es
     ? `<em>Nota comercial: Los precios finales pueden ajustarse tras revisar la complejidad de SKUs, empaque, frecuencia de inbounds e integraciones. Esta cotización es válida por ${c.validity}.</em>`
     : `<em>Commercial note: Final pricing may be adjusted after reviewing SKU complexity, packaging requirements, and workflow details. This quote is valid for ${c.validity}.</em>`;
-  const signoff     = es?'Saludos cordiales,':'Best regards,';
   const volStr      = `${c.orders.toLocaleString()} ${es?'órdenes':'orders'} / ${c.pallets} pallets / ${c.units.toLocaleString()} ${es?'unidades':'units'}`;
 
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head><body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif">
@@ -766,7 +882,6 @@ function buildEmailHTML(q,lang){
 <tr><td align="center">
 <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%">
 
-  <!-- HEADER -->
   <tr><td style="background:linear-gradient(135deg,#065f46,#16a34a);border-radius:12px 12px 0 0;padding:28px 32px">
     <table width="100%" cellpadding="0" cellspacing="0"><tr>
       <td>
@@ -781,14 +896,11 @@ function buildEmailHTML(q,lang){
     </tr></table>
   </td></tr>
 
-  <!-- BODY -->
   <tr><td style="background:#ffffff;padding:32px">
 
-    <!-- GREETING -->
     <p style="margin:0 0 6px;font-size:15px;font-weight:600;color:#0f172a">${greeting}</p>
     <p style="margin:0 0 24px;font-size:14px;color:#475569;line-height:1.6">${intro}</p>
 
-    <!-- INFO PILLS -->
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
     <tr>
       <td width="50%" style="padding-right:6px">
@@ -806,7 +918,6 @@ function buildEmailHTML(q,lang){
     </tr>
     </table>
 
-    <!-- QUOTE META -->
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:24px">
     <tr><td style="padding:14px 16px;font-size:12.5px;color:#475569;line-height:1.8">
       <strong style="color:#0f172a">${dateLabel}</strong> ${fmtD(c.quoteDate)}&nbsp;&nbsp;
@@ -815,13 +926,11 @@ function buildEmailHTML(q,lang){
     </td></tr>
     </table>
 
-    <!-- SERVICES TABLE -->
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#059669;border-bottom:2px solid #d1fae5;padding-bottom:6px;margin-bottom:10px">${svcLabel}</div>
     <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:20px">
       ${svcRows}
     </table>
 
-    <!-- TOTALS -->
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
     <tr><td style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px 10px 0 0;padding:10px 16px">
       <table width="100%" cellpadding="0" cellspacing="0"><tr>
@@ -837,7 +946,6 @@ function buildEmailHTML(q,lang){
     </td></tr>
     </table>
 
-    <!-- CTA BLOCK -->
     <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid #bfdbfe;border-radius:12px;margin-bottom:20px">
     <tr><td style="padding:20px;text-align:center">
       <div style="font-size:15px;font-weight:700;color:#1e40af;margin-bottom:6px">${ctaHead}</div>
@@ -848,12 +956,10 @@ function buildEmailHTML(q,lang){
 
     ${c.notes?`<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12.5px;color:#475569"><strong style="color:#0f172a">${es?'Notas:':'Notes:'}</strong> ${c.notes}</div>`:''}
 
-    <!-- NOTE -->
     <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 14px;font-size:11.5px;color:#92400e">${noteText}</div>
 
   </td></tr>
 
-  <!-- FOOTER -->
   <tr><td style="background:#1e293b;border-radius:0 0 12px 12px;padding:20px 32px">
     <table width="100%" cellpadding="0" cellspacing="0"><tr>
       <td style="vertical-align:top">
@@ -874,13 +980,11 @@ function buildEmailHTML(q,lang){
 </body></html>`;
 }
 
-/* ── BUILD PLAIN TEXT (fallback body for Gmail URL) ── */
 function buildEmailText(q,lang){
   const c=q.c;
   const qNum=getQNum(c);
   const validUntil=getValidUntil(c);
   const es=lang==='es';
-  // Only billable lines
   const svcLines=q.L.filter(l=>l.total>0).map(l=>`  • ${l.service}: ${l.qty} ${l.unit} × ${fmt(l.rate)} = ${fmt(l.total)}`).join('\n');
 
   if(es){
@@ -959,7 +1063,6 @@ FR-Logistics · (786) 300-1443 · info@fr-logistics.net`
   };
 }
 
-/* Renders the branded HTML preview inside the modal */
 function renderEmailPreview(){
   if(!CQ)return;
   const q=CQ, c=q.c, lang=_emailLang;
@@ -971,19 +1074,16 @@ function renderEmailPreview(){
 
   const es=lang==='es';
 
-  // meta bar
   $('emailSubject').textContent=subject;
   $('emailToDisplay').textContent=c.contactEmail||'(no recipient email set)';
   $('emailHeaderSub').textContent=c.clientName
     ? (es?`Para: ${c.clientName}`:`To: ${c.clientName}`)
     : (es?'Vista previa':'Quote preview');
 
-  // quote number + validity
   $('ep_qnum').textContent='#'+qNum;
   $('ep_qnum2').textContent=qNum;
   $('ep_valid').textContent=validUntil;
 
-  // greeting + intro
   if(es){
     $('ep_greeting').textContent=`Estimado/a ${c.contactName||'Cliente'},`;
     $('ep_intro').textContent=`Gracias por su interés en FR-Logistics. Adjunto la propuesta para ${c.clientName||'su empresa'}.`;
@@ -1008,7 +1108,6 @@ function renderEmailPreview(){
   $('ep_sug_val').textContent=fmt(q.sug);
   $('ep_prepby').textContent=c.prepBy||'Jose Fuentes – Operations Manager';
 
-  // service rows — only billable
   $('ep_services').innerHTML=q.L.filter(l=>l.total>0).map((l,i)=>`
     <div class="em-svc-row" style="display:grid;grid-template-columns:1fr auto;gap:8px;
          align-items:start;padding:8px 12px;border-radius:8px;
@@ -1022,12 +1121,6 @@ function renderEmailPreview(){
     </div>`).join('');
 }
 
-/* ── CREATE GMAIL DRAFT via Apps Script ──
-   1. Generate PDF as base64 (jsPDF)
-   2. POST to Apps Script: {to, subject, htmlBody, textBody, pdfBase64, pdfName}
-   3. Apps Script creates draft in josefuentes@fr-logistics.net with PDF attached
-   4. Show success toast with link to drafts
-*/
 function openGmailCompose(){
   if(!CQ)return;
   const{subject, textBody}=buildEmailText(CQ,_emailLang);
@@ -1036,19 +1129,17 @@ function openGmailCompose(){
   const c=CQ.c;
   const pdfName=`FR_Quote_${(c.clientName||'Quote').replace(/[^a-z0-9]+/gi,'_')}_${c.quoteDate||today()}.pdf`;
 
-  // Update button to loading state
   const btn=document.querySelector('.em-gmail-btn');
   const origText=btn.innerHTML;
   btn.innerHTML=es?'⏳ Creando borrador...':'⏳ Creating draft...';
   btn.disabled=true;
   btn.style.opacity='0.7';
 
-  // Generate PDF as base64
   let pdfBase64='';
   try{
     const{jsPDF}=window.jspdf;
-    const doc=buildPDFDoc(); // reuse existing PDF logic
-    pdfBase64=doc.output('datauristring').split(',')[1]; // strip data:...;base64,
+    const doc=buildPDFDoc();
+    pdfBase64=doc.output('datauristring').split(',')[1];
   }catch(err){
     console.warn('PDF generation failed:',err);
   }
@@ -1064,7 +1155,7 @@ function openGmailCompose(){
   fetch(APPS_SCRIPT_URL,{
     method:'POST',
     redirect:'follow',
-    headers:{'Content-Type':'text/plain'}, // text/plain avoids preflight CORS
+    headers:{'Content-Type':'text/plain'},
     body:JSON.stringify(payload)
   })
   .then(r=>r.json())
@@ -1081,8 +1172,6 @@ function openGmailCompose(){
   })
   .catch(err=>{
     btn.innerHTML=origText; btn.disabled=false; btn.style.opacity='1';
-    // CORS fallback: Apps Script may block cross-origin reads but draft was created
-    // Check if it's a CORS read error (draft likely created anyway)
     if(err.message&&err.message.includes('Failed to fetch')){
       closeEmailModal();
       showToast(es
@@ -1094,7 +1183,9 @@ function openGmailCompose(){
   });
 }
 
-/* ── BUILD PDF DOC (shared logic, returns jsPDF doc object) ── */
+// ════════════════════════════════════════════════════════════════════════════
+// PDF GENERATION (simplified — no tier "PRICING SNAPSHOT" cards anymore)
+// ════════════════════════════════════════════════════════════════════════════
 function buildPDFDoc(){
   const{jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'portrait',unit:'pt',format:'letter'});
@@ -1104,6 +1195,7 @@ function buildPDFDoc(){
   const S1=[248,250,252],S2=[226,232,240],S5=[100,116,139],S7=[51,65,85],S9=[15,23,42];
   const qNum=getQNum(c);
   let y=0;
+  // Header
   doc.setFillColor(...G2);doc.rect(0,0,PW,78,'F');
   doc.setFillColor(10,110,70,0.4);doc.rect(PW/2,0,PW/2,78,'F');
   doc.setFillColor(255,255,255,0.2);doc.roundedRect(ML,14,48,48,6,6,'F');
@@ -1120,6 +1212,7 @@ function buildPDFDoc(){
   doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(167,243,208);
   doc.text(`Date: ${fmtD(c.quoteDate)}   Valid: ${c.validity}`,PW-MR,56,{align:'right'});
   y=78;
+  // Info strip
   const colW3=usableW/3,stripH=60;
   doc.setFillColor(255,255,255);doc.rect(0,y,PW,stripH,'F');
   function infoCell(x,cy,label,main,sub){
@@ -1138,19 +1231,8 @@ function buildPDFDoc(){
   infoCell(ML+colW3*2,y,'MONTHLY VOLUME',`${c.orders.toLocaleString()} Orders / Mo`,`${c.pallets.toLocaleString()} pallets  ·  ${c.units.toLocaleString()} label units`);
   doc.setDrawColor(...S2);doc.setLineWidth(1.5);doc.line(0,y+stripH,PW,y+stripH);
   y+=stripH+14;
-  doc.setTextColor(5,150,105);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
-  doc.text('PRICING SNAPSHOT',ML,y);y+=8;
-  const snapW=(usableW-16)/3;
-  [[`Fulfillment Tier`,q.fTier],[`Fulfillment Rate`,`${fmt(q.fRate)} / order`],[`Labeling Tier / Rate`,`${q.lTier} @ ${fmt(q.lRate)}/unit`]].forEach((item,i)=>{
-    const sx=ML+i*(snapW+8);
-    doc.setFillColor(...G3);doc.roundedRect(sx,y,snapW,38,4,4,'F');
-    doc.setDrawColor(167,243,208);doc.setLineWidth(0.5);doc.roundedRect(sx,y,snapW,38,4,4,'S');
-    doc.setTextColor(...S5);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
-    doc.text(item[0].toUpperCase(),sx+10,y+14);
-    doc.setTextColor(...G2);doc.setFontSize(11.5);doc.setFont('helvetica','bold');
-    doc.text(String(item[1]),sx+10,y+28);
-  });
-  y+=52;
+
+  // Services table (no more pricing snapshot tier cards)
   doc.setTextColor(5,150,105);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
   doc.text('SELECTED SERVICES',ML,y);y+=8;
   const tCols=[usableW*0.22,usableW*0.14,usableW*0.32,usableW*0.08,usableW*0.12,usableW*0.12];
@@ -1187,6 +1269,8 @@ function buildPDFDoc(){
     y+=rh;
   });
   y+=12;
+
+  // Totals
   const totW=280,totX=ML+usableW-totW;
   doc.setFillColor(255,255,255);doc.setDrawColor(...S2);doc.setLineWidth(0.5);
   doc.rect(totX,y,totW,26,'FD');
@@ -1201,12 +1285,16 @@ function buildPDFDoc(){
   doc.setTextColor(255,255,255);doc.setFontSize(11);doc.setFont('helvetica','bold');
   doc.text('SUGGESTED MONTHLY BILLING',totX+12,y+18);
   doc.setFontSize(13);doc.text(fmt(q.sug),totX+totW-10,y+19,{align:'right'});y+=42;
+
+  // Validity note
   if(y+35>PH-60){doc.addPage();y=40;}
   doc.setFillColor(255,251,235);doc.setDrawColor(253,230,138);doc.setLineWidth(0.5);
   doc.roundedRect(ML,y,usableW,28,4,4,'FD');
   doc.setTextColor(146,64,14);doc.setFontSize(9);doc.setFont('helvetica','bold');
   doc.text('Quote Validity: ',ML+10,y+17);doc.setFont('helvetica','normal');
   doc.text(`Valid for ${c.validity} from ${fmtD(c.quoteDate)}.`,ML+10+doc.getTextWidth('Quote Validity: '),y+17);y+=38;
+
+  // Notes
   if(c.notes){
     const notesH=Math.min(60,doc.getTextDimensions(c.notes,{maxWidth:usableW-20,fontSize:9}).h+22);
     if(y+notesH>PH-60){doc.addPage();y=40;}
@@ -1216,6 +1304,8 @@ function buildPDFDoc(){
     doc.text('Scope / Notes:',ML+10,y+13);doc.setFont('helvetica','normal');
     doc.text(doc.splitTextToSize(c.notes,usableW-20),ML+10,y+24);y+=notesH+8;
   }
+
+  // Commercial note
   const commNote='Commercial Note: Final pricing may be adjusted after reviewing SKU complexity, packaging requirements, inbound frequency, storage profile, platform integrations, and workflow requirements.';
   const commH=doc.getTextDimensions(commNote,{maxWidth:usableW-20,fontSize:8}).h+18;
   if(y+commH>PH-60){doc.addPage();y=40;}
@@ -1223,6 +1313,8 @@ function buildPDFDoc(){
   doc.roundedRect(ML,y,usableW,commH,4,4,'FD');
   doc.setTextColor(...S5);doc.setFontSize(8);doc.setFont('helvetica','oblique');
   doc.text(doc.splitTextToSize(commNote,usableW-20),ML+10,y+12);
+
+  // Footer
   const pageCount=doc.internal.getNumberOfPages();
   for(let i=1;i<=pageCount;i++){
     doc.setPage(i);
@@ -1259,7 +1351,9 @@ function copyEmailBody(){
   }catch(e){copyFallback(_emailTextBody,es);}
 }
 
-/* ── EXCEL ── */
+// ════════════════════════════════════════════════════════════════════════════
+// EXCEL EXPORT (simplified — no Volume Pricing sheet anymore)
+// ════════════════════════════════════════════════════════════════════════════
 function dlExcel(){
   if(!ensureQ()){alert('Generate a quote with at least one selected service first.');return;}
   const q=CQ,c=q.c;
@@ -1276,6 +1370,7 @@ function dlExcel(){
     };
     XLSX.utils.book_append_sheet(wb,ws,name);
   }
+  // Sheet 1: Quote Summary
   const rows1=[
     ['FR-Logistics','','',`${CO.address}  ·  ${CO.phone}`,''],
     [CO.tagline,'','',CO.email+'  ·  '+CO.website,''],
@@ -1287,8 +1382,6 @@ function dlExcel(){
     ['Contact:',c.contactName||'—','','Monthly Orders:',c.orders],
     ['Email:',c.contactEmail||'—','','Monthly Pallets:',c.pallets],
     ['Prepared By:',c.prepBy||'—','','Label Units:',c.units],
-    ['','','','Fulfillment Tier:',`${q.fTier} @ ${fmt(q.fRate)}/order`],
-    ['','','','Labeling Tier:',`${q.lTier} @ ${fmt(q.lRate)}/unit`],
     ['','','','',''],
     ['SERVICE','CATEGORY','DESCRIPTION','QTY','UNIT RATE','LINE TOTAL'],
   ];
@@ -1302,24 +1395,20 @@ function dlExcel(){
   rows1.push([`Commercial Note: Final pricing may be adjusted after reviewing SKU complexity, packaging requirements, inbound frequency, storage profile, platform integrations, and workflow requirements. This quote is valid for ${c.validity}.`,'','','','','']);
   addSheet(wb,'Quote Summary',rows1,[28,20,38,20,18,16],false);
   const ws1=wb.Sheets['Quote Summary'];
-  const dataStart=15;const numRows=q.L.length;
+  // Currency formatting on Sheet 1
+  const dataStart=13;const numRows=q.L.length;
   for(let i=0;i<numRows;i++){const r=dataStart+i;const e=`E${r}`,f=`F${r}`;if(ws1[e]){ws1[e].t='n';ws1[e].z='"$"#,##0.00';}if(ws1[f]){ws1[f].t='n';ws1[f].z='"$"#,##0.00';}}
   const totStart=dataStart+numRows+2;
   if(ws1[`F${totStart}`]){ws1[`F${totStart}`].t='n';ws1[`F${totStart}`].z='"$"#,##0.00';}
   if(ws1[`F${totStart+1}`]){ws1[`F${totStart+1}`].t='n';ws1[`F${totStart+1}`].z='"$"#,##0.00';}
   if(ws1[`F${totStart+2}`]){ws1[`F${totStart+2}`].t='n';ws1[`F${totStart+2}`].z='"$"#,##0.00';}
+  // Sheet 2: Service Breakdown (with canonical service codes)
   const rows2=[['Service Code','Service','Category','Description','Quantity','Unit','Rate (USD)','Line Total (USD)','Auto-Priced']];
-  q.L.forEach(l=>rows2.push([l.id,l.service,l.cat,l.desc,l.qty,l.unit,l.rate,l.total,l.auto]));
-  addSheet(wb,'Service Breakdown',rows2,[14,26,22,42,10,20,12,16,12],true);
-  const rows3=[['Type','Tier','Min Units','Max Units','Rate (USD)'],
-    ...FT.map(t=>['Fulfillment (Pick & Pack)',t.l,t.mn,t.mx===999999?'Unlimited':t.mx,t.r]),
-    ...LT.map(t=>['Labeling (Amazon SPN)',t.l,t.mn,t.mx===999999?'Unlimited':t.mx,t.r]),
-  ];
-  addSheet(wb,'Volume Pricing',rows3,[26,16,12,12,12],false);
+  q.L.forEach(l=>rows2.push([l.code,l.service,l.cat,l.desc,l.qty,l.unit,l.rate,l.total,l.auto]));
+  addSheet(wb,'Service Breakdown',rows2,[16,26,22,42,10,20,12,16,12],true);
   XLSX.writeFile(wb,`FR_Quote_${safe(c.clientName)}_${c.quoteDate}.xlsx`);
 }
 
-/* ── PDF ── */
 function dlPDF(){
   if(!ensureQ()){alert('Generate a quote with at least one selected service first.');return;}
   const doc=buildPDFDoc();
@@ -1327,11 +1416,28 @@ function dlPDF(){
   doc.save(`FR_Quote_${safe(c.clientName)}_${c.quoteDate}.pdf`);
 }
 
-/* ── INIT ── */
-$('qDate').value=today();
-updateQID();
-renderSvcs();
-loadDraft();
+// ════════════════════════════════════════════════════════════════════════════
+// INIT — async because we have to load rates first
+// ════════════════════════════════════════════════════════════════════════════
+(async function init(){
+  $('qDate').value=today();
+  updateQID();
+
+  // Fetch rates from billing-rates API
+  const apiRates = await loadRates();
+  if(!apiRates){
+    // Error already shown by loadRates(); halt further setup
+    return;
+  }
+
+  // Build the catalog with API-injected rates
+  buildCatalog(apiRates);
+  showRatesOk();
+
+  // Render UI now that rates are loaded
+  renderSvcs();
+  loadDraft();
+})();
 </script>
 </body>
 </html>
