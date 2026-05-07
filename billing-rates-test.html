@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Billing Rates API · Test</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f1f5f9;
+      color: #0f172a;
+      padding: 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 { color: #065F46; margin-bottom: 0.5rem; font-size: 1.6rem; }
+    .subtitle { color: #64748b; margin-bottom: 2rem; }
+    .panel {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .panel h2 { font-size: 1rem; margin-bottom: 0.75rem; color: #065F46; }
+    .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    select, input, button {
+      padding: 0.5rem 0.75rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 0.9rem;
+    }
+    button {
+      background: #10b981;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover { background: #065F46; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    .status { padding: 0.4rem 0.8rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; }
+    .status.ok    { background: #d1fae5; color: #065F46; }
+    .status.fail  { background: #fee2e2; color: #dc2626; }
+    .status.wait  { background: #fef3c7; color: #92400e; }
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 1rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 0.8rem;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
+    th { background: #f8fafc; font-weight: 600; color: #475569; }
+    .badge { font-size: 0.7rem; padding: 0.15rem 0.4rem; border-radius: 4px; font-weight: 600; }
+    .badge.client  { background: #d1fae5; color: #065F46; }
+    .badge.default { background: #e2e8f0; color: #475569; }
+    .badge.catalog { background: #fef3c7; color: #92400e; }
+  </style>
+</head>
+<body>
+  <h1>Billing Rates API · Test Console</h1>
+  <p class="subtitle">Validate <code>/.netlify/functions/billing-rates</code> after deploy</p>
+
+  <div class="panel">
+    <h2>Test 1 — Catalog</h2>
+    <div class="row">
+      <button onclick="testCatalog()">GET ?action=catalog</button>
+      <span id="t1-status"></span>
+    </div>
+    <pre id="t1-out" style="display:none;"></pre>
+  </div>
+
+  <div class="panel">
+    <h2>Test 2 — DEFAULT rate card</h2>
+    <div class="row">
+      <button onclick="testCard('DEFAULT')">GET ?client=DEFAULT</button>
+      <span id="t2-status"></span>
+    </div>
+    <div id="t2-summary" style="margin-top:0.75rem;"></div>
+    <pre id="t2-out" style="display:none;"></pre>
+  </div>
+
+  <div class="panel">
+    <h2>Test 3 — Milano Brands LLC (custom rates)</h2>
+    <div class="row">
+      <button onclick="testCard('Milano Brands LLC')">GET ?client=Milano Brands LLC</button>
+      <span id="t3-status"></span>
+    </div>
+    <div id="t3-summary" style="margin-top:0.75rem;"></div>
+    <pre id="t3-out" style="display:none;"></pre>
+  </div>
+
+  <div class="panel">
+    <h2>Test 4 — Custom client (form)</h2>
+    <div class="row">
+      <input type="text" id="custom-client" placeholder="Client name" value="LRE Holding" style="flex:1; min-width:200px;">
+      <button onclick="testCard(document.getElementById('custom-client').value)">GET</button>
+      <span id="t4-status"></span>
+    </div>
+    <div id="t4-summary" style="margin-top:0.75rem;"></div>
+    <pre id="t4-out" style="display:none;"></pre>
+  </div>
+
+  <div class="panel">
+    <h2>Test 5 — List clients with custom rates</h2>
+    <div class="row">
+      <button onclick="testListClients()">GET ?action=list-clients</button>
+      <span id="t5-status"></span>
+    </div>
+    <pre id="t5-out" style="display:none;"></pre>
+  </div>
+
+  <script>
+    const API = '/.netlify/functions/billing-rates';
+
+    function setStatus(id, status, msg) {
+      const el = document.getElementById(id);
+      el.className = 'status ' + status;
+      el.textContent = msg;
+    }
+
+    async function call(path, statusId, outId) {
+      setStatus(statusId, 'wait', 'Loading...');
+      try {
+        const t0 = performance.now();
+        const res = await fetch(API + path);
+        const elapsed = Math.round(performance.now() - t0);
+        const data = await res.json();
+        if (!res.ok) {
+          setStatus(statusId, 'fail', `HTTP ${res.status} (${elapsed}ms)`);
+        } else {
+          setStatus(statusId, 'ok', `OK (${elapsed}ms)`);
+        }
+        const out = document.getElementById(outId);
+        out.style.display = 'block';
+        out.textContent = JSON.stringify(data, null, 2);
+        return data;
+      } catch (err) {
+        setStatus(statusId, 'fail', err.message);
+        return null;
+      }
+    }
+
+    async function testCatalog() {
+      const data = await call('?action=catalog', 't1-status', 't1-out');
+      if (data?.count) {
+        setStatus('t1-status', data.count === 53 ? 'ok' : 'fail',
+                  `${data.count} services ${data.count === 53 ? '✓' : '✗ expected 53'}`);
+      }
+    }
+
+    async function testCard(client) {
+      const idx = client === 'DEFAULT' ? 2 : (client === 'Milano Brands LLC' ? 3 : 4);
+      const data = await call('?client=' + encodeURIComponent(client), `t${idx}-status`, `t${idx}-out`);
+      if (data?.rates) {
+        const summary = renderSummary(data);
+        document.getElementById(`t${idx}-summary`).innerHTML = summary;
+      }
+    }
+
+    async function testListClients() {
+      await call('?action=list-clients', 't5-status', 't5-out');
+    }
+
+    function renderSummary(card) {
+      const rates = Object.values(card.rates);
+      const counts = {
+        client: rates.filter(r => r.source === 'client').length,
+        default: rates.filter(r => r.source === 'default').length,
+        catalog: rates.filter(r => r.source === 'catalog').length
+      };
+
+      const samples = [
+        { code: 'INB_CARTON',    label: 'Inbound Carton' },
+        { code: 'PRP_BOXING',    label: 'Boxing' },
+        { code: 'PRP_FNSKU',     label: 'FNSKU Labeling' },
+        { code: 'QC_HOUR',       label: 'QC per hour' },
+        { code: 'FUL_PP1',       label: 'Pick & Pack 1st' },
+        { code: 'RET_PROC',      label: 'Returns' },
+        { code: 'STO_RACK',      label: 'Storage Rack' },
+        { code: 'TEC_WMS',       label: 'WMS Monthly' }
+      ];
+
+      let html = '<table><thead><tr><th>Service</th><th>Rate</th><th>Unit</th><th>Source</th></tr></thead><tbody>';
+      for (const s of samples) {
+        const r = card.rates[s.code];
+        if (!r) { html += `<tr><td>${s.label}</td><td colspan="3">— missing —</td></tr>`; continue; }
+        html += `<tr>
+          <td>${s.label}</td>
+          <td><strong>$${r.rate.toFixed(2)}</strong></td>
+          <td>${r.unit}</td>
+          <td><span class="badge ${r.source}">${r.source}</span></td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+
+      html += `<p style="margin-top:0.75rem; font-size:0.8rem; color:#475569;">
+        Total: ${rates.length} services ·
+        <span class="badge client">${counts.client} client</span>
+        <span class="badge default">${counts.default} default</span>
+        <span class="badge catalog">${counts.catalog} catalog</span> ·
+        Policy: shipping_markup=${card.policy.shipping_markup ?? '—'},
+        mmb=${card.policy.mmb ?? '—'},
+        billing_source=${card.policy.billing_source ?? '—'}
+      </p>`;
+
+      return html;
+    }
+  </script>
+</body>
+</html>
