@@ -499,5 +499,3 @@ export default async function handler(req) {
     return jRes({ error: e.message || "internal error" }, 500);
   }
 }
-
-export const config = { path: "/.netlify/functions/dropship-manifests" };
