@@ -1,639 +1,503 @@
-// netlify/functions/dropship-manifest.js
-// Dropshipments · Daily client manifest via WhatsApp
+// netlify/functions/dropship-manifests.js
 //
-// Purpose
-// ───────
-// At 7 PM Miami (11 PM UTC) each day, send a WhatsApp daily_summary to each
-// active dropshipment client with counts of today's activity:
-//   {{1}} client name
-//   {{2}} human-readable date ("Tuesday, April 21")
-//   {{3}} received today count (physical_received_at::date = today UTC)
-//   {{4}} shipped today count (shipped_at::date = today UTC)
+// FR-Logistics · Outbound Manifest API (v2 — Commit 2)
 //
-// Behavior
-// ───────
-// - Scheduled: fires once per day at 11 PM UTC via netlify.toml
-// - Manual: POST with optional ?dry_run=1 or ?client_id={uuid} overrides
-// - Only sends to clients that have:
-//     * a dropship config (dropship_client_configs)
-//     * a wa_number on fr_clients
-//     * wa_notifications = true OR wa_consent = 'Yes' on fr_clients
-// - Only sends if the client had ≥1 shipped row today (unless
-//   force=1 is passed in manual mode, for dry-run previewing)
-// - After a successful send, marks the manifest-included shipped rows with
-//   manifest_sent_at so we never double-report the same day
-// - Logs the outbound message to wa-messages (add_outbound) for audit trail
+// Style: Netlify Functions v2 (ESM). Matches dropshipments.js pattern exactly.
+// Storage: Supabase Postgres + Netlify Blobs (fr-manifests store) + Resend SMTP.
 //
-// Endpoints
-// ───────
-//   GET  ?action=info                          → health & config
-//   POST                                       → run (scheduled or manual)
-//   POST ?dry_run=1                            → preview, no sends, no DB writes
-//   POST ?client_id={uuid}                     → run for a single client
-//   POST ?force=1                              → send even if no shipped today
-//                                               (useful for testing)
+// GET endpoints:
+//   ?action=list[&carrier=...&status=...&limit=50]
+//   ?action=get&manifest_id=MAN-...
+//   ?action=current_open&carrier=MailAmericas
+//   ?action=download_pdf&manifest_id=MAN-...
+//   ?action=download_csv&manifest_id=MAN-...
+//
+// POST endpoints (JSON body):
+//   action=auto_assign     → assign a shipped package to the open manifest
+//                            Body: { tracking_number, outbound_carrier, operator }
+//                            Internal-use: called by dropshipments.js after ship.
+//
+//   action=seal            → seal the open manifest, generate PDF + CSV,
+//                            upload to Netlify Blobs, open a fresh empty manifest.
+//                            Body: { manifest_id, sealed_by }
+//                            Returns: { sealed_manifest_id, pdf_url, csv_url, package_count, next_open }
 
-const SUPABASE_URL  = Netlify.env.get("SUPABASE_URL");
-const SUPABASE_KEY  = Netlify.env.get("SUPABASE_SERVICE_KEY");
-const RESEND_KEY    = Netlify.env.get("RESEND_API_KEY");
-const SITE_URL      = "https://apps.fr-logistics.net";
+import { getStore }      from "@netlify/blobs";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import QRCode             from "qrcode";
 
-// ─── Ops digest (internal copy to operations) ─────────────────────────────
-// After sending the per-client manifests, we also notify Jose with:
-//   - 1 WhatsApp consolidated message (quick mobile glance)
-//   - 1 email with full HTML breakdown (archivable, searchable)
-// NOTE: Using Jose's personal +1 786 775 7335 because the Miami business line
-// +1 305 240 3172 is not yet on the WABA's allowed recipients list.
-// Switch back to 13052403172 once added in Meta Business Manager.
-const OPS_WHATSAPP_NUMBER = "17867757335";          // Jose's personal mobile (no '+', no spaces)
-const OPS_EMAIL_TO        = "josefuentes@fr-logistics.net";
-const OPS_EMAIL_FROM      = "FR-Logistics <ops@fr-logistics.net>";
-const OPS_EMAIL_FROM_FALLBACK = "onboarding@resend.dev";
+const SUPABASE_URL = Netlify.env.get("SUPABASE_URL");
+const SUPABASE_KEY = Netlify.env.get("SUPABASE_SERVICE_KEY");
 
-// ─── Supabase helpers ────────────────────────────────────────────────────────
-const SB = () => ({ "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" });
-async function sbSelect(t, q = "") { const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}${q}`, { headers: SB() }); if (!r.ok) throw new Error(`sbSelect ${t}: ${await r.text()}`); return r.json(); }
-async function sbPatch(t, f, d) { const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}?${f}`, { method: "PATCH", headers: { ...SB(), "Prefer": "return=representation" }, body: JSON.stringify(d) }); if (!r.ok) throw new Error(`sbPatch ${t}: ${await r.text()}`); return r.json(); }
+// Public-facing base URL for the QR code link (commit 4 will serve /m/{token}).
+const PUBLIC_BASE_URL = Netlify.env.get("PUBLIC_BASE_URL") || "https://apps.fr-logistics.net";
 
-// ─── Date helpers ─────────────────────────────────────────────────────────────
-// Everything is UTC-based. A "day" boundary is UTC midnight → next UTC midnight.
-function todayUtcDate() {
-  const d = new Date();
-  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+const SB = () => ({
+  apikey: SUPABASE_KEY,
+  Authorization: `Bearer ${SUPABASE_KEY}`,
+  "Content-Type": "application/json",
+});
+
+const CORS = {
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type,Authorization",
+};
+const jRes = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: CORS });
+
+// ─── Supabase helpers ────────────────────────────────────────────────
+async function sbSelect(t, q = "") {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}${q}`, { headers: SB() });
+  if (!r.ok) throw new Error(`sbSelect ${t}: ${r.status} ${(await r.text()).slice(0, 240)}`);
+  return r.json();
 }
-function prettyDate(d = new Date()) {
-  // e.g. "Tuesday, April 21"
-  return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
+async function sbPatch(t, f, d) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}?${f}`, {
+    method: "PATCH",
+    headers: { ...SB(), Prefer: "return=representation" },
+    body: JSON.stringify(d),
+  });
+  if (!r.ok) throw new Error(`sbPatch ${t}: ${r.status} ${(await r.text()).slice(0, 240)}`);
+  return r.json();
 }
-
-// ─── Eligibility filter ───────────────────────────────────────────────────────
-// A client is eligible if they have a wa_number AND either
-// wa_notifications=true OR wa_consent ∈ {"Yes", "Opted In"}.
-function clientEligible(c) {
-  if (!c) return false;
-  if (!c.wa_number) return false;
-  const consentYes = c.wa_consent === "Yes" || c.wa_consent === "Opted In";
-  return !!(c.wa_notifications || consentYes);
-}
-function clientLabel(c) {
-  return c.store_name || c.company || c.name || "Client";
+async function sbRpc(fn, args) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: SB(),
+    body: JSON.stringify(args),
+  });
+  if (!r.ok) throw new Error(`sbRpc ${fn}: ${r.status} ${(await r.text()).slice(0, 240)}`);
+  return r.json();
 }
 
-// ─── WhatsApp send (DIRECT to Meta Graph API — bypasses whatsapp-notify) ─────
-// We call Meta directly for two reasons:
-//   1. Function-to-function calls in Netlify hit routing edge cases when the
-//      target function uses a custom config.path
-//   2. Skipping the intermediate hop is faster and removes a failure point
-//
-// Language handling: Meta requires the EXACT language code the template was
-// approved with. Our daily_summary is currently only approved in en_US, so
-// we automatically fall back to en_US if the requested language doesn't exist.
-async function sendWhatsAppMeta({ to, templateName, templateLanguage = "en_US", templateParams = [], fallbackText = "" }) {
-  const WA_TOKEN    = Netlify.env.get("WHATSAPP_TOKEN");
-  const WA_PHONE_ID = Netlify.env.get("WHATSAPP_PHONE_ID");
-  if (!WA_TOKEN)    throw new Error("WHATSAPP_TOKEN not configured");
-  if (!WA_PHONE_ID) throw new Error("WHATSAPP_PHONE_ID not configured");
+// ─── Action: list manifests ──────────────────────────────────────────
+async function actionList(url) {
+  const carrier = url.searchParams.get("carrier") || "";
+  const status  = url.searchParams.get("status")  || "";
+  const limit   = Math.min(parseInt(url.searchParams.get("limit") || "50", 10), 200);
 
-  // Normalize the phone: digits only. Meta wants 13052403172 (no '+', no spaces).
-  const phone = String(to || "").replace(/\D/g, "");
-  if (!phone) throw new Error("recipient phone is empty");
-  if (phone.length < 10) throw new Error(`recipient phone too short: ${phone}`);
+  const filters = [];
+  if (carrier) filters.push(`outbound_carrier=eq.${encodeURIComponent(carrier)}`);
+  if (status)  filters.push(`status=eq.${encodeURIComponent(status)}`);
 
-  const url = `https://graph.facebook.com/v21.0/${WA_PHONE_ID}/messages`;
+  const qs = [
+    "select=manifest_id,outbound_carrier,status,package_count,created_at,sealed_at,sealed_by,released_at,released_by,pdf_url,csv_url,email_sent_at,email_sent_to,public_token",
+    "order=created_at.desc",
+    `limit=${limit}`,
+    ...filters,
+  ].join("&");
 
-  const buildBody = (langCode) => ({
-    messaging_product: "whatsapp",
-    to: phone,
-    type: "template",
-    template: {
-      name: templateName,
-      language: { code: langCode },
-      components: [{
-        type: "body",
-        parameters: templateParams.map(p => ({ type: "text", text: String(p ?? "") }))
-      }]
-    }
+  const rows = await sbSelect("dropship_manifests", "?" + qs);
+  return jRes({ manifests: rows });
+}
+
+// ─── Action: get manifest by manifest_id, with packages ──────────────
+async function actionGet(url) {
+  const manifest_id = url.searchParams.get("manifest_id");
+  if (!manifest_id) return jRes({ error: "manifest_id required" }, 400);
+
+  const manifestRows = await sbSelect(
+    "dropship_manifests",
+    `?manifest_id=eq.${encodeURIComponent(manifest_id)}&limit=1`
+  );
+  if (!manifestRows.length) return jRes({ error: "manifest not found" }, 404);
+  const manifest = manifestRows[0];
+
+  const packages = await sbSelect(
+    "dropshipments",
+    `?manifest_id=eq.${encodeURIComponent(manifest_id)}` +
+      `&select=id,tracking_number,carrier,outbound_carrier,outbound_platform,outbound_tracking,client_id,content,qty_boxes,order_id,status,physical_received_at,shipped_at,received_by,shipped_by` +
+      `&order=shipped_at.desc.nullslast`
+  );
+  return jRes({ manifest, packages });
+}
+
+// ─── Action: current open manifest for a given carrier ───────────────
+async function actionCurrentOpen(url) {
+  const carrier = url.searchParams.get("carrier");
+  if (!carrier) return jRes({ error: "carrier required" }, 400);
+
+  const rows = await sbSelect(
+    "dropship_manifests",
+    `?outbound_carrier=eq.${encodeURIComponent(carrier)}&status=eq.open&limit=1`
+  );
+  if (!rows.length) return jRes({ manifest: null, packages: [] });
+
+  const manifest = rows[0];
+  const packages = await sbSelect(
+    "dropshipments",
+    `?manifest_id=eq.${encodeURIComponent(manifest.manifest_id)}` +
+      `&select=id,tracking_number,carrier,outbound_carrier,outbound_platform,outbound_tracking,client_id,content,qty_boxes,order_id,status,shipped_at,shipped_by` +
+      `&order=shipped_at.desc.nullslast`
+  );
+  return jRes({ manifest, packages });
+}
+
+// ─── Action: auto_assign (called from dropshipments.js after ship) ──
+// Body: { tracking_number, outbound_carrier, operator }
+// Returns: { manifest_id, package_count, was_created }
+async function actionAutoAssign(body) {
+  const tracking = (body.tracking_number || "").trim();
+  const carrier  = (body.outbound_carrier || "").trim();
+  const operator = (body.operator || "system").trim().slice(0, 60);
+
+  if (!tracking) return jRes({ error: "tracking_number required" }, 400);
+  if (!carrier)  return jRes({ error: "outbound_carrier required" }, 400);
+
+  // 1) Find the dropshipments row by inbound tracking_number
+  const rows = await sbSelect(
+    "dropshipments",
+    `?tracking_number=eq.${encodeURIComponent(tracking)}&select=id,manifest_id,status,outbound_carrier&limit=1`
+  );
+  if (!rows.length) return jRes({ error: "package not found", tracking_number: tracking }, 404);
+
+  const pkg = rows[0];
+  if (pkg.status !== "shipped") {
+    return jRes({
+      error: `package is not in shipped status (current: ${pkg.status})`,
+      hint: "auto_assign should only be called from the ship action",
+    }, 409);
+  }
+
+  // 2) Idempotency: if already assigned, return current state
+  if (pkg.manifest_id) {
+    return jRes({
+      ok: true,
+      already_assigned: true,
+      manifest_id: pkg.manifest_id,
+      package_id: pkg.id,
+    });
+  }
+
+  // 3) Get or create the open manifest for this carrier
+  const result = await sbRpc("get_or_create_open_manifest", {
+    p_carrier:  carrier,
+    p_operator: operator,
+  });
+  const manifest = Array.isArray(result) ? result[0] : result;
+  if (!manifest || !manifest.manifest_id) {
+    return jRes({ error: "failed to get or create open manifest" }, 500);
+  }
+
+  // 4) Assign the package + increment count
+  await sbPatch("dropshipments", `id=eq.${pkg.id}`, { manifest_id: manifest.manifest_id });
+  await sbRpc("manifest_increment_count", { p_manifest_id: manifest.manifest_id });
+
+  return jRes({
+    ok: true,
+    manifest_id:    manifest.manifest_id,
+    was_created:    manifest.was_created,
+    public_token:   manifest.public_token,
+    package_id:     pkg.id,
+  });
+}
+
+// ─── PDF generation ──────────────────────────────────────────────────
+async function generateManifestPdf(manifest, packages, clientNamesById) {
+  const pdf      = await PDFDocument.create();
+  pdf.setTitle(`Manifest ${manifest.manifest_id}`);
+  pdf.setAuthor("FR-Logistics Miami");
+  pdf.setCreator("apps.fr-logistics.net");
+
+  const page     = pdf.addPage([612, 792]); // Letter portrait
+  const fontReg  = await pdf.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const fontMono = await pdf.embedFont(StandardFonts.Courier);
+
+  const NAVY  = rgb(0.039, 0.145, 0.251);
+  const TEAL  = rgb(0.000, 0.706, 0.651);
+  const TEXT  = rgb(0.059, 0.090, 0.165);
+  const MUTE  = rgb(0.392, 0.455, 0.545);
+  const RULE  = rgb(0.886, 0.910, 0.941);
+
+  // Header
+  page.drawText("FR-LOGISTICS MIAMI", { x: 40, y: 750, size: 14, font: fontBold, color: NAVY });
+  page.drawText("Outbound Shipping Manifest", { x: 40, y: 732, size: 10, font: fontReg, color: MUTE });
+  page.drawLine({ start: { x: 40, y: 720 }, end: { x: 572, y: 720 }, thickness: 1.5, color: TEAL });
+
+  // QR code (top-right)
+  const publicUrl = `${PUBLIC_BASE_URL}/m/${manifest.public_token}`;
+  const qrPngBytes = await QRCode.toBuffer(publicUrl, {
+    type: "png",
+    margin: 1,
+    width: 220,
+    color: { dark: "#0A2540", light: "#FFFFFF" },
+  });
+  const qrImg = await pdf.embedPng(qrPngBytes);
+  const qrSize = 90;
+  page.drawImage(qrImg, { x: 572 - qrSize, y: 750 - qrSize + 10, width: qrSize, height: qrSize });
+  page.drawText(`/m/${manifest.public_token}`, {
+    x: 572 - qrSize, y: 750 - qrSize - 2, size: 7, font: fontMono, color: MUTE,
   });
 
-  const tryLang = async (langCode) => {
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${WA_TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify(buildBody(langCode))
-    });
-    const j = await r.json().catch(() => ({}));
-    return { ok: r.ok, status: r.status, json: j, lang_used: langCode };
+  // Manifest header block
+  let y = 690;
+  const drawKv = (label, val, bold = false) => {
+    page.drawText(label, { x: 40,  y, size: 8.5, font: fontReg,  color: MUTE });
+    page.drawText(val,   { x: 130, y, size: 10,  font: bold ? fontBold : fontReg, color: TEXT });
+    y -= 16;
   };
+  drawKv("MANIFEST ID",  manifest.manifest_id, true);
+  drawKv("CARRIER",      manifest.outbound_carrier);
+  drawKv("PACKAGES",     String(manifest.package_count));
+  drawKv("SEALED AT",    new Date(manifest.sealed_at || Date.now()).toLocaleString("en-US", { timeZone: "America/New_York" }) + " (Miami)");
+  drawKv("SEALED BY",    manifest.sealed_by || "—");
 
-  // First attempt: requested language
-  let result = await tryLang(templateLanguage);
-
-  // Fallback chain: if the requested lang isn't in Meta's translation list,
-  // try the most-likely-approved variant. Specifically Meta error 132001
-  // "Template name does not exist in the translation" means the template
-  // exists but not in this language.
-  const fallbackChain = [];
-  if (templateLanguage !== "en_US") fallbackChain.push("en_US");
-  if (templateLanguage !== "en")    fallbackChain.push("en");
-
-  for (const fb of fallbackChain) {
-    if (result.ok) break;
-    const errCode = result.json?.error?.code;
-    const errMsg  = result.json?.error?.message || "";
-    const isLangMissing = errCode === 132001 || /does not exist in the translation/i.test(errMsg);
-    if (!isLangMissing) break;  // some other error, don't retry
-    console.warn(`[wa-meta] template ${templateName} not in ${result.lang_used}, retrying with ${fb}`);
-    result = await tryLang(fb);
-  }
-
-  if (!result.ok) {
-    const errMsg = result.json?.error?.message || JSON.stringify(result.json);
-    throw new Error(`Meta ${result.status}: ${errMsg}`);
-  }
-  return { ok: true, message_id: result.json?.messages?.[0]?.id || null, lang_used: result.lang_used };
-}
-
-// Best-effort log to wa-messages (audit trail). Failures here are not fatal.
-async function logWhatsAppOutbound({ to, clientName, templateName, fallbackText }) {
-  try {
-    await fetch(`${SITE_URL}/.netlify/functions/wa-messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action:     "add_outbound",
-        to,
-        clientName,
-        template:   templateName,
-        text:       fallbackText
-      })
-    });
-  } catch (e) {
-    console.warn("[dropship-manifest] wa-messages log failed:", e.message);
-  }
-}
-
-// Per-client manifest send.
-// We try the client's preferred language first, with automatic fallback
-// to en_US handled inside sendWhatsAppMeta if the template isn't translated.
-async function sendWhatsAppTemplate({ to, clientName, dateLabel, inbound, outbound, lang = "en_US" }) {
-  const templateName     = "daily_summary";
-  // Map our client lang values to Meta's exact language codes.
-  // daily_summary is currently only approved in en_US, but if we ever add
-  // an "es" version, this will pick it up automatically.
-  const langMap = { ES: "es", es: "es", EN: "en_US", en: "en_US", "en_US": "en_US" };
-  const templateLanguage = langMap[lang] || "en_US";
-  const templateParams   = [
-    String(clientName || ""),
-    String(dateLabel  || ""),
-    String(inbound    || "0"),
-    String(outbound   || "0")
+  // Table header
+  y -= 8;
+  page.drawLine({ start: { x: 40, y }, end: { x: 572, y }, thickness: 0.5, color: RULE });
+  y -= 14;
+  const cols = [
+    { x: 40,  w: 100, lbl: "OUTBOUND" },
+    { x: 145, w: 110, lbl: "INBOUND" },
+    { x: 260, w: 70,  lbl: "ORDER #" },
+    { x: 335, w: 195, lbl: "CONTENT" },
+    { x: 535, w: 35,  lbl: "QTY" },
   ];
-  const fallbackText =
-    `Hi ${clientName}, here is your daily summary from FR-Logistics Miami — ${dateLabel}: ` +
-    `Inbound: ${inbound} package(s) received. Outbound: ${outbound} shipment(s) processed. ` +
-    `For full details contact us at info@fr-logistics.net.`;
+  for (const c of cols) {
+    page.drawText(c.lbl, { x: c.x, y, size: 8, font: fontBold, color: MUTE });
+  }
+  y -= 6;
+  page.drawLine({ start: { x: 40, y }, end: { x: 572, y }, thickness: 0.5, color: RULE });
 
-  const r = await sendWhatsAppMeta({ to, templateName, templateLanguage, templateParams, fallbackText });
-  await logWhatsAppOutbound({ to, clientName, templateName, fallbackText });
-  return { ok: true, fallbackText, ...r };
+  // Rows
+  const truncate = (s, max) => {
+    if (!s) return "—";
+    const str = String(s);
+    return str.length <= max ? str : str.slice(0, max - 1) + "…";
+  };
+
+  y -= 14;
+  for (const p of packages) {
+    if (y < 110) {
+      page.drawText(`… ${packages.length - packages.indexOf(p)} more package(s) — see CSV`, {
+        x: 40, y, size: 8, font: fontReg, color: MUTE,
+      });
+      break;
+    }
+    page.drawText(truncate(p.outbound_tracking, 16), { x: 40,  y, size: 8.5, font: fontMono, color: TEXT });
+    page.drawText(truncate(p.tracking_number,   16), { x: 145, y, size: 8.5, font: fontMono, color: TEXT });
+    page.drawText(truncate(p.order_id,           14), { x: 260, y, size: 8.5, font: fontMono, color: TEXT });
+    page.drawText(truncate(p.content,            34), { x: 335, y, size: 8.5, font: fontReg,  color: TEXT });
+    page.drawText(String(p.qty_boxes || 1),          { x: 540, y, size: 8.5, font: fontReg,  color: TEXT });
+    y -= 12;
+  }
+
+  // Signature block
+  page.drawLine({ start: { x: 40, y: 100 }, end: { x: 572, y: 100 }, thickness: 0.5, color: RULE });
+  page.drawText("Released by FR-Logistics", { x: 40, y: 84, size: 8, font: fontBold, color: NAVY });
+  page.drawText(`Operator: ${manifest.sealed_by || "—"}`, { x: 40, y: 70, size: 9, font: fontReg, color: TEXT });
+  page.drawText("Signature: _______________________", { x: 40, y: 50, size: 9, font: fontReg, color: MUTE });
+
+  page.drawText(`Received by ${manifest.outbound_carrier}`, { x: 320, y: 84, size: 8, font: fontBold, color: NAVY });
+  page.drawText("Driver: _______________________", { x: 320, y: 70, size: 9, font: fontReg, color: MUTE });
+  page.drawText("Signature: _______________________", { x: 320, y: 50, size: 9, font: fontReg, color: MUTE });
+
+  page.drawText(`${manifest.manifest_id} · page 1 of 1 · scan QR for live status`, {
+    x: 40, y: 28, size: 7, font: fontReg, color: MUTE,
+  });
+
+  return await pdf.save();
 }
 
-// ─── Ops digest: send a consolidated WhatsApp to Jose ─────────────────────
-// Uses the same daily_summary template (already approved). The "client name"
-// slot becomes "Operations" so Jose sees an internal-style message.
-// We aggregate received/shipped totals across ALL clients processed today.
-async function sendOpsWhatsAppDigest({ dateLabel, totals, sentClients, errors }) {
-  const inbound  = totals.received;
-  const outbound = totals.shipped;
-  // Use daily_summary template — same one used for clients, with "Operations" as recipient name
-  const templateName     = "daily_summary";
-  const templateLanguage = "en_US";  // template is approved in en_US
-  const templateParams   = [
-    "Operations",
-    String(dateLabel || ""),
-    String(inbound),
-    String(outbound)
+// ─── CSV generation ──────────────────────────────────────────────────
+function generateManifestCsv(manifest, packages, clientNamesById) {
+  const headers = [
+    "manifest_id", "manifest_date", "dropshipment_id",
+    "inbound_tracking", "inbound_carrier",
+    "outbound_tracking", "outbound_carrier", "outbound_platform",
+    "client_id", "client_name",
+    "content", "qty_boxes", "order_id",
+    "shipped_by", "shipped_at"
   ];
-  // Fallback text gets richer detail since template is rigid
-  let fallbackText =
-    `Hi Operations, here is your daily summary from FR-Logistics Miami — ${dateLabel}: ` +
-    `Inbound: ${inbound} package(s) received. Outbound: ${outbound} shipment(s) processed across ${sentClients} client(s).`;
-  if (errors > 0) fallbackText += ` ${errors} send error(s) — check email digest for details.`;
-
-  const r = await sendWhatsAppMeta({
-    to: OPS_WHATSAPP_NUMBER,
-    templateName,
-    templateLanguage,
-    templateParams,
-    fallbackText
-  });
-  await logWhatsAppOutbound({
-    to: OPS_WHATSAPP_NUMBER,
-    clientName: "Operations (internal)",
-    templateName,
-    fallbackText
-  });
-  return { ok: true, ...r };
+  const escape = (v) => {
+    if (v === null || v === undefined) return "";
+    const s = String(v);
+    if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  };
+  const rows = [headers.join(",")];
+  const sealedDate = (manifest.sealed_at || new Date().toISOString()).slice(0, 10);
+  for (const p of packages) {
+    rows.push([
+      manifest.manifest_id,
+      sealedDate,
+      p.id || "",
+      p.tracking_number || "",
+      p.carrier || "",
+      p.outbound_tracking || "",
+      p.outbound_carrier || "",
+      p.outbound_platform || "",
+      p.client_id || "",
+      clientNamesById?.[p.client_id] || "",
+      p.content || "",
+      p.qty_boxes || 1,
+      p.order_id || "",
+      p.shipped_by || "",
+      p.shipped_at || "",
+    ].map(escape).join(","));
+  }
+  return rows.join("\n");
 }
 
-// ─── Ops digest: send the rich HTML email to Jose ─────────────────────────
-async function sendOpsEmailDigest({ dateLabel, today, perClient, totals }) {
-  if (!RESEND_KEY) { console.warn("[ops-digest] RESEND_API_KEY not configured, skipping email"); return { skipped: true }; }
+// ─── Action: seal ────────────────────────────────────────────────────
+async function actionSeal(body) {
+  const manifest_id = (body.manifest_id || "").trim();
+  const sealed_by   = (body.sealed_by   || "").trim().slice(0, 60) || "warehouse";
+  if (!manifest_id) return jRes({ error: "manifest_id required" }, 400);
 
-  const sentRows  = perClient.filter(c => c.action === "sent");
-  const skipRows  = perClient.filter(c => c.action && c.action.startsWith("skip:"));
-  const errorRows = perClient.filter(c => c.action === "error");
-
-  const subject = errorRows.length
-    ? `📦 Daily Manifest — ${dateLabel} — ${errorRows.length} ERROR(S)`
-    : `📦 Daily Manifest — ${dateLabel} — ${totals.shipped} shipped across ${sentRows.length} client(s)`;
-
-  const sentTableRows = sentRows.length ? sentRows.map(c => `
-    <tr>
-      <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;font-weight:600;">${escapeHtml(c.client_label || "—")}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#64748b;font-family:monospace;">${escapeHtml(c.wa_number || "—")}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;text-align:right;color:#1e40af;">${c.received}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;text-align:right;color:#16a34a;font-weight:700;">${c.shipped}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:11px;text-align:right;color:#64748b;">${c.marked_rows || 0}</td>
-    </tr>
-  `).join("") : `<tr><td colspan="5" style="padding:20px;text-align:center;color:#94a3b8;font-size:13px;">No manifests sent today</td></tr>`;
-
-  const errorBlock = errorRows.length ? `
-    <h3 style="margin:24px 0 8px 0;font-size:14px;color:#dc2626;">⚠️ Send errors</h3>
-    <table style="width:100%;border-collapse:collapse;background:#fef2f2;border-radius:8px;overflow:hidden;">
-      ${errorRows.map(c => `
-        <tr>
-          <td style="padding:8px 12px;font-size:12px;font-weight:600;width:30%;">${escapeHtml(c.client_label || c.client_id || "—")}</td>
-          <td style="padding:8px 12px;font-size:12px;font-family:monospace;color:#991b1b;">${escapeHtml(c.error || "Unknown")}</td>
-        </tr>
-      `).join("")}
-    </table>
-  ` : "";
-
-  const skipBlock = skipRows.length ? `
-    <details style="margin-top:16px;">
-      <summary style="cursor:pointer;font-size:12px;color:#64748b;padding:6px 0;">
-        ${skipRows.length} client(s) skipped (no activity / no WA consent)
-      </summary>
-      <table style="width:100%;border-collapse:collapse;margin-top:8px;background:#f8fafc;border-radius:8px;overflow:hidden;font-size:12px;">
-        ${skipRows.map(c => `
-          <tr>
-            <td style="padding:6px 10px;color:#64748b;width:50%;">${escapeHtml(c.client_label || c.client_id || "—")}</td>
-            <td style="padding:6px 10px;color:#94a3b8;font-family:monospace;font-size:11px;">${escapeHtml(c.action.replace("skip:", ""))}</td>
-            <td style="padding:6px 10px;text-align:right;color:#64748b;font-size:11px;">recv:${c.received} · ship:${c.shipped}</td>
-          </tr>
-        `).join("")}
-      </table>
-    </details>
-  ` : "";
-
-  const html = `
-    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:720px;margin:0 auto;padding:24px;background:#f4f6f9;">
-      <div style="background:#fff;border-radius:14px;padding:28px;border:1px solid #e2e8f0;">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-          <span style="font-size:24px;">📦</span>
-          <h1 style="margin:0;font-size:20px;color:#1a202c;">Daily Manifest Sent</h1>
-        </div>
-        <p style="color:#64748b;font-size:13px;margin:0 0 20px 0;">${dateLabel} · day boundary in UTC (${today})</p>
-
-        <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
-          <div style="flex:1;min-width:130px;background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;">
-            <div style="font-size:11px;color:#166534;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Shipped today</div>
-            <div style="font-size:28px;color:#15803d;font-weight:800;line-height:1;margin-top:4px;">${totals.shipped}</div>
-          </div>
-          <div style="flex:1;min-width:130px;background:#dbeafe;border:1px solid #93c5fd;border-radius:10px;padding:14px;">
-            <div style="font-size:11px;color:#1e40af;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Received today</div>
-            <div style="font-size:28px;color:#1d4ed8;font-weight:800;line-height:1;margin-top:4px;">${totals.received}</div>
-          </div>
-          <div style="flex:1;min-width:130px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;">
-            <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Manifests sent</div>
-            <div style="font-size:28px;color:#1a202c;font-weight:800;line-height:1;margin-top:4px;">${sentRows.length}</div>
-          </div>
-        </div>
-
-        <h3 style="margin:0 0 8px 0;font-size:14px;color:#1a202c;">Per-client breakdown</h3>
-        <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
-          <thead>
-            <tr style="background:#f8fafc;">
-              <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #e2e8f0;">Client</th>
-              <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #e2e8f0;">WA</th>
-              <th style="padding:10px 12px;text-align:right;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #e2e8f0;">Received</th>
-              <th style="padding:10px 12px;text-align:right;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #e2e8f0;">Shipped</th>
-              <th style="padding:10px 12px;text-align:right;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #e2e8f0;">Marked</th>
-            </tr>
-          </thead>
-          <tbody>${sentTableRows}</tbody>
-        </table>
-
-        ${errorBlock}
-        ${skipBlock}
-
-        <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;">
-          <a href="${SITE_URL}/portal.html#app=dropshipments.html"
-             style="display:inline-block;background:#1fa463;color:#fff;text-decoration:none;padding:10px 20px;border-radius:9px;font-weight:600;font-size:14px;">
-            Open Dropshipments →
-          </a>
-        </div>
-        <p style="color:#94a3b8;font-size:11px;margin-top:20px;text-align:center;">
-          Automated daily manifest digest from FR-Logistics Dropshipments<br>
-          Sent ${new Date().toISOString()}
-        </p>
-      </div>
-    </div>
-  `;
-
-  // Try branded sender first, fallback to Resend's default if domain not verified.
-  async function tryResend(from) {
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: [OPS_EMAIL_TO], subject, html })
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(`Resend ${r.status}: ${j.message || JSON.stringify(j)}`);
-    return j;
-  }
+  // 1) Atomic seal
+  let sealResult;
   try {
-    return { ok: true, ...(await tryResend(OPS_EMAIL_FROM)) };
+    const r = await sbRpc("seal_manifest", { p_manifest_id: manifest_id, p_sealed_by: sealed_by });
+    sealResult = Array.isArray(r) ? r[0] : r;
   } catch (e) {
-    console.warn("[ops-digest] branded sender failed, retrying default:", e.message);
-    return { ok: true, fallback: true, ...(await tryResend(OPS_EMAIL_FROM_FALLBACK)) };
-  }
-}
-
-function escapeHtml(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
-}
-
-// ─── Core: build per-client summary for today (UTC) ──────────────────────────
-async function buildClientSummaries({ onlyClientId = null } = {}) {
-  const today = todayUtcDate();
-
-  // All rows that touched "today" in either pipeline step.
-  // We fetch BOTH received_today and shipped_today buckets with 2 cheap queries.
-  const [receivedToday, shippedToday, configs] = await Promise.all([
-    sbSelect("dropshipments",
-      `?physical_received_at=gte.${today}T00:00:00Z&physical_received_at=lt.${today}T23:59:59.999Z&select=id,client_id,status,physical_received_at`
-    ),
-    sbSelect("dropshipments",
-      `?status=eq.shipped&shipped_at=gte.${today}T00:00:00Z&shipped_at=lt.${today}T23:59:59.999Z&select=id,client_id,shipped_at,manifest_sent_at`
-    ),
-    sbSelect("dropship_client_configs",
-      "?active=eq.true&select=client_id,client_code,display_name,rate_per_package"
-    )
-  ]);
-
-  const cfgMap = {};
-  for (const c of configs) cfgMap[c.client_id] = c;
-
-  // Fetch fr_clients info for only the clients we actually need.
-  const clientIds = Array.from(new Set([
-    ...receivedToday.map(r => r.client_id),
-    ...shippedToday.map(r => r.client_id),
-    ...configs.map(c => c.client_id)
-  ].filter(Boolean)));
-
-  if (clientIds.length === 0) {
-    return { today, summaries: [] };
-  }
-
-  const clients = clientIds.length
-    ? await sbSelect("fr_clients", `?id=in.(${clientIds.join(",")})&select=id,name,company,store_name,wa_number,wa_consent,wa_notifications,lang`)
-    : [];
-  const clientMap = {};
-  for (const c of clients) clientMap[c.id] = c;
-
-  // Aggregate counts per client.
-  const bucket = {}; // clientId → { received, shipped, shipped_ids_not_yet_reported }
-  const ensure = (cid) => (bucket[cid] = bucket[cid] || { received: 0, shipped: 0, shipped_ids: [] });
-
-  for (const r of receivedToday) {
-    if (!r.client_id) continue;
-    ensure(r.client_id).received += 1;
-  }
-  for (const s of shippedToday) {
-    if (!s.client_id) continue;
-    const b = ensure(s.client_id);
-    b.shipped += 1;
-    // Only mark rows that haven't been reported yet (for the PATCH later)
-    if (!s.manifest_sent_at) b.shipped_ids.push(s.id);
-  }
-
-  // Compose final summaries (one per eligible client).
-  const summaries = [];
-  for (const cid of Object.keys(bucket)) {
-    if (onlyClientId && cid !== onlyClientId) continue;
-    const cfg    = cfgMap[cid];
-    const client = clientMap[cid];
-    const counts = bucket[cid];
-    summaries.push({
-      client_id:     cid,
-      config:        cfg || null,
-      client:        client || null,
-      eligible:      clientEligible(client),
-      received:      counts.received,
-      shipped:       counts.shipped,
-      shipped_ids:   counts.shipped_ids
-    });
-  }
-
-  // If onlyClientId was passed but no activity, still return one entry so
-  // manual invocations don't come back empty.
-  if (onlyClientId && !summaries.find(s => s.client_id === onlyClientId)) {
-    const cfg    = cfgMap[onlyClientId];
-    const client = clientMap[onlyClientId];
-    if (cfg || client) {
-      summaries.push({
-        client_id: onlyClientId,
-        config: cfg || null,
-        client: client || null,
-        eligible: clientEligible(client),
-        received: 0,
-        shipped: 0,
-        shipped_ids: []
-      });
+    const msg = e.message || String(e);
+    if (msg.includes("cannot seal an empty manifest")) {
+      return jRes({ error: "cannot seal an empty manifest", detail: msg }, 409);
     }
+    if (msg.includes("not open") || msg.includes("already sealed")) {
+      return jRes({ error: "manifest is not open (already sealed?)", detail: msg }, 409);
+    }
+    if (msg.includes("manifest not found")) {
+      return jRes({ error: "manifest not found", detail: msg }, 404);
+    }
+    throw e;
   }
 
-  return { today, summaries };
+  // 2) Reload manifest (now sealed) + packages
+  const manifestRows = await sbSelect(
+    "dropship_manifests",
+    `?manifest_id=eq.${encodeURIComponent(manifest_id)}&limit=1`
+  );
+  const manifest = manifestRows[0];
+
+  const packages = await sbSelect(
+    "dropshipments",
+    `?manifest_id=eq.${encodeURIComponent(manifest_id)}` +
+      `&select=id,tracking_number,carrier,outbound_carrier,outbound_platform,outbound_tracking,client_id,content,qty_boxes,order_id,shipped_at,shipped_by` +
+      `&order=shipped_at.asc.nullslast`
+  );
+
+  // Pull client display names for the CSV
+  const clientIds = [...new Set(packages.map(p => p.client_id).filter(Boolean))];
+  let clientNamesById = {};
+  if (clientIds.length) {
+    const idsList = clientIds.map(encodeURIComponent).join(",");
+    const cfgs = await sbSelect(
+      "dropship_client_configs",
+      `?client_id=in.(${idsList})&select=client_id,display_name`
+    );
+    clientNamesById = Object.fromEntries(cfgs.map(c => [c.client_id, c.display_name]));
+  }
+
+  // 3) Build artifacts
+  let pdfBytes, csvText;
+  try {
+    pdfBytes = await generateManifestPdf(manifest, packages, clientNamesById);
+    csvText  = generateManifestCsv(manifest, packages, clientNamesById);
+  } catch (e) {
+    console.error("[manifests.seal] artifact generation failed:", e);
+    return jRes({
+      error: "manifest sealed but artifacts failed to generate",
+      detail: e.message,
+      sealed_manifest_id: manifest_id,
+    }, 500);
+  }
+
+  // 4) Upload to Netlify Blobs
+  const store  = getStore({ name: "fr-manifests", consistency: "strong" });
+  const pdfKey = `${manifest_id}.pdf`;
+  const csvKey = `${manifest_id}.csv`;
+  await store.set(pdfKey, pdfBytes,                               { metadata: { manifest_id, type: "pdf" } });
+  await store.set(csvKey, new TextEncoder().encode(csvText),       { metadata: { manifest_id, type: "csv" } });
+
+  const pdfUrl = `/.netlify/functions/dropship-manifests?action=download_pdf&manifest_id=${encodeURIComponent(manifest_id)}`;
+  const csvUrl = `/.netlify/functions/dropship-manifests?action=download_csv&manifest_id=${encodeURIComponent(manifest_id)}`;
+
+  // 5) Persist URLs on the sealed manifest
+  await sbPatch("dropship_manifests", `manifest_id=eq.${encodeURIComponent(manifest_id)}`, {
+    pdf_url: pdfUrl,
+    csv_url: csvUrl,
+  });
+
+  return jRes({
+    ok: true,
+    sealed_manifest_id:    manifest_id,
+    sealed_at:             sealResult.sealed_at,
+    package_count:         sealResult.package_count,
+    public_token:          sealResult.public_token,
+    pdf_url:               pdfUrl,
+    csv_url:               csvUrl,
+    next_open_manifest_id: sealResult.next_open_manifest_id,
+    next_open_token:       sealResult.next_open_token,
+  });
 }
 
-// ─── Core run ────────────────────────────────────────────────────────────────
-async function run({ dryRun = false, onlyClientId = null, force = false } = {}) {
-  const started = new Date().toISOString();
-  const dateLabel = prettyDate();
-  const { today, summaries } = await buildClientSummaries({ onlyClientId });
+// ─── Download PDF / CSV from Netlify Blobs ───────────────────────────
+async function actionDownload(url, kind) {
+  const manifest_id = url.searchParams.get("manifest_id");
+  if (!manifest_id) return jRes({ error: "manifest_id required" }, 400);
 
-  const result = {
-    started,
-    today_utc: today,
-    date_label: dateLabel,
-    dry_run: dryRun,
-    scope: onlyClientId ? `client_id=${onlyClientId}` : "all active clients",
-    clients: []
+  const store = getStore({ name: "fr-manifests", consistency: "strong" });
+  const key   = `${manifest_id}.${kind === "pdf" ? "pdf" : "csv"}`;
+
+  const blob = await store.get(key, { type: "arrayBuffer" });
+  if (!blob) return jRes({ error: `${kind} not found for manifest ${manifest_id}` }, 404);
+
+  const headers = {
+    "Cache-Control": "private, max-age=60",
+    "Access-Control-Allow-Origin": "*",
   };
-
-  for (const s of summaries) {
-    const entry = {
-      client_id:     s.client_id,
-      client_label:  s.client ? clientLabel(s.client) : null,
-      received:      s.received,
-      shipped:       s.shipped,
-      eligible:      s.eligible,
-      wa_number:     s.client?.wa_number || null,
-      action:        null,
-      error:         null,
-      marked_rows:   0
-    };
-
-    if (!s.client) { entry.action = "skip:no_fr_client_record"; result.clients.push(entry); continue; }
-    if (!s.eligible) { entry.action = "skip:no_wa_consent_or_number"; result.clients.push(entry); continue; }
-    if (s.shipped === 0 && s.received === 0 && !force) { entry.action = "skip:no_activity_today"; result.clients.push(entry); continue; }
-
-    const payload = {
-      to:          s.client.wa_number,
-      clientName:  clientLabel(s.client),
-      dateLabel,
-      inbound:     s.received,
-      outbound:    s.shipped,
-      lang:        s.client.lang
-    };
-
-    if (dryRun) {
-      entry.action = "dry_run:would_send";
-      entry.payload_preview = payload;
-      result.clients.push(entry);
-      continue;
-    }
-
-    try {
-      await sendWhatsAppTemplate(payload);
-      entry.action = "sent";
-
-      // Mark shipped rows as manifest-included (only those not already marked).
-      if (s.shipped_ids.length) {
-        const now = new Date().toISOString();
-        await sbPatch("dropshipments",
-          `id=in.(${s.shipped_ids.join(",")})`,
-          { manifest_sent_at: now }
-        );
-        entry.marked_rows = s.shipped_ids.length;
-      }
-    } catch (e) {
-      console.error(`[dropship-manifest] send failed for ${s.client_id}:`, e.message);
-      entry.action = "error";
-      entry.error = e.message;
-    }
-
-    result.clients.push(entry);
-  }
-
-  result.finished = new Date().toISOString();
-  result.total_clients = result.clients.length;
-  result.total_sent    = result.clients.filter(c => c.action === "sent").length;
-  result.total_errors  = result.clients.filter(c => c.action === "error").length;
-
-  // ─── Ops digests (Option D: WhatsApp + Email to Jose) ───────────────────
-  // Aggregate totals across all clients in this run.
-  const totals = {
-    received: result.clients.reduce((sum, c) => sum + (c.received || 0), 0),
-    shipped:  result.clients.reduce((sum, c) => sum + (c.shipped  || 0), 0)
-  };
-  result.totals = totals;
-  result.ops_digest = { whatsapp: null, email: null };
-
-  // Don't spam ops on dry runs.
-  // Don't send if literally nothing happened (no clients processed at all),
-  // unless force=1 was passed for testing purposes.
-  const hasAnyActivity = result.total_sent > 0 || result.total_errors > 0 || force;
-
-  if (!dryRun && hasAnyActivity) {
-    // 1. WhatsApp consolidated to Jose
-    try {
-      await sendOpsWhatsAppDigest({
-        dateLabel,
-        totals,
-        sentClients: result.total_sent,
-        errors: result.total_errors
-      });
-      result.ops_digest.whatsapp = { ok: true, to: OPS_WHATSAPP_NUMBER };
-    } catch (e) {
-      console.error("[dropship-manifest] ops WA digest failed:", e.message);
-      result.ops_digest.whatsapp = { ok: false, error: e.message };
-    }
-
-    // 2. Email digest to Jose with full HTML breakdown
-    try {
-      const emailRes = await sendOpsEmailDigest({
-        dateLabel,
-        today,
-        perClient: result.clients,
-        totals
-      });
-      result.ops_digest.email = { ok: true, to: OPS_EMAIL_TO, ...emailRes };
-    } catch (e) {
-      console.error("[dropship-manifest] ops email digest failed:", e.message);
-      result.ops_digest.email = { ok: false, error: e.message };
-    }
-  } else if (dryRun) {
-    result.ops_digest.note = "skipped:dry_run";
+  if (kind === "pdf") {
+    headers["Content-Type"]        = "application/pdf";
+    headers["Content-Disposition"] = `inline; filename="${manifest_id}.pdf"`;
   } else {
-    result.ops_digest.note = "skipped:no_activity";
+    headers["Content-Type"]        = "text/csv; charset=utf-8";
+    headers["Content-Disposition"] = `attachment; filename="${manifest_id}.csv"`;
   }
-
-  return result;
+  return new Response(blob, { status: 200, headers });
 }
 
-// ─── HTTP handler ────────────────────────────────────────────────────────────
-const CORS = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type,Authorization" };
-const jRes = (d, s = 200) => new Response(JSON.stringify(d, null, 2), { status: s, headers: CORS });
-
+// ─── Handler ─────────────────────────────────────────────────────────
 export default async function handler(req) {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
 
-  const url = new URL(req.url);
-  const dryRun       = url.searchParams.get("dry_run") === "1";
-  const force        = url.searchParams.get("force") === "1";
-  const onlyClientId = url.searchParams.get("client_id") || null;
-
-  const ua = req.headers.get("user-agent") || "";
-  const isScheduled =
-    req.headers.get("x-nf-event") === "schedule" ||
-    ua.toLowerCase().includes("netlify-scheduled");
-
-  // Info endpoint
-  if (req.method === "GET" && url.searchParams.get("action") === "info") {
-    return jRes({
-      module: "dropship-manifest",
-      template_used: "daily_summary",
-      mode: "manual + scheduled (daily at 11 PM UTC / 7 PM Miami)",
-      schedule: "0 23 * * *",
-      ops_digest: {
-        whatsapp_to: OPS_WHATSAPP_NUMBER,
-        email_to:    OPS_EMAIL_TO,
-        email_from:  OPS_EMAIL_FROM,
-        resend_configured: !!RESEND_KEY
-      },
-      usage: {
-        run:         "POST /.netlify/functions/dropship-manifest",
-        dry_run:     "POST /.netlify/functions/dropship-manifest?dry_run=1",
-        single:      "POST /.netlify/functions/dropship-manifest?client_id={uuid}",
-        force_empty: "POST /.netlify/functions/dropship-manifest?client_id={uuid}&force=1"
-      }
-    });
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    return jRes({ error: "server misconfigured: SUPABASE env vars missing" }, 500);
   }
 
-  const shouldRun = req.method === "POST" || isScheduled;
-  if (!shouldRun) return jRes({ error: "Method not allowed. POST to run." }, 405);
+  const url    = new URL(req.url);
+  const action = url.searchParams.get("action") || "";
 
   try {
-    const result = await run({ dryRun, onlyClientId, force });
-    if (isScheduled) {
-      console.log(`[dropship-manifest] scheduled: ${result.total_sent} sent, ${result.total_errors} errors across ${result.total_clients} clients`);
+    if (req.method === "GET") {
+      if (action === "list")          return await actionList(url);
+      if (action === "get")           return await actionGet(url);
+      if (action === "current_open")  return await actionCurrentOpen(url);
+      if (action === "download_pdf")  return await actionDownload(url, "pdf");
+      if (action === "download_csv")  return await actionDownload(url, "csv");
+      return jRes({ error: `unknown GET action: ${action || "(none)"}` }, 400);
     }
-    return jRes({ ok: true, scheduled: isScheduled, ...result });
+
+    if (req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const act  = body.action || "";
+
+      if (act === "auto_assign") return await actionAutoAssign(body);
+      if (act === "seal")        return await actionSeal(body);
+      // release + email come in commit 3
+      return jRes({ error: `unknown POST action: ${act || "(none)"}` }, 400);
+    }
+
+    return jRes({ error: `method not allowed: ${req.method}` }, 405);
   } catch (e) {
-    console.error("[dropship-manifest] fatal:", e);
-    return jRes({ ok: false, error: e.message, stack: e.stack }, 500);
+    console.error("[dropship-manifests]", e);
+    return jRes({ error: e.message || "internal error" }, 500);
   }
 }
+
+export const config = { path: "/.netlify/functions/dropship-manifests" };
