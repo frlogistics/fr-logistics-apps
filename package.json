@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^1.1.1",
+    "pdf-lib": "^1.17.1",
+    "qrcode": "^1.5.4"
   }
 }
