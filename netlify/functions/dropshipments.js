@@ -7,6 +7,13 @@
 // Sync is forward-only (revert does not delete) and idempotent (duplicate
 // trackings are swallowed silently).
 //
+// Day 5 (Manifests): when a package transitions to `shipped`, we ALSO assign
+// it to the open manifest of its outbound_carrier (creating the manifest if
+// none exists). When a `shipped` package is reverted, we clear manifest_id
+// and decrement package_count — the manifest must still be 'open' (sealed
+// manifests cannot lose packages because the artifact has been generated).
+// All manifest sync is non-fatal: failures are logged, primary update wins.
+//
 // GET endpoints:
 //   ?action=list                         → list (with fr_clients join + config merge)
 //   ?action=list&status=pending          → filter by status
@@ -23,8 +30,8 @@
 // POST endpoints (JSON body: { action, id, operator, ... }):
 //   action=receive          → pending/exception → received   (sets physical_received_at, received_by)
 //   action=label            → received          → labeled    (sets labeled_at)
-//   action=ship             → labeled           → shipped    (sets shipped_at, shipped_by)
-//   action=revert           → received/labeled/shipped → previous status (clears ts/by)
+//   action=ship             → labeled           → shipped    (sets shipped_at, shipped_by, manifest_id)
+//   action=revert           → received/labeled/shipped → previous status (clears ts/by/manifest_id)
 //   action=exception        → pending/received/labeled → exception (reason: body.reason)
 //   action=resolve          → exception         → pending   (clears exception_reason)
 //   action=create_orphan    → new row with status='orphan'  (body: tracking_number, client_id, operator)
@@ -45,6 +52,7 @@ const SB = () => ({ "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_
 async function sbSelect(t, q = "") { const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}${q}`, { headers: SB() }); if (!r.ok) throw new Error(`sbSelect ${t}: ${await r.text()}`); return r.json(); }
 async function sbInsert(t, d) { const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}`, { method: "POST", headers: { ...SB(), "Prefer": "return=representation" }, body: JSON.stringify(d) }); if (!r.ok) throw new Error(`sbInsert ${t}: ${await r.text()}`); return r.json(); }
 async function sbPatch(t, f, d) { const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}?${f}`, { method: "PATCH", headers: { ...SB(), "Prefer": "return=representation" }, body: JSON.stringify(d) }); if (!r.ok) throw new Error(`sbPatch ${t}: ${await r.text()}`); return r.json(); }
+async function sbRpc(fn, args) { const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, { method: "POST", headers: SB(), body: JSON.stringify(args) }); if (!r.ok) throw new Error(`sbRpc ${fn}: ${await r.text()}`); return r.json(); }
 async function sbSignedUrl(path, expiresIn = 300) {
   const r = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${SB_BUCKET}/${path}`, {
     method: "POST",
@@ -80,7 +88,7 @@ const CORS = { "Content-Type": "application/json", "Access-Control-Allow-Origin"
 const jRes = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: CORS });
 
 // ─── Query builders ──────────────────────────────────────────────────────────
-const SELECT_CORE = "id,client_id,tracking_number,order_id,carrier,content,qty_boxes,notes,label_url,label_filename,outbound_carrier,outbound_platform,outbound_tracking,status,email_received_at,physical_received_at,labeled_at,shipped_at,received_by,shipped_by,exception_reason,created_at,updated_at";
+const SELECT_CORE = "id,client_id,tracking_number,order_id,carrier,content,qty_boxes,notes,label_url,label_filename,outbound_carrier,outbound_platform,outbound_tracking,status,email_received_at,physical_received_at,labeled_at,shipped_at,received_by,shipped_by,exception_reason,manifest_id,created_at,updated_at";
 
 // We only embed fr_clients (the one FK that exists on dropshipments).
 // dropship_client_configs is merged in application code below via client_id.
@@ -100,6 +108,69 @@ function attachConfigs(rows, configMap) {
   return rows;
 }
 
+// ─── Manifest sync helpers (Day 5) ──────────────────────────────────────────
+// All non-fatal: if anything throws here, the caller logs and continues.
+
+// Assign a freshly-shipped package to its open manifest. Idempotent.
+// Uses the Postgres function get_or_create_open_manifest(carrier, operator)
+// which is race-safe via the partial unique index.
+async function assignToOpenManifest({ packageId, outboundCarrier, operator }) {
+  if (!packageId || !outboundCarrier) {
+    throw new Error(`assignToOpenManifest: packageId and outboundCarrier required`);
+  }
+
+  // Idempotency: if already assigned, do nothing.
+  const cur = await sbSelect("dropshipments", `?id=eq.${packageId}&select=manifest_id&limit=1`);
+  if (cur[0]?.manifest_id) {
+    return { already_assigned: true, manifest_id: cur[0].manifest_id };
+  }
+
+  // Get or create the open manifest atomically (race-safe at DB level)
+  const result = await sbRpc("get_or_create_open_manifest", {
+    p_carrier:  outboundCarrier,
+    p_operator: operator || "system",
+  });
+  const m = Array.isArray(result) ? result[0] : result;
+  if (!m?.manifest_id) throw new Error("get_or_create_open_manifest returned no manifest");
+
+  // Assign + increment count
+  await sbPatch("dropshipments", `id=eq.${packageId}`, { manifest_id: m.manifest_id });
+  await sbRpc("manifest_increment_count", { p_manifest_id: m.manifest_id });
+
+  return {
+    already_assigned: false,
+    manifest_id:      m.manifest_id,
+    was_created:      m.was_created,
+  };
+}
+
+// On revert from shipped → labeled: clear manifest_id and decrement count,
+// but ONLY if the manifest is still open. If sealed, we hard-reject the revert
+// at the LEGAL transition layer above this function (see ship→revert handler).
+async function unassignFromManifest({ packageId, manifestId }) {
+  if (!packageId || !manifestId) return { skipped: true };
+
+  // Check the manifest status — only open manifests can shrink.
+  const mRows = await sbSelect("dropship_manifests",
+    `?manifest_id=eq.${encodeURIComponent(manifestId)}&select=status&limit=1`
+  );
+  if (!mRows.length) {
+    // Manifest disappeared (extremely rare, e.g. manual DB cleanup) — just clear the FK.
+    await sbPatch("dropshipments", `id=eq.${packageId}`, { manifest_id: null });
+    return { manifest_missing: true };
+  }
+  if (mRows[0].status !== "open") {
+    // This is the "sealed manifest blocks revert" case. The caller should
+    // have rejected the revert already; if we get here, something bypassed
+    // the guard. Fail loud.
+    throw new Error(`cannot unassign from manifest ${manifestId} (status=${mRows[0].status})`);
+  }
+
+  await sbPatch("dropshipments", `id=eq.${packageId}`, { manifest_id: null });
+  await sbRpc("manifest_decrement_count", { p_manifest_id: manifestId });
+  return { unassigned: true };
+}
+
 // ─── Handler ─────────────────────────────────────────────────────────────────
 export default async function handler(req) {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
@@ -109,27 +180,19 @@ export default async function handler(req) {
 
   try {
     // ── GET: stats (KPI strip counts + dashboard KPIs) ────────────────────
-    // Returns both:
-    //   - status counts (pending, received, labeled, shipped, orphan, exception, total)
-    //   - extended KPIs for the kpi-dash widget:
-    //       shipped_today, shipped_this_month, oldest_pending_hours,
-    //       received_today, orphans_aging (>6h)
-    // Backward compatible — old callers ignore the new fields.
     if (req.method === "GET" && action === "stats") {
       const clientFilter = url.searchParams.get("client_id");
       const clientFilterParam = clientFilter ? `&client_id=eq.${clientFilter}` : "";
 
-      // Primary fetch: status + key timestamps for ALL rows
       const rows = await sbSelect("dropshipments",
         `?select=status,physical_received_at,shipped_at${clientFilterParam}`
       );
       const counts = { pending: 0, received: 0, labeled: 0, shipped: 0, orphan: 0, exception: 0, total: rows.length };
       for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
 
-      // Extended KPIs — computed in-memory from the same fetch
       const now    = new Date();
-      const today  = now.toISOString().slice(0, 10);                   // YYYY-MM-DD UTC
-      const monthStart = today.slice(0, 7) + "-01";                    // YYYY-MM-01 UTC
+      const today  = now.toISOString().slice(0, 10);
+      const monthStart = today.slice(0, 7) + "-01";
       const sixHoursAgo = new Date(now.getTime() - 6 * 3600 * 1000);
 
       let shipped_today = 0, shipped_this_month = 0, received_today = 0;
@@ -145,16 +208,12 @@ export default async function handler(req) {
           const d = r.physical_received_at.slice(0, 10);
           if (d === today)            received_today += 1;
         }
-        // Track oldest pending (status='pending' rows by their email_received_at if available;
-        // since we didn't fetch that, we approximate using physical_received_at — pending
-        // rows usually don't have it set, so this heuristic is for bonus warning only)
         if (r.status === "orphan" && r.physical_received_at) {
           const ts = new Date(r.physical_received_at);
           if (ts < sixHoursAgo) orphans_aging += 1;
         }
       }
 
-      // Oldest pending: separate small query for accuracy (uses email_received_at)
       const pendingRows = await sbSelect("dropshipments",
         `?status=eq.pending&select=email_received_at&order=email_received_at.asc.nullslast&limit=1${clientFilterParam}`
       );
@@ -162,7 +221,6 @@ export default async function handler(req) {
         oldest_pending_at = pendingRows[0].email_received_at;
       }
 
-      // Compute oldest_pending_hours from oldest_pending_at
       let oldest_pending_hours = null;
       if (oldest_pending_at) {
         oldest_pending_hours = Math.round((now.getTime() - new Date(oldest_pending_at).getTime()) / 3600000);
@@ -202,23 +260,14 @@ export default async function handler(req) {
     }
 
     // ── GET: lookup by tracking number (for scan bar) ─────────────────────
-    // Searches BOTH inbound (tracking_number) and outbound (outbound_tracking)
-    // so operators can scan either the inbound carrier label OR the outbound
-    // shipping label they just printed.
-    //
-    // Returns match_field: "tracking_number" | "outbound_tracking" so the UI
-    // can tell the user how the match was found ("Found via outbound tracking").
     if (req.method === "GET" && action === "lookup") {
       const tracking = (url.searchParams.get("tracking") || "").trim();
       if (!tracking) return jRes({ error: "tracking required" }, 400);
       const enc = encodeURIComponent(tracking);
       const configMap = await loadConfigMap();
-      // PostgREST doesn't natively support OR across two eq filters in a clean
-      // way, so we use the `or=(...)` syntax: matches if EITHER field equals.
       const filter = `or=(tracking_number.eq.${enc},outbound_tracking.eq.${enc})`;
       const rows = await sbSelect("dropshipments", `?${filter}&select=${SELECT_WITH_CLIENT}&limit=5`);
       attachConfigs(rows, configMap);
-      // Annotate each row with how it matched (informational, used by the UI toast).
       const matches = rows.map(r => ({
         ...r,
         match_field: r.tracking_number === tracking ? "tracking_number"
@@ -236,8 +285,6 @@ export default async function handler(req) {
       if (!rows.length) return jRes({ error: "not found" }, 404);
       const labelPath = rows[0].label_url;
       if (!labelPath) return jRes({ error: "no label for this record" }, 404);
-      // label_url is stored as "LN/TRACKING.pdf" (without bucket prefix)
-      // sign it for 5 minutes
       const pathInBucket = labelPath.startsWith(`${SB_BUCKET}/`) ? labelPath.slice(SB_BUCKET.length + 1) : labelPath;
       const signedUrl = await sbSignedUrl(pathInBucket, 300);
       return jRes({ url: signedUrl, expires_in: 300 });
@@ -245,8 +292,8 @@ export default async function handler(req) {
 
     // ── GET: list (default) ───────────────────────────────────────────────
     if (req.method === "GET") {
-      const status    = url.searchParams.get("status");      // optional filter
-      const clientId  = url.searchParams.get("client_id");   // optional filter
+      const status    = url.searchParams.get("status");
+      const clientId  = url.searchParams.get("client_id");
       const limit     = parseInt(url.searchParams.get("limit") || "200", 10);
       const order     = url.searchParams.get("order") || "email_received_at.desc.nullslast";
 
@@ -278,11 +325,9 @@ export default async function handler(req) {
         if (!tracking) return jRes({ error: "tracking_number required" }, 400);
         if (!clientId) return jRes({ error: "client_id required" }, 400);
 
-        // Verify the client exists and is configured for dropshipments.
         const cfg = await sbSelect("dropship_client_configs", `?client_id=eq.${clientId}&select=client_id,client_code,display_name&limit=1`);
         if (!cfg.length) return jRes({ error: "client_id not configured for dropshipments" }, 400);
 
-        // Idempotency: if a row with same (client_id, tracking) already exists, return conflict.
         const existing = await sbSelect("dropshipments", `?client_id=eq.${clientId}&tracking_number=eq.${encodeURIComponent(tracking)}&select=id,status&limit=1`);
         if (existing.length) {
           return jRes({ error: "tracking already exists for this client", existing: existing[0] }, 409);
@@ -302,13 +347,6 @@ export default async function handler(req) {
       }
 
       // ── delete_orphan: hard-delete an orphan row ──────────────────────
-      // Used to clean up bad scans (operator scanned a non-tracking barcode
-      // by accident). Restricted to status='orphan' as a hard safety guard:
-      // we never delete rows in any other status — those must be reverted
-      // or exception-flagged instead, since they may have downstream
-      // billing/shipping artifacts.
-      //
-      // Body: { id, operator }
       if (act === "delete_orphan") {
         const id = body.id;
         if (!id) return jRes({ error: "id required" }, 400);
@@ -338,23 +376,6 @@ export default async function handler(req) {
       }
 
       // ── process_orphan: complete an orphan record manually ──────────────
-      // This is the catch-all for the case where:
-      //   - The package physically arrived (orphan was created via scan)
-      //   - The client did NOT send the structured email the parser expects
-      //   - Instead they replied conversationally with the label as PDF attached
-      //
-      // Operator opens the orphan in the drawer, clicks "Process orphan",
-      // drops the PDF (filename usually contains the outbound tracking),
-      // picks the carrier, fills order_id + content, and submits.
-      //
-      // We:
-      //   1. Upload the PDF to dropship-labels/{client_code}/{tracking}.pdf
-      //   2. Patch the dropshipments row: status orphan → received, fill all fields
-      //   3. Sync to shipments_general so Billing counts it (Day 4 behavior)
-      //
-      // Body: { id, outbound_tracking, outbound_carrier, order_id, content,
-      //         label_filename, pdf_base64, operator }
-      //         (qty_boxes, notes, outbound_platform are optional)
       if (act === "process_orphan") {
         const id              = body.id;
         const outbound        = (body.outbound_tracking || "").trim();
@@ -378,7 +399,6 @@ export default async function handler(req) {
         if (!outboundCarrier) return jRes({ error: "outbound_carrier required" }, 400);
         if (!pdfBase64) return jRes({ error: "pdf_base64 required" }, 400);
 
-        // Load the orphan row + client config
         const cur = await sbSelect("dropshipments",
           `?id=eq.${id}&select=id,status,client_id,tracking_number,outbound_tracking,physical_received_at,received_by&limit=1`
         );
@@ -392,7 +412,6 @@ export default async function handler(req) {
           }, 409);
         }
 
-        // Reject if outbound is the same as the inbound (sanity: catches operator mis-typing)
         if (outbound === current.tracking_number) {
           return jRes({
             error: "outbound_tracking cannot be the same as the inbound tracking_number",
@@ -400,7 +419,6 @@ export default async function handler(req) {
           }, 400);
         }
 
-        // Reject if this outbound is already used elsewhere
         const dupes = await sbSelect("dropshipments",
           `?outbound_tracking=eq.${encodeURIComponent(outbound)}&select=id,tracking_number,status&limit=2`
         );
@@ -412,17 +430,14 @@ export default async function handler(req) {
           }, 409);
         }
 
-        // Resolve client_code for the storage path
         const cfgRows = await sbSelect("dropship_client_configs",
           `?client_id=eq.${current.client_id}&select=client_code,client_name_billing,outbound_carrier&limit=1`
         );
         if (!cfgRows.length) return jRes({ error: "client config not found" }, 400);
         const clientCode = (cfgRows[0].client_code || "MISC").trim();
 
-        // Decode and upload the PDF
         let pdfBytes;
         try {
-          // Strip data: prefix if present (e.g. "data:application/pdf;base64,...")
           const cleanB64 = pdfBase64.includes(",") ? pdfBase64.split(",")[1] : pdfBase64;
           const binStr = atob(cleanB64);
           pdfBytes = new Uint8Array(binStr.length);
@@ -431,7 +446,6 @@ export default async function handler(req) {
           return jRes({ error: "invalid pdf_base64 encoding", detail: e.message }, 400);
         }
 
-        // Storage path: e.g. "LN/46886078645.pdf" — same convention as the parser.
         const storagePath = `${clientCode}/${outbound}.pdf`;
         try {
           await sbStorageUpload(storagePath, pdfBytes, "application/pdf");
@@ -439,7 +453,6 @@ export default async function handler(req) {
           return jRes({ error: "PDF upload failed", detail: e.message }, 500);
         }
 
-        // Patch the dropshipments row: orphan → received with all fields filled
         const now = new Date().toISOString();
         const patch = {
           status:                "received",
@@ -452,10 +465,7 @@ export default async function handler(req) {
           label_url:             storagePath,
           label_filename:        labelFilename || `${outbound}.pdf`,
           received_by:           operator,
-          // Preserve physical_received_at if it was already set by create_orphan;
-          // otherwise stamp it now.
           physical_received_at:  current.physical_received_at || now,
-          // Clear orphan-alert flag so future re-orphan would re-alert
           orphan_alerted_at:     null
         };
         if (notes) patch.notes = notes;
@@ -464,8 +474,6 @@ export default async function handler(req) {
         try {
           updated = await sbPatch("dropshipments", `id=eq.${id}`, patch);
         } catch (e) {
-          // Catch the orphan_alerted_at column missing case (pre-Day 5 schemas)
-          // and retry without it.
           if (String(e.message).includes("orphan_alerted_at")) {
             delete patch.orphan_alerted_at;
             updated = await sbPatch("dropshipments", `id=eq.${id}`, patch);
@@ -476,7 +484,6 @@ export default async function handler(req) {
         const updatedRow = updated[0];
 
         // ── Sync to shipments_general so Billing Generator counts the inbound ──
-        // Mirrors the receive-action sync logic (forward-only, idempotent).
         try {
           const cfg = cfgRows[0];
           if (cfg?.client_name_billing) {
@@ -503,7 +510,6 @@ export default async function handler(req) {
             console.warn(`[dropshipments.process_orphan] no client_name_billing — skipping sync`);
           }
         } catch (e) {
-          // Non-fatal — primary update already succeeded
           console.error(`[dropshipments.process_orphan] shipments_general sync failed:`, e.message);
         }
 
@@ -517,15 +523,6 @@ export default async function handler(req) {
       }
 
       // ── link_outbound: assign an outbound_tracking + transition to labeled ──
-      // Used by the post-print "Link outbound trackings" modal. The operator
-      // scans the carrier label barcode after printing; this writes the
-      // outbound_tracking value and (if currently 'received') promotes the
-      // row to 'labeled'.
-      //
-      // Body: { id, outbound_tracking, operator }
-      // Optional body: { force: true }   → allow re-link if outbound is already set
-      //
-      // Returns 409 if the outbound_tracking is already used by another row.
       if (act === "link_outbound") {
         const id          = body.id;
         const outbound    = (body.outbound_tracking || "").trim();
@@ -533,31 +530,19 @@ export default async function handler(req) {
         if (!id) return jRes({ error: "id required" }, 400);
         if (!outbound) return jRes({ error: "outbound_tracking required" }, 400);
 
-        // ── Validation (Day 4: prevent accidental garbage inputs) ──
-        // Length: 6-64 chars (tightened from 4 to block typos like "test1")
         if (outbound.length < 6 || outbound.length > 64) {
           return jRes({ error: "outbound_tracking must be 6-64 characters" }, 400);
         }
-        // Format: alphanumeric only. Real carrier barcodes never contain
-        // spaces, punctuation, or symbols — blocking them here catches
-        // test strings ("test 123"), copy-paste errors with stray chars,
-        // and emoji scans.
         if (!/^[A-Za-z0-9]+$/.test(outbound)) {
           return jRes({
             error: "outbound_tracking must contain only letters and digits (no spaces or symbols)"
           }, 400);
         }
 
-        // Load the row and validate state.
         const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,outbound_tracking,tracking_number&limit=1`);
         if (!cur.length) return jRes({ error: "not found" }, 404);
         const current = cur[0];
 
-        // Reject if operator scanned the inbound tracking by mistake.
-        // This is the most common human error: the inbound (TBA...) and the
-        // outbound label are usually side-by-side on the package, and it's
-        // easy to scan the wrong one. Catching it here surfaces a clear hint
-        // instead of silently poisoning the row with the inbound as outbound.
         if (outbound === current.tracking_number) {
           return jRes({
             error: "outbound_tracking cannot be the same as the inbound tracking_number",
@@ -565,7 +550,6 @@ export default async function handler(req) {
           }, 400);
         }
 
-        // Only allow link from received or labeled (re-link case).
         if (current.status !== "received" && current.status !== "labeled") {
           return jRes({
             error: `cannot link outbound from status '${current.status}'`,
@@ -573,7 +557,6 @@ export default async function handler(req) {
           }, 409);
         }
 
-        // Reject re-linking unless ?force=true (operator confirmed override).
         if (current.outbound_tracking && current.outbound_tracking !== outbound && !force) {
           return jRes({
             error: "this package already has a different outbound_tracking",
@@ -582,8 +565,6 @@ export default async function handler(req) {
           }, 409);
         }
 
-        // Reject if this outbound_tracking is already used by another row.
-        // (Belt-and-suspenders; the partial UNIQUE INDEX in DB also enforces this.)
         const dupes = await sbSelect("dropshipments",
           `?outbound_tracking=eq.${encodeURIComponent(outbound)}&select=id,tracking_number,status&limit=2`
         );
@@ -599,13 +580,10 @@ export default async function handler(req) {
         const patch = {
           outbound_tracking: outbound
         };
-        // If currently received, promote to labeled (single-step link+transition).
         if (current.status === "received") {
           patch.status = "labeled";
           patch.labeled_at = now;
         }
-        // For 're-link' on already-labeled rows, we keep status as labeled and
-        // just overwrite the outbound_tracking. labeled_at stays as-is.
 
         try {
           const updated = await sbPatch("dropshipments", `id=eq.${id}`, patch);
@@ -616,7 +594,6 @@ export default async function handler(req) {
             transitioned: current.status === "received"
           });
         } catch (e) {
-          // PostgreSQL unique violation surfaces here if two clients race
           if (String(e.message).includes("23505") || String(e.message).includes("duplicate")) {
             return jRes({ error: "outbound_tracking conflict (race condition)", detail: e.message }, 409);
           }
@@ -625,9 +602,6 @@ export default async function handler(req) {
       }
 
       // ── unlink_outbound: clear outbound_tracking (reset for re-scan) ────
-      // Used when the operator needs to undo a wrong link. Does NOT change
-      // status — the row stays labeled if it was labeled.
-      // Body: { id, operator }
       if (act === "unlink_outbound") {
         const id = body.id;
         if (!id) return jRes({ error: "id required" }, 400);
@@ -642,10 +616,8 @@ export default async function handler(req) {
       if (!id) return jRes({ error: "id required" }, 400);
 
       // Load the current row to validate the transition.
-      // Extra fields (client_id, outbound_tracking, carrier, order_id, content)
-      // are needed for the shipments_general sync that happens after receive/ship
-      // (Day 4 — Billing Generator compatibility).
-      const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,label_url,tracking_number,outbound_tracking,client_id,carrier,order_id,content,outbound_carrier&limit=1`);
+      // manifest_id added (Day 5) so revert can decide whether to clear it.
+      const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,label_url,tracking_number,outbound_tracking,client_id,carrier,order_id,content,outbound_carrier,manifest_id&limit=1`);
       if (!cur.length) return jRes({ error: "not found" }, 404);
       const current = cur[0];
 
@@ -665,17 +637,39 @@ export default async function handler(req) {
         return jRes({ error: `cannot ${act} from status '${current.status}'`, allowed_from: rule.from }, 409);
       }
 
+      // ── Revert from shipped: pre-flight check that the manifest is still open ──
+      // Decision (chat 2026-05-08): if a package is in a SEALED manifest, we
+      // hard-reject the revert. The manifest is legal evidence (signed by the
+      // carrier driver). To "undo" a shipped package post-seal, the operator
+      // must coordinate manually with the carrier and create a new exception
+      // record — this isn't something the UI should let happen with a click.
+      if (act === "revert" && current.status === "shipped" && current.manifest_id) {
+        const mRows = await sbSelect("dropship_manifests",
+          `?manifest_id=eq.${encodeURIComponent(current.manifest_id)}&select=manifest_id,status,sealed_at&limit=1`
+        );
+        if (mRows.length && mRows[0].status !== "open") {
+          return jRes({
+            error: "cannot revert a shipped package that's in a sealed manifest",
+            manifest_id: mRows[0].manifest_id,
+            manifest_status: mRows[0].status,
+            sealed_at: mRows[0].sealed_at,
+            hint: "the manifest has been sealed (carrier handoff). To dispute, mark this package as 'exception' instead."
+          }, 409);
+        }
+      }
+
       // Build the patch payload.
       const patch = {};
 
       if (act === "revert") {
-        // Revert to the previous status, clearing that step's timestamp.
         const REVERT_TO = { received: "pending", labeled: "received", shipped: "labeled" };
         const CLEAR_TS  = { received: "physical_received_at", labeled: "labeled_at", shipped: "shipped_at" };
         const CLEAR_BY  = { received: "received_by", labeled: null, shipped: "shipped_by" };
         patch.status = REVERT_TO[current.status];
         patch[CLEAR_TS[current.status]] = null;
         if (CLEAR_BY[current.status]) patch[CLEAR_BY[current.status]] = null;
+        // If reverting from shipped, also clear manifest_id (handled below in
+        // the post-update block since we need the OLD manifest_id reference).
       } else if (act === "exception") {
         patch.status = rule.to;
         patch.exception_reason = (body.reason || "").trim().slice(0, 500) || null;
@@ -687,8 +681,6 @@ export default async function handler(req) {
         patch.status = rule.to;
         if (rule.ts) patch[rule.ts] = new Date().toISOString();
         if (rule.by) patch[rule.by] = operator;
-        // When an orphan is manually received, clear the alerted flag so the
-        // record is eligible for a fresh alert if it ever returns to orphan.
         if (act === "receive" && current.status === "orphan") {
           patch.orphan_alerted_at = null;
         }
@@ -697,13 +689,6 @@ export default async function handler(req) {
       const updated = await sbPatch("dropshipments", `id=eq.${id}`, patch);
 
       // ── Sync to shipments_general (Day 4: Billing Generator compatibility) ──
-      // Forward transitions only: receive creates the Inbound row,
-      // ship creates the Outbound row. Revert does NOT delete — if a package
-      // was wrongly shipped, fix it manually in shipments_general afterwards.
-      //
-      // Non-fatal: failures here are logged but don't bubble up. The primary
-      // dropshipments update succeeded, and the billing sync can be reconciled
-      // later if needed (idempotent — re-running the action is safe).
       if (act === "receive" || act === "ship") {
         try {
           const cfgRows = await sbSelect("dropship_client_configs",
@@ -740,8 +725,6 @@ export default async function handler(req) {
                 await sbInsert("shipments_general", sgRow);
                 console.log(`[dropshipments.${act}] synced to shipments_general: ${sgRow.direction} ${sgRow.tracking}`);
               } catch (e) {
-                // Unique constraint on tracking means this row was already synced.
-                // Treat as success (idempotent behavior — same as the backfill SQL).
                 if (String(e.message).includes("23505") || String(e.message).toLowerCase().includes("duplicate")) {
                   console.log(`[dropshipments.${act}] already in shipments_general: ${sgRow.tracking}`);
                 } else {
@@ -751,8 +734,42 @@ export default async function handler(req) {
             }
           }
         } catch (e) {
-          // Non-fatal: dropshipments update already succeeded. Log and move on.
           console.error(`[dropshipments.${act}] shipments_general sync failed (non-fatal):`, e.message);
+        }
+      }
+
+      // ── Day 5: Manifest sync (auto-assign on ship, cleanup on revert) ──
+      // Non-fatal: the primary status update already succeeded.
+      if (act === "ship") {
+        try {
+          // Resolve the carrier — same fallback chain used by the shipments_general sync.
+          const cfgRows = await sbSelect("dropship_client_configs",
+            `?client_id=eq.${current.client_id}&select=outbound_carrier&limit=1`
+          );
+          const carrier = current.outbound_carrier || cfgRows[0]?.outbound_carrier || "MailAmericas";
+
+          const result = await assignToOpenManifest({
+            packageId:       current.id,
+            outboundCarrier: carrier,
+            operator,
+          });
+          console.log(`[dropshipments.ship] manifest assigned: ${result.manifest_id} (was_created=${result.was_created || false}, already_assigned=${result.already_assigned || false})`);
+        } catch (e) {
+          console.error(`[dropshipments.ship] manifest auto-assign failed (non-fatal):`, e.message);
+        }
+      }
+
+      // Revert from shipped: clear manifest_id and decrement count.
+      // The pre-flight check above already rejected if manifest was sealed.
+      if (act === "revert" && current.status === "shipped" && current.manifest_id) {
+        try {
+          const result = await unassignFromManifest({
+            packageId:  current.id,
+            manifestId: current.manifest_id,
+          });
+          console.log(`[dropshipments.revert] manifest unassign:`, result);
+        } catch (e) {
+          console.error(`[dropshipments.revert] manifest unassign failed (non-fatal):`, e.message);
         }
       }
 
@@ -765,5 +782,3 @@ export default async function handler(req) {
     return jRes({ error: e.message }, 500);
   }
 }
-
-export const config = { path: "/.netlify/functions/dropshipments" };
