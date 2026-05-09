@@ -35,3 +35,10 @@
   status = 302 
 [functions."wa-leads-weekly-report"]
      schedule = "0 23 * * 1"
+
+   # Public Manifest Page (Commit 4) — /m/{token} → public verification page
+[[redirects]]
+  from = "/m/:token"
+  to   = "/.netlify/functions/manifest-public?token=:token"
+  status = 200
+  force  = true  
