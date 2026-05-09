@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manifests · FR-Logistics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&family=DM+Mono&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --fr-navy: #0A2540;
+    --fr-navy-2: #1B3A5B;
+    --fr-teal: #00B4A6;
+    --fr-teal-dark: #008F84;
+    --fr-orange: #F97316;
+    --bg: #f4f6f9;
+    --card: #fff;
+    --border: #e2e8f0;
+    --text: #0F172A;
+    --muted: #64748B;
+    --accent: #00B4A6;
+    --accent-soft: rgba(0,180,166,.12);
+    --danger: #e53e3e;
+    --shadow: 0 2px 8px rgba(0,0,0,.06);
+
+    /* Manifest status colors */
+    --m-open-bg: #dcfce7;       --m-open-text: #166534;
+    --m-sealed-bg: #dbeafe;     --m-sealed-text: #1e40af;
+    --m-released-bg: #ede9fe;   --m-released-text: #6d28d9;
+    --m-void-bg: #fee2e2;       --m-void-text: #dc2626;
+  }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: 'DM Mono', monospace; }
+  .display { font-family: 'Syne', sans-serif; }
+
+  /* ── Top Nav ── */
+  .topnav {
+    background: var(--fr-navy);
+    color: #fff;
+    padding: 12px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 3px solid var(--fr-teal);
+  }
+  .topnav-left { display: flex; align-items: center; gap: 12px; }
+  .topnav-logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 16px;
+    letter-spacing: 0.5px;
+  }
+  .topnav-divider { color: rgba(255,255,255,0.3); margin: 0 4px; }
+  .topnav-app {
+    background: var(--fr-teal);
+    color: var(--fr-navy);
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .topnav-right { display: flex; gap: 16px; align-items: center; }
+  .topnav-link {
+    color: rgba(255,255,255,0.85);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    transition: color 0.2s;
+  }
+  .topnav-link:hover { color: #fff; }
+
+  /* ── Layout ── */
+  .layout { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100vh - 60px); }
+
+  /* ── Sidebar (matches dropshipments.html exactly) ── */
+  .sidebar {
+    background: #fff;
+    border-right: 1px solid var(--border);
+    padding: 20px 0;
+    overflow-y: auto;
+  }
+  .side-section { margin-bottom: 24px; }
+  .side-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 0 20px;
+    margin-bottom: 8px;
+  }
+  .side-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 20px;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background 0.15s, color 0.15s;
+    border-left: 3px solid transparent;
+  }
+  .side-link:hover { background: #f1f5f9; }
+  .side-link.active {
+    background: var(--accent-soft);
+    color: var(--fr-teal-dark);
+    border-left-color: var(--fr-teal);
+    font-weight: 600;
+  }
+  .side-link .icon { width: 20px; text-align: center; }
+
+  /* ── Main area ── */
+  .main-area { padding: 24px 32px 60px; max-width: 1400px; }
+
+  /* ── Header ── */
+  .hdr {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  .hdr-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--fr-navy);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .badge-beta {
+    font-family: 'DM Sans';
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    background: var(--accent-soft);
+    color: var(--fr-teal-dark);
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+  }
+  .hdr-sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .hdr-actions { display: flex; gap: 10px; align-items: center; }
+
+  /* ── Buttons ── */
+  .btn {
+    background: #fff;
+    border: 1px solid var(--border);
+    padding: 9px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn:hover { border-color: var(--fr-teal); color: var(--fr-teal); }
+  .btn-primary {
+    background: var(--fr-teal);
+    color: #fff;
+    border-color: var(--fr-teal);
+  }
+  .btn-primary:hover { background: var(--fr-teal-dark); border-color: var(--fr-teal-dark); color: #fff; }
+  .btn-ghost { background: transparent; border-color: transparent; }
+  .btn-ghost:hover { background: #f1f5f9; border-color: transparent; color: var(--fr-navy); }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Open Manifest Card ── */
+  .open-card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--fr-teal);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 32px;
+    box-shadow: var(--shadow);
+  }
+  .open-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+    gap: 16px;
+  }
+  .open-card-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--fr-navy);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--fr-teal);
+    box-shadow: 0 0 0 0 rgba(0, 180, 166, 0.7);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(0, 180, 166, 0.7); }
+    70%  { box-shadow: 0 0 0 10px rgba(0, 180, 166, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(0, 180, 166, 0); }
+  }
+  .open-card-meta {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 4px;
+  }
+  .open-card-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .stat-tile {
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-value {
+    font-family: 'Syne', sans-serif;
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--fr-navy);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .stat-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+
+  /* ── Package Preview Table ── */
+  .preview-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+    margin-top: 12px;
+  }
+  .preview-table thead th {
+    background: #f8fafc;
+    text-align: left;
+    padding: 10px 12px;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .preview-table tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .preview-table tbody tr:last-child td { border-bottom: none; }
+  .preview-table .truncate {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .empty-row {
+    text-align: center;
+    color: var(--muted);
+    font-style: italic;
+    padding: 32px 16px !important;
+  }
+
+  /* ── Section Heading ── */
+  .section-heading {
+    font-family: 'Syne', sans-serif;
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--fr-navy);
+    margin: 32px 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  /* ── Sealed Manifests Table ── */
+  .table-wrap {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .data-table thead th {
+    background: #f8fafc;
+    text-align: left;
+    padding: 12px 16px;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table tbody td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table tbody tr:last-child td { border-bottom: none; }
+  .data-table tbody tr:hover { background: #f8fafc; }
+
+  /* Status pills */
+  .pill {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .pill-open     { background: var(--m-open-bg);     color: var(--m-open-text); }
+  .pill-sealed   { background: var(--m-sealed-bg);   color: var(--m-sealed-text); }
+  .pill-released { background: var(--m-released-bg); color: var(--m-released-text); }
+  .pill-void     { background: var(--m-void-bg);     color: var(--m-void-text); }
+
+  .row-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .row-actions .btn-sm { font-size: 11px; padding: 5px 10px; }
+
+  .email-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11.5px;
+  }
+  .email-status.ok    { color: #16a34a; }
+  .email-status.fail  { color: var(--danger); }
+  .email-status.none  { color: var(--muted); }
+
+  /* ── Modal ── */
+  .modal-bg {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.6);
+    z-index: 1000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal-bg.show { display: flex; }
+  .modal {
+    background: #fff;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 480px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    overflow: hidden;
+  }
+  .modal-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--fr-navy);
+  }
+  .modal-body { padding: 20px 24px; font-size: 13.5px; line-height: 1.6; }
+  .modal-body p { margin-bottom: 12px; color: var(--text); }
+  .modal-body strong { color: var(--fr-navy); }
+  .modal-warning {
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 12.5px;
+    color: #9a3412;
+    margin-top: 8px;
+  }
+  .modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    background: #fafbfc;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  /* ── Toast notifications ── */
+  .toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1100;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+  }
+  .toast {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+    min-width: 280px;
+    max-width: 420px;
+    font-size: 13px;
+    pointer-events: auto;
+    border-left: 4px solid var(--fr-teal);
+    animation: slideIn 0.25s ease-out;
+  }
+  .toast.success { border-left-color: #16a34a; }
+  .toast.error   { border-left-color: var(--danger); }
+  .toast.info    { border-left-color: var(--fr-teal); }
+  .toast-title  { font-weight: 700; margin-bottom: 4px; color: var(--fr-navy); font-size: 13px; }
+  .toast-body   { color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+  @keyframes slideIn {
+    from { transform: translateX(120%); opacity: 0; }
+    to   { transform: translateX(0); opacity: 1; }
+  }
+
+  /* ── Empty state ── */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+  }
+  .empty-state .empty-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+  }
+  .empty-state .empty-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--fr-navy);
+    margin-bottom: 6px;
+  }
+  .empty-state .empty-sub {
+    font-size: 13px;
+  }
+
+  /* ── Loading ── */
+  .loading-row {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .main-area { padding: 16px; }
+    .open-card-stats { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Top Nav ── -->
+<nav class="topnav">
+  <div class="topnav-left">
+    <a href="portal.html" class="topnav-logo" style="color:#fff;text-decoration:none">FR-LOGISTICS</a>
+    <span class="topnav-divider">/</span>
+    <span class="topnav-app">Manifests</span>
+  </div>
+  <div class="topnav-right">
+    <a href="dropshipments.html" class="topnav-link">← Back to Dropshipments</a>
+    <a href="portal.html" class="topnav-link">Portal</a>
+  </div>
+</nav>
+
+<div class="layout">
+
+  <!-- ── Sidebar (consistent with dropshipments.html) ── -->
+  <aside class="sidebar">
+    <div class="side-section">
+      <div class="side-label">Dropshipments</div>
+      <a href="dropshipments.html" class="side-link"><span class="icon">📦</span> All Packages</a>
+      <a href="dropshipments.html?status=pending"   class="side-link"><span class="icon">⏱</span> Pending</a>
+      <a href="dropshipments.html?status=received"  class="side-link"><span class="icon">📥</span> Received</a>
+      <a href="dropshipments.html?status=labeled"   class="side-link"><span class="icon">🏷</span> Labeled</a>
+      <a href="dropshipments.html?status=shipped"   class="side-link"><span class="icon">✓</span> Shipped</a>
+      <a href="dropshipments.html?status=orphan"    class="side-link"><span class="icon">⚠</span> Orphans</a>
+      <a href="dropshipments.html?status=exception" class="side-link"><span class="icon">⛔</span> Exceptions</a>
+    </div>
+    <div class="side-section">
+      <div class="side-label">Tools</div>
+      <a href="#" class="side-link"><span class="icon">📧</span> Email Pipeline</a>
+      <a href="#" class="side-link"><span class="icon">🖨</span> Batch Print</a>
+      <a href="manifests.html" class="side-link active"><span class="icon">📋</span> Manifests</a>
+      <a href="#" class="side-link"><span class="icon">📊</span> Analytics</a>
+    </div>
+    <div class="side-section">
+      <div class="side-label">Account</div>
+      <a href="#" class="side-link"><span class="icon">⚙</span> Settings</a>
+      <a href="#" class="side-link"><span class="icon">💬</span> Support</a>
+    </div>
+  </aside>
+
+  <main class="main-area">
+
+    <div class="hdr">
+      <div>
+        <div class="hdr-title">
+          Manifests
+          <span class="badge-beta">v1</span>
+        </div>
+        <div class="hdr-sub">Outbound shipping manifests · per-carrier · auto-assignment on ship</div>
+      </div>
+      <div class="hdr-actions">
+        <button class="btn" id="refreshBtn" title="Refresh">
+          <span>↻</span> Refresh
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Open Manifest Card (shows the active open manifest for MailAmericas) ── -->
+    <div id="openManifestSlot">
+      <div class="open-card">
+        <div class="loading-row">Loading current manifest…</div>
+      </div>
+    </div>
+
+    <!-- ── Sealed Manifests History ── -->
+    <h2 class="section-heading">📋 Sealed Manifests</h2>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Manifest ID</th>
+            <th>Carrier</th>
+            <th>Status</th>
+            <th style="text-align:center">Packages</th>
+            <th>Sealed</th>
+            <th>Email</th>
+            <th style="text-align:right">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="sealedTbody">
+          <tr><td colspan="7" class="loading-row">Loading manifests…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── Modal: Confirm Seal ── -->
+<div class="modal-bg" id="sealModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Generate manifest?</div>
+    </div>
+    <div class="modal-body">
+      <p>You're about to seal the open manifest for <strong id="sealCarrier">—</strong>.</p>
+      <p><strong id="sealCount">0</strong> package(s) will be locked into manifest <strong class="mono" id="sealId">—</strong>.</p>
+      <div class="modal-warning">
+        ⚠️ Once sealed, this manifest cannot be modified. The PDF, CSV, and handoff email will be generated and sent automatically to the carrier.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="sealCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="sealConfirmBtn">Generate manifest</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toasts ── -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+'use strict';
+
+// ─── Config ────────────────────────────────────────────────────────────
+const API_BASE = '/.netlify/functions';
+const API_MANIFESTS     = `${API_BASE}/dropship-manifests`;
+const API_MANIFEST_EMAIL= `${API_BASE}/dropship-manifest-email`;
+
+// Carriers we manage. Stays in sync with the outbound_carriers table.
+// (Hardcoded for now since there's only MailAmericas; can be loaded
+// dynamically later if more carriers are added.)
+const CARRIERS = ['MailAmericas'];
+
+// Operator name (read from localStorage if available, falls back to "warehouse").
+function getOperator() {
+  try { return (localStorage.getItem('fr_operator') || 'warehouse').slice(0, 60); }
+  catch (_) { return 'warehouse'; }
+}
+
+// ─── DOM helpers ───────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+function el(tag, attrs = {}, children = []) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') e.className = v;
+    else if (k === 'style') e.style.cssText = v;
+    else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined) e.setAttribute(k, v);
+  }
+  for (const c of (Array.isArray(children) ? children : [children])) {
+    if (c === null || c === undefined) continue;
+    e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  }
+  return e;
+}
+
+// ─── Toasts ────────────────────────────────────────────────────────────
+function toast(kind, title, body, ms = 4500) {
+  const t = el('div', { class: `toast ${kind}` }, [
+    el('div', { class: 'toast-title' }, title),
+    body ? el('div', { class: 'toast-body' }, body) : null,
+  ]);
+  $('toastContainer').appendChild(t);
+  setTimeout(() => {
+    t.style.transition = 'opacity 0.3s';
+    t.style.opacity = '0';
+    setTimeout(() => t.remove(), 300);
+  }, ms);
+}
+
+// ─── Format helpers ────────────────────────────────────────────────────
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString('en-US', {
+    timeZone: 'America/New_York',
+    month: 'short', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  });
+}
+function fmtDateShort(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', {
+    timeZone: 'America/New_York',
+    month: 'short', day: 'numeric',
+  });
+}
+function ago(iso) {
+  if (!iso) return '—';
+  const ms   = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1)  return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+function statusPill(status) {
+  return el('span', { class: `pill pill-${status}` }, status);
+}
+
+// ─── API calls ─────────────────────────────────────────────────────────
+async function apiGet(url) {
+  const r = await fetch(url);
+  if (!r.ok) {
+    const txt = await r.text().catch(() => '');
+    throw new Error(`GET ${url} → ${r.status}: ${txt.slice(0, 200)}`);
+  }
+  return r.json();
+}
+async function apiPost(url, body) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const err = new Error(data.error || `POST ${url} → ${r.status}`);
+    err.status = r.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+// ─── Render: Open manifest card ────────────────────────────────────────
+async function loadOpenManifest() {
+  const slot = $('openManifestSlot');
+  slot.innerHTML = '';
+
+  // For now we only support 1 carrier (MailAmericas). When more come,
+  // we'd render one card per carrier in a loop here.
+  for (const carrier of CARRIERS) {
+    const card = el('div', { class: 'open-card', id: `openCard-${carrier}` });
+    card.innerHTML = `<div class="loading-row">Loading ${carrier}…</div>`;
+    slot.appendChild(card);
+
+    try {
+      const data = await apiGet(`${API_MANIFESTS}?action=current_open&carrier=${encodeURIComponent(carrier)}`);
+      renderOpenCard(card, carrier, data);
+    } catch (e) {
+      card.innerHTML = '';
+      card.appendChild(el('div', { class: 'empty-state' }, [
+        el('div', { class: 'empty-icon' }, '⚠'),
+        el('div', { class: 'empty-title' }, 'Failed to load'),
+        el('div', { class: 'empty-sub' }, e.message),
+      ]));
+    }
+  }
+}
+
+function renderOpenCard(card, carrier, data) {
+  card.innerHTML = '';
+
+  const m        = data.manifest;
+  const packages = data.packages || [];
+
+  // Card header
+  const headerLeft = el('div', {}, [
+    el('div', { class: 'open-card-title' }, [
+      el('span', { class: 'pulse-dot' }),
+      `Active Manifest · ${carrier}`,
+    ]),
+    el('div', { class: 'open-card-meta' }, m
+      ? `${m.manifest_id} · opened ${ago(m.created_at)}`
+      : 'No open manifest yet — will be created automatically when the first package ships.'
+    ),
+  ]);
+
+  const headerRight = el('div', { class: 'hdr-actions' }, [
+    m && packages.length > 0
+      ? el('button', {
+          class: 'btn btn-primary',
+          onclick: () => openSealModal(m, packages.length, carrier),
+        }, ['📤 Generate manifest'])
+      : el('button', { class: 'btn', disabled: true, title: 'Waiting for shipped packages' }, ['📤 Generate manifest']),
+  ]);
+
+  const header = el('div', { class: 'open-card-header' }, [headerLeft, headerRight]);
+  card.appendChild(header);
+
+  if (!m) {
+    card.appendChild(el('div', { class: 'empty-state', style: 'padding:32px 16px' }, [
+      el('div', { class: 'empty-icon' }, '📭'),
+      el('div', { class: 'empty-sub' }, 'When a package is marked shipped, a fresh manifest will open automatically.'),
+    ]));
+    return;
+  }
+
+  // Stats grid
+  const stats = el('div', { class: 'open-card-stats' }, [
+    statTile(packages.length, 'Packages'),
+    statTile(uniqueClients(packages), 'Clients'),
+    statTile(ago(m.created_at), 'Opened'),
+    statTile(m.public_token || '—', 'Token'),
+  ]);
+  card.appendChild(stats);
+
+  // Preview table
+  if (packages.length === 0) {
+    card.appendChild(el('div', { class: 'empty-state', style: 'padding:24px 16px' }, [
+      el('div', { class: 'empty-sub' }, 'No packages yet.'),
+    ]));
+  } else {
+    const table = el('table', { class: 'preview-table' }, [
+      el('thead', {}, el('tr', {}, [
+        el('th', {}, 'Outbound'),
+        el('th', {}, 'Inbound'),
+        el('th', {}, 'Order'),
+        el('th', {}, 'Content'),
+        el('th', { style: 'text-align:right' }, 'Shipped'),
+      ])),
+      el('tbody', {}, packages.slice(0, 8).map(p => el('tr', {}, [
+        el('td', { class: 'mono truncate' }, p.outbound_tracking || '—'),
+        el('td', { class: 'mono truncate' }, p.tracking_number || '—'),
+        el('td', { class: 'mono' }, p.order_id || '—'),
+        el('td', { class: 'truncate' }, p.content || '—'),
+        el('td', { style: 'text-align:right;color:var(--muted);font-size:11.5px' }, ago(p.shipped_at)),
+      ]))),
+    ]);
+    card.appendChild(table);
+
+    if (packages.length > 8) {
+      card.appendChild(el('div', { style: 'text-align:center;padding:12px;font-size:12px;color:var(--muted)' },
+        `+ ${packages.length - 8} more package(s)`
+      ));
+    }
+  }
+}
+
+function statTile(value, label) {
+  return el('div', { class: 'stat-tile' }, [
+    el('div', { class: 'stat-value mono' }, String(value ?? '—')),
+    el('div', { class: 'stat-label' }, label),
+  ]);
+}
+function uniqueClients(packages) {
+  return new Set(packages.map(p => p.client_id).filter(Boolean)).size;
+}
+
+// ─── Render: Sealed manifests history ──────────────────────────────────
+async function loadSealedManifests() {
+  const tbody = $('sealedTbody');
+  tbody.innerHTML = '<tr><td colspan="7" class="loading-row">Loading manifests…</td></tr>';
+
+  try {
+    const data = await apiGet(`${API_MANIFESTS}?action=list&limit=100`);
+    const rows = (data.manifests || []).filter(m => m.status !== 'open');
+    renderSealedTable(tbody, rows);
+  } catch (e) {
+    tbody.innerHTML = '';
+    tbody.appendChild(el('tr', {}, el('td', { colspan: 7, class: 'loading-row', style: 'color:var(--danger)' },
+      `Failed to load: ${e.message}`
+    )));
+  }
+}
+
+function renderSealedTable(tbody, rows) {
+  tbody.innerHTML = '';
+  if (!rows.length) {
+    tbody.appendChild(el('tr', {}, el('td', { colspan: 7 }, [
+      el('div', { class: 'empty-state' }, [
+        el('div', { class: 'empty-icon' }, '📋'),
+        el('div', { class: 'empty-title' }, 'No sealed manifests yet'),
+        el('div', { class: 'empty-sub' }, 'Generate the active manifest above to create the first one.'),
+      ]),
+    ])));
+    return;
+  }
+
+  for (const m of rows) {
+    const tr = el('tr', {}, [
+      el('td', { class: 'mono', style: 'font-weight:600' }, m.manifest_id),
+      el('td', {}, m.outbound_carrier),
+      el('td', {}, statusPill(m.status)),
+      el('td', { style: 'text-align:center;font-weight:700' }, String(m.package_count)),
+      el('td', { title: fmtDate(m.sealed_at) }, fmtDateShort(m.sealed_at) + ' · ' + (m.sealed_by || '—')),
+      el('td', {}, emailStatusCell(m)),
+      el('td', { style: 'text-align:right' }, el('div', { class: 'row-actions' }, [
+        el('a', {
+          class: 'btn btn-sm',
+          href: `${API_MANIFESTS}?action=download_pdf&manifest_id=${encodeURIComponent(m.manifest_id)}`,
+          target: '_blank',
+          title: 'Download PDF',
+        }, '📄 PDF'),
+        el('a', {
+          class: 'btn btn-sm',
+          href: `${API_MANIFESTS}?action=download_csv&manifest_id=${encodeURIComponent(m.manifest_id)}`,
+          target: '_blank',
+          title: 'Download CSV',
+        }, '📊 CSV'),
+        el('button', {
+          class: 'btn btn-sm',
+          onclick: () => retryEmail(m.manifest_id),
+          title: m.email_sent_at ? 'Resend email' : 'Send email',
+        }, m.email_sent_at ? '↻ Resend' : '✉ Send'),
+      ])),
+    ]);
+    tbody.appendChild(tr);
+  }
+}
+
+function emailStatusCell(m) {
+  if (m.email_sent_at) {
+    return el('span', {
+      class: 'email-status ok',
+      title: `Sent to ${m.email_sent_to} on ${fmtDate(m.email_sent_at)}`,
+    }, ['✓ Sent ', ago(m.email_sent_at)]);
+  }
+  return el('span', { class: 'email-status none' }, '— Not sent');
+}
+
+// ─── Seal modal ────────────────────────────────────────────────────────
+let _sealManifestId = null;
+
+function openSealModal(manifest, packageCount, carrier) {
+  _sealManifestId = manifest.manifest_id;
+  $('sealId').textContent      = manifest.manifest_id;
+  $('sealCarrier').textContent = carrier;
+  $('sealCount').textContent   = String(packageCount);
+  $('sealModal').classList.add('show');
+}
+
+function closeSealModal() {
+  $('sealModal').classList.remove('show');
+  _sealManifestId = null;
+}
+
+async function confirmSeal() {
+  if (!_sealManifestId) return;
+
+  const btn = $('sealConfirmBtn');
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+
+  try {
+    const result = await apiPost(API_MANIFESTS, {
+      action: 'seal',
+      manifest_id: _sealManifestId,
+      sealed_by: getOperator(),
+    });
+
+    closeSealModal();
+
+    // Show different toast based on whether email succeeded
+    if (result.email && result.email.ok) {
+      toast('success',
+        `Manifest sealed — email sent`,
+        `${result.sealed_manifest_id} · ${result.package_count} pkg · sent to ${result.email.sent_to}`,
+        6000
+      );
+    } else {
+      const emailErr = result.email && result.email.error
+        ? (typeof result.email.error === 'string' ? result.email.error : (result.email.error.error || JSON.stringify(result.email.error).slice(0, 120)))
+        : 'unknown error';
+      toast('info',
+        `Manifest sealed — email failed`,
+        `${result.sealed_manifest_id} · ${result.package_count} pkg. Use "↻ Resend" to retry. Error: ${emailErr}`,
+        9000
+      );
+    }
+
+    // Refresh both views
+    await Promise.all([loadOpenManifest(), loadSealedManifests()]);
+
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Generate manifest';
+    toast('error', 'Failed to seal manifest', e.message, 8000);
+  }
+}
+
+// ─── Retry/send email ──────────────────────────────────────────────────
+async function retryEmail(manifest_id) {
+  toast('info', 'Sending email…', `Manifest ${manifest_id}`, 2000);
+  try {
+    const result = await apiPost(API_MANIFEST_EMAIL, {
+      action: 'send',
+      manifest_id,
+    });
+    toast('success', 'Email sent', `${manifest_id} → ${result.sent_to}`, 5000);
+    await loadSealedManifests();
+  } catch (e) {
+    const detail = e.data && e.data.detail
+      ? (typeof e.data.detail === 'string' ? e.data.detail : JSON.stringify(e.data.detail).slice(0, 160))
+      : e.message;
+    toast('error', 'Email send failed', detail, 9000);
+  }
+}
+
+// ─── Boot ──────────────────────────────────────────────────────────────
+async function boot() {
+  await Promise.all([loadOpenManifest(), loadSealedManifests()]);
+}
+
+// Wire up modal buttons
+$('sealCancelBtn').addEventListener('click', closeSealModal);
+$('sealConfirmBtn').addEventListener('click', confirmSeal);
+$('sealModal').addEventListener('click', (e) => {
+  if (e.target === $('sealModal')) closeSealModal();
+});
+$('refreshBtn').addEventListener('click', () => {
+  $('refreshBtn').disabled = true;
+  Promise.all([loadOpenManifest(), loadSealedManifests()])
+    .finally(() => { $('refreshBtn').disabled = false; });
+});
+
+// ESC closes modal
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeSealModal();
+});
+
+// Initial load
+boot();
+
+// Soft auto-refresh of the open card every 60s (no toast, no spinner)
+setInterval(() => {
+  loadOpenManifest().catch(() => {});
+}, 60000);
+
+</script>
+</body>
+</html>
