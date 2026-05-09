@@ -570,6 +570,7 @@
             <th style="text-align:center">Packages</th>
             <th>Sealed</th>
             <th>Email</th>
+            <th>Viewed</th>
             <th style="text-align:right">Actions</th>
           </tr>
         </thead>
@@ -848,7 +849,7 @@ async function loadSealedManifests() {
 function renderSealedTable(tbody, rows) {
   tbody.innerHTML = '';
   if (!rows.length) {
-    tbody.appendChild(el('tr', {}, el('td', { colspan: 7 }, [
+    tbody.appendChild(el('tr', {}, el('td', { colspan: 8 }, [
       el('div', { class: 'empty-state' }, [
         el('div', { class: 'empty-icon' }, '📋'),
         el('div', { class: 'empty-title' }, 'No sealed manifests yet'),
@@ -866,6 +867,7 @@ function renderSealedTable(tbody, rows) {
       el('td', { style: 'text-align:center;font-weight:700' }, String(m.package_count)),
       el('td', { title: fmtDate(m.sealed_at) }, fmtDateShort(m.sealed_at) + ' · ' + (m.sealed_by || '—')),
       el('td', {}, emailStatusCell(m)),
+      el('td', {}, viewedStatusCell(m)),
       el('td', { style: 'text-align:right' }, el('div', { class: 'row-actions' }, [
         el('a', {
           class: 'btn btn-sm',
@@ -879,6 +881,12 @@ function renderSealedTable(tbody, rows) {
           target: '_blank',
           title: 'Download CSV',
         }, '📊 CSV'),
+        el('a', {
+          class: 'btn btn-sm',
+          href: `/m/${m.public_token}`,
+          target: '_blank',
+          title: 'Open public verification page',
+        }, '🔗 Public'),
         el('button', {
           class: 'btn btn-sm',
           onclick: () => retryEmail(m.manifest_id),
@@ -898,6 +906,18 @@ function emailStatusCell(m) {
     }, ['✓ Sent ', ago(m.email_sent_at)]);
   }
   return el('span', { class: 'email-status none' }, '— Not sent');
+}
+
+function viewedStatusCell(m) {
+  // last_viewed_at and view_count come from the manifests row (Commit 4)
+  if (m.last_viewed_at) {
+    const count = m.view_count || 0;
+    return el('span', {
+      class: 'email-status ok',
+      title: `Last viewed: ${fmtDate(m.last_viewed_at)} · ${count} total view${count === 1 ? '' : 's'}`,
+    }, ['👁 ', ago(m.last_viewed_at)]);
+  }
+  return el('span', { class: 'email-status none' }, '— Not viewed');
 }
 
 // ─── Seal modal ────────────────────────────────────────────────────────
