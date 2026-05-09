@@ -31,6 +31,8 @@ const SUPABASE_KEY = Netlify.env.get("SUPABASE_SERVICE_KEY");
 
 // Public-facing base URL for the QR code link (commit 4 will serve /m/{token}).
 const PUBLIC_BASE_URL = Netlify.env.get("PUBLIC_BASE_URL") || "https://apps.fr-logistics.net";
+// Site URL used for internal function-to-function calls (e.g. seal → email).
+const SITE_URL = Netlify.env.get("URL") || PUBLIC_BASE_URL;
 
 const SB = () => ({
   apikey: SUPABASE_KEY,
@@ -424,6 +426,31 @@ async function actionSeal(body) {
     csv_url: csvUrl,
   });
 
+  // 6) Auto-send the handoff email (Commit 3, mode A: automatic).
+  // Non-fatal: if the email fails, the seal still succeeded and the UI
+  // shows a "Retry email" button. We DON'T await this on the critical path
+  // for too long — but we do await it because the UI wants the result.
+  let emailResult = null;
+  let emailError  = null;
+  try {
+    const emailRes = await fetch(`${SITE_URL}/.netlify/functions/dropship-manifest-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "send", manifest_id }),
+    });
+    const emailJson = await emailRes.json().catch(() => ({}));
+    if (emailRes.ok) {
+      emailResult = emailJson;
+      console.log(`[manifests.seal] email sent to ${emailJson.sent_to} (id=${emailJson.message_id})`);
+    } else {
+      emailError = emailJson;
+      console.error(`[manifests.seal] email send failed (non-fatal):`, emailRes.status, emailJson);
+    }
+  } catch (e) {
+    emailError = { error: e.message || String(e) };
+    console.error(`[manifests.seal] email send threw (non-fatal):`, e.message);
+  }
+
   return jRes({
     ok: true,
     sealed_manifest_id:    manifest_id,
@@ -434,6 +461,7 @@ async function actionSeal(body) {
     csv_url:               csvUrl,
     next_open_manifest_id: sealResult.next_open_manifest_id,
     next_open_token:       sealResult.next_open_token,
+    email:                 emailResult ? { ok: true, ...emailResult } : { ok: false, error: emailError },
   });
 }
 
