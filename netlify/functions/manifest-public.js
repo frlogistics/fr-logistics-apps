@@ -757,7 +757,14 @@ export default async function handler(req) {
     });
     const rows = Array.isArray(result) ? result : [result];
 
+    // Debug: log what we received so we can see in Netlify Functions logs
+    console.log("[manifest-public] token:", token);
+    console.log("[manifest-public] result type:", typeof result, "isArray:", Array.isArray(result));
+    console.log("[manifest-public] rows.length:", rows.length);
+    console.log("[manifest-public] rows[0]:", JSON.stringify(rows[0] || null));
+
     if (!rows.length || !rows[0]?.manifest_id) {
+      console.log("[manifest-public] returning 404 — rows.length:", rows.length, "has manifest_id:", !!rows[0]?.manifest_id);
       return htmlResponse(pageNotFound(token), 404);
     }
 
