@@ -738,7 +738,27 @@ export default async function handler(req) {
   }
 
   const url    = new URL(req.url);
-  const token  = (url.searchParams.get("token") || "").trim().toLowerCase();
+  // Extract token from either:
+  //  1. Query param ?token=... (when called via netlify.toml redirect)
+  //  2. Path segment /m/{token} (fallback if redirect didn't pass it correctly,
+  //     or when the function is hit directly via /.netlify/functions/manifest-public/{token})
+  let token = (url.searchParams.get("token") || "").trim().toLowerCase();
+  if (!token) {
+    // Fallback: try to extract from path. The pathname can be:
+    //   /m/q7qbnjbb                         (via redirect, if path-rewrite mode)
+    //   /.netlify/functions/manifest-public (no token)
+    //   /.netlify/functions/manifest-public/q7qbnjbb (path-style direct)
+    const pathParts = url.pathname.split("/").filter(Boolean);
+    const lastPart  = pathParts[pathParts.length - 1] || "";
+    // Only use the last path segment if it looks like a token (8 alphanumeric)
+    if (/^[a-zA-Z0-9]{8}$/.test(lastPart) && lastPart !== "manifest-public") {
+      token = lastPart.toLowerCase();
+    }
+  }
+
+  console.log("[manifest-public] raw url:", req.url);
+  console.log("[manifest-public] pathname:", url.pathname);
+  console.log("[manifest-public] resolved token:", token);
 
   // Token format check — must be 8 alphanumeric (per generate_public_token RPC)
   if (!token || !/^[a-z0-9]{8}$/.test(token)) {
