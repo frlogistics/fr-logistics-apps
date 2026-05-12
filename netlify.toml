@@ -1,5 +1,15 @@
+# ============================================================================
+# netlify.toml — FR-Logistics Apps
+# ============================================================================
+# Registers Scheduled Functions, redirects, and CORS headers.
+# Order matters: group [functions.*] together, then [[redirects]], then [[headers]].
+# ============================================================================
+
 [functions]
   directory = "netlify/functions"
+
+# ─── Scheduled Functions ────────────────────────────────────────────────────
+# Cron format (UTC): "minute hour day-of-month month day-of-week"
 
 [functions."daily-summary"]
   schedule = "0 23 * * *"
@@ -9,20 +19,20 @@
 
 [functions."refresh-ig-token"]
   schedule = "0 12 1 */45 *"
+
 [functions."dropship-gmail-sync"]
   schedule = "0 */2 * * *"
 
 [functions."dropship-orphan-alert"]
   schedule = "15 */2 * * *"
-  [functions."dropship-manifest"]
+
+[functions."dropship-manifest"]
   schedule = "0 23 * * *"
-  
-[[headers]]
-  for = "/.netlify/functions/*"
-  [headers.values]
-    Access-Control-Allow-Origin = "*"
-    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
-    Access-Control-Allow-Headers = "Content-Type, Authorization"
+
+[functions."wa-leads-weekly-report"]
+  schedule = "0 23 * * 1"
+
+# ─── Redirects ──────────────────────────────────────────────────────────────
 
 [[redirects]]
   from = "/"
@@ -32,13 +42,20 @@
 [[redirects]]
   from = "/portal"
   to = "/portal.html"
-  status = 302 
-[functions."wa-leads-weekly-report"]
-     schedule = "0 23 * * 1"
+  status = 302
 
-   # Public Manifest Page (Commit 4) — /m/{token} → public verification page
+# Public Manifest Page (Commit 4) — /m/{token} → public verification page
 [[redirects]]
   from = "/m/:token"
-  to   = "/.netlify/functions/manifest-public?token=:token"
+  to = "/.netlify/functions/manifest-public?token=:token"
   status = 200
-  force  = true  
+  force = true
+
+# ─── Headers ────────────────────────────────────────────────────────────────
+
+[[headers]]
+  for = "/.netlify/functions/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, Authorization"
