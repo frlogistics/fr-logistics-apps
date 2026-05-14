@@ -4,7 +4,7 @@
 // Pattern: same as wa-clients.js / ecopack.js (HEADERS_SUPA, normalizers, status codes)
 // Endpoints:
 //   GET    ?catalog=true                          → list active service catalog
-//   GET    ?client_id=&from=&to=&status=&limit=   → list log entries (filters optional)
+//   GET    ?client_id=&from=&to=&status=&pending=&limit=   → list log entries (filters optional)
 //   POST   { client_id, client_name, service_code, service_name,
 //            quantity, unit, unit_rate, service_date?, reference_id?,
 //            performed_by?, notes?, logged_by? }   → create entry
@@ -93,6 +93,7 @@ exports.handler = async (event) => {
       let url = `${SUPA_URL}/rest/v1/${TABLE_LOG}?order=service_date.desc,id.desc`;
       if (params.client_id) url += `&client_id=eq.${encodeURIComponent(params.client_id)}`;
       if (params.status)    url += `&status=eq.${encodeURIComponent(params.status)}`;
+      if (params.pending === "true" && !params.status) url += `&status=eq.logged`;
       if (params.from)      url += `&service_date=gte.${params.from}`;
       if (params.to)        url += `&service_date=lte.${params.to}`;
       const limit = Math.min(parseInt(params.limit || "200", 10) || 200, 1000);
