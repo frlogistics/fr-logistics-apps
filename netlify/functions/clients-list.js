@@ -2,10 +2,23 @@
 // Returns all clients from fr_clients table
 // Used by billing.html, onboarding.html, and any app needing client data
 
+const ALLOWED_ORIGINS = [
+  'https://apps.fr-logistics.net',
+  'https://fr-logistics.net',
+  'https://www.fr-logistics.net',
+];
+
 exports.handler = async (event) => {
+  const origin = event.headers.origin || event.headers.Origin || '';
+  const allowOrigin = ALLOWED_ORIGINS.includes(origin)
+    ? origin
+    : ALLOWED_ORIGINS[0];
+
   const headers = {
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Vary': 'Origin',
     'Content-Type': 'application/json',
   };
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
