@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FR-Logistics · Warehouse Order Queue</title>
+<style>
+  :root {
+    --fr-green: #16a34a;
+    --fr-dark: #1f2937;
+    --fr-gray: #6b7280;
+    --fr-bg: #f1f5f9;
+    --fr-border: #e5e7eb;
+    --fr-red: #b91c1c;
+    --fr-red-bg: #fde8e8;
+    --fr-orange: #b45309;
+    --fr-blue: #1d4ed8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: var(--fr-bg);
+    color: var(--fr-dark);
+    min-height: 100vh;
+  }
+  header {
+    background: #fff;
+    border-bottom: 1px solid var(--fr-border);
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo {
+    width: 40px; height: 40px;
+    background: var(--fr-green);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 800; font-size: 14px; letter-spacing: -0.5px;
+  }
+  .brand-text h1 { font-size: 18px; font-weight: 700; }
+  .brand-text p { font-size: 11px; color: var(--fr-gray); text-transform: uppercase; letter-spacing: 0.5px; }
+  .back-link {
+    background: none; border: 1px solid var(--fr-border);
+    color: var(--fr-gray); padding: 8px 16px; border-radius: 6px;
+    font-size: 13px; cursor: pointer; text-decoration: none;
+  }
+  .back-link:hover { background: var(--fr-bg); }
+  main { max-width: 1300px; margin: 0 auto; padding: 32px; }
+  .page-title { font-size: 26px; font-weight: 800; margin-bottom: 4px; }
+  .page-sub { font-size: 13px; color: var(--fr-gray); margin-bottom: 24px; }
+  /* Toolbar */
+  .toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 16px; gap: 12px; flex-wrap: wrap;
+  }
+  .toolbar-left { display: flex; align-items: center; gap: 12px; }
+  select {
+    padding: 9px 12px; border: 1px solid var(--fr-border);
+    border-radius: 6px; font-size: 13px; font-family: inherit; background: #fff;
+  }
+  .selection-info { font-size: 13px; color: var(--fr-gray); }
+  .btn-export {
+    background: var(--fr-green); color: #fff; border: none;
+    padding: 10px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .btn-export:hover { background: #15803d; }
+  .btn-export:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-refresh {
+    background: none; border: 1px solid var(--fr-border); color: var(--fr-gray);
+    padding: 9px 14px; border-radius: 6px; font-size: 13px; cursor: pointer;
+  }
+  .btn-refresh:hover { background: var(--fr-bg); }
+  /* Panel + table */
+  .panel {
+    background: #fff; border: 1px solid var(--fr-border);
+    border-radius: 10px; overflow: hidden;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--fr-gray); padding: 12px;
+    border-bottom: 1px solid var(--fr-border); background: #fafbfc;
+  }
+  td { padding: 12px; border-bottom: 1px solid var(--fr-border); }
+  tbody tr:last-child td { border-bottom: none; }
+  .order-row:hover { background: var(--fr-bg); }
+  .col-check { width: 40px; text-align: center; }
+  .col-check input { width: 16px; height: 16px; cursor: pointer; }
+  .status-badge {
+    display: inline-block; padding: 3px 10px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; text-transform: capitalize;
+  }
+  .status-badge.pending { background: #fef3c7; color: var(--fr-orange); }
+  .status-badge.processing { background: #dbeafe; color: var(--fr-blue); }
+  .status-badge.exported { background: #dcfce7; color: var(--fr-green); }
+  .expand-btn {
+    background: none; border: none; cursor: pointer; color: var(--fr-gray);
+    font-size: 12px; padding: 2px 6px;
+  }
+  .item-detail td { padding: 0; background: #f9fafb; }
+  .item-detail-inner { padding: 12px 24px; }
+  .item-detail-inner table { font-size: 12px; }
+  .item-detail-inner th, .item-detail-inner td { padding: 6px 10px; background: transparent; }
+  .empty-state { text-align: center; padding: 48px; color: var(--fr-gray); font-size: 14px; }
+  /* Messages */
+  .msg-box { margin-bottom: 16px; padding: 12px 16px; border-radius: 8px; font-size: 13px; }
+  .msg-error { background: var(--fr-red-bg); color: var(--fr-red); }
+  .msg-success { background: #dcfce7; color: var(--fr-green); }
+  .msg-warn { background: #fef3c7; color: var(--fr-orange); }
+  .hidden { display: none; }
+  .muted { color: var(--fr-gray); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">FR</div>
+    <div class="brand-text">
+      <h1>Warehouse Order Queue</h1>
+      <p>Internal · Operations</p>
+    </div>
+  </div>
+  <a href="portal.html" class="back-link">← Back to Portal</a>
+</header>
+
+<main>
+  <h2 class="page-title">Client Orders</h2>
+  <p class="page-sub">Review incoming client orders and export pending ones to a ShipStation CSV.</p>
+
+  <div id="msg"></div>
+
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <select id="status-filter">
+        <option value="pending">Pending</option>
+        <option value="processing">Processing</option>
+        <option value="exported">Exported</option>
+        <option value="all">All statuses</option>
+      </select>
+      <button class="btn-refresh" id="refresh-btn">Refresh</button>
+      <span class="selection-info" id="selection-info">0 selected</span>
+    </div>
+    <button class="btn-export" id="export-btn" disabled>Export Selected to CSV</button>
+  </div>
+
+  <div class="panel">
+    <table>
+      <thead>
+        <tr>
+          <th class="col-check"><input type="checkbox" id="select-all" /></th>
+          <th>Order #</th>
+          <th>Client</th>
+          <th>Status</th>
+          <th>Recipient</th>
+          <th>Destination</th>
+          <th>Items</th>
+          <th>Created</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="orders-tbody">
+        <tr><td colspan="9" class="empty-state">Loading orders…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  console.log('[FR Warehouse] script start');
+
+  // ---------- Config ----------
+  const API_BASE = 'https://apps.fr-logistics.net/.netlify/functions';
+  // Who is exporting — shown in exported_by. Adjust if the portal has a real
+  // logged-in operator identity available; for now this is the ops account.
+  const EXPORTED_BY = 'warehouse';
+
+  // ---------- State ----------
+  let ordersCache = [];
+  const selected = new Set();
+
+  // ---------- Elements ----------
+  const tbody = document.getElementById('orders-tbody');
+  const statusFilter = document.getElementById('status-filter');
+  const selectAll = document.getElementById('select-all');
+  const exportBtn = document.getElementById('export-btn');
+  const refreshBtn = document.getElementById('refresh-btn');
+  const selectionInfo = document.getElementById('selection-info');
+  const msg = document.getElementById('msg');
+
+  function showMsg(text, kind) {
+    msg.innerHTML = `<div class="msg-box msg-${kind}">${text}</div>`;
+  }
+  function clearMsg() { msg.innerHTML = ''; }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  // ---------- Load orders ----------
+  async function loadOrders() {
+    const status = statusFilter.value;
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-state">Loading orders…</td></tr>';
+    selected.clear();
+    updateSelectionUI();
+    try {
+      const res = await fetch(`${API_BASE}/portal-warehouse-orders?action=list&status=${encodeURIComponent(status)}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to load orders');
+      ordersCache = json.orders || [];
+      renderOrders();
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="9" class="empty-state">${esc(err.message)}</td></tr>`;
+    }
+  }
+
+  function renderOrders() {
+    if (ordersCache.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No orders to show.</td></tr>';
+      selectAll.checked = false;
+      return;
+    }
+    tbody.innerHTML = '';
+    ordersCache.forEach((o) => {
+      const items = o.client_order_items || [];
+      const itemCount = items.reduce((s, it) => s + (it.item_quantity || 0), 0);
+      const created = o.created_at ? new Date(o.created_at).toLocaleDateString() : '—';
+      const dest = [o.city, o.state, o.country_code].filter(Boolean).join(', ');
+      const isPending = o.status === 'pending';
+
+      const tr = document.createElement('tr');
+      tr.className = 'order-row';
+      tr.innerHTML = `
+        <td class="col-check">
+          <input type="checkbox" data-id="${esc(o.id)}" ${isPending ? '' : 'disabled title="Only pending orders can be exported"'} />
+        </td>
+        <td><strong>${esc(o.order_number)}</strong></td>
+        <td>${esc(o.client_name)}</td>
+        <td><span class="status-badge ${esc(o.status)}">${esc(o.status)}</span></td>
+        <td>${esc(o.recipient_name)}</td>
+        <td>${esc(dest)}</td>
+        <td>${itemCount} (${items.length} SKU${items.length === 1 ? '' : 's'})</td>
+        <td>${esc(created)}</td>
+        <td><button class="expand-btn" type="button">▸ items</button></td>
+      `;
+
+      const detail = document.createElement('tr');
+      detail.className = 'item-detail hidden';
+      detail.innerHTML = `<td colspan="9"><div class="item-detail-inner">${itemsTable(items, o)}</div></td>`;
+
+      const cb = tr.querySelector('input[type="checkbox"]');
+      cb.addEventListener('change', () => {
+        if (cb.checked) selected.add(o.id);
+        else selected.delete(o.id);
+        updateSelectionUI();
+      });
+
+      tr.querySelector('.expand-btn').addEventListener('click', (e) => {
+        detail.classList.toggle('hidden');
+        e.target.textContent = detail.classList.contains('hidden') ? '▸ items' : '▾ items';
+      });
+
+      tbody.appendChild(tr);
+      tbody.appendChild(detail);
+    });
+    selectAll.checked = false;
+  }
+
+  function itemsTable(items, order) {
+    const addr = [order.address_line1, order.address_line2, `${order.city}, ${order.state} ${order.postal_code}`, order.country_code]
+      .filter(Boolean).join(' · ');
+    let html = `<p style="font-size:12px;margin-bottom:8px;" class="muted">Ship to: ${esc(addr)}`;
+    if (order.shipping_service) html += ` &nbsp;|&nbsp; ${esc(order.shipping_service)}`;
+    html += `</p>`;
+    if (order.internal_notes) {
+      html += `<p style="font-size:12px;margin-bottom:8px;" class="muted">Internal notes: ${esc(order.internal_notes)}</p>`;
+    }
+    if (items.length === 0) return html + '<p style="font-size:12px;" class="muted">No items.</p>';
+    html += '<table><thead><tr><th>SKU</th><th>Name</th><th>Qty</th><th>Unit Price</th><th>SKU Validated</th></tr></thead><tbody>';
+    items.forEach((it) => {
+      html += `<tr>
+        <td>${esc(it.item_sku)}</td>
+        <td>${esc(it.item_name || '—')}</td>
+        <td>${esc(it.item_quantity)}</td>
+        <td>${it.item_unit_price != null ? '$' + Number(it.item_unit_price).toFixed(2) : '—'}</td>
+        <td>${it.sku_validated ? 'Yes' : 'No'}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    return html;
+  }
+
+  // ---------- Selection ----------
+  function updateSelectionUI() {
+    selectionInfo.textContent = `${selected.size} selected`;
+    exportBtn.disabled = selected.size === 0;
+  }
+
+  selectAll.addEventListener('change', () => {
+    const checkboxes = tbody.querySelectorAll('input[type="checkbox"]:not([disabled])');
+    checkboxes.forEach((cb) => {
+      cb.checked = selectAll.checked;
+      const id = cb.dataset.id;
+      if (selectAll.checked) selected.add(id);
+      else selected.delete(id);
+    });
+    updateSelectionUI();
+  });
+
+  statusFilter.addEventListener('change', loadOrders);
+  refreshBtn.addEventListener('click', loadOrders);
+
+  // ---------- Export ----------
+  exportBtn.addEventListener('click', async () => {
+    if (selected.size === 0) return;
+    clearMsg();
+    const ids = Array.from(selected);
+    exportBtn.disabled = true;
+    exportBtn.textContent = 'Exporting…';
+    try {
+      const res = await fetch(`${API_BASE}/portal-warehouse-orders?action=export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_ids: ids, exported_by: EXPORTED_BY }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Export failed');
+
+      // Trigger CSV download in the browser.
+      const blob = new Blob([json.csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      a.href = url;
+      a.download = `FR-Logistics_Orders_${stamp}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      let text = `Exported ${json.exported_count} order(s) to CSV. They are now marked as exported.`;
+      if (json.skipped && json.skipped.length) {
+        text += ` Skipped (not pending): ${json.skipped.join(', ')}.`;
+        showMsg(text, 'warn');
+      } else {
+        showMsg(text, 'success');
+      }
+      await loadOrders();
+    } catch (err) {
+      showMsg(esc(err.message), 'error');
+    } finally {
+      exportBtn.disabled = selected.size === 0;
+      exportBtn.textContent = 'Export Selected to CSV';
+    }
+  });
+
+  console.log('[FR Warehouse] listeners registered');
+
+  // ---------- Init ----------
+  loadOrders();
+
+})();
+</script>
+</body>
+</html>
