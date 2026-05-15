@@ -48,34 +48,25 @@ async function sbFetch(path) {
   });
 }
 
-// Pull all products from SkuVault, paginated. We need every page because we
-// don't know up front which page contains this client's SKUs.
+// Pull all products from SkuVault in a single call (PageSize 10000), matching
+// the pattern used by inventory.js. SkuVault's PageNumber semantics are
+// unreliable across endpoints and our loop-based pagination was producing
+// duplicates that doubled the result count. A single large page is simpler
+// and consistent with the rest of the codebase.
 async function fetchAllProducts(tenantToken, userToken) {
-  const all = [];
-  let page = 0;
-  const pageSize = 500;
-  // Hard cap to avoid runaway loops; raise if the warehouse grows past this.
-  const maxPages = 50;
-
-  while (page < maxPages) {
-    const res = await fetch(`${SKUVAULT_BASE}/products/getProducts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        TenantToken: tenantToken,
-        UserToken: userToken,
-        PageNumber: page,
-        PageSize: pageSize,
-      }),
-    });
-    if (!res.ok) throw new Error(`SkuVault getProducts ${res.status}`);
-    const data = await res.json();
-    const products = data.Products || [];
-    all.push(...products);
-    if (products.length < pageSize) break;
-    page++;
-  }
-  return all;
+  const res = await fetch(`${SKUVAULT_BASE}/products/getProducts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      TenantToken: tenantToken,
+      UserToken: userToken,
+      PageNumber: 0,
+      PageSize: 10000,
+    }),
+  });
+  if (!res.ok) throw new Error(`SkuVault getProducts ${res.status}`);
+  const data = await res.json();
+  return data.Products || [];
 }
 
 async function fetchQuantities(tenantToken, userToken) {
