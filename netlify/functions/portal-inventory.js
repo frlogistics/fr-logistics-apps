@@ -159,8 +159,19 @@ exports.handler = async (event) => {
       fetchLocations(tenantToken, userToken),
     ]);
 
-    // 4. Filter products by exact match on Client field.
-    const myProducts = allProducts.filter((p) => p.Client === clientName);
+    // 4. Filter products by exact match on Client field, AND exclude alternate
+    //    SKUs. In SkuVault, a product can have multiple alternate SKUs sharing
+    //    the same physical stock (one label per sales channel: Amazon, eBay,
+    //    Shopify, etc.). The catalog UI and CSV reports show PRIMARY SKUs only,
+    //    aggregating alternates under their primary. But getProducts returns
+    //    primary + every alternate as separate rows (flagged with
+    //    IsAlternateSKU: true). Counting them all multi-counts stock — for
+    //    example, JDK's 225 primaries become 472 rows if alternates are kept.
+    //    See memory: "SkuVault Alternate SKUs" and the SkuVault docs on
+    //    "Alternate SKUs" for full background.
+    const myProducts = allProducts.filter(
+      (p) => p.Client === clientName && p.IsAlternateSKU !== true
+    );
     const mySkuSet = new Set(myProducts.map((p) => p.Sku));
 
     // 5. Build a quantities lookup keyed by SKU.
