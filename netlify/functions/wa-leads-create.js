@@ -3,6 +3,11 @@
 // Creates a new WhatsApp lead in Supabase (wa_leads) and forwards it to
 // info@fr-logistics.net via Resend's REST API.
 //
+// PATCHED 2026-05-16: Added support for `source` + Calendly fields
+//   (meeting_url, meeting_start_time, meeting_end_time, calendly_event_uri,
+//    calendly_invitee_uri, calendly_custom_answers) — all optional, backwards
+//    compatible with the existing form HTML.
+//
 // Style matches daily-summary.js / dropship-gmail-sync.js:
 //   - CommonJS exports.handler
 //   - Direct fetch to Supabase REST + Resend REST (no SDKs)
@@ -13,6 +18,11 @@ const { buildSubject, buildEmailHtml } = require('./_wa-lead-email');
 const VALID_SERVICES = new Set([
   'fba_prep', 'shopify_dtc', 'cross_dock_latam', 'ecopack_plus',
   'hold_for_pickup', 'fnsku_relabel', 'freight_inbound', 'storage_only', 'other',
+]);
+
+const VALID_SOURCES = new Set([
+  'manual_form', 'calendly_discovery_call', 'calendly_onboarding',
+  'calendly_ops_review', 'parser_ai', 'whatsapp_direct', 'web_form',
 ]);
 
 const SALES_EMAIL = 'info@fr-logistics.net';
@@ -78,12 +88,18 @@ exports.handler = async function(event) {
   const phone = normalizePhone(body.phone);
   const lang  = body.language === 'es' ? 'es' : 'en';
   const service = VALID_SERVICES.has(body.service) ? body.service : 'other';
+  const source  = VALID_SOURCES.has(body.source)   ? body.source  : 'manual_form';
 
   if (!name)                          errors.push('name is required');
   if (!email || !email.includes('@')) errors.push('valid email is required');
   if (!phone)                         errors.push('phone is required');
 
   if (errors.length) return json({ error: 'Validation failed', details: errors }, 400);
+
+  // Calendly-specific: if this lead is from Calendly, set initial status to 'qualifying'
+  // (they already booked a meeting = warmer than 'new')
+  const isFromCalendly = source.startsWith('calendly_');
+  const initialStatus = isFromCalendly ? 'qualifying' : 'new';
 
   // ─── 1. INSERT into Supabase via REST API ────────────────────────────
   const insertPayload = {
@@ -102,8 +118,17 @@ exports.handler = async function(event) {
     notes:                opt(body.notes),
     conversation_summary: opt(body.conversation_summary),
     captured_by:          opt(body.captured_by),
-    status:               'new',
+    status:               initialStatus,
+    source,
   };
+
+  // Calendly meeting fields (only set if provided)
+  if (body.meeting_url)             insertPayload.meeting_url             = str(body.meeting_url);
+  if (body.meeting_start_time)      insertPayload.meeting_start_time      = str(body.meeting_start_time);
+  if (body.meeting_end_time)        insertPayload.meeting_end_time        = str(body.meeting_end_time);
+  if (body.calendly_event_uri)      insertPayload.calendly_event_uri      = str(body.calendly_event_uri);
+  if (body.calendly_invitee_uri)    insertPayload.calendly_invitee_uri    = str(body.calendly_invitee_uri);
+  if (body.calendly_custom_answers) insertPayload.calendly_custom_answers = body.calendly_custom_answers;
 
   let lead;
   try {
@@ -120,6 +145,11 @@ exports.handler = async function(event) {
 
     if (!insertRes.ok) {
       const errText = await insertRes.text();
+      // Handle duplicate Calendly event gracefully (UNIQUE constraint on calendly_event_uri)
+      if (insertRes.status === 409 && errText.includes('calendly_event_uri')) {
+        console.warn('[wa-leads-create] Duplicate Calendly event, skipping:', body.calendly_event_uri);
+        return json({ error: 'Duplicate Calendly event — lead already exists', skipped: true }, 200);
+      }
       console.error('[wa-leads-create] Supabase insert failed:', insertRes.status, errText);
       return json({ error: 'Database insert failed', details: errText }, 500);
     }
@@ -157,6 +187,7 @@ exports.handler = async function(event) {
           'X-Lead-ID':       lead.id,
           'X-Lead-Service':  lead.service,
           'X-Lead-Language': lead.language,
+          'X-Lead-Source':   lead.source || 'manual_form',
         },
       }),
     });
@@ -177,6 +208,8 @@ exports.handler = async function(event) {
   // ─── 3. UPDATE lead with email status (best effort) ─────────────────
   if (emailSent && messageId) {
     try {
+      // For Calendly leads keep 'qualifying' status, just mark email sent
+      const finalStatus = isFromCalendly ? 'qualifying' : 'sent_to_sales';
       await fetch(`${SUPA_URL}/rest/v1/wa_leads?id=eq.${lead.id}`, {
         method: 'PATCH',
         headers: {
@@ -185,7 +218,7 @@ exports.handler = async function(event) {
           'Content-Type':  'application/json',
         },
         body: JSON.stringify({
-          status:            'sent_to_sales',
+          status:            finalStatus,
           email_sent_at:     new Date().toISOString(),
           resend_message_id: messageId,
         }),
@@ -200,6 +233,7 @@ exports.handler = async function(event) {
     email_sent: emailSent,
     resend_message_id: messageId,
     email_error: emailError,
-    status: emailSent ? 'sent_to_sales' : 'new',
+    status: emailSent ? (isFromCalendly ? 'qualifying' : 'sent_to_sales') : initialStatus,
+    source: lead.source,
   }, emailSent ? 200 : 207);  // 207 Multi-Status: lead saved but email failed
 };
