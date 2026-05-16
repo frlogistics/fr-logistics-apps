@@ -9,6 +9,9 @@
      WA Lead Capture · standalone tab for apps.fr-logistics.net portal
      UI in English (per FR portal convention)
      Brand palette from /assets/styles.css
+
+     2026-05-16 — Added Chat Parser (Camino B): paste WhatsApp chat →
+     Claude API extracts data → form auto-fills.
      ════════════════════════════════════════════════════════════════════ */
   :root {
     --brand-green:      #10B981;
@@ -90,6 +93,27 @@
     background: var(--gradient-brand);
   }
 
+  /* ─── Parser toolbar at top of form ─── */
+  .parser-toolbar {
+    background: linear-gradient(90deg, #ECFDF5 0%, #F0F9FF 100%);
+    border: 1px solid #A7F3D0;
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .parser-toolbar .toolbar-text {
+    flex: 1;
+    min-width: 180px;
+    font-size: 12px;
+    color: #065F46;
+    line-height: 1.4;
+  }
+  .parser-toolbar .toolbar-text strong { color: #064E3B; }
+
   /* ─── Form ─── */
   .form-grid { display: grid; gap: 14px; }
   .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -124,6 +148,17 @@
   }
   textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 
+  /* Highlight fields that were auto-filled by parser */
+  .field-autofilled {
+    background: #FEFCE8 !important;
+    border-color: #FDE047 !important;
+    animation: flash 0.6s ease-out;
+  }
+  @keyframes flash {
+    0%   { background: #FEF08A; }
+    100% { background: #FEFCE8; }
+  }
+
   .btn {
     display: inline-flex;
     align-items: center;
@@ -147,6 +182,13 @@
   .btn-primary:disabled {
     background: var(--border-strong); color: white; cursor: not-allowed;
   }
+  .btn-parse {
+    background: white;
+    color: var(--brand-green-dark);
+    border-color: var(--brand-green);
+  }
+  .btn-parse:hover { background: #ECFDF5; }
+  .btn-parse:disabled { opacity: .6; cursor: not-allowed; }
   .btn-ghost {
     background: transparent; color: var(--text-2);
     border-color: var(--border-strong);
@@ -224,6 +266,22 @@
   table.pipe a { color: var(--brand-green-dark); text-decoration: none; font-weight: 500; }
   table.pipe a:hover { text-decoration: underline; }
 
+  /* Source chip in pipeline */
+  .src-chip {
+    display: inline-block;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    margin-top: 3px;
+  }
+  .src-manual_form              { background: #F1F5F9; color: #475569; }
+  .src-calendly_discovery_call  { background: #DBEAFE; color: #1E40AF; }
+  .src-calendly_onboarding      { background: #DBEAFE; color: #1E40AF; }
+  .src-calendly_ops_review      { background: #DBEAFE; color: #1E40AF; }
+  .src-parser_ai                { background: #FEF3C7; color: #92400E; }
+  .src-whatsapp_direct          { background: #D1FAE5; color: #065F46; }
+
   .badge {
     display: inline-block;
     font-size: 11px;
@@ -278,6 +336,91 @@
   .kpi-num { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1; }
   .kpi-num.green { color: var(--brand-green-dark); }
   .kpi-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-top: 4px; font-weight: 600; }
+
+  /* ─── Parser Modal ─── */
+  .modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15,23,42,.55);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    background: white;
+    border-radius: var(--radius);
+    width: 100%;
+    max-width: 680px;
+    max-height: 90vh;
+    box-shadow: 0 20px 60px rgba(0,0,0,.25);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .modal-head {
+    padding: 16px 20px;
+    background: var(--gradient-brand);
+    color: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .modal-head h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .modal-close {
+    background: rgba(255,255,255,.2);
+    border: none;
+    color: white;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .modal-close:hover { background: rgba(255,255,255,.3); }
+  .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .modal-body p {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: var(--text-2);
+  }
+  .modal-body p strong { color: var(--text); }
+  .modal-body textarea {
+    min-height: 240px;
+    font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .modal-foot {
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-soft);
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+  .confidence-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 100px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+  }
+  .confidence-high   { background: #D1FAE5; color: #065F46; }
+  .confidence-medium { background: #FEF3C7; color: #92400E; }
+  .confidence-low    { background: #FEE2E2; color: #991B1B; }
 </style>
 </head>
 <body>
@@ -294,6 +437,17 @@
     </div>
 
     <div class="card-body">
+
+      <!-- ─── PARSER TOOLBAR (new) ─── -->
+      <div class="parser-toolbar">
+        <div class="toolbar-text">
+          <strong>⚡ Save time:</strong> paste a WhatsApp chat and let Liam extract the lead data for you.
+        </div>
+        <button type="button" class="btn btn-parse btn-sm" id="openParserBtn">
+          📋 Parse from Chat
+        </button>
+      </div>
+
       <form id="waLeadForm" class="form-grid">
         <!-- Identity -->
         <div class="row-2">
@@ -388,6 +542,9 @@
           </select>
         </div>
 
+        <!-- Hidden field: source (set by parser if used) -->
+        <input type="hidden" name="source" id="sourceField" value="manual_form">
+
         <div id="formToast" class="toast"></div>
 
         <div class="form-actions">
@@ -464,6 +621,30 @@
 
 </div>
 
+<!-- ═════════════ PARSER MODAL ═════════════ -->
+<div class="modal-backdrop" id="parserModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>📋 Parse WhatsApp Chat</h3>
+      <button class="modal-close" id="closeParserBtn">✕</button>
+    </div>
+    <div class="modal-body">
+      <p><strong>How it works:</strong> Paste the full WhatsApp conversation below. Liam will extract the lead's data (name, email, service, etc.) and fill the form for you. You'll still review and submit.</p>
+      <p style="font-size: 12px; color: var(--text-muted);">💡 Tip: in WhatsApp Business App → open chat → ⋮ menu → <strong>Export chat</strong> → Without media → Copy from the email or paste here.</p>
+      <textarea id="parserInput" placeholder="[5/16/26, 3:42 PM] Lead: Hola, necesito ayuda con FBA prep…
+[5/16/26, 3:43 PM] Liam: ¡Hola! Soy Liam…
+…"></textarea>
+      <div id="parserToast" class="toast" style="margin-top: 10px;"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="cancelParserBtn">Cancel</button>
+      <button class="btn btn-primary" id="runParserBtn">
+        <span id="parserBtnLabel">✨ Extract Lead Data</span>
+      </button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function() {
   'use strict';
@@ -472,15 +653,15 @@
   const API_CREATE = '/.netlify/functions/wa-leads-create';
   const API_LIST   = '/.netlify/functions/wa-leads-list';
   const API_UPDATE = '/.netlify/functions/wa-leads-update';
+  const API_PARSE  = '/.netlify/functions/wa-leads-parse';
 
   // ─── OPERATOR PERSISTENCE ──────────────────────────────────────────
-  // Remember who's capturing leads across sessions (localStorage)
   const STORAGE_KEY = 'fr_wa_operator';
   const operatorSelect = document.getElementById('capturedBy');
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) operatorSelect.value = saved;
-  } catch (e) { /* localStorage may be blocked, fine */ }
+  } catch (e) {}
   operatorSelect.addEventListener('change', () => {
     try { localStorage.setItem(STORAGE_KEY, operatorSelect.value); } catch (e) {}
   });
@@ -490,19 +671,20 @@
   const submitBtn   = document.getElementById('submitBtn');
   const submitLabel = document.getElementById('submitLabel');
   const toast       = document.getElementById('formToast');
+  const sourceField = document.getElementById('sourceField');
 
-  function showToast(kind, msg) {
-    toast.className = 'toast show ' + kind;
-    toast.innerHTML = msg;
+  function showToast(el, kind, msg) {
+    el.className = 'toast show ' + kind;
+    el.innerHTML = msg;
   }
-  function hideToast() {
-    toast.className = 'toast';
-    toast.innerHTML = '';
+  function hideToast(el) {
+    el.className = 'toast';
+    el.innerHTML = '';
   }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    hideToast();
+    hideToast(toast);
 
     const fd = new FormData(form);
     const payload = Object.fromEntries(fd.entries());
@@ -519,18 +701,22 @@
       const data = await res.json();
 
       if (!res.ok && res.status !== 207) {
-        showToast('err', `❌ ${data.error || 'Server error'}` +
+        showToast(toast, 'err', `❌ ${data.error || 'Server error'}` +
           (data.details ? `<br><small>${Array.isArray(data.details) ? data.details.join(', ') : data.details}</small>` : ''));
         return;
       }
 
       if (data.email_sent) {
-        showToast('ok', `✅ Lead captured and forwarded to <strong>info@fr-logistics.net</strong>.<br><small>Lead ID: ${data.id} · Status: <strong>sent_to_sales</strong></small>`);
+        showToast(toast, 'ok', `✅ Lead captured and forwarded to <strong>info@fr-logistics.net</strong>.<br><small>Lead ID: ${data.id} · Status: <strong>${data.status}</strong> · Source: ${data.source}</small>`);
       } else {
-        showToast('warn', `⚠️ Lead saved to database, but email forward failed.<br><small>${data.email_error || 'Check Resend logs'}</small><br><small>Lead ID: ${data.id}</small>`);
+        showToast(toast, 'warn', `⚠️ Lead saved to database, but email forward failed.<br><small>${data.email_error || 'Check Resend logs'}</small><br><small>Lead ID: ${data.id}</small>`);
       }
 
       form.reset();
+      // Reset source to default after submission
+      sourceField.value = 'manual_form';
+      // Remove autofill highlights
+      clearAutoFillHighlights();
       // Restore saved operator after reset
       try {
         const saved = localStorage.getItem(STORAGE_KEY);
@@ -538,11 +724,118 @@
       } catch (e) {}
       loadPipeline();
     } catch (err) {
-      showToast('err', `❌ Network error: ${err.message}`);
+      showToast(toast, 'err', `❌ Network error: ${err.message}`);
     } finally {
       submitBtn.disabled = false;
       submitLabel.textContent = '📩 Capture & Forward to Sales';
     }
+  });
+
+  // ─── PARSER MODAL ──────────────────────────────────────────────────
+  const parserModal    = document.getElementById('parserModal');
+  const parserInput    = document.getElementById('parserInput');
+  const parserToast    = document.getElementById('parserToast');
+  const runParserBtn   = document.getElementById('runParserBtn');
+  const parserBtnLabel = document.getElementById('parserBtnLabel');
+
+  document.getElementById('openParserBtn').addEventListener('click', () => {
+    hideToast(parserToast);
+    parserInput.value = '';
+    parserModal.classList.add('show');
+    setTimeout(() => parserInput.focus(), 100);
+  });
+
+  function closeParser() {
+    parserModal.classList.remove('show');
+  }
+  document.getElementById('closeParserBtn').addEventListener('click', closeParser);
+  document.getElementById('cancelParserBtn').addEventListener('click', closeParser);
+  parserModal.addEventListener('click', (e) => {
+    if (e.target === parserModal) closeParser();
+  });
+
+  // Fields the parser can fill (must match form field names)
+  const PARSER_FIELDS = [
+    'name', 'email', 'phone', 'country', 'language', 'service',
+    'monthly_volume', 'skus', 'origin', 'destination', 'product_type',
+    'conversation_summary', 'notes',
+  ];
+
+  function clearAutoFillHighlights() {
+    document.querySelectorAll('.field-autofilled').forEach(el => {
+      el.classList.remove('field-autofilled');
+    });
+  }
+
+  function fillFormFromExtraction(data) {
+    clearAutoFillHighlights();
+    PARSER_FIELDS.forEach(field => {
+      const el = form.querySelector(`[name="${field}"]`);
+      if (!el) return;
+      const val = data[field];
+      if (val !== null && val !== undefined && val !== '') {
+        el.value = val;
+        el.classList.add('field-autofilled');
+      }
+    });
+    // Mark source as parser_ai
+    sourceField.value = 'parser_ai';
+  }
+
+  runParserBtn.addEventListener('click', async () => {
+    const chat = parserInput.value.trim();
+    if (!chat) {
+      showToast(parserToast, 'warn', '⚠️ Paste a WhatsApp chat first.');
+      return;
+    }
+    if (chat.length < 30) {
+      showToast(parserToast, 'warn', '⚠️ Chat seems too short. Paste the full conversation for best results.');
+      return;
+    }
+
+    hideToast(parserToast);
+    runParserBtn.disabled = true;
+    parserBtnLabel.innerHTML = '<span class="loading"></span> Extracting with Claude…';
+
+    try {
+      const res = await fetch(API_PARSE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showToast(parserToast, 'err', `❌ ${data.error || 'Extraction failed'}` +
+          (data.details ? `<br><small>${data.details}</small>` : ''));
+        return;
+      }
+
+      // Fill form
+      fillFormFromExtraction(data);
+
+      // Show confidence + close modal after a brief moment
+      const conf = data.confidence || 'medium';
+      const confEmoji = conf === 'high' ? '🎯' : conf === 'medium' ? '👀' : '⚠️';
+      showToast(parserToast, 'ok',
+        `${confEmoji} Extraction complete — confidence: <span class="confidence-badge confidence-${conf}">${conf.toUpperCase()}</span><br>` +
+        `<small>Review the highlighted fields and submit when ready.</small>`
+      );
+
+      // Auto-close after 1.5s so user sees the form
+      setTimeout(closeParser, 1500);
+
+    } catch (err) {
+      showToast(parserToast, 'err', `❌ Network error: ${err.message}`);
+    } finally {
+      runParserBtn.disabled = false;
+      parserBtnLabel.textContent = '✨ Extract Lead Data';
+    }
+  });
+
+  // ESC closes parser modal
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && parserModal.classList.contains('show')) closeParser();
   });
 
   // ─── PIPELINE ───────────────────────────────────────────────────────
@@ -589,6 +882,16 @@
     other:            '💬 Other',
   };
 
+  const SOURCE_LABEL = {
+    manual_form:              '✍️ Manual',
+    calendly_discovery_call:  '📅 Calendly',
+    calendly_onboarding:      '📅 Calendly OB',
+    calendly_ops_review:      '📅 Calendly OR',
+    parser_ai:                '🤖 AI Parsed',
+    whatsapp_direct:          '💬 WhatsApp',
+    web_form:                 '🌐 Web',
+  };
+
   const STATUSES = ['new', 'qualifying', 'sent_to_sales', 'won', 'lost'];
   const STATUS_LABEL = {
     new:           'New',
@@ -628,12 +931,16 @@
       const statusOpts = STATUSES.map(s =>
         `<option value="${s}"${s === l.status ? ' selected' : ''}>${STATUS_LABEL[s]}</option>`
       ).join('');
+      const sourceChip = l.source
+        ? `<span class="src-chip src-${l.source}">${SOURCE_LABEL[l.source] || l.source}</span>`
+        : '';
       return `
         <tr data-id="${l.id}">
           <td>
             <div class="lead-name">${escapeHtml(l.name)}</div>
             <div class="lead-meta">${escapeHtml(l.email)}</div>
             <div class="lead-meta">${escapeHtml(l.phone)}${l.country ? ' · ' + escapeHtml(l.country) : ''} · ${l.language === 'es' ? '🇪🇸' : '🇺🇸'}</div>
+            ${sourceChip}
           </td>
           <td>${SERVICE_CHIPS[l.service] || '💬 Other'}</td>
           <td><div class="lead-meta">${relativeTime(l.created_at)}</div></td>
@@ -664,9 +971,7 @@
             alert(`Update failed: ${err.error || res.status}`);
             return;
           }
-          // Update badge class
           e.target.className = `status-select badge badge-${newStatus}`;
-          // Update local cache + KPIs
           const lead = currentLeads.find(l => l.id === id);
           if (lead) lead.status = newStatus;
           updateKpis(currentLeads);
@@ -695,10 +1000,7 @@
     searchTimer = setTimeout(loadPipeline, 250);
   });
 
-  // Initial load
   loadPipeline();
-
-  // Auto-refresh every 60s
   setInterval(loadPipeline, 60000);
 })();
 </script>
