@@ -3,11 +3,14 @@
 // Scheduled: 7PM EST daily (23:00 UTC during EDT, adjust +1hr Nov-Mar)
 // Sends HTML email to josefuentes@fr-logistics.net via Resend with:
 //   1. Inbound/Outbound summary from shipments_general (Supabase)
-//   2. Inventory KPIs from SKUVault (via inventory.js)
+//   2. ShipStation shipped orders today (total + by store)
+//   3. Inventory KPIs from SKUVault (via inventory.js)
 
 const SUPABASE_URL = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY = Netlify.env.get("SUPABASE_SERVICE_KEY");
 const RESEND_KEY   = Netlify.env.get("RESEND_API_KEY");
+const SS_API_KEY   = Netlify.env.get("SS_API_KEY");        // ▼ NEW
+const SS_API_SECRET= Netlify.env.get("SS_API_SECRET");     // ▼ NEW
 const SITE_URL     = Netlify.env.get("URL") || "https://apps.fr-logistics.net";
 const TO_EMAIL     = "josefuentes@fr-logistics.net";
 const FROM_EMAIL   = "FR-Logistics Ops <info@fr-logistics.net>";
@@ -43,6 +46,75 @@ async function getTodayShipments(start, end) {
   return res.json();
 }
 
+// ── ShipStation: shipped orders today (total + by store) ────────  ▼ NEW BLOCK
+async function getShipStationToday(dateStr) {
+  if (!SS_API_KEY || !SS_API_SECRET) {
+    console.warn("[daily-ops-report] ShipStation creds missing");
+    return null;
+  }
+  const auth = Buffer.from(`${SS_API_KEY}:${SS_API_SECRET}`).toString("base64");
+  const headers = { "Authorization": `Basic ${auth}` };
+
+  try {
+    // 1) Build storeId → storeName map (fresh every run — auto-updates on new clients)
+    const storesRes = await fetch("https://ssapi.shipstation.com/stores", { headers });
+    if (!storesRes.ok) throw new Error(`stores ${storesRes.status}`);
+    const stores = await storesRes.json();
+    const storeMap = Object.fromEntries(stores.map(s => [s.storeId, s.storeName]));
+
+    // 2) Fetch shipments. ShipStation uses PT internally for shipDate, so we widen
+    //    the window by 1 day on each side, then filter in code by Miami-local day.
+    const shipDateStart = dateStr;                           // Miami today
+    const yesterday = new Date(new Date(dateStr).getTime() - 86400000)
+                       .toISOString().slice(0, 10);
+    const tomorrow  = new Date(new Date(dateStr).getTime() + 86400000)
+                       .toISOString().slice(0, 10);
+
+    let all = [];
+    let page = 1;
+    while (true) {
+      const url = `https://ssapi.shipstation.com/shipments` +
+        `?shipDateStart=${yesterday}&shipDateEnd=${tomorrow}` +
+        `&includeShipmentItems=false&pageSize=500&page=${page}`;
+      const res = await fetch(url, { headers });
+      if (!res.ok) throw new Error(`shipments p${page} ${res.status}`);
+      const data = await res.json();
+      all = all.concat(data.shipments || []);
+      if (page >= (data.pages || 1)) break;
+      page++;
+      if (page > 10) break; // safety: max 5000 shipments/day
+    }
+
+    // 3) Filter to Miami-local day and exclude voided
+    const targetDay = dateStr; // "YYYY-MM-DD"
+    const todays = all.filter(s => {
+      if (s.voided) return false;
+      if (!s.shipDate) return false;
+      // s.shipDate is "YYYY-MM-DD" in PT → convert to Miami day
+      // Shipments created in ShipStation carry shipDate as PT calendar day.
+      // Translate by adding 3h (PT→ET) to a noon-PT anchor and reading the ET date.
+      const ptNoon = new Date(`${s.shipDate}T12:00:00-08:00`);
+      const miamiDate = new Date(ptNoon.toLocaleString("en-US", { timeZone: "America/New_York" }));
+      const md = `${miamiDate.getFullYear()}-${String(miamiDate.getMonth()+1).padStart(2,"0")}-${String(miamiDate.getDate()).padStart(2,"0")}`;
+      return md === targetDay;
+    });
+
+    // 4) Aggregate
+    const byStore = {};
+    todays.forEach(s => {
+      const sid = s.advancedOptions?.storeId;
+      const name = (storeMap[sid] || `Store ${sid || "?"}`).trim();
+      byStore[name] = (byStore[name] || 0) + 1;
+    });
+    const sorted = Object.entries(byStore).sort((a, b) => a[0].localeCompare(b[0]));
+
+    return { total: todays.length, byStore: sorted };
+  } catch (e) {
+    console.warn("[daily-ops-report] ShipStation unavailable:", e.message);
+    return null;
+  }
+}
+
 // ── Inventory KPIs via internal inventory.js function ───────────
 async function getInventoryKPIs() {
   try {
@@ -57,7 +129,7 @@ async function getInventoryKPIs() {
 }
 
 // ── Build HTML + plain text email ───────────────────────────────
-function buildEmail(label, shipments, kpis) {
+function buildEmail(label, shipments, kpis, ss) {  // ▼ added ss param
   const inbound  = shipments.filter(r => r.direction === "Inbound");
   const outbound = shipments.filter(r => r.direction === "Outbound");
 
@@ -80,6 +152,35 @@ function buildEmail(label, shipments, kpis) {
     </tr>`).join("");
 
   const noActivity = `<p style="color:#94a3b8;font-size:13px;text-align:center;padding:12px 0;margin:0">No movements recorded today.</p>`;
+
+  // ── ShipStation section ──────────────────────────────────────  ▼ NEW BLOCK
+  const ssRows = ss && ss.byStore.length ? ss.byStore.map(([name, count]) => `
+    <tr>
+      <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:13px">${name}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;text-align:center;font-weight:800;color:#16a3b5">${count}</td>
+    </tr>`).join("") : "";
+
+  const ssSection = ss ? `
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:20px">
+      <h2 style="margin:0 0 14px;font-size:15px;color:#0f172a;font-weight:900">🚀 ShipStation — Shipped Today</h2>
+      <div style="background:#ecfeff;border:1px solid #a5f3fc;border-radius:10px;padding:14px;text-align:center;margin-bottom:${ss.byStore.length ? "16px" : "0"}">
+        <div style="font-size:32px;font-weight:900;color:#0891b2;line-height:1">${ss.total}</div>
+        <div style="font-size:11px;color:#155e75;font-weight:800;margin-top:5px;letter-spacing:.5px">ORDERS SHIPPED</div>
+      </div>
+      ${ss.byStore.length ? `
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:#f8fafc">
+            <th style="padding:8px 10px;text-align:left;color:#475569;font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.4px;border-bottom:2px solid #e2e8f0">Store</th>
+            <th style="padding:8px 10px;text-align:center;color:#16a3b5;font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.4px;border-bottom:2px solid #e2e8f0">Orders</th>
+          </tr>
+        </thead>
+        <tbody>${ssRows}</tbody>
+      </table>` : `<p style="color:#94a3b8;font-size:13px;text-align:center;padding:12px 0;margin:0">No orders shipped today.</p>`}
+    </div>` :
+    `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;margin-bottom:20px;color:#94a3b8;font-size:12px;text-align:center">
+       🚀 ShipStation data unavailable — check API credentials.
+    </div>`;
 
   const ok       = kpis ? (kpis.totalSKUs - (kpis.outOfStock || 0) - (kpis.reorderAlerts || 0)) : 0;
   const reorder  = kpis ? (kpis.reorderAlerts || 0) : 0;
@@ -166,6 +267,9 @@ function buildEmail(label, shipments, kpis) {
     </a>` : noActivity}
   </div>
 
+  <!-- ShipStation -->            ${/* ▼ NEW */ ""}
+  ${ssSection}
+
   <!-- Inventory -->
   ${invSection}
 
@@ -192,6 +296,15 @@ function buildEmail(label, shipments, kpis) {
     clientsSorted.length
       ? clientsSorted.map(([n, c]) => `  ${n}: IN ${c.in}  OUT ${c.out}`).join("\n")
       : `  No movements today.`,
+    ``,
+    // ▼ NEW
+    ss ? [
+      `SHIPSTATION — SHIPPED TODAY`,
+      `  Total orders: ${ss.total}`,
+      ss.byStore.length
+        ? ss.byStore.map(([n, c]) => `    ${n}: ${c}`).join("\n")
+        : `    No orders shipped today.`,
+    ].join("\n") : `SHIPSTATION: data unavailable.`,
     ``,
     kpis ? [
       `SKUVAULT INVENTORY`,
@@ -230,21 +343,22 @@ async function sendEmail(html, text, label) {
 export default async (req) => {
   console.log("[daily-ops-report] Starting at", new Date().toISOString());
   try {
-    const { start, end, label } = getTodayRange();
+    const { start, end, label, dateStr } = getTodayRange();
     console.log("[daily-ops-report] Range:", start, "→", end);
 
-    const [shipments, kpis] = await Promise.all([
+    const [shipments, kpis, ss] = await Promise.all([   // ▼ added ss
       getTodayShipments(start, end),
-      getInventoryKPIs()
+      getInventoryKPIs(),
+      getShipStationToday(dateStr)                       // ▼ NEW
     ]);
 
-    console.log(`[daily-ops-report] ${shipments.length} shipments | KPIs: ${kpis ? "ok" : "unavailable"}`);
+    console.log(`[daily-ops-report] ${shipments.length} shipments | KPIs: ${kpis ? "ok" : "unavailable"} | SS: ${ss ? ss.total : "unavailable"}`);
 
-    const { html, text } = buildEmail(label, shipments, kpis);
+    const { html, text } = buildEmail(label, shipments, kpis, ss);  // ▼ pass ss
     const result = await sendEmail(html, text, label);
 
     console.log("[daily-ops-report] Email sent →", result.id || JSON.stringify(result));
-    return new Response(JSON.stringify({ success: true, shipments: shipments.length, resend: result }), {
+    return new Response(JSON.stringify({ success: true, shipments: shipments.length, shipstation: ss?.total ?? null, resend: result }), {
       status: 200, headers: { "Content-Type": "application/json" }
     });
   } catch(e) {
