@@ -103,7 +103,7 @@ export default async function handler(req) {
     }
 
     // 2) Fan-out: email + push (don't block the 200 to Meta)
-    notifyOutOfBand(newMessages).catch((e) =>
+    await notifyOutOfBand(newMessages).catch((e) =>
       console.error("[webhook] notify error:", e)
     );
 
