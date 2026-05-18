@@ -7,6 +7,9 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_KEY;
 
+const __VERSION = "DEPLOY_MARKER_v3_1779134439590";
+console.log("[wa-push-subscribe] LOADED VERSION:", __VERSION);
+
 export default async function handler(req) {
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
     auth: { persistSession: false },
@@ -59,7 +62,7 @@ export default async function handler(req) {
         );
       }
 
-      return new Response(JSON.stringify({ ok: true }), {
+      return new Response(JSON.stringify({ ok: true, version: __VERSION }), {
         status: 200,
         headers: cors,
       });
