@@ -3,30 +3,37 @@
 // Receives webhook events from Calendly and creates corresponding wa_leads
 // entries via wa-leads-create.
 //
-// 2026-05-18: Removed HMAC signature verification (Calendly does not expose
-// signing_key via PAT API). Replaced with structural payload validation:
-//   - Validates event type
-//   - Validates payload shape
-//   - Validates event URI prefix
-//   - Logs all incoming requests for audit
+// 2026-05-18 v2: Calendly sends event_type as UUID (not slug). Updated to
+//                match by UUID directly. Also kept slug fallback for safety.
 //
-// EVENTS HANDLED:
-//   - invitee.created  → INSERT new lead with status='qualifying'
-//   - invitee.canceled → UPDATE existing lead to status='lost'
-//
-// CALENDLY EVENT TYPES (only Discovery Call creates leads):
-//   - "Discovery Call — FR-Logistics 3PL"  (slug: discoverycall)         ✅ Creates lead
-//   - "Client Onboarding — FR-Logistics"    (slug: josefuentes_fr_...)   ⏭️  Skipped (existing client)
-//   - "Operations Review"                    (slug: clientonboarding)    ⏭️  Skipped (existing client)
+// 2026-05-18 v1: Removed HMAC signature verification (Calendly does not expose
+// signing_key via PAT API). Replaced with structural payload validation.
 
 // ─── CONFIG ─────────────────────────────────────────────────────────
+//
+// Event type UUIDs (extracted from Calendly's event_type URI)
+// To find a UUID: GET https://api.calendly.com/event_types or check the URL
+// when editing an event type in Calendly admin.
+//
+const DISCOVERY_CALL_UUIDS = new Set([
+  '370979b2-00e9-4877-98b1-d3f908acbcb0',  // Discovery Call — FR-Logistics 3PL
+]);
+
+const ONBOARDING_UUIDS = new Set([
+  'a3a27acf-8e46-4ea6-b0e0-169863bf0988',  // Client Onboarding — FR-Logistics
+]);
+
+const OPS_REVIEW_UUIDS = new Set([
+  '3daf975f-feef-4a4e-a0f6-91fb62c92ce8',  // Operations Review
+]);
+
+// Legacy slug matching (kept as fallback for safety)
 const DISCOVERY_CALL_SLUGS = new Set(['discoverycall']);
 const ONBOARDING_SLUGS     = new Set(['josefuentes_fr_onboarding']);
 const OPS_REVIEW_SLUGS     = new Set(['clientonboarding']);
 
 const VALID_EVENT_TYPES = new Set(['invitee.created', 'invitee.canceled']);
 const CALENDLY_EVENT_URI_PREFIX = 'https://api.calendly.com/scheduled_events/';
-const CALENDLY_INVITEE_URI_PREFIX = 'https://api.calendly.com/scheduled_events/';
 
 // ─── COUNTRY MAPPING ────────────────────────────────────────────────
 const COUNTRY_MAP = {
@@ -74,6 +81,15 @@ function findAnswer(questions, keyword) {
   return found ? found.answer : null;
 }
 
+// ─── HELPER: Match event type identifier against a set ──────────────
+//
+// Tries both UUID match and slug match for robustness.
+function matchesEventType(eventTypeUri, uuidSet, slugSet) {
+  if (!eventTypeUri) return false;
+  const lastSegment = String(eventTypeUri).split('/').pop();
+  return uuidSet.has(lastSegment) || slugSet.has(lastSegment);
+}
+
 // ─── HELPER: JSON response ───────────────────────────────────────────
 function json(body, statusCode = 200) {
   return {
@@ -84,19 +100,6 @@ function json(body, statusCode = 200) {
 }
 
 // ─── STRUCTURAL VALIDATION (replaces HMAC) ──────────────────────────
-//
-// Since Calendly does not expose signing_key via PAT, we use a multi-layer
-// structural validation that ensures the payload could only have come from
-// Calendly (or a sophisticated attacker who knows the exact format AND
-// our private webhook URL).
-//
-// Security mitigations in place:
-//   1. URL is private (only Calendly knows it because we registered it)
-//   2. Payload structure must match Calendly's exact format
-//   3. Event type must be one of our expected values
-//   4. URIs must point to api.calendly.com
-//   5. All requests are logged for audit
-//
 function validatePayload(payload) {
   const errors = [];
 
@@ -118,7 +121,6 @@ function validatePayload(payload) {
 
   const data = payload.payload;
 
-  // For invitee.created, validate the scheduled_event URI structure
   if (payload.event === 'invitee.created') {
     if (!data.scheduled_event || typeof data.scheduled_event !== 'object') {
       errors.push('payload.payload.scheduled_event is missing');
@@ -131,17 +133,15 @@ function validatePayload(payload) {
       }
     }
 
-    // Validate basic invitee fields exist
     if (!data.email && !data.name) {
       errors.push('Both email and name are missing from invitee');
     }
   }
 
-  // For invitee.canceled, ensure we have an event URI to lookup
   if (payload.event === 'invitee.canceled') {
     const eventUri = (data.scheduled_event && data.scheduled_event.uri) || data.event;
     if (!eventUri) {
-      errors.push('Cannot identify canceled event (no scheduled_event.uri or event field)');
+      errors.push('Cannot identify canceled event');
     } else if (typeof eventUri === 'string' && !eventUri.startsWith(CALENDLY_EVENT_URI_PREFIX)) {
       errors.push('Canceled event URI does not start with Calendly prefix');
     }
@@ -174,7 +174,7 @@ exports.handler = async function(event) {
     return json({ error: 'Invalid JSON' }, 400);
   }
 
-  // ─── Structural validation (replaces HMAC signature check) ─────────
+  // ─── Structural validation ─────────────────────────────────────────
   const validationErrors = validatePayload(payload);
   if (validationErrors.length > 0) {
     console.error('[calendly-webhook] Payload validation failed:', validationErrors);
@@ -185,41 +185,37 @@ exports.handler = async function(event) {
   const eventType = payload.event;
   const data      = payload.payload;
 
-  // Log every accepted webhook for audit
   console.log(`[calendly-webhook] Event: ${eventType} | invitee: ${data.email || 'unknown'} | event_uri: ${(data.scheduled_event && data.scheduled_event.uri) || 'n/a'}`);
 
-  // ─── ROUTE: invitee.canceled ───────────────────────────────────────
   if (eventType === 'invitee.canceled') {
     return await handleCanceled(data, SUPA_URL, SUPA_KEY);
   }
 
-  // ─── ROUTE: invitee.created ────────────────────────────────────────
   if (eventType === 'invitee.created') {
     return await handleCreated(data);
   }
 
-  // Should never reach here (validatePayload would catch this)
   return json({ ok: true, ignored: eventType });
 };
 
 // ─── HANDLER: invitee.created → create lead ──────────────────────────
 async function handleCreated(data) {
   const eventDetails = data.scheduled_event || {};
-  const eventType    = eventDetails.event_type || '';
-  const eventTypeSlug = String(eventType).split('/').pop();
+  const eventTypeUri = eventDetails.event_type || '';
+  const eventTypeId  = String(eventTypeUri).split('/').pop();
 
-  // Only Discovery Call creates leads
-  if (!DISCOVERY_CALL_SLUGS.has(eventTypeSlug)) {
-    if (ONBOARDING_SLUGS.has(eventTypeSlug)) {
+  // Match against Discovery Call (by UUID or slug)
+  if (!matchesEventType(eventTypeUri, DISCOVERY_CALL_UUIDS, DISCOVERY_CALL_SLUGS)) {
+    if (matchesEventType(eventTypeUri, ONBOARDING_UUIDS, ONBOARDING_SLUGS)) {
       console.log('[calendly-webhook] Skipping Client Onboarding (existing client)');
       return json({ ok: true, skipped: 'client_onboarding' });
     }
-    if (OPS_REVIEW_SLUGS.has(eventTypeSlug)) {
+    if (matchesEventType(eventTypeUri, OPS_REVIEW_UUIDS, OPS_REVIEW_SLUGS)) {
       console.log('[calendly-webhook] Skipping Ops Review (existing client)');
       return json({ ok: true, skipped: 'ops_review' });
     }
-    console.log(`[calendly-webhook] Unknown event type slug: ${eventTypeSlug}`);
-    return json({ ok: true, skipped: 'unknown_event_type' });
+    console.log(`[calendly-webhook] Unknown event type identifier: ${eventTypeId}`);
+    return json({ ok: true, skipped: 'unknown_event_type', identifier: eventTypeId });
   }
 
   // Extract invitee data
@@ -235,12 +231,10 @@ async function handleCreated(data) {
   const challengeAnswer = findAnswer(questions, 'reto operativo') || findAnswer(questions, 'challenge');
   const urlAnswer       = findAnswer(questions, 'website') || findAnswer(questions, 'amazon storefront');
 
-  // Map to wa_leads schema
   const countryISO = COUNTRY_MAP[countryAnswer] || (countryAnswer ? 'OTHER' : null);
   const language   = detectLanguage(countryISO, businessDesc);
   const service    = mapServiceFromChannels(channelsAnswer);
 
-  // Build conversation summary
   const summaryParts = [];
   if (businessDesc)    summaryParts.push(`💼 Business: ${businessDesc}`);
   if (volumeAnswer)    summaryParts.push(`📊 Volume: ${volumeAnswer}`);
@@ -255,7 +249,7 @@ async function handleCreated(data) {
   const leadPayload = {
     name,
     email,
-    phone: phone || email, // fallback
+    phone: phone || email,
     country: countryISO,
     language,
     service,
@@ -276,7 +270,6 @@ async function handleCreated(data) {
     console.warn(`[calendly-webhook] No phone for ${email}, using email as phone fallback`);
   }
 
-  // Forward to wa-leads-create
   const siteHost = process.env.URL || process.env.DEPLOY_URL || 'https://apps.fr-logistics.net';
   const createUrl = `${siteHost}/.netlify/functions/wa-leads-create`;
 
