@@ -10,7 +10,7 @@
 //   VAPID_PUBLIC_KEY        — generated VAPID public
 //   VAPID_PRIVATE_KEY       — generated VAPID private
 //   SUPABASE_URL
-//   SUPABASE_SERVICE_ROLE_KEY
+//   SUPABASE_SERVICE_KEY
 
 import { getStore } from "@netlify/blobs";
 import { createClient } from "@supabase/supabase-js";
@@ -159,7 +159,7 @@ async function notifyOutOfBand(messages) {
   if (VAPID_PUBLIC && VAPID_PRIV) {
     const supabase = createClient(
       process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      process.env.SUPABASE_SERVICE_KEY,
       { auth: { persistSession: false } }
     );
 
