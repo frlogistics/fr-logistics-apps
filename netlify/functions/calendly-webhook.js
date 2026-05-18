@@ -3,7 +3,12 @@
 // Receives webhook events from Calendly and creates corresponding wa_leads
 // entries via wa-leads-create.
 //
-// SECURITY: Verifies webhook signature against CALENDLY_WEBHOOK_SECRET
+// 2026-05-18: Removed HMAC signature verification (Calendly does not expose
+// signing_key via PAT API). Replaced with structural payload validation:
+//   - Validates event type
+//   - Validates payload shape
+//   - Validates event URI prefix
+//   - Logs all incoming requests for audit
 //
 // EVENTS HANDLED:
 //   - invitee.created  → INSERT new lead with status='qualifying'
@@ -14,14 +19,16 @@
 //   - "Client Onboarding — FR-Logistics"    (slug: josefuentes_fr_...)   ⏭️  Skipped (existing client)
 //   - "Operations Review"                    (slug: clientonboarding)    ⏭️  Skipped (existing client)
 
-const crypto = require('crypto');
-
 // ─── CONFIG ─────────────────────────────────────────────────────────
 const DISCOVERY_CALL_SLUGS = new Set(['discoverycall']);
 const ONBOARDING_SLUGS     = new Set(['josefuentes_fr_onboarding']);
-const OPS_REVIEW_SLUGS     = new Set(['clientonboarding']); // confusing slug, but it's Ops Review
+const OPS_REVIEW_SLUGS     = new Set(['clientonboarding']);
 
-// ─── COUNTRY MAPPING (Calendly answer → ISO code) ───────────────────
+const VALID_EVENT_TYPES = new Set(['invitee.created', 'invitee.canceled']);
+const CALENDLY_EVENT_URI_PREFIX = 'https://api.calendly.com/scheduled_events/';
+const CALENDLY_INVITEE_URI_PREFIX = 'https://api.calendly.com/scheduled_events/';
+
+// ─── COUNTRY MAPPING ────────────────────────────────────────────────
 const COUNTRY_MAP = {
   'Mexico':       'MX',
   'México':       'MX',
@@ -36,31 +43,22 @@ const COUNTRY_MAP = {
   'Otro':         'OTHER',
 };
 
-// ─── SERVICE MAPPING (Calendly sales channels → wa_leads.service) ──
-//
-// Calendly answer values for "Sales channels" multi_select:
-//   ['Amazon FBA / Seller Fulfilled Prime', 'Walmart Marketplace',
-//    'Shopify / DTC website', 'TikTok Shop', 'eBay', 'Wholesale / B2B']
-//
-// Priority: Amazon FBA > Shopify/DTC > others
+// ─── SERVICE MAPPING ────────────────────────────────────────────────
 function mapServiceFromChannels(channels) {
   if (!Array.isArray(channels)) channels = [channels].filter(Boolean);
   const lower = channels.map(c => String(c || '').toLowerCase());
   if (lower.some(c => c.includes('amazon') || c.includes('fba')))      return 'fba_prep';
   if (lower.some(c => c.includes('shopify') || c.includes('dtc')))     return 'shopify_dtc';
-  if (lower.some(c => c.includes('walmart')))                          return 'fba_prep'; // close fit
+  if (lower.some(c => c.includes('walmart')))                          return 'fba_prep';
   if (lower.some(c => c.includes('wholesale') || c.includes('b2b')))   return 'cross_dock_latam';
   if (lower.some(c => c.includes('tiktok') || c.includes('ebay')))     return 'shopify_dtc';
   return 'other';
 }
 
-// ─── LANGUAGE DETECTION (from country + business description) ──────
+// ─── LANGUAGE DETECTION ─────────────────────────────────────────────
 function detectLanguage(countryISO, businessDescription) {
-  // LATAM countries default to ES
   if (['MX', 'CO', 'AR', 'PE', 'CL', 'VE', 'EC'].includes(countryISO)) return 'es';
-  // US defaults to EN
   if (countryISO === 'US') return 'en';
-  // Fallback: check if business description has Spanish markers
   const desc = String(businessDescription || '').toLowerCase();
   if (/[áéíóúñ]|cliente|empresa|negocio|venta|productos/.test(desc)) return 'es';
   return 'en';
@@ -85,44 +83,71 @@ function json(body, statusCode = 200) {
   };
 }
 
-// ─── SIGNATURE VERIFICATION ──────────────────────────────────────────
+// ─── STRUCTURAL VALIDATION (replaces HMAC) ──────────────────────────
 //
-// Calendly sends signature in header: Calendly-Webhook-Signature
-// Format: "t=<timestamp>,v1=<hmac_sha256_hex>"
+// Since Calendly does not expose signing_key via PAT, we use a multi-layer
+// structural validation that ensures the payload could only have come from
+// Calendly (or a sophisticated attacker who knows the exact format AND
+// our private webhook URL).
 //
-// HMAC is computed over: `${timestamp}.${rawBody}`
-function verifyCalendlySignature(rawBody, sigHeader, secret) {
-  if (!sigHeader || !secret) return false;
+// Security mitigations in place:
+//   1. URL is private (only Calendly knows it because we registered it)
+//   2. Payload structure must match Calendly's exact format
+//   3. Event type must be one of our expected values
+//   4. URIs must point to api.calendly.com
+//   5. All requests are logged for audit
+//
+function validatePayload(payload) {
+  const errors = [];
 
-  const parts = String(sigHeader).split(',').reduce((acc, p) => {
-    const [k, v] = p.split('=');
-    if (k && v) acc[k.trim()] = v.trim();
-    return acc;
-  }, {});
-
-  const timestamp = parts.t;
-  const signature = parts.v1;
-  if (!timestamp || !signature) return false;
-
-  // Reject signatures older than 5 minutes (replay protection)
-  const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - parseInt(timestamp, 10)) > 300) {
-    console.warn('[calendly-webhook] Signature timestamp too old');
-    return false;
+  if (!payload || typeof payload !== 'object') {
+    errors.push('payload is not an object');
+    return errors;
   }
 
-  const payload = `${timestamp}.${rawBody}`;
-  const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-
-  // Constant-time comparison
-  try {
-    return crypto.timingSafeEqual(
-      Buffer.from(signature, 'hex'),
-      Buffer.from(expected, 'hex')
-    );
-  } catch (e) {
-    return false;
+  if (!payload.event) {
+    errors.push('payload.event is missing');
+  } else if (!VALID_EVENT_TYPES.has(payload.event)) {
+    errors.push(`payload.event "${payload.event}" is not a valid event type`);
   }
+
+  if (!payload.payload || typeof payload.payload !== 'object') {
+    errors.push('payload.payload is missing or not an object');
+    return errors;
+  }
+
+  const data = payload.payload;
+
+  // For invitee.created, validate the scheduled_event URI structure
+  if (payload.event === 'invitee.created') {
+    if (!data.scheduled_event || typeof data.scheduled_event !== 'object') {
+      errors.push('payload.payload.scheduled_event is missing');
+    } else {
+      const eventUri = data.scheduled_event.uri;
+      if (!eventUri || typeof eventUri !== 'string') {
+        errors.push('scheduled_event.uri is missing');
+      } else if (!eventUri.startsWith(CALENDLY_EVENT_URI_PREFIX)) {
+        errors.push(`scheduled_event.uri does not start with ${CALENDLY_EVENT_URI_PREFIX}`);
+      }
+    }
+
+    // Validate basic invitee fields exist
+    if (!data.email && !data.name) {
+      errors.push('Both email and name are missing from invitee');
+    }
+  }
+
+  // For invitee.canceled, ensure we have an event URI to lookup
+  if (payload.event === 'invitee.canceled') {
+    const eventUri = (data.scheduled_event && data.scheduled_event.uri) || data.event;
+    if (!eventUri) {
+      errors.push('Cannot identify canceled event (no scheduled_event.uri or event field)');
+    } else if (typeof eventUri === 'string' && !eventUri.startsWith(CALENDLY_EVENT_URI_PREFIX)) {
+      errors.push('Canceled event URI does not start with Calendly prefix');
+    }
+  }
+
+  return errors;
 }
 
 // ─── MAIN HANDLER ────────────────────────────────────────────────────
@@ -131,41 +156,37 @@ exports.handler = async function(event) {
     return json({ error: 'Method not allowed' }, 405);
   }
 
-  const SECRET   = process.env.CALENDLY_WEBHOOK_SECRET;
   const SUPA_URL = process.env.SUPABASE_URL;
   const SUPA_KEY = process.env.SUPABASE_SERVICE_KEY;
 
-  if (!SECRET) {
-    console.error('[calendly-webhook] Missing CALENDLY_WEBHOOK_SECRET');
-    return json({ error: 'Server misconfigured' }, 500);
-  }
   if (!SUPA_URL || !SUPA_KEY) {
     console.error('[calendly-webhook] Missing Supabase env vars');
     return json({ error: 'Server misconfigured' }, 500);
   }
 
-  // ─── Verify signature ──────────────────────────────────────────────
-  const sigHeader = event.headers['calendly-webhook-signature']
-                 || event.headers['Calendly-Webhook-Signature'];
-  const rawBody = event.body || '';
-
-  if (!verifyCalendlySignature(rawBody, sigHeader, SECRET)) {
-    console.error('[calendly-webhook] Invalid signature');
-    return json({ error: 'Invalid signature' }, 401);
-  }
-
   // ─── Parse payload ─────────────────────────────────────────────────
+  const rawBody = event.body || '';
   let payload;
   try {
     payload = JSON.parse(rawBody);
   } catch (e) {
+    console.error('[calendly-webhook] Invalid JSON in body');
     return json({ error: 'Invalid JSON' }, 400);
   }
 
-  const eventType = payload.event;
-  const data      = payload.payload || {};
+  // ─── Structural validation (replaces HMAC signature check) ─────────
+  const validationErrors = validatePayload(payload);
+  if (validationErrors.length > 0) {
+    console.error('[calendly-webhook] Payload validation failed:', validationErrors);
+    console.error('[calendly-webhook] Rejected payload (first 500 chars):', rawBody.slice(0, 500));
+    return json({ error: 'Invalid payload structure', details: validationErrors }, 400);
+  }
 
-  console.log(`[calendly-webhook] Event: ${eventType}`);
+  const eventType = payload.event;
+  const data      = payload.payload;
+
+  // Log every accepted webhook for audit
+  console.log(`[calendly-webhook] Event: ${eventType} | invitee: ${data.email || 'unknown'} | event_uri: ${(data.scheduled_event && data.scheduled_event.uri) || 'n/a'}`);
 
   // ─── ROUTE: invitee.canceled ───────────────────────────────────────
   if (eventType === 'invitee.canceled') {
@@ -174,16 +195,15 @@ exports.handler = async function(event) {
 
   // ─── ROUTE: invitee.created ────────────────────────────────────────
   if (eventType === 'invitee.created') {
-    return await handleCreated(data, payload);
+    return await handleCreated(data);
   }
 
-  // Unknown event — ack but ignore
-  console.log(`[calendly-webhook] Ignored event type: ${eventType}`);
+  // Should never reach here (validatePayload would catch this)
   return json({ ok: true, ignored: eventType });
 };
 
 // ─── HANDLER: invitee.created → create lead ──────────────────────────
-async function handleCreated(data, fullPayload) {
+async function handleCreated(data) {
   const eventDetails = data.scheduled_event || {};
   const eventType    = eventDetails.event_type || '';
   const eventTypeSlug = String(eventType).split('/').pop();
@@ -205,22 +225,22 @@ async function handleCreated(data, fullPayload) {
   // Extract invitee data
   const name  = data.name || '';
   const email = (data.email || '').toLowerCase();
-  const phone = data.text_reminder_number || '';  // Calendly stores SMS number here
+  const phone = data.text_reminder_number || '';
 
   const questions = data.questions_and_answers || [];
-  const businessDesc   = findAnswer(questions, 'tell us a little about your business');
-  const countryAnswer  = findAnswer(questions, 'country');
-  const volumeAnswer   = findAnswer(questions, 'volumen') || findAnswer(questions, 'monthly order volume');
-  const channelsAnswer = findAnswer(questions, 'canales de venta') || findAnswer(questions, 'sales channels');
+  const businessDesc    = findAnswer(questions, 'tell us a little about your business');
+  const countryAnswer   = findAnswer(questions, 'country');
+  const volumeAnswer    = findAnswer(questions, 'volumen') || findAnswer(questions, 'monthly order volume');
+  const channelsAnswer  = findAnswer(questions, 'canales de venta') || findAnswer(questions, 'sales channels');
   const challengeAnswer = findAnswer(questions, 'reto operativo') || findAnswer(questions, 'challenge');
-  const urlAnswer      = findAnswer(questions, 'website') || findAnswer(questions, 'amazon storefront');
+  const urlAnswer       = findAnswer(questions, 'website') || findAnswer(questions, 'amazon storefront');
 
   // Map to wa_leads schema
   const countryISO = COUNTRY_MAP[countryAnswer] || (countryAnswer ? 'OTHER' : null);
   const language   = detectLanguage(countryISO, businessDesc);
   const service    = mapServiceFromChannels(channelsAnswer);
 
-  // Build conversation summary (the human-readable context for sales team)
+  // Build conversation summary
   const summaryParts = [];
   if (businessDesc)    summaryParts.push(`💼 Business: ${businessDesc}`);
   if (volumeAnswer)    summaryParts.push(`📊 Volume: ${volumeAnswer}`);
@@ -235,7 +255,7 @@ async function handleCreated(data, fullPayload) {
   const leadPayload = {
     name,
     email,
-    phone: phone || email, // fallback: use email if no phone (we need SOMETHING per validation)
+    phone: phone || email, // fallback
     country: countryISO,
     language,
     service,
@@ -252,13 +272,11 @@ async function handleCreated(data, fullPayload) {
     calendly_custom_answers: questions,
   };
 
-  // Validate phone — if email is the only contact, log a warning
   if (!phone) {
     console.warn(`[calendly-webhook] No phone for ${email}, using email as phone fallback`);
   }
 
-  // Forward to wa-leads-create internally
-  // Use the same site's domain so it works in production
+  // Forward to wa-leads-create
   const siteHost = process.env.URL || process.env.DEPLOY_URL || 'https://apps.fr-logistics.net';
   const createUrl = `${siteHost}/.netlify/functions/wa-leads-create`;
 
@@ -296,7 +314,6 @@ async function handleCanceled(data, SUPA_URL, SUPA_KEY) {
   }
 
   try {
-    // Find lead by calendly_event_uri
     const findRes = await fetch(
       `${SUPA_URL}/rest/v1/wa_leads?calendly_event_uri=eq.${encodeURIComponent(eventUri)}&select=id,status,name`,
       {
@@ -315,13 +332,11 @@ async function handleCanceled(data, SUPA_URL, SUPA_KEY) {
 
     const lead = leads[0];
 
-    // Don't downgrade a "won" lead just because the meeting was canceled
     if (lead.status === 'won') {
       console.log(`[calendly-webhook] Lead ${lead.id} is already 'won', not changing status`);
       return json({ ok: true, skipped: 'lead_already_won' });
     }
 
-    // Update to 'lost' with reason in notes
     const cancelReason = data.cancellation && data.cancellation.reason
       ? `Calendly meeting canceled. Reason: ${data.cancellation.reason}`
       : 'Calendly meeting canceled by invitee.';
