@@ -116,111 +116,35 @@ export default async function handler(req) {
 // ───────────────────────────────── Out-of-band notifications
 async function notifyOutOfBand(messages) {
   if (!messages?.length) return;
-
-  // 2a — Email via Resend
-  if (RESEND_KEY) {
-    const subject = `[WA Inbox] ${messages.length} new from ${messages[0].clientName}`;
-    const html =
-      `<h2 style="font:600 16px Arial">New WhatsApp messages</h2>` +
-      messages
-        .map(
-          (m) =>
-            `<div style="margin:12px 0;padding:12px;border:1px solid #e5e7eb;border-radius:6px;font:14px Arial">
-              <strong>${escapeHtml(m.clientName)}</strong>
-              <span style="color:#6b7280">&nbsp;+${escapeHtml(m.from)}</span>
-              <div style="margin-top:6px">${escapeHtml(m.text)}</div>
-            </div>`
-        )
-        .join("") +
-      `<p style="font:13px Arial;color:#6b7280">
-        Open inbox: <a href="https://apps.fr-logistics.net/portal.html#wa-inbox">apps.fr-logistics.net/portal.html</a>
-      </p>`;
-
-    try {
-      await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${RESEND_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: "FR-Logistics WA <noreply@fr-logistics.net>",
-          to: ["warehouse@fr-logistics.net", "josefuentes@fr-logistics.net"],
-          subject,
-          html,
-        }),
-      });
-    } catch (err) {
-      console.error("[webhook] Resend error:", err);
-    }
-  }
-
-  // 2b — Web Push to all active subscribers
-  if (VAPID_PUBLIC && VAPID_PRIV) {
-    const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY,
-      { auth: { persistSession: false } }
-    );
-
-    const { data: subs, error } = await supabase
-      .from("wa_push_subscriptions")
-      .select("endpoint,p256dh,auth")
-      .eq("active", true);
-
-    if (error) {
-      console.error("[webhook] supabase select error:", error);
-      return;
-    }
-    if (!subs?.length) return;
-
-    // Send one push per new message (or batch if >1 from same sender)
-    const first = messages[0];
-    const payload = JSON.stringify({
-      title:
-        messages.length === 1
-          ? first.clientName
-          : `${first.clientName} +${messages.length - 1} more`,
-      body: first.text.slice(0, 140),
-      tag: "wa-inbox",
-      url: "https://apps.fr-logistics.net/portal.html#wa-inbox",
-      icon: "https://fr-logistics.net/wp-content/uploads/2024/03/favicon-196x196.png",
-      badge: "https://fr-logistics.net/wp-content/uploads/2024/03/favicon-196x196.png",
-    });
-
-    const deadEndpoints = [];
-    await Promise.all(
-      subs.map(async (s) => {
-        try {
-          await webpush.sendNotification(
-            {
-              endpoint: s.endpoint,
-              keys: { p256dh: s.p256dh, auth: s.auth },
-            },
-            payload,
-            { TTL: 60 * 60 } // expire in 1h if undelivered
-          );
-        } catch (err) {
-          const code = err?.statusCode;
-          if (code === 404 || code === 410) {
-            // gone — mark inactive
-            deadEndpoints.push(s.endpoint);
-          } else {
-            console.error("[webhook] push error:", code, err?.body || err);
-          }
-        }
-      })
-    );
-
-    if (deadEndpoints.length) {
-      await supabase
-        .from("wa_push_subscriptions")
-        .update({ active: false })
-        .in("endpoint", deadEndpoints);
-    }
-  }
+  console.log('[webhook] notifyOutOfBand: ' + messages.length + ' messages, starting email + push in parallel');
+  await Promise.allSettled([
+    sendEmail(messages).catch(e => console.error('[webhook] email error:', e?.message || e)),
+    sendPush(messages).catch(e => console.error('[webhook] push error:', e?.message || e)),
+  ]);
 }
 
+async function sendEmail(messages) {
+  if (!RESEND_KEY) { console.log('[webhook] no RESEND_KEY, skipping email'); return; }
+  const subject = '[WA Inbox] ' + messages.length + ' new from ' + messages[0].clientName;
+  const html = '<h2>New WhatsApp messages</h2>' + messages.map(m => '<div style=\"margin:12px 0;padding:12px;border:1px solid #e5e7eb;border-radius:6px;font:14px Arial\"><strong>' + escapeHtml(m.clientName) + '</strong>&nbsp;+' + escapeHtml(m.from) + '<div style=\"margin-top:6px\">' + escapeHtml(m.text) + '</div></div>').join('') + '<p><a href=\"https://apps.fr-logistics.net/portal.html#wa-inbox\">Open inbox</a></p>';
+  const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + RESEND_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'FR-Logistics WA <noreply@fr-logistics.net>', to: ['warehouse@fr-logistics.net', 'josefuentes@fr-logistics.net'], subject, html }) });
+  console.log('[webhook] Resend response: ' + r.status);
+}
+
+async function sendPush(messages) {
+  if (!VAPID_PUBLIC || !VAPID_PRIV) { console.log('[webhook] no VAPID, skipping push'); return; }
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
+  const { data: subs, error } = await supabase.from('wa_push_subscriptions').select('endpoint,p256dh,auth').eq('active', true);
+  if (error) { console.error('[webhook] supabase err:', error.message); return; }
+  if (!subs?.length) { console.log('[webhook] no active subscriptions'); return; }
+  console.log('[webhook] dispatching push to ' + subs.length + ' subscribers');
+  const first = messages[0];
+  const payload = JSON.stringify({ title: messages.length === 1 ? first.clientName : first.clientName + ' +' + (messages.length - 1) + ' more', body: first.text.slice(0, 140), tag: 'wa-inbox', url: 'https://apps.fr-logistics.net/portal.html#wa-inbox', icon: 'https://fr-logistics.net/wp-content/uploads/2024/03/favicon-196x196.png' });
+  const dead = []; let ok = 0;
+  await Promise.all(subs.map(async s => { try { await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 3600 }); ok++; } catch (err) { const code = err?.statusCode; if (code === 404 || code === 410) { dead.push(s.endpoint); } else { console.error('[webhook] push send err code=' + code + ' body=' + (err?.body || err?.message)); } } }));
+  console.log('[webhook] push: ' + ok + '/' + subs.length + ' delivered, ' + dead.length + ' dead');
+  if (dead.length) { await supabase.from('wa_push_subscriptions').update({ active: false }).in('endpoint', dead); }
+}
 function escapeHtml(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;")
