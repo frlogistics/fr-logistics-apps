@@ -43,7 +43,7 @@ self.addEventListener('install', (event) => {
 
 /* ════════════════════════════════════════════════════════════════════
    ACTIVATE — clean up old caches
-   ════════════════════════════════════════════════════════════════════ */
+   ═══════════════════════════════════════════════════════════════════ */
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
