@@ -319,20 +319,31 @@ export function pickTemplate(key, language, ...args) {
 
 /**
  * Parses user's reply to the greeting menu into a service intent.
+ *
+ * Sprint 4 fix: keyword fallback ONLY activates on SHORT messages (≤60 chars).
+ * Long messages are natural-language questions that should reach the LLM
+ * (e.g. "tengo una marca de cremas y quiero entrar a Amazon US con labeling")
+ * — those should NOT be intercepted as "FBA Prep" just because they contain
+ * the word "Amazon".
+ *
  * @param {string} text - User's reply
  * @returns {string|null} 'fba_prep'|'master_case'|'dropship'|'ecopack'|'jose_handoff'|null
  */
 export function parseMenuChoice(text) {
-  const lower = (text || '').toLowerCase().trim();
+  const raw = text || '';
+  const lower = raw.toLowerCase().trim();
 
-  // Number replies
+  // ──── Number replies — always match (specific by design) ────
   if (/^1\b/.test(lower) || /1️⃣/.test(text)) return 'fba_prep';
   if (/^2\b/.test(lower) || /2️⃣/.test(text)) return 'master_case';
   if (/^3\b/.test(lower) || /3️⃣/.test(text)) return 'dropship';
   if (/^4\b/.test(lower) || /4️⃣/.test(text)) return 'ecopack';
   if (/^5\b/.test(lower) || /5️⃣/.test(text)) return 'jose_handoff';
 
-  // Keyword fallback
+  // ──── Keyword fallback — ONLY for short messages (≤60 chars) ────
+  // Long messages are natural-language; let the LLM handle them.
+  if (raw.length > 60) return null;
+
   if (/\bfba\b|prep|amazon/i.test(text)) return 'fba_prep';
   if (/master ?case|container|contenedor/i.test(text)) return 'master_case';
   if (/drop ?ship/i.test(text)) return 'dropship';
