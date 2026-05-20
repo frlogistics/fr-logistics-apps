@@ -38,6 +38,14 @@ import {
   extractBoth,
 } from "./wa-agent-capture.js";
 import { sendHandoffEmail } from "./wa-agent-email-handoff.js";
+import {
+  QUALIFY_SEQUENCES,
+  parseQualifyReply,
+  getNextQuestion,
+  getQuestionByIndex,
+  getSequenceLength,
+  buildQualificationSummary,
+} from "./wa-agent-qualify.js";
 
 /**
  * Main entry point — called per inbound message.
@@ -106,6 +114,12 @@ export async function routeIncomingMessage(msg) {
     //   → user is replying to menu (1-5)
     if (existingConv?.state === "greeted") {
       return await handleMenuReply(existingConv, msg);
+    }
+
+    // Branch C2: active conversation in qualifying state (Sprint 2)
+    //   → user is answering a qualification question
+    if (existingConv?.state === "qualifying") {
+      return await handleQualifyReply(existingConv, msg);
     }
 
     // Branch D: active conversation in handoff_jose state
@@ -424,25 +438,39 @@ async function handleMenuReply(conv, msg) {
     return;
   }
 
-  // Options 1-4 — services. Sprint 1: simple acknowledgment.
-  // Sprint 2 will replace this with the full qualification flow.
+  // Options 1-4 — services. Sprint 2: enter qualification flow.
   if (choice && ["fba_prep", "master_case", "dropship", "ecopack"].includes(choice)) {
-    const placeholderMsg =
+    // Send intro template for the chosen service
+    const introKey = `qualify_intro_${choice}`;
+    const introMsg =
       language === "ES"
-        ? `¡Genial! Para darte la mejor información sobre ${labelService(choice, "ES")}, te paso con Jose Fuentes.\n\n¿Puedes dejarme tu nombre y email para que él te contacte?`
-        : `Awesome! To give you the best info on ${labelService(choice, "EN")}, I'm connecting you with Jose Fuentes.\n\nCould you share your name and email so he can reach out?`;
+        ? TEMPLATES[`${introKey}_es`]()
+        : TEMPLATES[`${introKey}_en`]();
 
-    const send = await sendAndRecord({
+    const sendIntro = await sendAndRecord({
       to: from,
-      text: placeholderMsg,
+      text: introMsg,
       clientName: "Liam",
     });
 
-    if (send.ok) {
-      await recordAgentMessage(conv.id, "handoff_jose");
-      await markHandoff(conv.id, `service_interest_${choice}`, "handoff_jose");
-      // Day 3: enter capture flow waiting for name
-      await setSubStateAndService(conv.id, "awaiting_name", choice);
+    if (!sendIntro.ok) {
+      console.error("[router] failed to send qualify intro, aborting");
+      return;
+    }
+
+    // Send Q1 immediately after the intro
+    const q1 = getQuestionByIndex(choice, 1);
+    const q1Msg = language === "ES" ? q1.prompts.es : q1.prompts.en;
+    const sendQ1 = await sendAndRecord({
+      to: from,
+      text: q1Msg,
+      clientName: "Liam",
+    });
+
+    if (sendQ1.ok) {
+      // Transition: state = 'qualifying', sub_state = 'awaiting_q1', captured_service = choice
+      await recordAgentMessage(conv.id, "qualifying");
+      await setSubStateAndService(conv.id, "awaiting_q1", choice);
     }
     return;
   }
@@ -700,6 +728,112 @@ async function handleHandoffCapture(conv, msg) {
   console.log(`[agent-router] handoff_jose with sub_state '${conv.sub_state}' — no action`);
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// HANDLER: qualification flow — user is in state='qualifying'
+// Tracks sub_state: awaiting_q1 → awaiting_q2 → awaiting_q3 → 
+//   transition to handoff_jose with sub_state='awaiting_name'
+// Cancellation at any point → graceful exit + partial email to info@
+// Human shortcut at any point → already handled by STEP 0 in router
+// ─────────────────────────────────────────────────────────────────────
+async function handleQualifyReply(conv, msg) {
+  const { from, text } = msg;
+  const language = (conv.language || "en").toUpperCase();
+  const service = conv.captured_service;
+
+  await updateConversationOnUserMessage(conv.id);
+
+  // Cancellation — partial email, graceful exit
+  if (isCancellation(text)) {
+    const farewell =
+      language === "ES"
+        ? "Entendido. Si cambias de opinión, escríbeme cuando quieras."
+        : "Got it. If you change your mind, message me anytime.";
+    await sendAndRecord({ to: from, text: farewell, clientName: "Liam" });
+
+    if (!conv.info_email_sent_at) {
+      const summary = buildQualificationSummary(conv);
+      await sendHandoffEmail({
+        waNumber: from,
+        name: conv.captured_name || msg.clientName || "Lead (no name)",
+        email: conv.captured_email || "(no proporcionado)",
+        language: language.toLowerCase(),
+        serviceInterest: service || "other",
+        firstMessage: conv.first_message || "",
+        handoffReason: `${service}_cancelled_qualify`,
+        conversationId: conv.id,
+        qualification: summary,
+      });
+      await markInfoEmailSent(conv.id);
+    }
+    return;
+  }
+
+  // Determine which question we're answering
+  const subState = conv.sub_state || "awaiting_q1";
+  if (!subState.startsWith("awaiting_q")) {
+    console.error(`[router] unexpected sub_state '${subState}' in qualifying`);
+    return;
+  }
+  const currentIdx = parseInt(subState.replace("awaiting_q", ""), 10);
+  const currentQuestion = getQuestionByIndex(service, currentIdx);
+  if (!currentQuestion) {
+    console.error(`[router] no question at index ${currentIdx} for service ${service}`);
+    return;
+  }
+
+  // Parse the reply: { normalized, raw }
+  const { normalized, raw } = parseQualifyReply(text, currentQuestion);
+
+  // Persist the answer (both normalized and raw)
+  await saveQualifyField(conv.id, currentQuestion.field, currentQuestion.rawField, normalized, raw);
+
+  // Get the next question (or null if sequence complete)
+  const nextQuestion = getNextQuestion(service, subState);
+
+  if (nextQuestion) {
+    // Send next question
+    const nextMsg = language === "ES" ? nextQuestion.prompts.es : nextQuestion.prompts.en;
+    const send = await sendAndRecord({ to: from, text: nextMsg, clientName: "Liam" });
+    if (send.ok) {
+      await recordAgentMessage(conv.id);
+      await setSubState(conv.id, `awaiting_${nextQuestion.id}`);
+    }
+    return;
+  }
+
+  // Sequence complete → bridge to contact capture
+  const doneMsg =
+    language === "ES" ? TEMPLATES.qualify_done_es() : TEMPLATES.qualify_done_en();
+  const send = await sendAndRecord({ to: from, text: doneMsg, clientName: "Liam" });
+  if (send.ok) {
+    await recordAgentMessage(conv.id, "handoff_jose");
+    await markHandoff(conv.id, `qualified_${service}`, "handoff_jose");
+    await setSubState(conv.id, "awaiting_name");
+  }
+}
+
+// DB helper — save a captured qualify field + its _raw companion
+async function saveQualifyField(conversationId, field, rawField, normalizedValue, rawValue) {
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
+    { auth: { persistSession: false } }
+  );
+  const patch = {};
+  if (normalizedValue !== null && normalizedValue !== undefined) {
+    patch[field] = normalizedValue;
+  }
+  if (rawValue) {
+    patch[rawField] = rawValue;
+  }
+  if (Object.keys(patch).length === 0) return;
+  await sb
+    .from("wa_agent_conversations")
+    .update(patch)
+    .eq("id", conversationId);
+}
+
 // Final step of the capture flow: send confirmation + email info@
 async function completeHandoff(conv, msg, name, email) {
   const { from } = msg;
@@ -714,6 +848,20 @@ async function completeHandoff(conv, msg, name, email) {
 
   // 2. Email info@fr-logistics.net (idempotency check)
   if (!conv.info_email_sent_at) {
+    // Refetch conv to get latest captured_* values
+    const { createClient } = await import("@supabase/supabase-js");
+    const sb = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY,
+      { auth: { persistSession: false } }
+    );
+    const { data: freshConv } = await sb
+      .from("wa_agent_conversations")
+      .select("*")
+      .eq("id", conv.id)
+      .single();
+    const summary = freshConv ? buildQualificationSummary(freshConv) : {};
+
     const emailResult = await sendHandoffEmail({
       waNumber: from,
       name,
@@ -723,6 +871,7 @@ async function completeHandoff(conv, msg, name, email) {
       firstMessage: conv.first_message || "",
       handoffReason: conv.handoff_reason || "user_request_jose",
       conversationId: conv.id,
+      qualification: summary,
     });
 
     if (emailResult.ok) {
