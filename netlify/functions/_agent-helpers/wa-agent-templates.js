@@ -168,6 +168,34 @@ I have everything Jose Fuentes needs to prepare a personalized proposal for you.
 Could you share your name and email so he can reach out?`,
 
   // ───────────────────────────────────────────────────────────────
+  // FAQ FOLLOW-UP (Sprint 3)
+  // After Liam answers a free-text question with a FAQ, re-offer
+  // the main menu to keep the lead engaged toward conversion.
+  // ───────────────────────────────────────────────────────────────
+
+  faq_followup_menu_es: () =>
+`¿Hay algo más en lo que te pueda ayudar? 🤝
+
+1️⃣ FBA Prep — Amazon SPN-Certified
+2️⃣ Master Case — Recepción de contenedores
+3️⃣ Dropshipment — Sellers sin inventario
+4️⃣ EcoPack+ — Envíos sostenibles
+5️⃣ Hablar con Jose Fuentes
+
+_(O escríbeme tu pregunta y te respondo)_`,
+
+  faq_followup_menu_en: () =>
+`Anything else I can help with? 🤝
+
+1️⃣ FBA Prep — Amazon SPN-Certified
+2️⃣ Master Case — Container receiving
+3️⃣ Dropshipment — Sellers without inventory
+4️⃣ EcoPack+ — Sustainable shipping
+5️⃣ Talk to Jose Fuentes
+
+_(Or just ask me anything)_`,
+
+  // ───────────────────────────────────────────────────────────────
   // HANDOFF TO JOSE (option 5 or explicit request)
   // ───────────────────────────────────────────────────────────────
 
