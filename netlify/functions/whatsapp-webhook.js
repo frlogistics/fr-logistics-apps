@@ -3,6 +3,7 @@
 //   - Stores in Netlify Blobs (wa-messages store)
 //   - Sends email to warehouse@fr-logistics.net via Resend
 //   - Dispatches Web Push to all active subscribers
+//   - [NEW Sprint 1] Routes to Liam agent for automated responses
 //
 // ENV required:
 //   WHATSAPP_WEBHOOK_SECRET — Meta verify token
@@ -11,10 +12,15 @@
 //   VAPID_PRIVATE_KEY       — generated VAPID private
 //   SUPABASE_URL
 //   SUPABASE_SERVICE_KEY
+//   WHATSAPP_TOKEN          — for agent outbound replies (Meta Cloud API)
+//   WHATSAPP_PHONE_ID       — for agent outbound replies
 
 import { getStore } from "@netlify/blobs";
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
+
+// [NEW Sprint 1] Liam agent router
+import { routeIncomingMessage } from "../functions-helpers/wa-agent-router.js";
 
 const VERIFY_TOKEN = process.env.WHATSAPP_WEBHOOK_SECRET || "frlogistics_wa_2026";
 const RESEND_KEY   = process.env.RESEND_API_KEY;
@@ -90,6 +96,7 @@ export default async function handler(req) {
     }
 
     // 1) Persist to Blobs
+    let actuallyNewMessages = [];
     try {
       const existing = (await store.get("messages", { type: "json" })) || [];
       const existingIds = new Set(existing.map((m) => m.id));
@@ -98,12 +105,15 @@ export default async function handler(req) {
         const merged = [...existing, ...toAdd].slice(-500);
         await store.setJSON("messages", merged);
       }
+      actuallyNewMessages = toAdd;  // Only route truly new msgs to agent
     } catch (err) {
       console.error("[webhook] Blobs save error:", err);
+      // If Blobs failed, still route to agent based on incoming msgs
+      actuallyNewMessages = newMessages;
     }
 
-    // 2) Fan-out: email + push (don't block the 200 to Meta)
-    await notifyOutOfBand(newMessages).catch((e) =>
+    // 2) Fan-out: email + push + [NEW] agent (don't block the 200 to Meta)
+    await notifyOutOfBand(newMessages, actuallyNewMessages).catch((e) =>
       console.error("[webhook] notify error:", e)
     );
 
@@ -114,13 +124,28 @@ export default async function handler(req) {
 }
 
 // ───────────────────────────────── Out-of-band notifications
-async function notifyOutOfBand(messages) {
+async function notifyOutOfBand(messages, agentMessages) {
   if (!messages?.length) return;
-  console.log('[webhook] notifyOutOfBand: ' + messages.length + ' messages, starting email + push in parallel');
+  console.log('[webhook] notifyOutOfBand: ' + messages.length + ' messages, ' + (agentMessages?.length || 0) + ' for agent');
   await Promise.allSettled([
     sendEmail(messages).catch(e => console.error('[webhook] email error:', e?.message || e)),
     sendPush(messages).catch(e => console.error('[webhook] push error:', e?.message || e)),
+    // [NEW Sprint 1] Route to Liam agent
+    routeToAgent(agentMessages || messages).catch(e => console.error('[webhook] agent error:', e?.message || e)),
   ]);
+}
+
+// [NEW Sprint 1] Loop over new messages and route each to the agent.
+// Errors per-message are swallowed so one bad message doesn't block others.
+async function routeToAgent(messages) {
+  if (!messages?.length) return;
+  for (const msg of messages) {
+    try {
+      await routeIncomingMessage(msg);
+    } catch (err) {
+      console.error('[webhook] agent route error for msg ' + msg.id + ':', err?.message || err);
+    }
+  }
 }
 
 async function sendEmail(messages) {
