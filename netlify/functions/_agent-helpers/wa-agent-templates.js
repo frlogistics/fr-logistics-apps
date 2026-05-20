@@ -1,4 +1,4 @@
-// netlify/functions-helpers/wa-agent-templates.js
+// netlify/functions/_agent-helpers/wa-agent-templates.js
 //
 // Hardcoded message templates for Liam, FR-Logistics WhatsApp agent.
 // These DO NOT call the LLM — they're deterministic templates.
@@ -7,6 +7,14 @@
 // All templates are locked per Sprint 1 spec.
 // Tone: professional + friendly. Personality: Liam.
 // Brand voice: warm, capable, never overpromising.
+//
+// SPANISH STYLE (locked v2 — May 2026):
+//   - Neutral LATAM Spanish — works for MX, CO, AR, PE, CL, VE, EC, ES.
+//   - Tuteo with "tú" implicit: puedes, tienes, quieres, necesitas, avísame.
+//   - NEVER rioplatense: no vos, podés, tenés, querés, sos.
+//   - NEVER vosotros (Spain): no tenéis, podéis.
+//   - No regional slang: no chévere, vale, bárbaro, padre.
+//   - "aquí" not "acá".
 
 // ─────────────────────────────────────────────────────────────────────
 // INITIAL GREETINGS (Sprint 1)
@@ -15,10 +23,10 @@
 export const TEMPLATES = {
 
   // When language is detected confidently
-  greet_es: () => 
+  greet_es: () =>
 `¡Hola! 👋
 
-Soy Liam, asistente virtual de FR-Logistics Miami.
+Soy Liam, asistente logístico de FR-Logistics Miami.
 Estoy aquí 24/7 para ayudarte.
 
 Podemos hablar de:
@@ -26,14 +34,14 @@ Podemos hablar de:
 2️⃣ Master Case (recepción de contenedores)
 3️⃣ Dropshipment (sin inventario)
 4️⃣ EcoPack+ (envíos sostenibles)
-5️⃣ Otro / hablar con Jose
+5️⃣ Otro / hablar con Jose Fuentes
 
-¿En qué te ayudo hoy?`,
+¿Cómo te puedo ayudar hoy?`,
 
   greet_en: () =>
 `Hi there! 👋
 
-I'm Liam, FR-Logistics Miami's virtual assistant.
+I'm Liam, FR-Logistics Miami's logistics assistant.
 I'm here 24/7 to help you.
 
 We can talk about:
@@ -41,7 +49,7 @@ We can talk about:
 2️⃣ Master Case (container receiving)
 3️⃣ Dropshipment (no inventory)
 4️⃣ EcoPack+ (sustainable shipping)
-5️⃣ Other / talk to Jose
+5️⃣ Other / talk to Jose Fuentes
 
 How can I help you today?`,
 
@@ -50,7 +58,7 @@ How can I help you today?`,
 `👋 Hi / Hola
 
 I'm Liam — FR-Logistics assistant.
-Soy Liam — asistente de FR-Logistics.
+Soy Liam — asistente logístico de FR-Logistics.
 
 Reply EN or ES?`,
 
@@ -63,7 +71,7 @@ We can talk about:
 2️⃣ Master Case
 3️⃣ Dropshipment
 4️⃣ EcoPack+
-5️⃣ Other / talk to Jose
+5️⃣ Other / talk to Jose Fuentes
 
 How can I help?`,
 
@@ -76,9 +84,9 @@ Podemos hablar de:
 2️⃣ Master Case
 3️⃣ Dropshipment
 4️⃣ EcoPack+
-5️⃣ Otro / hablar con Jose
+5️⃣ Otro / hablar con Jose Fuentes
 
-¿En qué te ayudo?`,
+¿Cómo te puedo ayudar?`,
 
   // If user replies to bilingual greeting with something we can't parse
   retry_language_choice: () =>
@@ -93,7 +101,7 @@ Perdón, no entendí — responde EN o ES.`,
 2️⃣ Master Case
 3️⃣ Dropshipment
 4️⃣ EcoPack+
-5️⃣ Other / talk to Jose
+5️⃣ Other / talk to Jose Fuentes
 
 How can I help?`,
 
@@ -104,7 +112,7 @@ How can I help?`,
   handoff_jose_ack_es: () =>
 `Perfecto, le aviso a Jose Fuentes ahora mismo.
 
-Mientras tanto, ¿podés dejarme tu nombre y email así él puede contactarte?`,
+Mientras tanto, ¿puedes dejarme tu nombre y email para que él pueda contactarte?`,
 
   handoff_jose_ack_en: () =>
 `Got it — I'm notifying Jose Fuentes right now.
@@ -126,7 +134,7 @@ In the meantime, could you share your name and email so he can reach out?`,
   handoff_jose_complete_es: (name) =>
 `Listo, ${name}. Jose Fuentes te contactará lo antes posible al email que dejaste.
 
-Si necesitás algo urgente, podés llamarnos al +1 786-300-1443.`,
+Si necesitas algo urgente, puedes llamarnos al +1 786-300-1443.`,
 
   handoff_jose_complete_en: (name) =>
 `All set, ${name}. Jose Fuentes will reach out asap to the email you provided.
@@ -143,7 +151,7 @@ If you need something urgent, you can call us at +1 786-300-1443.`,
 En este momento estamos con alta demanda.
 Nuestro equipo te contactará pronto a través de info@fr-logistics.net.
 
-Si es urgente, podés llamar al +1 786-300-1443.`,
+Si es urgente, puedes llamar al +1 786-300-1443.`,
 
   kill_switch_en: () =>
 `Hi! I'm Liam from FR-Logistics.
@@ -163,7 +171,7 @@ If urgent, call +1 786-300-1443.`,
 
 Tu mensaje fue recibido. El equipo de FR-Logistics te responderá pronto.
 
-Si es urgente, podés llamar al +1 786-300-1443.`,
+Si es urgente, puedes llamar al +1 786-300-1443.`,
 
   existing_client_redirect_en: (clientName) =>
 `Hi ${clientName}! 👋
@@ -183,10 +191,10 @@ If urgent, you can call +1 786-300-1443.`,
   // ───────────────────────────────────────────────────────────────
 
   timeout_es: () =>
-`Veo que no pudimos seguir conversando. 
+`Veo que no pudimos continuar la conversación.
 
-Cuando estés listo para retomar, escribime aquí mismo y te ayudo.
-Mientras tanto, podés visitar fr-logistics.net o llamar al +1 786-300-1443.`,
+Cuando estés listo para retomarla, solo escríbeme aquí y te ayudo.
+Mientras tanto, puedes visitar fr-logistics.net o llamar al +1 786-300-1443.`,
 
   timeout_en: () =>
 `Looks like we couldn't continue the conversation.
@@ -226,20 +234,20 @@ export function pickTemplate(key, language, ...args) {
  */
 export function parseMenuChoice(text) {
   const lower = (text || '').toLowerCase().trim();
-  
+
   // Number replies
   if (/^1\b/.test(lower) || /1️⃣/.test(text)) return 'fba_prep';
   if (/^2\b/.test(lower) || /2️⃣/.test(text)) return 'master_case';
   if (/^3\b/.test(lower) || /3️⃣/.test(text)) return 'dropship';
   if (/^4\b/.test(lower) || /4️⃣/.test(text)) return 'ecopack';
   if (/^5\b/.test(lower) || /5️⃣/.test(text)) return 'jose_handoff';
-  
+
   // Keyword fallback
   if (/\bfba\b|prep|amazon/i.test(text)) return 'fba_prep';
   if (/master ?case|container|contenedor/i.test(text)) return 'master_case';
   if (/drop ?ship/i.test(text)) return 'dropship';
   if (/eco ?pack/i.test(text)) return 'ecopack';
   if (/jose|hablar|talk to|human|humano|persona|owner/i.test(text)) return 'jose_handoff';
-  
+
   return null;
 }
