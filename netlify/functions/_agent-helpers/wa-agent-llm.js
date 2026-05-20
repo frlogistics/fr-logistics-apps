@@ -268,7 +268,11 @@ async function logCall(payload) {
         conversation_id: payload.conversationId || null,
         wa_number: payload.waNumber || null,
         model: MODEL_ID,
-        input_tokens_total: payload.inputTokensTotal || 0,
+        // input_tokens_total is GENERATED column = sum of system+user+context.
+        // We put the full input count in system_prompt_tokens (the majority).
+        system_prompt_tokens: payload.inputTokensTotal || 0,
+        user_message_tokens: 0,
+        context_tokens: 0,
         response_tokens: payload.responseTokens || 0,
         cost_usd: payload.costUsd || 0,
         response_text: payload.responseText ? payload.responseText.slice(0, 4000) : null,
