@@ -215,6 +215,43 @@ export function getFAQQuestion(faq, language) {
 }
 
 /**
+ * Returns the top-N highest-scoring FAQs above zero score, regardless of
+ * the MIN_SCORE_THRESHOLD. Used by the LLM layer to inject relevant FAQ
+ * content as context even when no single match is strong enough to answer
+ * directly with templates.
+ * 
+ * @param {string} text - User's message
+ * @param {string} language - 'es' or 'en' (lowercase)
+ * @param {number} n - max results (default 3)
+ * @returns {Promise<Array<{id, question, answer, score, priority}>>}
+ */
+export async function topNFAQs(text, language, n = 3) {
+  if (!text || text.trim().length < 3) return [];
+  const lang = (language || "en").toLowerCase();
+  const userTokens = tokenize(text);
+  if (userTokens.size === 0) return [];
+
+  const faqs = await loadActiveFAQs();
+  if (!faqs.length) return [];
+
+  const scored = faqs
+    .map(faq => ({
+      id: faq.id,
+      question: lang === "es" ? faq.question_es : faq.question_en,
+      answer: lang === "es" ? faq.answer_es : faq.answer_en,
+      score: scoreFAQ(faq, text, userTokens, lang),
+      priority: faq.priority,
+    }))
+    .filter(f => f.score > 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return (b.priority || 0) - (a.priority || 0);
+    });
+
+  return scored.slice(0, n);
+}
+
+/**
  * Manually invalidates the cache. Useful from admin tools when FAQs are edited.
  * Not exposed via HTTP yet — Sprint 5 will add a portal admin tab.
  */
