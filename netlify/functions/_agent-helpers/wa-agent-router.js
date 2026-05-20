@@ -28,6 +28,16 @@ import {
   markHandoff,
 } from "./wa-agent-db.js";
 import { sendAndRecord } from "./wa-agent-send.js";
+import {
+  extractEmail,
+  isValidEmail,
+  looksLikeName,
+  cleanName,
+  isCancellation,
+  isHumanRequest,
+  extractBoth,
+} from "./wa-agent-capture.js";
+import { sendHandoffEmail } from "./wa-agent-email-handoff.js";
 
 /**
  * Main entry point — called per inbound message.
@@ -47,6 +57,15 @@ export async function routeIncomingMessage(msg) {
     }
 
     const fromE164 = from.startsWith("+") ? from : `+${from}`;
+
+    // ─── STEP 0: Human shortcut ───────────────────────────────────
+    // If user types "humano" / "human" / "quiero hablar con jose" from ANY
+    // state, jump straight to handoff. This is a safety valve for users
+    // who don't want to navigate menus.
+    if (isHumanRequest(text)) {
+      console.log("[agent-router] human shortcut triggered");
+      return await handleHumanShortcut(msg);
+    }
 
     // ─── STEP 1: Kill switch ──────────────────────────────────────
     const disabled = await isAgentDisabled();
@@ -89,7 +108,21 @@ export async function routeIncomingMessage(msg) {
       return await handleMenuReply(existingConv, msg);
     }
 
-    // Branch D: active conversation in another state (qualifying, handoff_*)
+    // Branch D: active conversation in handoff_jose state
+    //   → Day 3: capture name + email, then email info@
+    if (existingConv?.state === "handoff_jose") {
+      return await handleHandoffCapture(existingConv, msg);
+    }
+
+    // Branch D2: handoff already completed (handoff_email or completed)
+    //   → soft acknowledgment, no further automated action
+    if (existingConv && ["handoff_email", "completed"].includes(existingConv.state)) {
+      console.log(`[agent-router] conv already in terminal state '${existingConv.state}', acknowledging silently`);
+      await updateConversationOnUserMessage(existingConv.id);
+      return;
+    }
+
+    // Branch D3: active conversation in another state (qualifying, etc.)
     //   → Sprint 2+ will handle these. For Sprint 1: silent, just log.
     if (existingConv) {
       console.log(`[agent-router] conv in state '${existingConv.state}', Sprint 1 does not handle yet`);
@@ -156,6 +189,84 @@ async function handleNewExistingClientMessage(existingClient, msg) {
   if (send.ok) {
     // Existing clients don't go through qualification flow — mark completed
     await recordAgentMessage(conv.id, "completed");
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// HANDLER: human shortcut — user typed "humano"/"human"/"hablar con jose"
+// Works from ANY state. If conversation exists, transitions to handoff_jose
+// and starts capture. If no conversation, creates new one straight in handoff_jose.
+// ─────────────────────────────────────────────────────────────────────
+async function handleHumanShortcut(msg) {
+  const { from, text, clientName } = msg;
+  const fromE164 = from.startsWith("+") ? from : `+${from}`;
+
+  // Look up existing conversation (any state, not just active)
+  const existingConv = await getActiveConversation(from);
+
+  // Detect language from this message or use existing conv's
+  let language;
+  if (existingConv?.language) {
+    language = existingConv.language.toUpperCase();
+  } else {
+    const d = detectLanguage(text, fromE164);
+    language = d.language === "UNKNOWN" ? "EN" : d.language;
+  }
+
+  // If conversation exists, transition it to handoff
+  if (existingConv) {
+    // If already in handoff capture, treat this as normal capture message
+    if (existingConv.state === "handoff_jose") {
+      return await handleHandoffCapture(existingConv, msg);
+    }
+
+    // Otherwise transition to handoff_jose
+    await updateConversationOnUserMessage(existingConv.id);
+    await markHandoff(existingConv.id, "human_shortcut", "handoff_jose");
+
+    const ack =
+      language === "ES"
+        ? TEMPLATES.handoff_jose_ack_es()
+        : TEMPLATES.handoff_jose_ack_en();
+    const send = await sendAndRecord({ to: from, text: ack, clientName: "Liam" });
+    if (send.ok) {
+      await recordAgentMessage(existingConv.id, "handoff_jose");
+      await setSubStateAndService(existingConv.id, "awaiting_name", "jose_handoff");
+    }
+    return;
+  }
+
+  // No conversation — create one straight in handoff_jose
+  const conv = await createConversation({
+    waNumber: from,
+    waProfileName: clientName,
+    firstMessage: text,
+    language,
+    languageSource: existingConv?.language ? "existing_conv" : "text_detect",
+    isExistingClient: false,
+    clientId: null,
+  });
+  if (!conv) return;
+
+  // Create lead row
+  const leadId = await createLeadFromConversation({
+    waNumber: from,
+    waProfileName: clientName,
+    language: language.toLowerCase(),
+    firstMessage: text,
+  });
+  if (leadId) await linkConversationToLead(conv.id, leadId);
+
+  await markHandoff(conv.id, "human_shortcut", "handoff_jose");
+
+  const ack =
+    language === "ES"
+      ? TEMPLATES.handoff_jose_ack_es()
+      : TEMPLATES.handoff_jose_ack_en();
+  const send = await sendAndRecord({ to: from, text: ack, clientName: "Liam" });
+  if (send.ok) {
+    await recordAgentMessage(conv.id, "handoff_jose");
+    await setSubStateAndService(conv.id, "awaiting_name", "jose_handoff");
   }
 }
 
@@ -307,8 +418,9 @@ async function handleMenuReply(conv, msg) {
     if (send.ok) {
       await recordAgentMessage(conv.id, "handoff_jose");
       await markHandoff(conv.id, "user_request_jose", "handoff_jose");
+      // Day 3: enter capture flow waiting for name
+      await setSubStateAndService(conv.id, "awaiting_name", "jose_handoff");
     }
-    // Capturing name + email in 2 more turns is Sprint 1 Day 3.
     return;
   }
 
@@ -329,6 +441,8 @@ async function handleMenuReply(conv, msg) {
     if (send.ok) {
       await recordAgentMessage(conv.id, "handoff_jose");
       await markHandoff(conv.id, `service_interest_${choice}`, "handoff_jose");
+      // Day 3: enter capture flow waiting for name
+      await setSubStateAndService(conv.id, "awaiting_name", choice);
     }
     return;
   }
@@ -372,4 +486,254 @@ async function updateConversationLanguage(conversationId, lang, source) {
     .from("wa_agent_conversations")
     .update({ language: lang, language_source: source })
     .eq("id", conversationId);
+}
+
+// Sets sub_state + captured_service in one call (Day 3 capture flow)
+async function setSubStateAndService(conversationId, subState, service) {
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
+    { auth: { persistSession: false } }
+  );
+  await sb
+    .from("wa_agent_conversations")
+    .update({ sub_state: subState, captured_service: service })
+    .eq("id", conversationId);
+}
+
+// Sets just sub_state
+async function setSubState(conversationId, subState) {
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
+    { auth: { persistSession: false } }
+  );
+  await sb
+    .from("wa_agent_conversations")
+    .update({ sub_state: subState })
+    .eq("id", conversationId);
+}
+
+// Updates captured name + email on the conversation
+async function setCapturedNameEmail(conversationId, name, email) {
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
+    { auth: { persistSession: false } }
+  );
+  const patch = {};
+  if (name) patch.captured_name = name;
+  if (email) patch.captured_email = email;
+  if (Object.keys(patch).length === 0) return;
+  await sb
+    .from("wa_agent_conversations")
+    .update(patch)
+    .eq("id", conversationId);
+}
+
+// Updates the linked wa_leads row with real name + email (replacing placeholder)
+async function updateLeadFromCapture(leadId, { name, email }) {
+  if (!leadId) return;
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
+    { auth: { persistSession: false } }
+  );
+  const patch = {};
+  if (name) patch.name = name;
+  if (email) patch.email = email;
+  if (Object.keys(patch).length === 0) return;
+  await sb
+    .from("wa_leads")
+    .update(patch)
+    .eq("id", leadId);
+}
+
+// Marks the email_sent_at timestamp (idempotency: don't email twice)
+async function markInfoEmailSent(conversationId) {
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
+    { auth: { persistSession: false } }
+  );
+  await sb
+    .from("wa_agent_conversations")
+    .update({
+      info_email_sent_at: new Date().toISOString(),
+      sub_state: "completed",
+      state: "handoff_email",
+    })
+    .eq("id", conversationId);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// HANDLER: capture flow — user is in handoff_jose state
+// We track sub_state: 'awaiting_name' → 'awaiting_email' → completed.
+// ─────────────────────────────────────────────────────────────────────
+async function handleHandoffCapture(conv, msg) {
+  const { from, text } = msg;
+  const language = (conv.language || "en").toUpperCase();
+
+  await updateConversationOnUserMessage(conv.id);
+
+  // Cancellation → graceful exit, partial email if any data captured
+  if (isCancellation(text)) {
+    const farewell =
+      language === "ES"
+        ? "Entendido. Si cambias de opinión, escríbeme cuando quieras."
+        : "Got it. If you change your mind, message me anytime.";
+    await sendAndRecord({ to: from, text: farewell, clientName: "Liam" });
+
+    // Send partial-info email so Jose knows someone reached out
+    if (!conv.info_email_sent_at) {
+      await sendHandoffEmail({
+        waNumber: from,
+        name: conv.captured_name || msg.clientName || "Lead (no name)",
+        email: conv.captured_email || "(no proporcionado)",
+        language: language.toLowerCase(),
+        serviceInterest: conv.captured_service || "other",
+        firstMessage: conv.first_message || "",
+        handoffReason: `${conv.handoff_reason || "user_request_jose"}_cancelled_capture`,
+        conversationId: conv.id,
+      });
+      await markInfoEmailSent(conv.id);
+    }
+    return;
+  }
+
+  // Try to extract both name and email from the message at once
+  const both = extractBoth(text);
+
+  // ─── SUB-STATE: awaiting_name ───────────────────────────────────
+  if (!conv.sub_state || conv.sub_state === "awaiting_name") {
+    // If user sent ONLY an email (no name yet), capture email and ask for name
+    if (both.email && !both.name) {
+      await setCapturedNameEmail(conv.id, null, both.email);
+      const askName =
+        language === "ES"
+          ? `Gracias. Solo me falta tu nombre, ¿cuál es?`
+          : `Thanks. I just need your name now — what is it?`;
+      const send = await sendAndRecord({ to: from, text: askName, clientName: "Liam" });
+      if (send.ok) {
+        await recordAgentMessage(conv.id);
+        await setSubState(conv.id, "awaiting_name_after_email");
+      }
+      return;
+    }
+
+    // If user sent BOTH name and email in one message — jackpot, finish
+    if (both.name && both.email) {
+      await setCapturedNameEmail(conv.id, both.name, both.email);
+      await updateLeadFromCapture(conv.lead_id, { name: both.name, email: both.email });
+      return await completeHandoff(conv, msg, both.name, both.email);
+    }
+
+    // Only a name? Save it and ask for email
+    if (both.name) {
+      await setCapturedNameEmail(conv.id, both.name, null);
+      await updateLeadFromCapture(conv.lead_id, { name: both.name });
+      const askEmail =
+        language === "ES"
+          ? TEMPLATES.handoff_jose_ask_email_es(both.name)
+          : TEMPLATES.handoff_jose_ask_email_en(both.name);
+      const send = await sendAndRecord({ to: from, text: askEmail, clientName: "Liam" });
+      if (send.ok) {
+        await recordAgentMessage(conv.id);
+        await setSubState(conv.id, "awaiting_email");
+      }
+      return;
+    }
+
+    // Couldn't extract anything → re-ask politely
+    const reAsk =
+      language === "ES"
+        ? "¿Puedes darme tu nombre completo, por favor?"
+        : "Could you share your full name, please?";
+    const send = await sendAndRecord({ to: from, text: reAsk, clientName: "Liam" });
+    if (send.ok) await recordAgentMessage(conv.id);
+    return;
+  }
+
+  // ─── SUB-STATE: awaiting_name_after_email ───────────────────────
+  // We already have email, just need name
+  if (conv.sub_state === "awaiting_name_after_email") {
+    if (both.name) {
+      await setCapturedNameEmail(conv.id, both.name, null);
+      await updateLeadFromCapture(conv.lead_id, { name: both.name });
+      return await completeHandoff(conv, msg, both.name, conv.captured_email);
+    }
+
+    const reAsk =
+      language === "ES"
+        ? "Solo necesito tu nombre, ¿puedes escribírmelo?"
+        : "I just need your name — could you type it out?";
+    const send = await sendAndRecord({ to: from, text: reAsk, clientName: "Liam" });
+    if (send.ok) await recordAgentMessage(conv.id);
+    return;
+  }
+
+  // ─── SUB-STATE: awaiting_email ──────────────────────────────────
+  if (conv.sub_state === "awaiting_email") {
+    if (both.email && isValidEmail(both.email)) {
+      await setCapturedNameEmail(conv.id, null, both.email);
+      await updateLeadFromCapture(conv.lead_id, { email: both.email });
+      return await completeHandoff(conv, msg, conv.captured_name, both.email);
+    }
+
+    // No email or invalid format — re-ask
+    const reAsk =
+      language === "ES"
+        ? "No reconozco eso como un email válido. ¿Puedes verificarlo? (ej. nombre@empresa.com)"
+        : "I don't recognize that as a valid email. Could you double-check? (e.g. name@company.com)";
+    const send = await sendAndRecord({ to: from, text: reAsk, clientName: "Liam" });
+    if (send.ok) await recordAgentMessage(conv.id);
+    return;
+  }
+
+  // ─── SUB-STATE: completed or unknown ────────────────────────────
+  // Already finished capture — just acknowledge and stay silent
+  console.log(`[agent-router] handoff_jose with sub_state '${conv.sub_state}' — no action`);
+}
+
+// Final step of the capture flow: send confirmation + email info@
+async function completeHandoff(conv, msg, name, email) {
+  const { from } = msg;
+  const language = (conv.language || "en").toUpperCase();
+
+  // 1. Send final confirmation to user
+  const done =
+    language === "ES"
+      ? TEMPLATES.handoff_jose_complete_es(name)
+      : TEMPLATES.handoff_jose_complete_en(name);
+  await sendAndRecord({ to: from, text: done, clientName: "Liam" });
+
+  // 2. Email info@fr-logistics.net (idempotency check)
+  if (!conv.info_email_sent_at) {
+    const emailResult = await sendHandoffEmail({
+      waNumber: from,
+      name,
+      email,
+      language: language.toLowerCase(),
+      serviceInterest: conv.captured_service || "other",
+      firstMessage: conv.first_message || "",
+      handoffReason: conv.handoff_reason || "user_request_jose",
+      conversationId: conv.id,
+    });
+
+    if (emailResult.ok) {
+      console.log(`[agent-router] handoff email sent for conv ${conv.id}`);
+    } else {
+      console.error(`[agent-router] handoff email FAILED for conv ${conv.id}: ${emailResult.error}`);
+    }
+  } else {
+    console.log(`[agent-router] info_email already sent for conv ${conv.id}, skipping`);
+  }
+
+  // 3. Mark conversation as completed (state=handoff_email, sub_state=completed)
+  await markInfoEmailSent(conv.id);
 }
