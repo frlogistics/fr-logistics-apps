@@ -19,10 +19,19 @@ import { createClient } from "@supabase/supabase-js";
 // CONFIG
 // ─────────────────────────────────────────────────────────────────────
 
-// Minimum number of keyword matches to consider a FAQ "hit"
-// Set to 1 — single strong keyword is enough (e.g. "hazmat" → hazmat FAQ).
-// We bias toward responding rather than escalating.
-const MIN_SCORE_THRESHOLD = 1;
+// Minimum number of keyword matches to consider a FAQ "hit".
+// Hybrid threshold by priority:
+//   - FAQ priority >= HIGH_PRIORITY_CUTOFF → score >= MIN_SCORE_HIGH_PRIORITY
+//   - FAQ priority <  HIGH_PRIORITY_CUTOFF → score >= MIN_SCORE_LOW_PRIORITY
+// 
+// Rationale: critical FAQs (rates, hours, where, services, talk to human)
+// have priority >= 9 and should fire on a single strong keyword. Lower-priority
+// FAQs (wholesale, marketplaces, insurance, etc.) require 2+ matches to avoid
+// stealing nuanced questions from the LLM (e.g. "tengo una marca de cremas..."
+// shouldn't match "wholesale" just because of the word "marca").
+const HIGH_PRIORITY_CUTOFF = 9;
+const MIN_SCORE_HIGH_PRIORITY = 1;
+const MIN_SCORE_LOW_PRIORITY = 2;
 
 // Cache active FAQs for the warm Lambda lifecycle (~5-15 min between cold starts)
 let _faqCache = null;
@@ -181,8 +190,14 @@ export async function matchFAQ(text, language) {
     score: scoreFAQ(faq, text, userTokens, lang),
   }));
 
-  // Filter to those at or above threshold
-  const candidates = scored.filter(f => f.score >= MIN_SCORE_THRESHOLD);
+  // Filter using hybrid threshold based on priority
+  const candidates = scored.filter(f => {
+    if (f.score === 0) return false;
+    const minScore = (f.priority || 0) >= HIGH_PRIORITY_CUTOFF
+      ? MIN_SCORE_HIGH_PRIORITY
+      : MIN_SCORE_LOW_PRIORITY;
+    return f.score >= minScore;
+  });
   if (!candidates.length) return null;
 
   // Sort by score DESC, then priority DESC
