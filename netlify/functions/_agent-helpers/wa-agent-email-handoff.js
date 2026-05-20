@@ -32,6 +32,16 @@ const SERVICE_LABELS = {
  * @param {string} payload.firstMessage   — The original message that started conv
  * @param {string} payload.handoffReason  — 'user_request_jose' | 'service_interest_*' etc
  * @param {string} payload.conversationId — UUID for traceability
+ * @param {object} payload.qualification — Optional Sprint 2 captured data
+ *   {
+ *     volume?: { normalized, raw },
+ *     country?: { normalized, raw },
+ *     platforms?: { normalized, raw },
+ *     stage?: { normalized, raw },
+ *     product_type?: { normalized, raw },
+ *     integration?: { normalized, raw },
+ *     eco_focus?: { normalized, raw },
+ *   }
  * @returns {Promise<{ok: boolean, error?: string}>}
  */
 export async function sendHandoffEmail(payload) {
@@ -49,6 +59,7 @@ export async function sendHandoffEmail(payload) {
     firstMessage = "",
     handoffReason = "unknown",
     conversationId = "",
+    qualification = {},
   } = payload;
 
   const phoneClean = waNumber.startsWith("+") ? waNumber : `+${waNumber}`;
@@ -81,6 +92,7 @@ export async function sendHandoffEmail(payload) {
     portalLink,
     leadCaptureLink,
     conversationId,
+    qualification,
   });
 
   try {
@@ -122,11 +134,47 @@ export async function sendHandoffEmail(payload) {
 function renderEmailHtml({
   name, email, phone, phoneRaw, language, serviceLabel,
   firstMessage, handoffReason, waReplyLink, portalLink, leadCaptureLink,
-  conversationId,
+  conversationId, qualification = {},
 }) {
   const esc = (s) => String(s ?? "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  // Build qualification HTML if any data is present
+  const qualifyFields = [
+    { key: 'volume',       label: 'Volume / Volumen' },
+    { key: 'country',      label: 'Country / País' },
+    { key: 'platforms',    label: 'Platforms / Plataformas' },
+    { key: 'stage',        label: 'Stage / Etapa' },
+    { key: 'product_type', label: 'Product type / Tipo de producto' },
+    { key: 'integration',  label: 'Integration / Integración' },
+    { key: 'eco_focus',    label: 'Eco focus / Foco eco' },
+  ];
+  const presentFields = qualifyFields.filter(f => qualification[f.key]);
+  
+  let qualifySectionHtml = '';
+  if (presentFields.length > 0) {
+    qualifySectionHtml = `
+      <!-- Qualification section -->
+      <tr><td style="padding:8px 32px 16px;">
+        <div style="font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">📋 Qualification details</div>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;overflow:hidden;">
+          ${presentFields.map((f, i) => {
+            const q = qualification[f.key];
+            const norm = q.normalized;
+            const raw = q.raw;
+            const value = norm
+              ? `<span style="font-weight:600;color:#065f46;">${esc(norm)}</span>${raw && raw !== norm ? ` <span style="color:#6b7280;font-size:12px;">(user said: "${esc(raw)}")</span>` : ''}`
+              : `<span style="color:#374151;font-style:italic;">"${esc(raw)}"</span> <span style="color:#9ca3af;font-size:12px;">— not normalized</span>`;
+            const borderStyle = i < presentFields.length - 1 ? 'border-bottom:1px solid #d1fae5;' : '';
+            return `<tr>
+              <td style="padding:10px 14px;${borderStyle}width:180px;color:#065f46;font-size:13px;font-weight:600;">${esc(f.label)}</td>
+              <td style="padding:10px 14px;${borderStyle}font-size:14px;color:#111827;">${value}</td>
+            </tr>`;
+          }).join('')}
+        </table>
+      </td></tr>`;
+  }
 
   return `
 <!DOCTYPE html>
@@ -161,6 +209,8 @@ function renderEmailHtml({
               <td style="padding:10px 0;font-size:13px;color:#6b7280;font-family:monospace;">${esc(handoffReason)}</td></tr>
         </table>
       </td></tr>
+
+      ${qualifySectionHtml}
 
       <!-- Original message -->
       <tr><td style="padding:8px 32px 16px;">
