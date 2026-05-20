@@ -46,6 +46,7 @@ import {
   getSequenceLength,
   buildQualificationSummary,
 } from "./wa-agent-qualify.js";
+import { matchFAQ, getFAQAnswer, getFAQQuestion } from "./wa-agent-faq-match.js";
 
 /**
  * Main entry point — called per inbound message.
@@ -475,7 +476,37 @@ async function handleMenuReply(conv, msg) {
     return;
   }
 
-  // Unparseable reply to menu — gentle re-ask
+  // ───────────────────────────────────────────────────────────────
+  // Sprint 3: free-text reply (not 1-5) — try FAQ match before re-asking
+  // ───────────────────────────────────────────────────────────────
+  const langLower = language.toLowerCase();
+  const faqHit = await matchFAQ(text, langLower);
+
+  if (faqHit) {
+    console.log(`[router] FAQ matched in greeted state: id=${faqHit.id} score=${faqHit.score} q="${getFAQQuestion(faqHit, langLower)}"`);
+
+    const answer = getFAQAnswer(faqHit, langLower);
+    const sendAns = await sendAndRecord({ to: from, text: answer, clientName: "Liam" });
+    if (!sendAns.ok) {
+      console.error("[router] FAQ answer send failed");
+      return;
+    }
+
+    // After the FAQ answer, re-offer the menu (decision: Path B — keep lead engaged)
+    const followup =
+      language === "ES"
+        ? TEMPLATES.faq_followup_menu_es()
+        : TEMPLATES.faq_followup_menu_en();
+    const sendMenu = await sendAndRecord({ to: from, text: followup, clientName: "Liam" });
+    if (sendMenu.ok) {
+      await recordAgentMessage(conv.id);  // stay in 'greeted'
+      // Record which FAQ was served (lightweight audit — no new column needed)
+      await updateConversationFAQHit(conv.id, faqHit.id);
+    }
+    return;
+  }
+
+  // No FAQ match either — gentle re-ask
   const retry =
     language === "ES"
       ? "No te entendí 🤔 Responde 1, 2, 3, 4 o 5 para continuar."
@@ -484,6 +515,26 @@ async function handleMenuReply(conv, msg) {
   const send = await sendAndRecord({ to: from, text: retry, clientName: "Liam" });
   if (send.ok) {
     await recordAgentMessage(conv.id);  // stay in greeted
+  }
+}
+
+// Lightweight audit — track the last FAQ Liam served (if column exists)
+// Soft-fail if the column isn't there yet (migration optional).
+async function updateConversationFAQHit(conversationId, faqId) {
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const sb = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY,
+      { auth: { persistSession: false } }
+    );
+    await sb
+      .from("wa_agent_conversations")
+      .update({ last_faq_id: faqId })
+      .eq("id", conversationId);
+  } catch (e) {
+    // Column may not exist yet — non-fatal, audit only
+    console.log(`[router] last_faq_id update skipped: ${e.message}`);
   }
 }
 
