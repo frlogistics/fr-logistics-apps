@@ -317,7 +317,7 @@ async function handleMenuReply(conv, msg) {
   if (choice && ["fba_prep", "master_case", "dropship", "ecopack"].includes(choice)) {
     const placeholderMsg =
       language === "ES"
-        ? `¡Genial! Para darte la mejor info de ${labelService(choice, "ES")}, te paso con Jose Fuentes.\n\n¿Podés dejarme tu nombre y email así él te contacta?`
+        ? `¡Genial! Para darte la mejor información sobre ${labelService(choice, "ES")}, te paso con Jose Fuentes.\n\n¿Puedes dejarme tu nombre y email para que él te contacte?`
         : `Awesome! To give you the best info on ${labelService(choice, "EN")}, I'm connecting you with Jose Fuentes.\n\nCould you share your name and email so he can reach out?`;
 
     const send = await sendAndRecord({
