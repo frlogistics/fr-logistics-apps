@@ -46,7 +46,8 @@ import {
   getSequenceLength,
   buildQualificationSummary,
 } from "./wa-agent-qualify.js";
-import { matchFAQ, getFAQAnswer, getFAQQuestion } from "./wa-agent-faq-match.js";
+import { matchFAQ, getFAQAnswer, getFAQQuestion, topNFAQs } from "./wa-agent-faq-match.js";
+import { askLLM } from "./wa-agent-llm.js";
 
 /**
  * Main entry point — called per inbound message.
@@ -506,7 +507,57 @@ async function handleMenuReply(conv, msg) {
     return;
   }
 
-  // No FAQ match either — gentle re-ask
+  // ───────────────────────────────────────────────────────────────
+  // Sprint 4: FAQ matcher didn't find a strong match. Try LLM.
+  // LLM is invisible to the lead — same Liam voice.
+  // If LLM is gated (kill switch) or errors, fall through to re-ask.
+  // ───────────────────────────────────────────────────────────────
+  
+  // Build LLM context: top 3 FAQ candidates + lead data + history
+  const llmTopFAQs = await topNFAQs(text, langLower, 3);
+  const llmHistory = await loadRecentHistory(from, 5);
+  const llmLeadData = {
+    name:       conv.captured_name || null,
+    email:      conv.captured_email || null,
+    service:    conv.captured_service || null,
+    volume:     conv.captured_volume || conv.captured_volume_raw || null,
+    country:    conv.captured_country || conv.captured_country_raw || null,
+    platforms:  conv.captured_platforms || conv.captured_platforms_raw || null,
+  };
+
+  const llmResult = await askLLM({
+    userMessage: text,
+    language: langLower,
+    history: llmHistory,
+    faqContext: llmTopFAQs,
+    leadData: llmLeadData,
+    conversationId: conv.id,
+    waNumber: from,
+  });
+
+  if (llmResult.text) {
+    // LLM produced a reply — send it, then re-offer menu (Sprint 3 pattern)
+    const sendLlm = await sendAndRecord({ to: from, text: llmResult.text, clientName: "Liam" });
+    if (!sendLlm.ok) {
+      console.error("[router] LLM reply send failed");
+      return;
+    }
+
+    // Re-offer the menu so the conversation moves toward conversion
+    const followup =
+      language === "ES"
+        ? TEMPLATES.faq_followup_menu_es()
+        : TEMPLATES.faq_followup_menu_en();
+    const sendMenu = await sendAndRecord({ to: from, text: followup, clientName: "Liam" });
+    if (sendMenu.ok) {
+      await recordAgentMessage(conv.id);  // stay in 'greeted'
+    }
+    return;
+  }
+
+  console.log(`[router] LLM unavailable (reason=${llmResult.reason}), falling back to re-ask`);
+
+  // LLM not available — gentle re-ask (original Sprint 3 fallback)
   const retry =
     language === "ES"
       ? "No te entendí 🤔 Responde 1, 2, 3, 4 o 5 para continuar."
@@ -515,6 +566,43 @@ async function handleMenuReply(conv, msg) {
   const send = await sendAndRecord({ to: from, text: retry, clientName: "Liam" });
   if (send.ok) {
     await recordAgentMessage(conv.id);  // stay in greeted
+  }
+}
+
+// Load the last N user/assistant messages from wa_messages for LLM context.
+// We use from_number to filter by the lead's wa number (since conversation_id
+// isn't a column in wa_messages).
+async function loadRecentHistory(waNumber, n = 5) {
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const sb = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY,
+      { auth: { persistSession: false } }
+    );
+    // Inbound = from lead; outbound = from Liam. Filter by the lead's number on
+    // either side of the conversation. Last N*2 messages, then take last N
+    // (oldest first for LLM context).
+    const { data, error } = await sb
+      .from("wa_messages")
+      .select("direction, body, from_number, to_number, timestamp")
+      .or(`from_number.eq.${waNumber},to_number.eq.${waNumber}`)
+      .order("timestamp", { ascending: false })
+      .limit(n * 2);
+
+    if (error || !data) return [];
+
+    return data
+      .reverse()
+      .map(m => ({
+        role: m.direction === "inbound" ? "user" : "assistant",
+        text: m.body || "",
+      }))
+      .filter(m => m.text)
+      .slice(-n);
+  } catch (e) {
+    console.log(`[router] history load failed: ${e.message}`);
+    return [];
   }
 }
 
