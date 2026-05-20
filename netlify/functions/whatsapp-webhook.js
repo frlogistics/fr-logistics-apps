@@ -20,7 +20,7 @@ import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
 
 // [NEW Sprint 1] Liam agent router
-import { routeIncomingMessage } from "../functions-helpers/wa-agent-router.js";
+import { routeIncomingMessage } from "./_agent-helpers/wa-agent-router.js";
 
 const VERIFY_TOKEN = process.env.WHATSAPP_WEBHOOK_SECRET || "frlogistics_wa_2026";
 const RESEND_KEY   = process.env.RESEND_API_KEY;
