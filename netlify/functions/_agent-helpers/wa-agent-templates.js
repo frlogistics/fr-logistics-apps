@@ -34,14 +34,14 @@ Podemos hablar de:
 2️⃣ Master Case (recepción de contenedores)
 3️⃣ Dropshipment (sin inventario)
 4️⃣ EcoPack+ (envíos sostenibles)
-5️⃣ Otro / hablar con Jose Fuentes
+5️⃣ Otro / hablar con Jose
 
 ¿Cómo te puedo ayudar hoy?`,
 
   greet_en: () =>
 `Hi there! 👋
 
-I'm Liam, FR-Logistics Miami's logistics assistant.
+I'm Liam, FR-Logistics Miami's virtual assistant.
 I'm here 24/7 to help you.
 
 We can talk about:
@@ -49,7 +49,7 @@ We can talk about:
 2️⃣ Master Case (container receiving)
 3️⃣ Dropshipment (no inventory)
 4️⃣ EcoPack+ (sustainable shipping)
-5️⃣ Other / talk to Jose Fuentes
+5️⃣ Other / talk to Jose
 
 How can I help you today?`,
 
@@ -71,7 +71,7 @@ We can talk about:
 2️⃣ Master Case
 3️⃣ Dropshipment
 4️⃣ EcoPack+
-5️⃣ Other / talk to Jose Fuentes
+5️⃣ Other / talk to Jose
 
 How can I help?`,
 
@@ -84,7 +84,7 @@ Podemos hablar de:
 2️⃣ Master Case
 3️⃣ Dropshipment
 4️⃣ EcoPack+
-5️⃣ Otro / hablar con Jose Fuentes
+5️⃣ Otro / hablar con Jose
 
 ¿Cómo te puedo ayudar?`,
 
@@ -101,9 +101,71 @@ Perdón, no entendí — responde EN o ES.`,
 2️⃣ Master Case
 3️⃣ Dropshipment
 4️⃣ EcoPack+
-5️⃣ Other / talk to Jose Fuentes
+5️⃣ Other / talk to Jose
 
 How can I help?`,
+
+  // ───────────────────────────────────────────────────────────────
+  // QUALIFICATION FLOW (Sprint 2) — intros + transitions
+  // The actual questions live in wa-agent-qualify.js (one per service).
+  // These templates wrap the flow with friendly text.
+  // ───────────────────────────────────────────────────────────────
+
+  // After user picks 1-4 from main menu — intro to the 3 questions
+  qualify_intro_fba_prep_es: () =>
+`¡Excelente elección! 📦
+
+Para darte la mejor info sobre *FBA Prep*, déjame hacerte 3 preguntas rápidas. Después te conecto con Jose Fuentes para que te dé una cotización personalizada.`,
+
+  qualify_intro_fba_prep_en: () =>
+`Excellent choice! 📦
+
+To give you the best info on *FBA Prep*, let me ask you 3 quick questions. Then I'll connect you with Jose Fuentes for a personalized quote.`,
+
+  qualify_intro_master_case_es: () =>
+`¡Excelente! 📥
+
+Para darte la mejor info sobre *Master Case Receiving*, déjame hacerte 3 preguntas rápidas. Después te conecto con Jose Fuentes para una cotización.`,
+
+  qualify_intro_master_case_en: () =>
+`Excellent! 📥
+
+To give you the best info on *Master Case Receiving*, let me ask you 3 quick questions. Then I'll connect you with Jose Fuentes for a quote.`,
+
+  qualify_intro_dropship_es: () =>
+`¡Genial! 🚚
+
+Para darte la mejor info sobre *Dropshipment*, déjame hacerte 3 preguntas rápidas. Después te conecto con Jose Fuentes para una cotización.`,
+
+  qualify_intro_dropship_en: () =>
+`Awesome! 🚚
+
+To give you the best info on *Dropshipment*, let me ask you 3 quick questions. Then I'll connect you with Jose Fuentes for a quote.`,
+
+  qualify_intro_ecopack_es: () =>
+`¡Me encanta! 🌱
+
+Para darte la mejor info sobre *EcoPack+*, déjame hacerte 3 preguntas rápidas. Después te conecto con Jose Fuentes para una cotización.`,
+
+  qualify_intro_ecopack_en: () =>
+`Love it! 🌱
+
+To give you the best info on *EcoPack+*, let me ask you 3 quick questions. Then I'll connect you with Jose Fuentes for a quote.`,
+
+  // After Q3 answered — bridge to contact capture
+  qualify_done_es: () =>
+`¡Perfecto, gracias! 🙏
+
+Ya tengo lo que necesito para que Jose Fuentes te prepare una propuesta personalizada.
+
+¿Me dejas tu nombre y email para que te contacte?`,
+
+  qualify_done_en: () =>
+`Perfect, thanks! 🙏
+
+I have everything Jose Fuentes needs to prepare a personalized proposal for you.
+
+Could you share your name and email so he can reach out?`,
 
   // ───────────────────────────────────────────────────────────────
   // HANDOFF TO JOSE (option 5 or explicit request)
