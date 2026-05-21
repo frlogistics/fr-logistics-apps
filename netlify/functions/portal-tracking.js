@@ -3,18 +3,15 @@
 //
 // Returns the last 30 days of SHIPPED orders for the client linked to
 // ?portal_user=<email>, filtering according to fr_clients.billing_source:
-//   - ss_cf1   → /orders?customField1=<value> (ShipStation filters server-side)
-//   - ss_store → /orders?storeId=<id> (resolved from store_name + aliases)
+//   - ss_cf1   → /orders?customField1=<value>&orderStatus=shipped
+//   - ss_store → /orders?storeId=<id>&orderStatus=shipped
 //   - portal   → 'unsupported' mode (no ShipStation integration yet)
 //
-// Why /orders and not /shipments:
-// ShipStation's /shipments endpoint does NOT include customField1 in its
-// response — that field lives on the Order object, not the Shipment.
-// Filtering /shipments by CF1 client-side returns 0 because the value
-// is always null. Using /orders instead solves this AND lets ShipStation
-// do the filtering server-side, which is faster and more accurate.
-// Each /orders result includes a `shipments` array with tracking data
-// once the label has been bought.
+// Why /orders (not /shipments):
+//   ShipStation's /shipments endpoint does NOT include customField1 in its
+//   response — that field lives on the Order object. /orders supports
+//   server-side filtering by customField1 AND includes tracking + shipping
+//   data on shipped orders, so a single call gives us everything we need.
 
 const ALLOWED_ORIGINS = [
   'https://fr-logistics.net',
@@ -65,9 +62,9 @@ async function sbFetch(path) {
 }
 
 // Pull orders from ShipStation matching the supplied filter params.
-// ShipStation's /orders endpoint supports customField1, storeId, and date
-// filters server-side, so we don't need to download every order in the
-// warehouse and filter client-side (which was the previous bug).
+// ShipStation /orders supports customField1, storeId, orderStatus, and
+// shipDateStart/End server-side, so we don't need to download every order
+// and filter client-side.
 async function fetchOrders(filterParams) {
   const all = [];
   let page = 1;
@@ -92,35 +89,6 @@ async function fetchOrders(filterParams) {
     const totalPages = data.pages || 1;
     if (page >= totalPages || orders.length < pageSize) break;
     page++;
-  }
-  return all;
-}
-
-// Fetch shipments for a specific list of orderIds. ShipStation /shipments
-// supports comma-separated orderIds in the query string.
-async function fetchShipmentsForOrders(orderIds) {
-  if (!orderIds.length) return [];
-  const all = [];
-  // Chunk into batches of 100 to keep URLs short.
-  for (let i = 0; i < orderIds.length; i += 100) {
-    const chunk = orderIds.slice(i, i + 100);
-    let page = 1;
-    while (page <= 10) {
-      const params = new URLSearchParams({
-        orderId: chunk.join(','),
-        pageSize: '500',
-        page: String(page),
-      });
-      const url = `${SS_BASE}/shipments?${params.toString()}`;
-      const res = await fetch(url, { headers: ssHeaders() });
-      if (!res.ok) throw new Error(`ShipStation /shipments ${res.status}`);
-      const data = await res.json();
-      const shipments = data.shipments || [];
-      all.push(...shipments);
-      const totalPages = data.pages || 1;
-      if (page >= totalPages || shipments.length < 500) break;
-      page++;
-    }
   }
   return all;
 }
@@ -189,7 +157,6 @@ exports.handler = async (event) => {
     }
     const client = clients[0];
     const billingSource = (client.billing_source || '').toLowerCase().trim();
-    // Display name in the response uses company (canonical) when available.
     const displayName = client.company || client.name;
 
     // 2. Cache check.
@@ -202,14 +169,13 @@ exports.handler = async (event) => {
       };
     }
 
-    // 3. Compute date window: last 30 days, in ISO with time to match
-    //    ShipStation's expected format for orderDateStart.
+    // 3. Date window.
     const now = new Date();
     const start = new Date(now.getTime() - WINDOW_DAYS * 24 * 60 * 60 * 1000);
     const startDate = fmtDate(start);
     const endDate = fmtDate(now);
 
-    // 4. Branch by billing_source.
+    // 4. Portal mode: no ShipStation integration yet.
     if (billingSource === 'portal') {
       const payload = {
         client: { id: client.id, name: displayName },
@@ -229,15 +195,12 @@ exports.handler = async (event) => {
       };
     }
 
-    // 5. Build the /orders filter based on billing_source.
-    //    /orders supports customField1 and storeId filtering server-side,
-    //    which is more efficient and avoids the /shipments customField1
-    //    null bug.
-    let filterParams = {
-      // Use shipDateStart/End on /orders to scope to recently-shipped
-      // orders, matching the 30-day "shipped" window semantics.
-      shipDateStart: startDate,
-      shipDateEnd: endDate,
+    // 5. Build the /orders filter. We use orderDateStart/End instead of
+    //    shipDateStart/End because /orders supports them more reliably,
+    //    and orderStatus=shipped already constrains us to shipped orders.
+    const filterParams = {
+      orderDateStart: startDate,
+      orderDateEnd: endDate,
       orderStatus: 'shipped',
     };
 
@@ -256,60 +219,38 @@ exports.handler = async (event) => {
       if (!storeIds.length) {
         return { statusCode: 404, headers, body: JSON.stringify({ error: `No ShipStation store matched "${storeName}"` }) };
       }
-      // ShipStation /orders accepts one storeId per call. For multi-store
-      // clients (aliases), we'd need parallel calls. For now most clients
-      // map to one store, so take the first match.
       filterParams.storeId = storeIds[0];
     } else {
       return { statusCode: 400, headers, body: JSON.stringify({ error: `Unsupported billing_source: ${billingSource}` }) };
     }
 
-    // 6. Pull matching orders from ShipStation.
+    // 6. Pull matching orders. Each shipped order in ShipStation includes
+    //    the trackingNumber, carrierCode, serviceCode, and shipDate of its
+    //    primary shipment — we don't need a second call to /shipments.
     const orders = await fetchOrders(filterParams);
 
-    // 7. For each order, look up its shipments to get tracking + ship date.
-    //    /orders does NOT include shipments inline; we have to fetch them.
-    const orderIds = orders.map((o) => o.orderId).filter(Boolean);
-    const allShipments = await fetchShipmentsForOrders(orderIds);
-
-    // Index shipments by orderId so we can pair them back with orders.
-    const shipmentsByOrder = new Map();
-    for (const sh of allShipments) {
-      if (!shipmentsByOrder.has(sh.orderId)) shipmentsByOrder.set(sh.orderId, []);
-      shipmentsByOrder.get(sh.orderId).push(sh);
-    }
-
-    // 8. Project each order to one row. If an order has multiple shipments
-    //    (split shipments), take the most recent non-voided one.
-    const rows = orders.map((o) => {
-      const shipments = (shipmentsByOrder.get(o.orderId) || [])
-        .filter((sh) => !sh.voided && sh.trackingNumber);
-      if (shipments.length === 0) return null;
-      // Most recent shipment by shipDate.
-      shipments.sort((a, b) => {
-        const da = a.shipDate ? new Date(a.shipDate).getTime() : 0;
-        const db = b.shipDate ? new Date(b.shipDate).getTime() : 0;
-        return db - da;
+    // 7. Project each shipped order to one tracking row.
+    const rows = orders
+      .filter((o) => o.trackingNumber)  // ignore orders that haven't been labeled yet
+      .map((o) => {
+        const carrier = o.carrierCode || '';
+        const tn = o.trackingNumber || '';
+        return {
+          orderNumber: o.orderNumber || '',
+          orderDate: o.orderDate || o.createDate || '',
+          shipDate: o.shipDate || '',
+          recipient: (o.shipTo && o.shipTo.name) || '',
+          destination: o.shipTo
+            ? [o.shipTo.city, o.shipTo.state].filter(Boolean).join(', ')
+            : '',
+          country: (o.shipTo && o.shipTo.country) || '',
+          carrier,
+          service: o.serviceCode || '',
+          trackingNumber: tn,
+          trackingUrl: trackingUrl(carrier, tn),
+          status: 'Shipped',
+        };
       });
-      const sh = shipments[0];
-      const carrier = sh.carrierCode || o.carrierCode || '';
-      const tn = sh.trackingNumber || '';
-      return {
-        orderNumber: o.orderNumber || '',
-        orderDate: o.orderDate || o.createDate || '',
-        shipDate: sh.shipDate || '',
-        recipient: (o.shipTo && o.shipTo.name) || (sh.shipTo && sh.shipTo.name) || '',
-        destination: o.shipTo
-          ? [o.shipTo.city, o.shipTo.state].filter(Boolean).join(', ')
-          : '',
-        country: (o.shipTo && o.shipTo.country) || '',
-        carrier,
-        service: sh.serviceCode || o.serviceCode || '',
-        trackingNumber: tn,
-        trackingUrl: trackingUrl(carrier, tn),
-        status: 'Shipped',
-      };
-    }).filter(Boolean);
 
     // Sort by shipDate desc (most recent first).
     rows.sort((a, b) => {
@@ -318,7 +259,7 @@ exports.handler = async (event) => {
       return db - da;
     });
 
-    // 9. KPIs.
+    // 8. KPIs.
     const uniqueCarriers = new Set(rows.map((r) => r.carrier).filter(Boolean));
     const kpis = {
       totalShipments: rows.length,
