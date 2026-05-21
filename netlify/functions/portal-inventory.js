@@ -2,7 +2,7 @@
 // FR-Logistics Client Portal — Fase 2, Inventory tab
 // Returns the inventory in SkuVault that belongs to the client linked to
 // ?portal_user=<email>, filtered by the SkuVault product field "Client"
-// matching fr_clients.name exactly.
+// matching fr_clients.company (canonical company name) exactly.
 //
 // Pattern: calques inventory.js (the internal dashboard's SkuVault proxy),
 // adds the portal_user → client resolution from portal-orders-list.js, and
@@ -124,9 +124,13 @@ exports.handler = async (event) => {
   const [tenantToken, userToken] = svToken.split('|');
 
   try {
-    // 1. Resolve client by portal_user.
+    // 1. Resolve client by portal_user. We SELECT company alongside id+name
+    //    because SkuVault tags products with the canonical company name
+    //    (e.g. "JDK Network LLC"), not the contact name (e.g. "Jose Fuentes
+    //    (JDK)"). Without company in the SELECT, the filter below silently
+    //    falls back to client.name and returns zero matches.
     const clientRes = await sbFetch(
-      `fr_clients?portal_user=eq.${encodeURIComponent(portalUser)}&select=id,name`
+      `fr_clients?portal_user=eq.${encodeURIComponent(portalUser)}&select=id,name,company`
     );
     if (!clientRes.ok) {
       const t = await clientRes.text();
@@ -137,6 +141,8 @@ exports.handler = async (event) => {
       return { statusCode: 404, headers, body: JSON.stringify({ error: 'No client linked to this portal user' }) };
     }
     const client = clients[0];
+    // SkuVault product.Client = fr_clients.company (canonical). Fall back to
+    // name only for legacy rows where company is empty.
     const clientName = client.company || client.name;
 
     // 2. Per-client cache check.
@@ -234,7 +240,10 @@ exports.handler = async (event) => {
     };
 
     const payload = {
-      client: { id: client.id, name: client.name },
+      // Use clientName (company) in the response so the portal displays
+      // the canonical company, not the contact person. The id stays as the
+      // Supabase row id for traceability.
+      client: { id: client.id, name: clientName },
       lastSync: new Date().toISOString(),
       lowStockThreshold: LOW_STOCK_THRESHOLD,
       kpis,
