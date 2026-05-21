@@ -1,12 +1,17 @@
 // netlify/functions/portal-tracking.js
 // FR-Logistics Client Portal — Fase 3, Tracking tab
-// 🔧 DEBUG VERSION v4 — exposes raw /orders response when ?debug=1
 //
-// Pass ?debug=1 to inspect:
-//   - filterParams sent to ShipStation
-//   - rawOrderCount returned by ShipStation
-//   - sample of the first 2 orders (so we can see field names + values)
-//   - knownOrderFound for WS4B234173
+// Returns the last 30 days of SHIPPED orders for the client linked to
+// ?portal_user=<email>, filtering according to fr_clients.billing_source:
+//   - ss_cf1   → cross-reference /orders (filtered by customField1) with
+//                /shipments (filtered by date) to get tracking numbers.
+//   - ss_store → filter /shipments directly by storeId via advancedOptions.
+//   - portal   → 'unsupported' mode (no ShipStation integration yet).
+//
+// Why two endpoints for ss_cf1:
+//   ShipStation's /orders endpoint exposes customField1 (the client tag)
+//   but NOT trackingNumber. /shipments exposes trackingNumber but NOT
+//   customField1. We cross-reference them by orderNumber.
 
 const ALLOWED_ORIGINS = [
   'https://fr-logistics.net',
@@ -21,7 +26,8 @@ const SS_API_KEY = process.env.SS_API_KEY;
 const SS_API_SECRET = process.env.SS_API_SECRET;
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
-const cache = new Map();
+const cache = new Map(); // clientId → { data, ts }
+
 const WINDOW_DAYS = 30;
 
 function corsHeaders(origin) {
@@ -36,23 +42,39 @@ function corsHeaders(origin) {
 
 function ssHeaders() {
   const credentials = Buffer.from(`${SS_API_KEY}:${SS_API_SECRET}`).toString('base64');
-  return { Authorization: `Basic ${credentials}`, 'Content-Type': 'application/json' };
+  return {
+    Authorization: `Basic ${credentials}`,
+    'Content-Type': 'application/json',
+  };
 }
 
-function fmtDate(d) { return d.toISOString().slice(0, 10); }
+function fmtDate(d) {
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+}
 
 async function sbFetch(path) {
   return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` },
+    headers: {
+      apikey: SUPABASE_SERVICE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+    },
   });
 }
 
+// Pull orders matching the supplied filter. Used in ss_cf1 mode to find
+// which orderNumbers belong to the client (orders endpoint exposes CF1).
 async function fetchOrders(filterParams) {
   const all = [];
   let page = 1;
+  const pageSize = 500;
   const maxPages = 10;
+
   while (page <= maxPages) {
-    const params = new URLSearchParams({ ...filterParams, pageSize: '500', page: String(page) });
+    const params = new URLSearchParams({
+      ...filterParams,
+      pageSize: String(pageSize),
+      page: String(page),
+    });
     const url = `${SS_BASE}/orders?${params.toString()}`;
     const res = await fetch(url, { headers: ssHeaders() });
     if (!res.ok) {
@@ -63,20 +85,54 @@ async function fetchOrders(filterParams) {
     const orders = data.orders || [];
     all.push(...orders);
     const totalPages = data.pages || 1;
-    if (page >= totalPages || orders.length < 500) break;
+    if (page >= totalPages || orders.length < pageSize) break;
     page++;
   }
   return all;
 }
 
+// Pull shipments for a date range. The /shipments endpoint exposes
+// trackingNumber, carrierCode, shipDate, shipTo, etc. — but NOT
+// customField1. We filter by orderNumber set when in ss_cf1 mode, or by
+// storeId when in ss_store mode.
+async function fetchShipments(startDate, endDate) {
+  const all = [];
+  let page = 1;
+  const pageSize = 500;
+  const maxPages = 10;
+
+  while (page <= maxPages) {
+    const url = `${SS_BASE}/shipments?shipDateStart=${startDate}&shipDateEnd=${endDate}&pageSize=${pageSize}&page=${page}`;
+    const res = await fetch(url, { headers: ssHeaders() });
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(`ShipStation /shipments ${res.status}: ${t.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    const shipments = data.shipments || [];
+    all.push(...shipments);
+    const totalPages = data.pages || 1;
+    if (page >= totalPages || shipments.length < pageSize) break;
+    page++;
+  }
+  return all;
+}
+
+// Resolve storeIds from fr_clients.store_name + aliases.
 async function resolveStoreIds(storeName, aliases) {
-  const candidates = [storeName, ...(aliases || [])].filter(Boolean).map((s) => String(s).trim().toLowerCase());
+  const candidates = [storeName, ...(aliases || [])]
+    .filter(Boolean)
+    .map((s) => String(s).trim().toLowerCase());
   if (!candidates.length) return [];
+
   const res = await fetch(`${SS_BASE}/stores?showInactive=false`, { headers: ssHeaders() });
   if (!res.ok) return [];
   const stores = await res.json();
   if (!Array.isArray(stores)) return [];
-  return stores.filter((s) => candidates.includes(String(s.storeName || '').trim().toLowerCase())).map((s) => String(s.storeId));
+
+  return stores
+    .filter((s) => candidates.includes(String(s.storeName || '').trim().toLowerCase()))
+    .map((s) => String(s.storeId));
 }
 
 function trackingUrl(carrierCode, trackingNumber) {
@@ -93,17 +149,22 @@ function trackingUrl(carrierCode, trackingNumber) {
 exports.handler = async (event) => {
   const origin = event.headers.origin || event.headers.Origin || '';
   const headers = corsHeaders(origin);
+
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers, body: '' };
-  if (event.httpMethod !== 'GET') return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
+  if (event.httpMethod !== 'GET') {
+    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
+  }
 
-  const qs = event.queryStringParameters || {};
-  const portalUser = qs.portal_user;
-  const isDebug = qs.debug === '1';
-
-  if (!portalUser) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing portal_user' }) };
-  if (!SS_API_KEY || !SS_API_SECRET) return { statusCode: 500, headers, body: JSON.stringify({ error: 'ShipStation credentials not configured' }) };
+  const portalUser = (event.queryStringParameters || {}).portal_user;
+  if (!portalUser) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing portal_user' }) };
+  }
+  if (!SS_API_KEY || !SS_API_SECRET) {
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'ShipStation credentials not configured' }) };
+  }
 
   try {
+    // 1. Resolve client.
     const clientRes = await sbFetch(
       `fr_clients?portal_user=eq.${encodeURIComponent(portalUser)}` +
         `&select=id,name,company,billing_source,ss_custom_field_1,store_name,aliases`
@@ -113,24 +174,30 @@ exports.handler = async (event) => {
       return { statusCode: 502, headers, body: JSON.stringify({ error: 'Client lookup failed', detail: t }) };
     }
     const clients = await clientRes.json();
-    if (!clients.length) return { statusCode: 404, headers, body: JSON.stringify({ error: 'No client linked to this portal user' }) };
-
+    if (!clients.length) {
+      return { statusCode: 404, headers, body: JSON.stringify({ error: 'No client linked to this portal user' }) };
+    }
     const client = clients[0];
     const billingSource = (client.billing_source || '').toLowerCase().trim();
     const displayName = client.company || client.name;
 
-    if (!isDebug) {
-      const cached = cache.get(client.id);
-      if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
-        return { statusCode: 200, headers: { ...headers, 'X-Cache': 'HIT' }, body: JSON.stringify(cached.data) };
-      }
+    // 2. Cache check.
+    const cached = cache.get(client.id);
+    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+      return {
+        statusCode: 200,
+        headers: { ...headers, 'X-Cache': 'HIT' },
+        body: JSON.stringify(cached.data),
+      };
     }
 
+    // 3. Date window.
     const now = new Date();
     const start = new Date(now.getTime() - WINDOW_DAYS * 24 * 60 * 60 * 1000);
     const startDate = fmtDate(start);
     const endDate = fmtDate(now);
 
+    // 4. Portal mode: not yet supported by Tracking.
     if (billingSource === 'portal') {
       const payload = {
         client: { id: client.id, name: displayName },
@@ -143,108 +210,90 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers, body: JSON.stringify(payload) };
     }
 
-    // ---- 🔧 DEBUG: try BOTH date filter strategies and report each count ----
-    let filterParams;
-    let debugInfo = null;
+    // 5. Get the universe of shipments for the window (single call, used
+    //    by both ss_cf1 and ss_store modes).
+    const allShipments = await fetchShipments(startDate, endDate);
 
-    if (isDebug) {
-      // Run 3 different filter combinations to see which one works
-      const baseFilter = { orderStatus: 'shipped' };
-      if (billingSource === 'ss_cf1') baseFilter.customField1 = (client.ss_custom_field_1 || '').trim();
-      else if (billingSource === 'ss_store') {
-        const storeIds = await resolveStoreIds((client.store_name || '').trim(), client.aliases);
-        if (storeIds.length) baseFilter.storeId = storeIds[0];
-      }
-
-      const tries = [
-        { label: 'no_date_filter', params: { ...baseFilter } },
-        { label: 'order_date', params: { ...baseFilter, orderDateStart: startDate, orderDateEnd: endDate } },
-        { label: 'modify_date', params: { ...baseFilter, modifyDateStart: startDate, modifyDateEnd: endDate } },
-      ];
-
-      const tryResults = [];
-      for (const t of tries) {
-        try {
-          const orders = await fetchOrders(t.params);
-          const withTracking = orders.filter((o) => o.trackingNumber);
-          const knownOrder = orders.find((o) => o.orderNumber === 'WS4B234173');
-          tryResults.push({
-            label: t.label,
-            params: t.params,
-            orderCount: orders.length,
-            withTrackingCount: withTracking.length,
-            knownOrderFound: !!knownOrder,
-            knownOrderSample: knownOrder ? {
-              orderNumber: knownOrder.orderNumber,
-              orderDate: knownOrder.orderDate,
-              shipDate: knownOrder.shipDate,
-              orderStatus: knownOrder.orderStatus,
-              trackingNumber: knownOrder.trackingNumber,
-              carrierCode: knownOrder.carrierCode,
-              customField1: knownOrder.advancedOptions ? knownOrder.advancedOptions.customField1 : null,
-              allKeys: Object.keys(knownOrder),
-            } : null,
-            firstOrderSample: orders[0] ? {
-              orderNumber: orders[0].orderNumber,
-              orderDate: orders[0].orderDate,
-              shipDate: orders[0].shipDate,
-              customField1: orders[0].advancedOptions ? orders[0].advancedOptions.customField1 : null,
-              trackingNumber: orders[0].trackingNumber,
-            } : null,
-          });
-        } catch (e) {
-          tryResults.push({ label: t.label, params: t.params, error: String(e) });
-        }
-      }
-
-      return {
-        statusCode: 200,
-        headers: { ...headers, 'X-Cache': 'DEBUG' },
-        body: JSON.stringify({
-          client: { id: client.id, name: displayName, billing_source: client.billing_source, ss_custom_field_1: client.ss_custom_field_1 },
-          window: { startDate, endDate, days: WINDOW_DAYS },
-          tryResults,
-        }, null, 2),
-      };
-    }
-
-    // ---- NORMAL FLOW (debug not requested) ----
-    filterParams = { orderDateStart: startDate, orderDateEnd: endDate, orderStatus: 'shipped' };
+    // 6. Build a Set of orderNumbers belonging to this client.
+    let clientOrderNumbers = null; // null = no filter (ss_store mode uses storeId)
+    let storeIds = [];
 
     if (billingSource === 'ss_cf1') {
       const cf1 = (client.ss_custom_field_1 || '').trim();
-      if (!cf1) return { statusCode: 400, headers, body: JSON.stringify({ error: 'ss_custom_field_1 empty' }) };
-      filterParams.customField1 = cf1;
+      if (!cf1) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: 'ss_custom_field_1 empty' }) };
+      }
+      // Use modifyDate to catch orders whose orderDate is older than the
+      // window but whose ship+modify happened recently (common with WS4B
+      // orders imported from Wix days before shipping).
+      const orders = await fetchOrders({
+        customField1: cf1,
+        orderStatus: 'shipped',
+        modifyDateStart: startDate,
+        modifyDateEnd: endDate,
+      });
+      clientOrderNumbers = new Set(orders.map((o) => o.orderNumber).filter(Boolean));
     } else if (billingSource === 'ss_store') {
       const storeName = (client.store_name || '').trim();
-      if (!storeName) return { statusCode: 400, headers, body: JSON.stringify({ error: 'store_name empty' }) };
-      const storeIds = await resolveStoreIds(storeName, client.aliases);
-      if (!storeIds.length) return { statusCode: 404, headers, body: JSON.stringify({ error: `No store matched "${storeName}"` }) };
-      filterParams.storeId = storeIds[0];
+      if (!storeName) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: 'store_name empty' }) };
+      }
+      storeIds = await resolveStoreIds(storeName, client.aliases);
+      if (!storeIds.length) {
+        return { statusCode: 404, headers, body: JSON.stringify({ error: `No ShipStation store matched "${storeName}"` }) };
+      }
     } else {
       return { statusCode: 400, headers, body: JSON.stringify({ error: `Unsupported billing_source: ${billingSource}` }) };
     }
 
-    const orders = await fetchOrders(filterParams);
-    const rows = orders.filter((o) => o.trackingNumber).map((o) => {
-      const carrier = o.carrierCode || '';
-      const tn = o.trackingNumber || '';
+    // 7. Filter shipments to this client.
+    let matched;
+    if (billingSource === 'ss_cf1') {
+      matched = allShipments.filter((sh) => clientOrderNumbers.has(sh.orderNumber));
+    } else { // ss_store
+      const idSet = new Set(storeIds);
+      matched = allShipments.filter((sh) => {
+        const id = sh.advancedOptions && sh.advancedOptions.storeId;
+        return id != null && idSet.has(String(id));
+      });
+    }
+
+    // 8. Keep only the ones with a tracking number (= label generated) and
+    //    not voided.
+    const shipped = matched.filter((sh) => sh.trackingNumber && !sh.voided);
+
+    // 9. Project to UI rows.
+    const rows = shipped.map((sh) => {
+      const carrier = sh.carrierCode || '';
+      const tn = sh.trackingNumber || '';
       return {
-        orderNumber: o.orderNumber || '',
-        orderDate: o.orderDate || o.createDate || '',
-        shipDate: o.shipDate || '',
-        recipient: (o.shipTo && o.shipTo.name) || '',
-        destination: o.shipTo ? [o.shipTo.city, o.shipTo.state].filter(Boolean).join(', ') : '',
-        country: (o.shipTo && o.shipTo.country) || '',
-        carrier, service: o.serviceCode || '',
-        trackingNumber: tn, trackingUrl: trackingUrl(carrier, tn),
+        orderNumber: sh.orderNumber || '',
+        orderDate: sh.orderDate || sh.createDate || '',
+        shipDate: sh.shipDate || '',
+        recipient: (sh.shipTo && sh.shipTo.name) || '',
+        destination: sh.shipTo
+          ? [sh.shipTo.city, sh.shipTo.state].filter(Boolean).join(', ')
+          : '',
+        country: (sh.shipTo && sh.shipTo.country) || '',
+        carrier,
+        service: sh.serviceCode || '',
+        trackingNumber: tn,
+        trackingUrl: trackingUrl(carrier, tn),
         status: 'Shipped',
       };
     });
-    rows.sort((a, b) => (new Date(b.shipDate || 0).getTime()) - (new Date(a.shipDate || 0).getTime()));
+
+    rows.sort((a, b) => {
+      const da = a.shipDate ? new Date(a.shipDate).getTime() : 0;
+      const db = b.shipDate ? new Date(b.shipDate).getTime() : 0;
+      return db - da;
+    });
 
     const uniqueCarriers = new Set(rows.map((r) => r.carrier).filter(Boolean));
-    const kpis = { totalShipments: rows.length, carriers: uniqueCarriers.size };
+    const kpis = {
+      totalShipments: rows.length,
+      carriers: uniqueCarriers.size,
+    };
 
     const payload = {
       client: { id: client.id, name: displayName },
@@ -255,8 +304,17 @@ exports.handler = async (event) => {
     };
 
     cache.set(client.id, { data: payload, ts: Date.now() });
-    return { statusCode: 200, headers: { ...headers, 'X-Cache': 'MISS' }, body: JSON.stringify(payload) };
+
+    return {
+      statusCode: 200,
+      headers: { ...headers, 'X-Cache': 'MISS' },
+      body: JSON.stringify(payload),
+    };
   } catch (err) {
-    return { statusCode: 502, headers, body: JSON.stringify({ error: 'Failed to fetch tracking', detail: String(err) }) };
+    return {
+      statusCode: 502,
+      headers,
+      body: JSON.stringify({ error: 'Failed to fetch tracking', detail: String(err) }),
+    };
   }
 };
