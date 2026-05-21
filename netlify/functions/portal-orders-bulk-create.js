@@ -1,13 +1,19 @@
 // netlify/functions/portal-orders-bulk-create.js
 // FR-Logistics Client Portal — Fase 1, Bulk CSV Upload
-// Accepts an array of CSV rows (already parsed by the client) and creates
-// orders in bulk. Validates each row server-side (format only — no inventory
-// check). Returns a per-row report so the client can show which rows were
-// created and which failed.
 //
-// Body: { portal_user: "email", rows: [ {order_number, recipient_name, ...}, ... ] }
+// Accepts CSV rows in ShipStation export format (47-column standard) and
+// creates orders in the client_orders / client_order_items tables.
 //
-// Rows with the same order_number are merged into a single order with
+// Why ShipStation format: every 3PL client (MXS, Milano, etc.) already
+// exports from ShipStation in this exact column layout, and so does our
+// own warehouse-orders.js when generating the file we re-import to
+// ShipStation later. Using the same format end-to-end removes friction
+// (no template re-typing for the client) and keeps a single canonical
+// shape across the system.
+//
+// Body: { portal_user: "email", rows: [ { "Order #": "...", "Recipient Full Name": "...", ... } ] }
+//
+// Rows with the same "Order #" are merged into a single order with
 // multiple items, just like ShipStation imports.
 
 const ALLOWED_ORIGINS = [
@@ -21,18 +27,43 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 const MAX_ROWS = 500;
 
-// Required per-row CSV fields.
-const REQUIRED_FIELDS = [
-  'order_number',
-  'recipient_name',
-  'address_line1',
-  'city',
-  'state',
-  'postal_code',
-  'country_code',
-  'item_sku',
-  'item_quantity',
+// ShipStation header → internal DB column. Only the fields the portal cares
+// about; the other 32 ShipStation columns (Order Total, Buyer info, weights,
+// etc.) are ignored silently so the CSV can be uploaded as-is.
+const HEADER_MAP = {
+  'Order #': 'order_number',
+  'Recipient Full Name': 'recipient_name',
+  'Recipient Phone': 'recipient_phone',
+  'Address Line 1': 'address_line1',
+  'Address Line 2': 'address_line2',
+  'City': 'city',
+  'State': 'state',
+  'Postal Code': 'postal_code',
+  'Country Code': 'country_code',
+  'Shipping Service': 'shipping_service',
+  'Notes to the Buyer': 'notes_to_buyer',
+  'Item SKU': 'item_sku',
+  'Item Name / Title': 'item_name',
+  'Item Quantity': 'item_quantity',
+  'Item Unit Price': 'item_unit_price',
+};
+
+// Required ShipStation headers — what we surface in error messages so the
+// client recognises the column names from their own export.
+const REQUIRED_SHIPSTATION_FIELDS = [
+  'Order #',
+  'Recipient Full Name',
+  'Address Line 1',
+  'City',
+  'State',
+  'Postal Code',
+  'Country Code',
+  'Item SKU',
+  'Item Quantity',
 ];
+
+// Mirror of REQUIRED_SHIPSTATION_FIELDS in DB names, used after mapping.
+const REQUIRED_INTERNAL_FIELDS = REQUIRED_SHIPSTATION_FIELDS.map((h) => HEADER_MAP[h]);
 
 // Order-level fields (apply to the whole order, not the item). The first row
 // of a given order_number wins; subsequent rows for the same order_number
@@ -50,6 +81,45 @@ const ORDER_FIELDS = [
   'notes_to_buyer',
 ];
 
+// USA-only country normalisation per project decision (May 2026). When other
+// countries become relevant, extend this map. Anything not recognised that's
+// already 2 letters is passed through verbatim; anything else falls to
+// validation as "country_code must be 2 letters".
+const COUNTRY_NORMALISE = {
+  'united states': 'US',
+  'united states of america': 'US',
+  'usa': 'US',
+  'us': 'US',
+};
+
+function normaliseCountry(value) {
+  if (value === undefined || value === null) return value;
+  const trimmed = String(value).trim();
+  if (trimmed === '') return trimmed;
+  const lower = trimmed.toLowerCase();
+  if (COUNTRY_NORMALISE[lower]) return COUNTRY_NORMALISE[lower];
+  // Already a 2-letter code: leave as uppercase.
+  if (trimmed.length === 2) return trimmed.toUpperCase();
+  return trimmed; // fall through, validateRow will flag it
+}
+
+// Map a ShipStation-format row to internal field names. Unknown headers are
+// dropped. If the row already uses internal field names (legacy template),
+// they pass through unchanged so backward-compat is preserved.
+function mapRow(rawRow) {
+  const out = {};
+  for (const key of Object.keys(rawRow)) {
+    const internalKey = HEADER_MAP[key] || key; // unknown ShipStation → drop later
+    // Only keep keys that match either a header we know about or an
+    // internal field name (legacy). Avoid bringing in irrelevant junk.
+    if (HEADER_MAP[key] || REQUIRED_INTERNAL_FIELDS.includes(key) || ORDER_FIELDS.includes(key) || key === 'item_sku' || key === 'item_name' || key === 'item_quantity' || key === 'item_unit_price' || key === 'order_number') {
+      out[internalKey] = rawRow[key];
+    }
+  }
+  if (out.country_code !== undefined) out.country_code = normaliseCountry(out.country_code);
+  return out;
+}
+
 function corsHeaders(origin) {
   const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
@@ -60,36 +130,39 @@ function corsHeaders(origin) {
   };
 }
 
-// Validate a single row. Returns null if valid, or { row, errors: [...] }.
+// Validate a single mapped row. Returns null if valid, or
+// { row_index, order_number, errors }.
 function validateRow(row, rowIndex) {
   const errors = [];
 
-  for (const f of REQUIRED_FIELDS) {
+  for (const f of REQUIRED_INTERNAL_FIELDS) {
     if (row[f] === undefined || row[f] === null || String(row[f]).trim() === '') {
-      errors.push(`Missing required field: ${f}`);
+      // Surface the ShipStation column name so the client recognises it.
+      const ssHeader = Object.keys(HEADER_MAP).find((k) => HEADER_MAP[k] === f) || f;
+      errors.push(`Missing required field: ${ssHeader}`);
     }
   }
 
   if (row.country_code && String(row.country_code).trim().length !== 2) {
-    errors.push('country_code must be 2 letters (ISO Alpha-2, e.g. US, CA, MX)');
+    errors.push('Country Code must be 2 letters (ISO Alpha-2, e.g. US, CA, MX)');
   }
 
   if (row.item_quantity !== undefined && row.item_quantity !== null && String(row.item_quantity).trim() !== '') {
     const qty = parseInt(row.item_quantity, 10);
     if (!Number.isInteger(qty) || qty < 1) {
-      errors.push('item_quantity must be an integer >= 1');
+      errors.push('Item Quantity must be an integer >= 1');
     }
   }
 
   if (row.item_unit_price !== undefined && row.item_unit_price !== null && String(row.item_unit_price).trim() !== '') {
     const price = parseFloat(row.item_unit_price);
     if (Number.isNaN(price) || price < 0) {
-      errors.push('item_unit_price must be a non-negative number');
+      errors.push('Item Unit Price must be a non-negative number');
     }
   }
 
   if (row.order_number && String(row.order_number).length > 100) {
-    errors.push('order_number too long (max 100 chars)');
+    errors.push('Order # too long (max 100 chars)');
   }
 
   if (errors.length === 0) return null;
@@ -171,13 +244,16 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing portal_user' }) };
   }
 
-  const rows = Array.isArray(payload.rows) ? payload.rows : [];
-  if (rows.length === 0) {
+  const rawRows = Array.isArray(payload.rows) ? payload.rows : [];
+  if (rawRows.length === 0) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'No rows provided' }) };
   }
-  if (rows.length > MAX_ROWS) {
+  if (rawRows.length > MAX_ROWS) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: `Too many rows (max ${MAX_ROWS})` }) };
   }
+
+  // Map ShipStation headers → internal field names BEFORE validation.
+  const rows = rawRows.map(mapRow);
 
   try {
     // 1. Resolve client by portal_user.
@@ -204,7 +280,6 @@ exports.handler = async (event) => {
     });
 
     // 3. Check for duplicate order_numbers across THIS client (existing in DB).
-    // We do this before grouping so we can flag the rows clearly.
     if (validRows.length > 0) {
       const numbersInBatch = Array.from(new Set(validRows.map((r) => String(r.row.order_number).trim())));
       const numList = numbersInBatch.map((n) => `"${n.replace(/"/g, '\\"')}"`).join(',');
@@ -215,7 +290,6 @@ exports.handler = async (event) => {
         const dupRows = await dupRes.json();
         const dupSet = new Set(dupRows.map((d) => d.order_number));
         if (dupSet.size > 0) {
-          // Move duplicate rows from validRows to rowErrors.
           const stillValid = [];
           for (const r of validRows) {
             const num = String(r.row.order_number).trim();
@@ -223,7 +297,7 @@ exports.handler = async (event) => {
               rowErrors.push({
                 row_index: r.row_index,
                 order_number: num,
-                errors: [`order_number already exists for this client`],
+                errors: [`Order # already exists for this client`],
               });
             } else {
               stillValid.push(r);
@@ -233,9 +307,6 @@ exports.handler = async (event) => {
           validRows.push(...stillValid);
         }
       }
-      // If dup check failed, we proceed without it — DB unique constraints (if any)
-      // would catch a true duplicate; absent that, the worst case is two rows
-      // with the same number, which the warehouse will spot.
     }
 
     if (validRows.length === 0) {
@@ -254,9 +325,7 @@ exports.handler = async (event) => {
     // 4. Group valid rows into orders by order_number.
     const orders = groupRows(validRows);
 
-    // 5. Insert orders one by one, then items. We don't wrap in a transaction
-    // because Supabase REST doesn't expose one; instead we report per-order
-    // success/failure so the client knows exactly what happened.
+    // 5. Insert orders one by one, then items.
     const created = [];
     const failed = [];
     for (const grp of orders) {
@@ -316,7 +385,7 @@ exports.handler = async (event) => {
         created_orders: created,
         failed_orders: failed,
         row_errors: rowErrors,
-        total_rows_received: rows.length,
+        total_rows_received: rawRows.length,
       }),
     };
   } catch (err) {
