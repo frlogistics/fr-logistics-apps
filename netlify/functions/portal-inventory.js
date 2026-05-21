@@ -137,7 +137,7 @@ exports.handler = async (event) => {
       return { statusCode: 404, headers, body: JSON.stringify({ error: 'No client linked to this portal user' }) };
     }
     const client = clients[0];
-    const clientName = client.name;
+    const clientName = client.company || client.name;
 
     // 2. Per-client cache check.
     const cached = cache.get(clientName);
