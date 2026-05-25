@@ -68,9 +68,9 @@ export async function sendAgentText(to, text) {
 }
 
 /**
- * Records the agent's outbound message into the Blobs store so the
- * portal Inbox shows the conversation flow. Mirrors the inbound shape
- * used by whatsapp-webhook.js.
+ * Records the agent's outbound message into the Blobs store AND Supabase
+ * `wa_messages` so the portal Inbox shows the conversation flow.
+ * Mirrors the inbound shape used by whatsapp-webhook.js.
  * 
  * Idempotent — if messageId already exists, skips.
  * Best-effort — errors are logged but never thrown.
@@ -81,29 +81,69 @@ export async function recordOutboundInBlobs({
   messageId,
   clientName = "Liam (agent)",
 }) {
+  const finalMsgId = messageId || `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const tsSeconds = Math.floor(Date.now() / 1000);
+
+  // ── 1) Blobs (legacy, keep for backwards compat) ───────────────────
   try {
     const store = getStore({ name: "wa-messages", consistency: "strong" });
     const existing = (await store.get("messages", { type: "json" })) || [];
-    
+
     const newMsg = {
-      id: messageId || `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: finalMsgId,
       from: to,                        // The "from" in inbox view = the other side
       clientName,
       text,
-      timestamp: Math.floor(Date.now() / 1000),
+      timestamp: tsSeconds,
       type: "text",
       direction: "outbound",           // Marker for portal to render differently
       sentByAgent: true,
     };
 
     // Avoid duplicates by messageId
-    if (existing.find((m) => m.id === newMsg.id)) return;
-
-    const merged = [...existing, newMsg].slice(-500);
-    await store.setJSON("messages", merged);
+    if (!existing.find((m) => m.id === newMsg.id)) {
+      const merged = [...existing, newMsg].slice(-500);
+      await store.setJSON("messages", merged);
+    }
   } catch (err) {
-    console.error("[agent-send] recordOutboundInBlobs error:", err.message);
-    // never throw — recording in Blobs is convenience, not critical
+    console.error("[agent-send] Blobs save error:", err.message);
+  }
+
+  // ── 2) Supabase wa_messages (so portal inbox shows this thread) ───
+  try {
+    const sbUrl = process.env.SUPABASE_URL;
+    const sbKey = process.env.SUPABASE_SERVICE_KEY;
+    if (sbUrl && sbKey) {
+      const row = {
+        wa_msg_id:   finalMsgId,
+        direction:   "outbound",
+        from_number: PHONE_ID || "",
+        to_number:   String(to).replace(/^\+/, ""),
+        client_name: clientName,
+        body:        text,
+        msg_type:    "text",
+        timestamp:   new Date(tsSeconds * 1000).toISOString(),
+        read:        true,    // agent's own messages are inherently "read"
+        replied:     false,
+      };
+      const r = await fetch(`${sbUrl}/rest/v1/wa_messages?on_conflict=wa_msg_id`, {
+        method: "POST",
+        headers: {
+          apikey: sbKey,
+          Authorization: `Bearer ${sbKey}`,
+          "Content-Type": "application/json",
+          Prefer: "resolution=ignore-duplicates,return=minimal",
+        },
+        body: JSON.stringify(row),
+      });
+      if (!r.ok) {
+        const errText = await r.text().catch(() => "");
+        console.error(`[agent-send] Supabase save failed: HTTP ${r.status} ${errText}`);
+      }
+    }
+  } catch (err) {
+    console.error("[agent-send] Supabase save error:", err?.message || err);
+    // never throw — recording is convenience, not critical
   }
 }
 
