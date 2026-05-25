@@ -112,6 +112,54 @@ export default async function handler(req) {
       actuallyNewMessages = newMessages;
     }
 
+    // 1b) ALSO persist to Supabase wa_messages so the portal inbox can see them.
+    // Without this, the portal only shows outbound messages and old Blobs data.
+    // Each message is upsert'd by wa_msg_id (UNIQUE) so re-deliveries from Meta
+    // don't create duplicates.
+    try {
+      const phoneId = value?.metadata?.phone_number_id || process.env.WHATSAPP_PHONE_ID || "";
+      const rowsToInsert = newMessages.map(m => ({
+        wa_msg_id:   m.id,
+        direction:   "inbound",
+        from_number: m.from,
+        to_number:   phoneId,
+        client_name: m.clientName,
+        body:        m.text,
+        msg_type:    m.type || "text",
+        timestamp:   new Date(m.timestamp * 1000).toISOString(),
+        read:        false,
+        replied:     false,
+      }));
+
+      if (rowsToInsert.length) {
+        const sbUrl = process.env.SUPABASE_URL;
+        const sbKey = process.env.SUPABASE_SERVICE_KEY;
+        if (sbUrl && sbKey) {
+          const r = await fetch(`${sbUrl}/rest/v1/wa_messages?on_conflict=wa_msg_id`, {
+            method: "POST",
+            headers: {
+              apikey: sbKey,
+              Authorization: `Bearer ${sbKey}`,
+              "Content-Type": "application/json",
+              Prefer: "resolution=ignore-duplicates,return=minimal",
+            },
+            body: JSON.stringify(rowsToInsert),
+          });
+          if (!r.ok) {
+            const errText = await r.text().catch(() => "");
+            console.error(`[webhook] Supabase wa_messages insert failed: HTTP ${r.status} ${errText}`);
+          } else {
+            console.log(`[webhook] Saved ${rowsToInsert.length} inbound msg(s) to wa_messages`);
+          }
+        } else {
+          console.error("[webhook] SUPABASE_URL or SUPABASE_SERVICE_KEY missing — cannot save to wa_messages");
+        }
+      }
+    } catch (err) {
+      console.error("[webhook] Supabase wa_messages save error:", err?.message || err);
+      // Non-fatal — don't block the 200 to Meta
+    }
+
     // 2) Fan-out: email + push + [NEW] agent (don't block the 200 to Meta)
     await notifyOutOfBand(newMessages, actuallyNewMessages).catch((e) =>
       console.error("[webhook] notify error:", e)
