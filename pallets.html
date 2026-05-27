@@ -1410,7 +1410,7 @@ async function openLabel(palletId){
   </div>
 </div>
 
-<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script src="https://unpkg.com/@zxing/browser@0.1.5"></script>
 <script>
 (function(){
   'use strict';
@@ -1472,113 +1472,117 @@ async function openLabel(palletId){
     while(recentEl.children.length > 8) recentEl.removeChild(recentEl.lastChild);
   }
 
+  // ── Scanner controls (returned by decodeFromConstraints) ─────
+  let scanControls = null;
+
   // ── Camera control ───────────────────────────────────────────
   async function startCamera(){
-    if(!window.ZXing){
-      setStatus('Library not loaded. Refresh and try again.', 'error');
+    // The library exposes window.ZXingBrowser (with embedded ZXing core types)
+    const Z = window.ZXingBrowser;
+    if(!Z || !Z.BrowserMultiFormatReader){
+      setStatus('❌ Scanner library not loaded. Check connection and refresh.', 'error');
+      hintEl.textContent = 'window.ZXingBrowser = ' + (typeof window.ZXingBrowser);
       return false;
     }
+
     try {
-      // ── Hints must be passed to the constructor ──────────────
+      // ── Hints ───────────────────────────────────────────────
+      // @zxing/browser re-exports DecodeHintType and BarcodeFormat from @zxing/library
+      const DecodeHintType = Z.DecodeHintType;
+      const BarcodeFormat  = Z.BarcodeFormat;
       const hints = new Map();
-      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-        ZXing.BarcodeFormat.CODE_128,
-        ZXing.BarcodeFormat.CODE_39,
-        ZXing.BarcodeFormat.ITF,
-        ZXing.BarcodeFormat.QR_CODE,
-        ZXing.BarcodeFormat.DATA_MATRIX,
-        ZXing.BarcodeFormat.EAN_13,
-        ZXing.BarcodeFormat.UPC_A,
-        ZXing.BarcodeFormat.PDF_417,
-        ZXing.BarcodeFormat.CODABAR
-      ]);
-      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-      hints.set(ZXing.DecodeHintType.ASSUME_GS1, false);
+      if(DecodeHintType && BarcodeFormat){
+        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+          BarcodeFormat.CODE_128,
+          BarcodeFormat.CODE_39,
+          BarcodeFormat.ITF,
+          BarcodeFormat.QR_CODE,
+          BarcodeFormat.DATA_MATRIX,
+          BarcodeFormat.EAN_13,
+          BarcodeFormat.UPC_A,
+          BarcodeFormat.PDF_417,
+          BarcodeFormat.CODABAR
+        ]);
+        hints.set(DecodeHintType.TRY_HARDER, true);
+      }
+      // Otherwise reader will decode all formats with default settings — still works.
 
-      // timeBetweenScansMillis = 150ms (faster than default 500ms)
-      codeReader = new ZXing.BrowserMultiFormatReader(hints, 150);
+      // 200ms between decode attempts (default is 500ms, faster is better for batch scan)
+      codeReader = new Z.BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 200 });
 
-      // ── Camera constraints — high res + continuous autofocus ──
+      // ── Camera constraints — high res, back camera, continuous focus ──
       const constraints = {
         audio: false,
         video: {
           facingMode: { ideal: 'environment' },
           width:  { ideal: 1920 },
           height: { ideal: 1080 },
-          frameRate: { ideal: 30 },
-          // iOS Safari ignores unknown keys, no harm:
-          focusMode: 'continuous',
-          advanced: [{ focusMode: 'continuous' }]
+          frameRate: { ideal: 30 }
         }
       };
 
       setStatus('Requesting camera…', '');
+      hintEl.textContent = 'Initializing camera…';
 
-      // Open stream manually first to control track settings
-      currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-      currentTrack = currentStream.getVideoTracks()[0];
-      video.srcObject = currentStream;
-      video.setAttribute('playsinline', 'true');
-      await video.play();
-
-      // Show actual resolution + format coverage in the hint bar
-      const settings = currentTrack.getSettings ? currentTrack.getSettings() : {};
-      hintEl.textContent = (settings.width || '?') + '×' + (settings.height || '?') +
-                           ' · Code128/QR/DataMatrix · Fill the frame';
-
-      setStatus('Ready — point at barcode', '');
-
-      // ── Decode loop — use decodeFromStream which respects hints ──
-      codeReader.decodeFromStream(currentStream, video, (result, err) => {
+      // ── decodeFromConstraints handles getUserMedia + decode loop internally ──
+      scanControls = await codeReader.decodeFromConstraints(constraints, video, (result, err, controls) => {
         if(result){
           handleScanResult(result.getText());
         }
-        // NotFoundException is fired every frame without a code — ignore it.
-        // Anything else worth logging:
-        if(err && err.name && err.name !== 'NotFoundException' && err.name !== 'NotFoundException2'){
-          // Silent; would spam console otherwise. Uncomment to debug:
-          // console.debug('ZXing:', err.name, err.message);
-        }
+        // err is a NotFoundException2 every frame without a code — silent.
       });
 
-      // Torch availability
-      const caps = currentTrack.getCapabilities ? currentTrack.getCapabilities() : {};
-      torchBtn.style.display = caps.torch ? 'inline-flex' : 'none';
+      // After decodeFromConstraints, the video stream is on video.srcObject
+      currentStream = video.srcObject;
+      currentTrack  = currentStream ? currentStream.getVideoTracks()[0] : null;
 
+      // Show actual capture resolution
+      if(currentTrack){
+        const settings = currentTrack.getSettings ? currentTrack.getSettings() : {};
+        hintEl.textContent = (settings.width || '?') + '×' + (settings.height || '?') +
+                             ' · Fill the frame · Hold steady';
+        // Torch availability
+        const caps = currentTrack.getCapabilities ? currentTrack.getCapabilities() : {};
+        torchBtn.style.display = caps.torch ? 'inline-flex' : 'none';
+      }
+
+      setStatus('Ready — point at barcode', '');
       return true;
     } catch(e){
-      console.error('Camera error:', e);
-      let msg = 'Camera error';
+      console.error('Camera/scanner error:', e);
+      let msg;
       if(e.name === 'NotAllowedError') msg = '❌ Camera permission denied. Enable it in Settings → Safari → Camera.';
       else if(e.name === 'NotFoundError') msg = '❌ No camera available on this device.';
       else if(e.name === 'NotReadableError') msg = '❌ Camera is in use by another app.';
-      else if(e.name === 'OverconstrainedError') {
-        // Fall back to a simpler constraint set
-        try {
-          currentStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment' },
-            audio: false
-          });
-          currentTrack = currentStream.getVideoTracks()[0];
-          video.srcObject = currentStream;
-          await video.play();
-          setStatus('Camera ready (fallback mode)', '');
-          codeReader.decodeFromStream(currentStream, video, (result) => {
-            if(result) handleScanResult(result.getText());
-          });
-          return true;
-        } catch(e2) {
-          msg = '❌ Camera unavailable: ' + e2.name;
-        }
-      } else msg = '❌ ' + (e.message || e.name);
+      else if(e.name === 'OverconstrainedError') msg = '❌ Camera does not support requested resolution. Retrying…';
+      else msg = '❌ ' + (e.name || 'Error') + ': ' + (e.message || 'unknown');
       setStatus(msg, 'error');
+
+      // Try fallback with minimal constraints
+      if(e.name === 'OverconstrainedError'){
+        try {
+          scanControls = await codeReader.decodeFromConstraints(
+            { audio:false, video:{ facingMode:'environment' } },
+            video,
+            (result) => { if(result) handleScanResult(result.getText()); }
+          );
+          currentStream = video.srcObject;
+          currentTrack  = currentStream ? currentStream.getVideoTracks()[0] : null;
+          setStatus('Ready (fallback mode)', '');
+          hintEl.textContent = 'Fallback resolution · Fill the frame';
+          return true;
+        } catch(e2){
+          setStatus('❌ Camera unavailable: ' + e2.name, 'error');
+        }
+      }
       return false;
     }
   }
 
   function stopCamera(){
-    try { if(codeReader) codeReader.reset(); } catch(e){}
+    try { if(scanControls && typeof scanControls.stop === 'function') scanControls.stop(); } catch(e){}
     try { if(currentStream) currentStream.getTracks().forEach(t => t.stop()); } catch(e){}
+    scanControls = null;
     codeReader = null;
     currentStream = null;
     currentTrack = null;
