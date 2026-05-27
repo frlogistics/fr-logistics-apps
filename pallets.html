@@ -510,12 +510,12 @@
       justify-content: center;
     }
     .scanner-frame {
-      width: 75%;
-      max-width: 320px;
-      height: 140px;
+      width: 86%;
+      max-width: 380px;
+      height: 200px;
       border: 2px solid #00ffae;
       border-radius: 16px;
-      box-shadow: 0 0 0 9999px rgba(0,0,0,0.45);
+      box-shadow: 0 0 0 9999px rgba(0,0,0,0.40);
       position: relative;
     }
     .scanner-frame::before {
@@ -530,8 +530,8 @@
       animation: scan-line 1.6s ease-in-out infinite;
     }
     @keyframes scan-line {
-      0%, 100% { transform: translateY(-50px); opacity: 0.3; }
-      50% { transform: translateY(50px); opacity: 1; }
+      0%, 100% { transform: translateY(-80px); opacity: 0.3; }
+      50% { transform: translateY(80px); opacity: 1; }
     }
     .scanner-hint {
       position: absolute;
@@ -1479,8 +1479,7 @@ async function openLabel(palletId){
       return false;
     }
     try {
-      codeReader = new ZXing.BrowserMultiFormatReader();
-      // Restrict to logistics-relevant formats for better accuracy
+      // ── Hints must be passed to the constructor ──────────────
       const hints = new Map();
       hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
         ZXing.BarcodeFormat.CODE_128,
@@ -1490,34 +1489,59 @@ async function openLabel(palletId){
         ZXing.BarcodeFormat.DATA_MATRIX,
         ZXing.BarcodeFormat.EAN_13,
         ZXing.BarcodeFormat.UPC_A,
-        ZXing.BarcodeFormat.PDF_417
+        ZXing.BarcodeFormat.PDF_417,
+        ZXing.BarcodeFormat.CODABAR
       ]);
       hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-      codeReader.hints = hints;
+      hints.set(ZXing.DecodeHintType.ASSUME_GS1, false);
 
+      // timeBetweenScansMillis = 150ms (faster than default 500ms)
+      codeReader = new ZXing.BrowserMultiFormatReader(hints, 150);
+
+      // ── Camera constraints — high res + continuous autofocus ──
       const constraints = {
+        audio: false,
         video: {
           facingMode: { ideal: 'environment' },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
+          width:  { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 30 },
+          // iOS Safari ignores unknown keys, no harm:
+          focusMode: 'continuous',
+          advanced: [{ focusMode: 'continuous' }]
         }
       };
+
+      setStatus('Requesting camera…', '');
+
+      // Open stream manually first to control track settings
       currentStream = await navigator.mediaDevices.getUserMedia(constraints);
       currentTrack = currentStream.getVideoTracks()[0];
       video.srcObject = currentStream;
+      video.setAttribute('playsinline', 'true');
       await video.play();
+
+      // Show actual resolution + format coverage in the hint bar
+      const settings = currentTrack.getSettings ? currentTrack.getSettings() : {};
+      hintEl.textContent = (settings.width || '?') + '×' + (settings.height || '?') +
+                           ' · Code128/QR/DataMatrix · Fill the frame';
 
       setStatus('Ready — point at barcode', '');
 
-      // Start decoding loop
-      codeReader.decodeFromVideoElement(video, (result, err) => {
+      // ── Decode loop — use decodeFromStream which respects hints ──
+      codeReader.decodeFromStream(currentStream, video, (result, err) => {
         if(result){
           handleScanResult(result.getText());
         }
-        // Ignore err — NotFoundException fires every frame without a code
+        // NotFoundException is fired every frame without a code — ignore it.
+        // Anything else worth logging:
+        if(err && err.name && err.name !== 'NotFoundException' && err.name !== 'NotFoundException2'){
+          // Silent; would spam console otherwise. Uncomment to debug:
+          // console.debug('ZXing:', err.name, err.message);
+        }
       });
 
-      // Check torch capability
+      // Torch availability
       const caps = currentTrack.getCapabilities ? currentTrack.getCapabilities() : {};
       torchBtn.style.display = caps.torch ? 'inline-flex' : 'none';
 
@@ -1528,7 +1552,25 @@ async function openLabel(palletId){
       if(e.name === 'NotAllowedError') msg = '❌ Camera permission denied. Enable it in Settings → Safari → Camera.';
       else if(e.name === 'NotFoundError') msg = '❌ No camera available on this device.';
       else if(e.name === 'NotReadableError') msg = '❌ Camera is in use by another app.';
-      else msg = '❌ ' + (e.message || e.name);
+      else if(e.name === 'OverconstrainedError') {
+        // Fall back to a simpler constraint set
+        try {
+          currentStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' },
+            audio: false
+          });
+          currentTrack = currentStream.getVideoTracks()[0];
+          video.srcObject = currentStream;
+          await video.play();
+          setStatus('Camera ready (fallback mode)', '');
+          codeReader.decodeFromStream(currentStream, video, (result) => {
+            if(result) handleScanResult(result.getText());
+          });
+          return true;
+        } catch(e2) {
+          msg = '❌ Camera unavailable: ' + e2.name;
+        }
+      } else msg = '❌ ' + (e.message || e.name);
       setStatus(msg, 'error');
       return false;
     }
