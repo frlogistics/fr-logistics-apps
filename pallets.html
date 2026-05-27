@@ -1511,22 +1511,25 @@ async function openLabel(palletId){
       const hints = new Map();
       if(DecodeHintType && BarcodeFormat){
         hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-          BarcodeFormat.CODE_128,
-          BarcodeFormat.CODE_39,
-          BarcodeFormat.ITF,
-          BarcodeFormat.QR_CODE,
-          BarcodeFormat.DATA_MATRIX,
+          BarcodeFormat.CODE_128,    // UPS, FedEx, DHL, Amazon FBA
+          BarcodeFormat.CODE_39,     // FedEx Ground (older)
+          BarcodeFormat.ITF,         // USPS Intelligent Mail (Interleaved 2 of 5)
+          BarcodeFormat.QR_CODE,     // FR-Logistics pallets, generic
+          BarcodeFormat.DATA_MATRIX, // Amazon FBA secondary, Maersk
           BarcodeFormat.EAN_13,
           BarcodeFormat.UPC_A,
-          BarcodeFormat.PDF_417,
+          BarcodeFormat.PDF_417,     // Some carriers' 2D
           BarcodeFormat.CODABAR
         ]);
         hints.set(DecodeHintType.TRY_HARDER, true);
+        // Allow Code 128 to use the full character set including the
+        // special "FNC" codes UPS embeds in its tracking labels.
+        hints.set(DecodeHintType.ASSUME_CODE_39_CHECK_DIGIT, false);
       }
-      // Otherwise reader will decode all formats with default settings — still works.
 
-      // 200ms between decode attempts (default is 500ms, faster is better for batch scan)
-      codeReader = new Z.BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 200 });
+      // 100ms between decode attempts (was 200ms) — better for hard-to-read
+      // labels like dense UPS Code 128. Tradeoff: more CPU on the phone.
+      codeReader = new Z.BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 100 });
 
       // ── Camera constraints — high res, back camera, continuous focus ──
       const constraints = {
@@ -1562,9 +1565,31 @@ async function openLabel(palletId){
         // Torch availability
         const caps = currentTrack.getCapabilities ? currentTrack.getCapabilities() : {};
         torchBtn.style.display = caps.torch ? 'inline-flex' : 'none';
+
+        // ── ZOOM — helps UPS Code 128 a lot ──
+        // Many iPhone/iPad back cameras support a zoom range like 1.0–8.0.
+        // We apply a moderate 1.5x by default so dense codes look bigger to ZXing.
+        if(caps.zoom){
+          try {
+            const targetZoom = Math.min(1.8, caps.zoom.max || 1.8);
+            if(targetZoom > (caps.zoom.min || 1) + 0.1){
+              await currentTrack.applyConstraints({ advanced: [{ zoom: targetZoom }] });
+            }
+          } catch(e){ /* zoom not applicable, fine */ }
+        }
       }
 
       setStatus('Ready — point at barcode', '');
+
+      // ── Adaptive hint — if 4s pass without detection, suggest tweaks ──
+      // Clear any previous timer first
+      if(window.__scanHintTimer) clearTimeout(window.__scanHintTimer);
+      window.__scanHintTimer = setTimeout(() => {
+        if(modal.classList.contains('open') && !lastScannedCode){
+          hintEl.textContent = '💡 Hard label? Get closer · turn on 🔦 Torch · hold steady';
+        }
+      }, 4000);
+
       return true;
     } catch(e){
       console.error('Camera/scanner error:', e);
@@ -1598,6 +1623,7 @@ async function openLabel(palletId){
   }
 
   function stopCamera(){
+    try { if(window.__scanHintTimer){ clearTimeout(window.__scanHintTimer); window.__scanHintTimer = null; } } catch(e){}
     try { if(scanControls && typeof scanControls.stop === 'function') scanControls.stop(); } catch(e){}
     try { if(currentStream) currentStream.getTracks().forEach(t => t.stop()); } catch(e){}
     scanControls = null;
