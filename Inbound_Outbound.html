@@ -892,14 +892,21 @@ td,th{white-space:nowrap}
       const hints = new Map();
       if(Z.DecodeHintType && Z.BarcodeFormat){
         hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [
-          Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.ITF,
-          Z.BarcodeFormat.QR_CODE, Z.BarcodeFormat.DATA_MATRIX,
-          Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.UPC_A,
-          Z.BarcodeFormat.PDF_417, Z.BarcodeFormat.CODABAR
+          Z.BarcodeFormat.CODE_128,    // UPS, FedEx, DHL, Amazon FBA
+          Z.BarcodeFormat.CODE_39,     // FedEx Ground (older)
+          Z.BarcodeFormat.ITF,         // USPS Intelligent Mail
+          Z.BarcodeFormat.QR_CODE,     // FR-Logistics pallets, generic
+          Z.BarcodeFormat.DATA_MATRIX, // Amazon FBA secondary
+          Z.BarcodeFormat.EAN_13,
+          Z.BarcodeFormat.UPC_A,
+          Z.BarcodeFormat.PDF_417,
+          Z.BarcodeFormat.CODABAR
         ]);
         hints.set(Z.DecodeHintType.TRY_HARDER, true);
+        hints.set(Z.DecodeHintType.ASSUME_CODE_39_CHECK_DIGIT, false);
       }
-      codeReader = new Z.BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 200 });
+      // 100ms between attempts — better for dense UPS Code 128 labels
+      codeReader = new Z.BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 100 });
 
       const constraints = {
         audio: false,
@@ -924,9 +931,28 @@ td,th{white-space:nowrap}
                              ' · Fill the frame · Hold steady';
         const caps = currentTrack.getCapabilities ? currentTrack.getCapabilities() : {};
         torchBtn.style.display = caps.torch ? 'inline-flex' : 'none';
+
+        // Zoom 1.5-1.8x helps dense UPS Code 128 labels
+        if(caps.zoom){
+          try {
+            const targetZoom = Math.min(1.8, caps.zoom.max || 1.8);
+            if(targetZoom > (caps.zoom.min || 1) + 0.1){
+              await currentTrack.applyConstraints({ advanced: [{ zoom: targetZoom }] });
+            }
+          } catch(e){}
+        }
       }
 
       setStatus('Ready — point at barcode', '');
+
+      // Adaptive hint after 4s without detection
+      if(window.__scanHintTimer) clearTimeout(window.__scanHintTimer);
+      window.__scanHintTimer = setTimeout(() => {
+        if(modal.classList.contains('open') && !lastScannedCode){
+          hintEl.textContent = '💡 Hard label? Get closer · turn on 🔦 Torch · hold steady';
+        }
+      }, 4000);
+
       return true;
     } catch(e){
       console.error('Camera/scanner error:', e);
@@ -955,6 +981,7 @@ td,th{white-space:nowrap}
   }
 
   function stopCamera(){
+    try { if(window.__scanHintTimer){ clearTimeout(window.__scanHintTimer); window.__scanHintTimer = null; } } catch(e){}
     try { if(scanControls && typeof scanControls.stop === 'function') scanControls.stop(); } catch(e){}
     try { if(currentStream) currentStream.getTracks().forEach(t => t.stop()); } catch(e){}
     scanControls = null; codeReader = null;
