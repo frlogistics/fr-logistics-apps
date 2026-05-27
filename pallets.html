@@ -700,8 +700,11 @@
 
       <div class="row">
         <div>
-          <label>Load pallet by Pallet ID</label>
-          <input id="lookupPalletId" class="mono" placeholder="Paste Pallet ID and Enter" />
+          <label>Load pallet by Pallet ID (scan QR)</label>
+          <div class="scan-input-group">
+            <input id="lookupPalletId" class="mono" placeholder="Paste/scan Pallet ID and Enter" />
+            <button type="button" class="scan-btn" id="lookupPalletIdScanBtn" aria-label="Open camera scanner" title="Open camera scanner">📷</button>
+          </div>
         </div>
         <div style="display:flex; align-items:end;">
           <button class="primary" id="lookupPalletBtn" style="width:100%;">Load Pallet</button>
@@ -1005,6 +1008,13 @@
     const ok=await ensureCurrentPallet(); if(!ok) return;
     const trk=$("pkgTracking").value.trim();
     if(!trk){ setStatus("leftStatus","Scan a package tracking number.","bad"); return; }
+    // Guard — a Pallet ID is not a package tracking
+    if(/^FRP-/i.test(trk)){
+      setStatus("leftStatus","That looks like a Pallet ID (FRP-...), not a package tracking. Scan the carrier label.","bad");
+      $("pkgTracking").value = "";
+      $("pkgTracking").focus();
+      return;
+    }
     const mapped=await checkTrackingExists(trk);
     if(mapped){ setStatus("leftStatus",`Tracking already registered on pallet ${mapped.pallet_id}`,"bad"); return; }
     if((currentPallet.packages||[]).some(x=>x.tracking===trk)){ setStatus("leftStatus","Tracking already in this pallet.","bad"); return; }
@@ -1244,6 +1254,14 @@ function isNotFull(status){
 async function lookupTracking(){
   const trk = $("lookupTracking").value.trim();
   if(!trk) return;
+  // ── Smart routing — if a Pallet ID QR was scanned by mistake, redirect ──
+  if(/^FRP-/i.test(trk)){
+    $("lookupResult").innerHTML = `<div class="status warn">Scanned a Pallet ID, not a tracking. Loading pallet <span class="mono">${trk}</span>…</div>`;
+    $("lookupPalletId").value = trk;
+    $("lookupTracking").value = "";
+    await loadPallet(trk);
+    return;
+  }
   try {
     const data = await sbFetch("GET", `/rest/v1/pallet_packages?tracking=eq.${encodeURIComponent(trk)}&limit=1`);
     if(!data || data.length === 0){
@@ -1738,6 +1756,12 @@ async function openLabel(palletId){
         const btn = document.getElementById('lookupTrackingBtn');
         if(btn) btn.click();
       }
+    }, false);
+
+    // lookupPalletId → single shot (scan the Pallet QR to load it)
+    bindScanButton('lookupPalletIdScanBtn', 'lookupPalletId', () => {
+      const btn = document.getElementById('lookupPalletBtn');
+      if(btn) btn.click();
     }, false);
   }
 
