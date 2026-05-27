@@ -111,6 +111,25 @@
   .msg-warn { background: #fef3c7; color: var(--fr-orange); }
   .hidden { display: none; }
   .muted { color: var(--fr-gray); }
+
+  /* Responsive — iPhone & iPad */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%; }
+  .table-wrap table { min-width: 720px; }
+  @media (max-width: 1024px) {
+    main { padding: 20px; }
+    header { padding: 14px 20px; }
+  }
+  @media (max-width: 768px) {
+    main { padding: 14px; }
+    header { padding: 12px 14px; flex-wrap: wrap; gap: 10px; }
+    .brand-text h1 { font-size: 16px; }
+    .toolbar { flex-wrap: wrap; gap: 10px; }
+    .toolbar-left { flex-wrap: wrap; gap: 8px; }
+    .btn-export, .btn-refresh, select { width: 100%; }
+    .toolbar-left { width: 100%; }
+    table { font-size: 13px; }
+    table th, table td { padding: 8px 6px !important; }
+  }
 </style>
 </head>
 <body>
@@ -147,6 +166,7 @@
   </div>
 
   <div class="panel">
+    <div class="table-wrap">
     <table>
       <thead>
         <tr>
@@ -165,6 +185,7 @@
         <tr><td colspan="9" class="empty-state">Loading orders…</td></tr>
       </tbody>
     </table>
+    </div>
   </div>
 </main>
 
