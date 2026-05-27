@@ -249,6 +249,17 @@
     font-size: 11px; color: var(--gray);
   }
 
+  @media (max-width: 1024px) {
+    .container { padding: 1.25rem 1rem 2.5rem; }
+  }
+  @media (max-width: 768px) {
+    .topnav { padding: 0 14px; flex-wrap: wrap; gap: 8px; }
+    .container { padding: 1rem 0.75rem 2rem; }
+    .cred-grid { grid-template-columns: 1fr; }
+    .phase-nav { gap: 6px; }
+    .phase-btn { padding: 8px 12px; font-size: 12px; min-height: 36px; }
+    input, select, textarea { font-size: 16px; }
+  }
   @media (max-width: 640px) {
     .cred-grid { grid-template-columns: 1fr; }
     .phase-num { font-size: 22px; min-width: 28px; }
