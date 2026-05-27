@@ -412,9 +412,19 @@
     letter-spacing: 0.04em;
   }
 
+  @media (max-width: 1024px) {
+    .container { padding: 1.75rem 1.5rem 3.5rem; }
+    footer { padding: 1.5rem; }
+  }
+  @media (max-width: 768px) {
+    .topnav { padding: 0 1rem; flex-wrap: wrap; gap: 8px; min-height: auto; padding: 10px 1rem; }
+    .container { padding: 1.5rem 1.25rem 3rem; }
+    .cards { grid-template-columns: 1fr; gap: 10px; }
+    input, select, textarea { font-size: 16px; }
+  }
   @media (max-width: 600px) {
     .hero { padding: 2rem 1.25rem 2.75rem; }
-    .container { padding: 1.5rem 1.25rem 3rem; }
+    .container { padding: 1.25rem 1rem 2.5rem; }
     .cards { grid-template-columns: 1fr; }
     .chips-row { gap: 6px; }
     .chip { font-size: 12px; padding: 5px 11px; }
