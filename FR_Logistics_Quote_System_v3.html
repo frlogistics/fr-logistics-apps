@@ -1591,7 +1591,26 @@ function dlPDF(){
   // Render UI now that rates are loaded
   renderSvcs();
   loadDraft();
+
+  // Capa 3 — auto-import si venimos del Inbox con #lead={uuid}
+  await maybeImportLeadFromHash();
 })();
+
+// Reads #lead={uuid} from the URL (set by the Inbox "Cotizar" button),
+// fetches that single lead, and pre-fills the form automatically.
+async function maybeImportLeadFromHash(){
+  try{
+    const m = (location.hash||'').match(/lead=([0-9a-f-]{36})/i);
+    if(!m) return;
+    const id = m[1];
+    const res = await fetch(`${LEADS_API}?id=${encodeURIComponent(id)}`);
+    if(!res.ok) return;
+    const lead = await res.json();
+    if(lead && lead.id){
+      pickLead(encodeURIComponent(JSON.stringify(lead)));
+    }
+  }catch(_){ /* non-fatal */ }
+}
 </script>
 </body>
 </html>
