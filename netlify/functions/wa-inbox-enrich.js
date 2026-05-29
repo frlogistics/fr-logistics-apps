@@ -55,9 +55,9 @@ exports.handler = async (event) => {
   try {
     // ── Enrich map: phone -> lead context ────────────────────────────────
     if (qs.enrich === "phones") {
-      // Pull recent-ish leads (any status) so even won/lost chats resolve.
+      // Active leads only — a "lost" lead shouldn't badge a chat in the inbox.
       const leads = await sb(
-        `wa_leads?select=id,name,email,phone,service,service_detail,status,country,monthly_volume&order=created_at.desc&limit=500`
+        `wa_leads?select=id,name,email,phone,service,service_detail,status,country,monthly_volume&status=neq.lost&order=created_at.desc&limit=500`
       );
       const map = {};
       for (const l of leads) {
