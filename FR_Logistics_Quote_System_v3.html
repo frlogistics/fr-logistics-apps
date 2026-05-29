@@ -147,6 +147,17 @@
 
     .em-total-bar{background:linear-gradient(135deg,#065f46,#0f766e);border-radius:10px;padding:12px 16px;
                   display:flex;justify-content:space-between;align-items:center;margin-top:4px}
+
+    /* LEAD IMPORT BUTTON + MODAL */
+    .lead-import-btn{width:100%;background:linear-gradient(135deg,#0F172A,#1e293b);color:#fff;
+                     border:none;border-radius:10px;padding:10px 16px;font-weight:600;font-size:13px;
+                     cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+                     font-family:'DM Sans',sans-serif;transition:all .12s}
+    .lead-import-btn:hover{transform:translateY(-1px);filter:brightness(1.15)}
+    .lead-card{display:block;width:100%;text-align:left;border:1px solid #e2e8f0;border-radius:11px;
+               padding:12px 14px;margin-bottom:8px;background:#fff;cursor:pointer;
+               font-family:'DM Sans',sans-serif;transition:all .12s}
+    .lead-card:hover{border-color:#86efac;background:#f0fdf4}
   </style>
 </head>
 <body>
@@ -167,6 +178,18 @@
     <div>
       <div class="card">
         <div class="ch"><h3><span class="si">👤</span>Client Information</h3></div>
+
+        <!-- ▼▼▼ IMPORT FROM LEAD — botón ▼▼▼ -->
+        <div style="padding:12px 18px 0;">
+          <button type="button" class="lead-import-btn" onclick="openLeadImport()">
+            📥 Import from WhatsApp Lead
+          </button>
+          <div id="importedBadge" style="display:none;margin-top:8px;font-size:12px;
+               color:#15803d;font-weight:600;background:#f0fdf4;border:1px solid #bbf7d0;
+               border-radius:8px;padding:7px 11px;"></div>
+        </div>
+        <!-- ▲▲▲ IMPORT FROM LEAD — botón ▲▲▲ -->
+
         <div class="cb">
           <div class="f"><label>Company / Client Name</label><input id="clientName" placeholder="Acme Distribution LLC" oninput="saveDraft();updateQID()"/></div>
           <div class="fr">
@@ -263,6 +286,36 @@
   </div>
 
   <div class="footer">FR-Logistics &nbsp;·&nbsp; 10893 NW 17th Street, Unit 121, Miami, FL 33172 &nbsp;·&nbsp; (786) 300-1443 &nbsp;·&nbsp; info@fr-logistics.net &nbsp;·&nbsp; www.fr-logistics.net</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     LEAD IMPORT MODAL — FR-Logistics WhatsApp Leads
+═══════════════════════════════════════════════ -->
+<div id="leadModal" style="display:none;position:fixed;inset:0;z-index:99999;
+     background:rgba(10,20,35,.6);backdrop-filter:blur(4px);
+     align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#fff;border-radius:18px;max-width:540px;width:100%;
+       max-height:84vh;display:flex;flex-direction:column;overflow:hidden;
+       box-shadow:0 30px 80px rgba(0,0,0,.3);font-family:'DM Sans',sans-serif;">
+    <div style="background:linear-gradient(135deg,#065f46,#16a34a);padding:16px 20px;
+         display:flex;justify-content:space-between;align-items:center;">
+      <div style="display:flex;align-items:center;gap:11px;">
+        <div style="width:34px;height:34px;background:rgba(255,255,255,.2);border-radius:9px;
+             display:flex;align-items:center;justify-content:center;font-size:17px;">💬</div>
+        <div>
+          <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:15px;color:#fff;">Import a WhatsApp Lead</div>
+          <div style="font-size:11px;color:rgba(209,250,229,.85);margin-top:1px;">Captured 24/7 by Liam</div>
+        </div>
+      </div>
+      <button onclick="closeLeadImport()" style="background:rgba(255,255,255,.15);color:#fff;
+              border:none;cursor:pointer;border-radius:8px;padding:6px 11px;font-size:13px;
+              font-weight:600;">✕</button>
+    </div>
+    <div style="padding:13px 20px 6px;font-size:12px;color:#64748b;flex-shrink:0;">
+      Pick a lead to pre-fill contact &amp; scope. <strong>Volume still needs your qualification.</strong>
+    </div>
+    <div id="leadList" style="flex:1;overflow-y:auto;padding:8px 20px 20px;font-size:14px;">Loading…</div>
+  </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════
@@ -431,31 +484,20 @@
 // - Added 13 new services (Bubble Wrap, B2B, Hang Tag, etc.)
 // - Fixed urgent rates: Returns $1.25→$5 (D8), EcoPack $2→$2.50 (D5),
 //   Outbound carton $1→$2 (D7), AMZ Plan $50→$8 (D10)
+//
+// 2026-05-29 — Added "Import from WhatsApp Lead": pulls leads from wa_leads via
+//   /.netlify/functions/quote-leads, pre-fills client fields, and links the quote
+//   back to the lead (source_lead_id) + advances the WA Lead Capture pipeline.
 // ════════════════════════════════════════════════════════════════════════════
 
 const SK='fr_q_v4';  // bumped from v3 to invalidate old localStorage drafts
 const RATES_API = '/.netlify/functions/billing-rates';
+const LEADS_API = '/.netlify/functions/quote-leads';
 const CO={name:'FR-Logistics',address:'10893 NW 17th Street, Unit 121, Miami, FL 33172',
           phone:'(786) 300-1443',email:'info@fr-logistics.net',website:'www.fr-logistics.net',
           tagline:'3PL Fulfillment · Amazon FBA Prep · E-Commerce Logistics'};
 
 // ─── SERVICE CATALOG TEMPLATE ─────────────────────────────────────────────────
-// Defines display metadata (categories, descriptions, units, source bindings).
-// Rates are NEVER hardcoded here — they're fetched from billing-rates API and
-// injected into the .rate field at runtime via mergeRatesIntoCatalog().
-//
-// Field guide:
-//   id      = stable internal ID for localStorage / DOM bindings
-//   code    = canonical service_code matching billing-rates API (key for rate lookup)
-//   name    = display label
-//   cat     = UI category grouping
-//   unit    = display unit (e.g. "per order", "per unit")
-//   src     = volume input ID for auto-population ('orders'|'pallets'|'units'|null)
-//   dq      = default qty when src is null (1 = enabled by default for fixed services)
-//   desc    = customer-facing description
-//   note    = optional badge/tooltip
-//   auto    = true if rate auto-populates from monthly volume input (P&P, Labeling)
-// ─────────────────────────────────────────────────────────────────────────────
 const SVCS_TEMPLATE = [
   // ─── STORAGE ────────────────────────────────────────────────────────────
   {id:'STO_RACK',     code:'STO_RACK',     name:'Pallet Rack Storage',           cat:'Storage', unit:'per rack / mo',   src:'pallets', dq:1, desc:'Standard rack position storage'},
@@ -545,6 +587,111 @@ const fmtD=iso=>{if(!iso)return'—';const[y,m,d]=iso.split('-');return`${m}/${d
 const safe=s=>(s||'Quote').replace(/[^a-z0-9]+/gi,'_').replace(/^_|_$/g,'');
 
 // ════════════════════════════════════════════════════════════════════════════
+// IMPORT FROM WHATSAPP LEAD
+// ════════════════════════════════════════════════════════════════════════════
+let _sourceLeadId = null;
+
+// service enum / free text -> matches one of the <select id="channel"> options
+function inferLeadChannel(lead){
+  const blob = `${lead.service||''} ${lead.service_detail||''} ${lead.notes||''}`.toLowerCase();
+  if(blob.includes('fbm') || blob.includes('merchant')) return 'Amazon FBM';
+  if(blob.includes('fba') || blob.includes('amazon'))   return 'Amazon FBA';
+  if(blob.includes('shopify') || blob.includes('dtc'))  return 'Shopify DTC';
+  if(blob.includes('wholesale') || blob.includes('b2b'))return 'Wholesale / B2B';
+  if(blob.includes('multi'))                            return 'Multi-Channel';
+  return 'Other'; // dropship / cross-dock / latam / storage → Other
+}
+
+// flags gimail.com, gmial.com, hotmial.com, malformed addresses, etc.
+function leadEmailLooksOff(email){
+  if(!email) return true;
+  return !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email) ||
+         /g[i1l]mail\.|gmial\.|hotmial\.|yaho\./i.test(email);
+}
+
+async function openLeadImport(){
+  $('leadModal').style.display='flex';
+  const list=$('leadList');
+  list.innerHTML='<div style="color:#94a3b8;text-align:center;padding:24px 0;">Loading leads…</div>';
+  try{
+    const res=await fetch(LEADS_API);
+    const leads=await res.json();
+    if(!Array.isArray(leads) || !leads.length){
+      list.innerHTML='<div style="color:#94a3b8;text-align:center;padding:24px 0;"><em>No importable leads in the last 60 days.</em></div>';
+      return;
+    }
+    list.innerHTML=leads.map(l=>{
+      const date=new Date(l.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+      const svc=(l.service && l.service!=='other')
+        ? l.service.replace(/_/g,' ')
+        : (l.service_detail ? l.service_detail.slice(0,42)+'…' : 'general inquiry');
+      const flag=leadEmailLooksOff(l.email)
+        ? ' <span style="color:#d97706;" title="Check email">⚠️</span>' : '';
+      const json=encodeURIComponent(JSON.stringify(l));
+      return `<button class="lead-card" onclick='pickLead("${json}")'>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;">
+          <strong style="font-size:14px;color:#0f172a;">${l.name||'(no name)'}${flag}</strong>
+          <span style="color:#94a3b8;font-size:11px;">${date}</span>
+        </div>
+        <div style="color:#64748b;font-size:12px;margin-top:2px;">
+          ${svc} · ${(l.language||'').toUpperCase()} ${l.phone?'· '+l.phone:''}
+        </div>
+      </button>`;
+    }).join('');
+  }catch(e){
+    list.innerHTML=`<div style="color:#dc2626;padding:16px 0;">Error loading leads: ${e.message}</div>`;
+  }
+}
+
+function pickLead(encoded){
+  const lead=JSON.parse(decodeURIComponent(encoded));
+
+  $('contactName').value = lead.name || '';
+  $('clientName').value  = lead.name || '';   // rename to company if it's a business
+  $('contactEmail').value= lead.email || '';
+  $('channel').value     = inferLeadChannel(lead);
+
+  const ctx=[];
+  if(lead.service_detail) ctx.push(`Lead said: "${lead.service_detail}"`);
+  if(lead.monthly_volume) ctx.push(`Stated volume: ${lead.monthly_volume}`);
+  if(lead.country)        ctx.push(`Country: ${lead.country}`);
+  if(lead.phone)          ctx.push(`WhatsApp: ${lead.phone}`);
+  ctx.push(`Source: ${lead.source||'lead'} · imported ${new Date().toLocaleDateString()}`);
+  $('notes').value = ctx.join('\n');
+
+  _sourceLeadId = lead.id;
+
+  // refresh the builder's own UI
+  updateQID();
+  saveDraft();
+
+  const badge=$('importedBadge');
+  badge.style.display='block';
+  badge.innerHTML = `✓ Imported <strong>${lead.name||'lead'}</strong>` +
+    (leadEmailLooksOff(lead.email)
+      ? ' &nbsp;⚠️ <span style="color:#b45309;">verify email before sending</span>' : '');
+
+  closeLeadImport();
+}
+
+function closeLeadImport(){
+  $('leadModal').style.display='none';
+}
+
+// Advances the lead in the WA Lead Capture pipeline (new/qualifying -> sent_to_sales).
+// Called automatically when an email draft is created.
+async function markLeadQuoted(){
+  if(!_sourceLeadId) return;
+  try{
+    await fetch(LEADS_API,{
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:_sourceLeadId, status:'sent_to_sales'})
+    });
+  }catch(_){ /* non-fatal */ }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // RATES LOADING — fetches DEFAULT rates from billing-rates API on init
 // ════════════════════════════════════════════════════════════════════════════
 async function loadRates(){
@@ -581,7 +728,6 @@ function showRatesOk(){
 }
 
 // Build the SVCS array by merging template metadata with API rates.
-// Services without a matching rate code in the API response are skipped silently.
 function buildCatalog(apiRates){
   SVCS = SVCS_TEMPLATE
     .map(t => {
@@ -648,14 +794,12 @@ function getDQ(s){return s.src?(+$(s.src)?.value||0):s.dq}
 
 // ════════════════════════════════════════════════════════════════════════════
 // VOLUME BINDINGS — auto-populate qty for services bound to volume inputs
-// (replaces v3's applyAuto() tier logic — rates are now flat from API)
 // ════════════════════════════════════════════════════════════════════════════
 function applyVolumeBindings(){
   if(!_ratesLoaded) return;
   const o=+$('orders').value||0;
   const u=+$('units').value||0;
   const p=+$('pallets').value||0;
-  // Auto-fill qty for the two flagship auto services
   const fq=$('qty_FUL_PP1'),  lq=$('qty_PRP_FNSKU');
   if(fq)fq.value=o;
   if(lq)lq.value=u;
@@ -736,13 +880,14 @@ function toggleAll(f){
 
 function saveDraft(){
   if(!_ratesLoaded) return;  // don't save during initial load
-  try{localStorage.setItem(SK,JSON.stringify({client:getClient(),ss:SVCS.map(s=>({id:s.id,ch:$(`chk_${s.id}`)?.checked||false,q:$(`qty_${s.id}`)?.value||'',r:$(`rate_${s.id}`)?.value||'',d:$(`desc_${s.id}`)?.value||''}))}));}catch(e){}
+  try{localStorage.setItem(SK,JSON.stringify({client:getClient(),sourceLeadId:_sourceLeadId,ss:SVCS.map(s=>({id:s.id,ch:$(`chk_${s.id}`)?.checked||false,q:$(`qty_${s.id}`)?.value||'',r:$(`rate_${s.id}`)?.value||'',d:$(`desc_${s.id}`)?.value||''}))}));}catch(e){}
 }
 
 function loadDraft(){
   try{
     const raw=localStorage.getItem(SK);if(!raw)return;
     const dr=JSON.parse(raw);
+    if(dr.sourceLeadId) _sourceLeadId=dr.sourceLeadId;
     if(dr.client){
       const c=dr.client;
       $('clientName').value=c.clientName||''; $('contactName').value=c.contactName||'';
@@ -768,6 +913,8 @@ function loadDraft(){
 function clearQ(){
   if(!confirm('Reset this quote?'))return;
   try{localStorage.removeItem(SK);}catch(e){}
+  _sourceLeadId=null;
+  const badge=$('importedBadge'); if(badge) badge.style.display='none';
   ['clientName','contactName','contactEmail','notes'].forEach(id=>$(id).value='');
   $('qDate').value=today(); $('channel').value='Amazon FBA'; $('opType').value='Startup';
   $('prepBy').value='Jose Fuentes – Operations Manager';
@@ -1162,6 +1309,7 @@ function openGmailCompose(){
   .then(data=>{
     btn.innerHTML=origText; btn.disabled=false; btn.style.opacity='1';
     if(data.success){
+      markLeadQuoted();   // advance the WA Lead Capture pipeline
       closeEmailModal();
       showToast(es
         ? '✅ Borrador creado en josefuentes@fr-logistics.net — revisa Borradores'
@@ -1173,6 +1321,7 @@ function openGmailCompose(){
   .catch(err=>{
     btn.innerHTML=origText; btn.disabled=false; btn.style.opacity='1';
     if(err.message&&err.message.includes('Failed to fetch')){
+      markLeadQuoted();   // advance the WA Lead Capture pipeline
       closeEmailModal();
       showToast(es
         ? '📨 Solicitud enviada — revisa Borradores en josefuentes@fr-logistics.net'
@@ -1232,7 +1381,7 @@ function buildPDFDoc(){
   doc.setDrawColor(...S2);doc.setLineWidth(1.5);doc.line(0,y+stripH,PW,y+stripH);
   y+=stripH+14;
 
-  // Services table (no more pricing snapshot tier cards)
+  // Services table
   doc.setTextColor(5,150,105);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
   doc.text('SELECTED SERVICES',ML,y);y+=8;
   const tCols=[usableW*0.22,usableW*0.14,usableW*0.32,usableW*0.08,usableW*0.12,usableW*0.12];
