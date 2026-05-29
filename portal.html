@@ -1070,6 +1070,334 @@ document.addEventListener('DOMContentLoaded',()=>syncClientView(null));
   }
 })();
 </script>
+   <!-- ════════════════════════════════════════════════════════════════════════
+     WHATSAPP INBOX — Search + Lead Enrichment + Quote button (3 capas)
+     Pega este bloque COMPLETO justo antes de </body>, después del
+     <script id="waNotifModule">. No toca el código existente: lo envuelve.
+════════════════════════════════════════════════════════════════════════ -->
+<script id="waInboxEnhance">
+(function(){
+  'use strict';
+
+  const ENRICH_API = '/.netlify/functions/wa-inbox-enrich';
+  const QUOTE_APP  = 'FR_Logistics_Quote_System_v3.html';
+
+  let leadMap = {};          // normPhone -> { name, email, service, status, lead_id, ... }
+  let searchTerm = '';
+  let deepResults = null;    // results from server-side deep search (or null)
+
+  const normP = p => String(p||'').replace(/\D/g,'');
+  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  const STATUS_BADGE = {
+    sent_to_sales: {t:'Sales',  bg:'#dbeafe', c:'#1d4ed8'},
+    qualifying:    {t:'Qualifying', bg:'#fef9c3', c:'#854d0e'},
+    new:           {t:'New',    bg:'#dcfce7', c:'#16a34a'},
+    won:           {t:'Won',    bg:'#dcfce7', c:'#15803d'},
+    lost:          {t:'Lost',   bg:'#fee2e2', c:'#dc2626'},
+  };
+
+  // ── Fetch the phone->lead map once, refresh periodically ──────────────────
+  async function loadLeadMap(){
+    try{
+      const r = await fetch(`${ENRICH_API}?enrich=phones`);
+      if(r.ok){ leadMap = await r.json() || {}; }
+    }catch(_){ /* non-fatal — inbox still works without enrichment */ }
+  }
+
+  // Look up a thread's lead context by its phone.
+  function leadFor(phone){ return leadMap[normP(phone)] || null; }
+
+  // ── Inject the search box into the inbox header (once) ────────────────────
+  function injectSearchBox(){
+    const header = document.querySelector('#tabWhatsapp .inboxList .inboxHeader');
+    if(!header || document.getElementById('inboxSearchWrap')) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'inboxSearchWrap';
+    wrap.style.cssText = 'padding:10px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--card);z-index:2';
+    wrap.innerHTML =
+      '<div style="position:relative">' +
+        '<input id="inboxSearch" type="text" placeholder="🔎 Search name, phone or email…" ' +
+          'style="width:100%;padding:8px 30px 8px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;outline:none" ' +
+          'oninput="window._inboxSearch(this.value)"/>' +
+        '<span id="inboxSearchClear" onclick="window._inboxSearchClear()" ' +
+          'style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--muted);font-size:16px">✕</span>' +
+      '</div>' +
+      '<div id="inboxSearchHint" style="font-size:11px;color:var(--muted);margin-top:6px;display:none"></div>';
+    // place it right AFTER the "Conversations / count" header row
+    header.insertAdjacentElement('afterend', wrap);
+  }
+
+  // ── Search handlers ───────────────────────────────────────────────────────
+  let deepTimer = null;
+  window._inboxSearch = function(v){
+    searchTerm = (v||'').trim().toLowerCase();
+    document.getElementById('inboxSearchClear').style.display = searchTerm ? 'block' : 'none';
+    deepResults = null;
+    if(typeof window.renderInboxList === 'function') window.renderInboxList();
+
+    // If nothing matched locally and term is meaningful, do a deep DB search.
+    clearTimeout(deepTimer);
+    const hint = document.getElementById('inboxSearchHint');
+    if(searchTerm.length >= 2){
+      const localCount = countLocalMatches();
+      if(localCount === 0){
+        hint.style.display='block';
+        hint.textContent='Searching all history…';
+        deepTimer = setTimeout(runDeepSearch, 350);
+      } else {
+        hint.style.display='none';
+      }
+    } else {
+      hint.style.display='none';
+    }
+  };
+  window._inboxSearchClear = function(){
+    const i=document.getElementById('inboxSearch'); if(i) i.value='';
+    window._inboxSearch('');
+  };
+
+  function countLocalMatches(){
+    const all = window.allMessages || [];
+    const phones = new Set();
+    all.forEach(m=>{ phones.add(normP(m.direction==='inbound'?m.from:m.to)); });
+    let n=0;
+    phones.forEach(p=>{ if(matchesThread(p)) n++; });
+    return n;
+  }
+
+  async function runDeepSearch(){
+    const hint = document.getElementById('inboxSearchHint');
+    try{
+      const r = await fetch(`${ENRICH_API}?search=${encodeURIComponent(searchTerm)}`);
+      deepResults = r.ok ? await r.json() : [];
+      if(typeof window.renderInboxList === 'function') window.renderInboxList();
+      hint.textContent = deepResults.length
+        ? `${deepResults.length} result${deepResults.length!==1?'s':''} from full history`
+        : 'No matches in history';
+      hint.style.display = 'block';
+    }catch(_){ hint.style.display='none'; }
+  }
+
+  // Does a thread (by phone) match the current search term?
+  function matchesThread(phone){
+    if(!searchTerm) return true;
+    const np = normP(phone);
+    const termDigits = normP(searchTerm);
+    // phone match only when the search term actually contains digits
+    if(termDigits.length >= 3 && np.includes(termDigits)) return true;
+    const lead = leadMap[np];
+    const hay = [
+      lead?.name, lead?.email, lead?.service,
+      threadDisplayName(phone)
+    ].filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(searchTerm);
+  }
+
+  // Real display name: prefer lead name over the generic "Liam" stored in msgs.
+  function threadDisplayName(phone){
+    const lead = leadFor(phone);
+    if(lead && lead.name) return lead.name;
+    const all = window.allMessages || [];
+    const m = all.find(x => normP(x.from)===normP(phone) || normP(x.to)===normP(phone));
+    return (m && m.clientName) || phone;
+  }
+  window._inboxThreadName = threadDisplayName;
+
+  // ── Wrap renderInboxList to (a) filter by search (b) enrich names+badges ──
+  function wrapRenderInbox(){
+    const orig = window.renderInboxList;
+    if(typeof orig !== 'function' || orig.__enhanced) return;
+
+    window.renderInboxList = function(){
+      // If a deep search is active, render those results instead.
+      if(searchTerm && deepResults){
+        renderDeepResults();
+        return;
+      }
+      orig.apply(this, arguments);          // let the original build the list
+      if(searchTerm) applySearchFilter();   // hide non-matching rows
+      enrichRenderedList();                 // swap names, add badges
+    };
+    window.renderInboxList.__enhanced = true;
+  }
+
+  // Hide rows whose phone doesn't match the search (operates on rendered DOM).
+  function applySearchFilter(){
+    const lb = document.getElementById('inboxListBody');
+    if(!lb) return;
+    let shown=0;
+    lb.querySelectorAll('.inboxItem').forEach(row=>{
+      const oc = row.getAttribute('onclick')||'';
+      const m = oc.match(/openThread\('([^']*)'/);
+      const phone = m ? m[1] : '';
+      const ok = matchesThread(phone);
+      row.style.display = ok ? '' : 'none';
+      if(ok) shown++;
+    });
+    const ce = document.getElementById('inboxCount');
+    if(ce && searchTerm) ce.textContent = shown + ' match' + (shown!==1?'es':'');
+  }
+
+  // Replace generic names with lead names and append a status badge.
+  function enrichRenderedList(){
+    const lb = document.getElementById('inboxListBody');
+    if(!lb) return;
+    lb.querySelectorAll('.inboxItem').forEach(row=>{
+      const oc = row.getAttribute('onclick')||'';
+      const m = oc.match(/openThread\('([^']*)'/);
+      const phone = m ? m[1] : '';
+      const lead = leadFor(phone);
+      if(!lead) return;
+      const fromEl = row.querySelector('.inboxFrom');
+      if(fromEl && lead.name){
+        // only override the generic agent name, keep real captured names
+        const cur = fromEl.textContent.trim().toLowerCase();
+        if(cur==='liam' || cur===normP(phone) || cur===phone || cur.startsWith('+')) {
+          fromEl.textContent = lead.name;
+        }
+        if(!fromEl.querySelector('.leadBadge')){
+          const b = STATUS_BADGE[lead.status];
+          if(b){
+            const span=document.createElement('span');
+            span.className='leadBadge';
+            span.style.cssText=`margin-left:6px;font-size:9px;font-weight:700;padding:1px 6px;border-radius:5px;background:${b.bg};color:${b.c};vertical-align:middle`;
+            span.textContent=b.t;
+            fromEl.appendChild(span);
+          }
+        }
+      }
+    });
+  }
+
+  // Render server-side deep-search results as clickable rows.
+  function renderDeepResults(){
+    const lb = document.getElementById('inboxListBody');
+    const ce = document.getElementById('inboxCount');
+    if(!lb) return;
+    if(ce) ce.textContent = (deepResults.length||0)+' found';
+    if(!deepResults.length){
+      lb.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">No matches in full history.</div>';
+      return;
+    }
+    lb.innerHTML = deepResults.map(d=>{
+      const name = d.name || d.phone;
+      const initials = (name||'?').split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
+      const b = STATUS_BADGE[d.status];
+      const badge = b ? `<span style="margin-left:6px;font-size:9px;font-weight:700;padding:1px 6px;border-radius:5px;background:${b.bg};color:${b.c}">${b.t}</span>` : '';
+      const sub = d.email || d.last_text || d.phone || '';
+      return `<div class="inboxItem" onclick="window._openDeepThread('${esc(d.phone)}','${esc(name)}')">
+        <div class="inboxAvatar">${initials}</div>
+        <div style="flex:1;min-width:0">
+          <div class="inboxFrom">${esc(name)}${badge}</div>
+          <div class="inboxPreview">${esc(sub)}</div>
+        </div>
+        <div style="font-size:10px;color:var(--muted)">${d.source==='lead'?'lead':'chat'}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // Open a thread found via deep search: load that phone's messages then open.
+  window._openDeepThread = function(phone, name){
+    fetch('/.netlify/functions/wa-messages?phone='+encodeURIComponent(normP(phone)))
+      .then(r=>r.json())
+      .then(data=>{
+        const arr = Array.isArray(data)?data:[];
+        const existing = window.allMessages || [];
+        const ids = new Set(existing.map(m=>m.id));
+        arr.forEach(m=>{ if(!ids.has(m.id)) existing.push(m); });
+        window.allMessages = existing;
+        // clear search so the thread shows
+        window._inboxSearchClear();
+        if(typeof window.openThread==='function') window.openThread(normP(phone), name);
+      })
+      .catch(()=>{ if(typeof window.openThread==='function') window.openThread(normP(phone), name); });
+  };
+
+  // ── Wrap openThread to inject the Quote button + show lead email ──────────
+  function wrapOpenThread(){
+    const orig = window.openThread;
+    if(typeof orig !== 'function' || orig.__enhanced) return;
+    window.openThread = function(phone, name){
+      const lead = leadFor(phone);
+      // prefer real lead name in the header
+      const displayName = (lead && lead.name) ? lead.name : name;
+      orig.call(this, phone, displayName);
+      decorateThreadHeader(phone, lead);
+    };
+    window.openThread.__enhanced = true;
+  }
+
+  function decorateThreadHeader(phone, lead){
+    const hdr = document.getElementById('threadHeader');
+    if(!hdr) return;
+
+    // show lead email under the phone, if we have it
+    const phoneEl = document.getElementById('threadPhone');
+    if(phoneEl){
+      let emailEl = document.getElementById('threadLeadEmail');
+      if(!emailEl){
+        emailEl = document.createElement('div');
+        emailEl.id = 'threadLeadEmail';
+        emailEl.style.cssText='font-size:11px;color:var(--accent);margin-top:1px';
+        phoneEl.insertAdjacentElement('afterend', emailEl);
+      }
+      emailEl.textContent = (lead && lead.email) ? '✉ '+lead.email : '';
+      emailEl.style.display = (lead && lead.email) ? 'block' : 'none';
+    }
+
+    // inject the "Cotizar" button once, before "Use Template"
+    let qbtn = document.getElementById('threadQuoteBtn');
+    const tplBtn = hdr.querySelector('button[onclick*="replyWithTemplate"]');
+    if(!qbtn && tplBtn){
+      qbtn = document.createElement('button');
+      qbtn.id = 'threadQuoteBtn';
+      qbtn.className = 'waBtn';
+      qbtn.style.cssText = 'padding:5px 12px;font-size:12px;margin-right:6px;background:rgba(31,164,99,.12);border:1px solid rgba(31,164,99,.4);color:var(--accent)';
+      qbtn.textContent = '📋 Cotizar';
+      tplBtn.insertAdjacentElement('beforebegin', qbtn);
+    }
+    if(qbtn){
+      if(lead && lead.lead_id){
+        qbtn.style.display='';
+        qbtn.title='Open Quote Builder pre-filled with this lead';
+        qbtn.onclick = ()=>{
+          // open the Quote Builder in the in-app viewer with the lead id
+          const url = QUOTE_APP + '#lead=' + encodeURIComponent(lead.lead_id);
+          if(typeof window.openApp==='function') window.openApp(url, 'Quote Builder');
+          else window.open(url,'_blank');
+        };
+      } else {
+        // no lead match — hide the button (nothing to pre-fill)
+        qbtn.style.display='none';
+      }
+    }
+  }
+
+  // ── Boot ──────────────────────────────────────────────────────────────────
+  function boot(){
+    injectSearchBox();
+    wrapRenderInbox();
+    wrapOpenThread();
+    loadLeadMap().then(()=>{
+      if(typeof window.renderInboxList==='function') window.renderInboxList();
+    });
+  }
+
+  // Re-run setup whenever the user lands on the WhatsApp tab.
+  document.addEventListener('click',(e)=>{
+    const btn = e.target.closest('[onclick*="switchTab(\'Whatsapp\'"]');
+    if(btn) setTimeout(boot, 120);
+  });
+
+  // Refresh the lead map every 5 min so new leads enrich automatically.
+  setInterval(loadLeadMap, 5*60*1000);
+
+  // First boot (in case inbox is the initial view after login).
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(boot,500));
+  else setTimeout(boot,500);
+})();
+</script>
 
 </body>
 </html>
