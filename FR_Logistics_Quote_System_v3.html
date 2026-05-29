@@ -312,7 +312,8 @@
               font-weight:600;">✕</button>
     </div>
     <div style="padding:13px 20px 6px;font-size:12px;color:#64748b;flex-shrink:0;">
-      Pick a lead to pre-fill contact &amp; scope. <strong>Volume still needs your qualification.</strong>
+      Ranked by quality — 🟢 ready to quote · 🟡 good · 🟠 basic · ⚪ minimal.
+      <strong>Volume still needs your qualification.</strong>
     </div>
     <div id="leadList" style="flex:1;overflow-y:auto;padding:8px 20px 20px;font-size:14px;">Loading…</div>
   </div>
@@ -620,21 +621,25 @@ async function openLeadImport(){
       list.innerHTML='<div style="color:#94a3b8;text-align:center;padding:24px 0;"><em>No importable leads in the last 60 days.</em></div>';
       return;
     }
+    // Quality tier emoji comes from the endpoint's _score (0-3).
+    const tierFor=s=>s>=3?'🟢':s===2?'🟡':s===1?'🟠':'⚪';
     list.innerHTML=leads.map(l=>{
       const date=new Date(l.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'});
       const svc=(l.service && l.service!=='other')
         ? l.service.replace(/_/g,' ')
         : (l.service_detail ? l.service_detail.slice(0,42)+'…' : 'general inquiry');
-      const flag=leadEmailLooksOff(l.email)
-        ? ' <span style="color:#d97706;" title="Check email">⚠️</span>' : '';
+      const emailOff=(typeof l._emailOff==='boolean')?l._emailOff:leadEmailLooksOff(l.email);
+      const flag=emailOff?' <span style="color:#d97706;" title="Check email">⚠️</span>':'';
+      const tier=tierFor(l._score||0);
+      const vol=l.monthly_volume?` · 📦 ${l.monthly_volume}`:'';
       const json=encodeURIComponent(JSON.stringify(l));
       return `<button class="lead-card" onclick='pickLead("${json}")'>
         <div style="display:flex;justify-content:space-between;align-items:baseline;">
-          <strong style="font-size:14px;color:#0f172a;">${l.name||'(no name)'}${flag}</strong>
+          <strong style="font-size:14px;color:#0f172a;">${tier} ${l.name||'(no name)'}${flag}</strong>
           <span style="color:#94a3b8;font-size:11px;">${date}</span>
         </div>
         <div style="color:#64748b;font-size:12px;margin-top:2px;">
-          ${svc} · ${(l.language||'').toUpperCase()} ${l.phone?'· '+l.phone:''}
+          ${svc} · ${(l.language||'').toUpperCase()}${vol} ${l.phone?'· '+l.phone:''}
         </div>
       </button>`;
     }).join('');
