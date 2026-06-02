@@ -14,6 +14,13 @@
 // manifests cannot lose packages because the artifact has been generated).
 // All manifest sync is non-fatal: failures are logged, primary update wins.
 //
+// Day 6 (Receive guard — Option 2): an orphan can ONLY transition to `received`
+// once it actually has a matched email/label. A physically-received package with
+// no email_message_id AND no label_url stays in `orphan` until the Gmail sync
+// (or a manual Process Orphan) attaches the documents. This prevents a package
+// with no printable label from leaking into the dispatch flow. The guard lives
+// here (single source of truth) so scan, batch, and drawer all behave the same.
+//
 // GET endpoints:
 //   ?action=list                         → list (with fr_clients join + config merge)
 //   ?action=list&status=pending          → filter by status
@@ -29,6 +36,7 @@
 //
 // POST endpoints (JSON body: { action, id, operator, ... }):
 //   action=receive          → pending/exception → received   (sets physical_received_at, received_by)
+//                             orphan → received ONLY if it has email_message_id OR label_url
 //   action=label            → received          → labeled    (sets labeled_at)
 //   action=ship             → labeled           → shipped    (sets shipped_at, shipped_by, manifest_id)
 //   action=revert           → received/labeled/shipped → previous status (clears ts/by/manifest_id)
@@ -617,7 +625,8 @@ export default async function handler(req) {
 
       // Load the current row to validate the transition.
       // manifest_id added (Day 5) so revert can decide whether to clear it.
-      const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,label_url,tracking_number,outbound_tracking,client_id,carrier,order_id,content,outbound_carrier,manifest_id&limit=1`);
+      // email_message_id + label_url added (Day 6) for the receive guard.
+      const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,label_url,email_message_id,tracking_number,outbound_tracking,client_id,carrier,order_id,content,outbound_carrier,manifest_id&limit=1`);
       if (!cur.length) return jRes({ error: "not found" }, 404);
       const current = cur[0];
 
@@ -635,6 +644,31 @@ export default async function handler(req) {
       if (!rule) return jRes({ error: `unknown action '${act}'`, allowed: [...Object.keys(LEGAL), "create_orphan", "link_outbound", "unlink_outbound", "process_orphan", "delete_orphan"] }, 400);
       if (!rule.from.includes(current.status)) {
         return jRes({ error: `cannot ${act} from status '${current.status}'`, allowed_from: rule.from }, 409);
+      }
+
+      // ── Day 6: Receive guard (Option 2) ───────────────────────────────────
+      // An orphan can only be promoted to `received` once it actually carries
+      // its documents (the matched email and/or the printable label). Without
+      // them, `received` would be a lie — the package can't be printed or
+      // dispatched. We block the transition and keep it in `orphan` until the
+      // Gmail sync attaches the email, or the operator runs Process Orphan
+      // (which uploads the PDF). This makes `received` a hard guarantee:
+      // every received package has a label.
+      //
+      // Note: this is scoped to orphan→received only. pending→received and
+      // exception→received are unaffected (those rows came from a parsed email
+      // and already have email_message_id + label_url set by the sync).
+      if (act === "receive" && current.status === "orphan") {
+        const hasEmail = !!current.email_message_id;
+        const hasLabel = !!current.label_url;
+        if (!hasEmail && !hasLabel) {
+          return jRes({
+            error: "orphan has no email/label yet",
+            code: "ORPHAN_NO_DOCS",
+            hint: "Recibido físico, pero sin email ni label todavía. Queda en Orphans hasta que el sync de Gmail lo empareje, o usa 'Process orphan' para subir el PDF manualmente.",
+            tracking_number: current.tracking_number
+          }, 409);
+        }
       }
 
       // ── Revert from shipped: pre-flight check that the manifest is still open ──
