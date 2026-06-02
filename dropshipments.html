@@ -488,7 +488,7 @@
     z-index: 100; padding: 20px;
     backdrop-filter: blur(2px);
   }
-  .modal-backdrop.show { display: flex; }
+  .modal-backdrop.show, .modal-backdrop.open { display: flex; }
   .modal-box {
     background: #fff;
     border-radius: 12px;
@@ -1304,7 +1304,12 @@
       }
       toast(actionMessage(action, row.tracking_number));
     } catch (e) {
-      toast("Failed: " + e.message, { error: true });
+      // Guard Opción 2 (backend): orphan sin email/label no puede pasar a received.
+      if (e.message && (e.message.includes("ORPHAN_NO_DOCS") || e.message.includes("no email/label"))) {
+        toast("Recibido físico, pero sin email/label → queda en Orphans hasta el match.", { error: true });
+      } else {
+        toast("Failed: " + e.message, { error: true });
+      }
     } finally {
       btns.forEach(b => b.disabled = false);
     }
