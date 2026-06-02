@@ -15,9 +15,16 @@
 //   - NEVER vosotros (Spain): no tenéis, podéis.
 //   - No regional slang: no chévere, vale, bárbaro, padre.
 //   - "aquí" not "acá".
+//
+// DISQUALIFIER UPDATE (Sprint 6.1 — June 2026):
+//   - All greeting templates now include a B2B disqualifier line.
+//   - Prevents job-seekers, "make money" leads, and dropshipping commission
+//     hunters from progressing through the qualification flow.
+//   - Triggered by Google Ads lead quality crisis where Mercado Libre/dropship
+//     keywords attracted non-target audiences (Zoe, Isaías, Fernanda, etc.).
 
 // ─────────────────────────────────────────────────────────────────────
-// INITIAL GREETINGS (Sprint 1)
+// INITIAL GREETINGS (Sprint 1 + 6.1 disqualifier)
 // ─────────────────────────────────────────────────────────────────────
 
 export const TEMPLATES = {
@@ -29,7 +36,12 @@ export const TEMPLATES = {
 Soy Liam, asistente logístico de FR-Logistics Miami.
 Estoy aquí 24/7 para ayudarte.
 
-Podemos hablar de:
+⚠️ *Importante antes de empezar:*
+FR-Logistics es un *almacén/3PL de pago* en Doral, Miami.
+✅ Cobramos *desde $0.55/unidad* o *$6/paquete* por nuestros servicios.
+❌ NO ofrecemos empleo · NO pagamos por dropshipping · NO damos cursos.
+
+Si buscas servicio logístico, perfecto. Podemos hablar de:
 1️⃣ FBA Prep (preparación para Amazon)
 2️⃣ Master Case (recepción de contenedores)
 3️⃣ Dropshipment (sin inventario)
@@ -44,7 +56,12 @@ Podemos hablar de:
 I'm Liam, FR-Logistics Miami's virtual assistant.
 I'm here 24/7 to help you.
 
-We can talk about:
+⚠️ *Important before we start:*
+FR-Logistics is a *paid 3PL warehouse* in Doral, Miami.
+✅ We charge *from $0.55/unit* or *$6/package* for our services.
+❌ NOT a job offer · We do NOT pay for dropshipping · NOT a course.
+
+If you need logistics service, perfect. We can talk about:
 1️⃣ FBA Prep (Amazon prep services)
 2️⃣ Master Case (container receiving)
 3️⃣ Dropshipment (no inventory)
@@ -57,8 +74,10 @@ How can I help you today?`,
   greet_bilingual: () =>
 `👋 Hi / Hola
 
-I'm Liam — FR-Logistics assistant.
-Soy Liam — asistente logístico de FR-Logistics.
+I'm Liam — FR-Logistics assistant (paid 3PL warehouse in Miami).
+Soy Liam — asistente de FR-Logistics (almacén/3PL de pago en Miami).
+
+⚠️ This is *not a job offer* / *no es oferta de empleo*.
 
 Reply EN or ES?`,
 
@@ -66,7 +85,9 @@ Reply EN or ES?`,
   confirm_en: () =>
 `Got it! I'll continue in English. 👍
 
-We can talk about:
+⚠️ *Quick clarification:* FR-Logistics is a *paid B2B 3PL warehouse* — we charge from $0.55/unit or $6/package. We're not a job, not a course, and we don't pay for dropshipping.
+
+If you need logistics service, we can talk about:
 1️⃣ FBA Prep
 2️⃣ Master Case
 3️⃣ Dropshipment
@@ -79,7 +100,9 @@ How can I help?`,
   confirm_es: () =>
 `¡Perfecto! Sigo en español. 👍
 
-Podemos hablar de:
+⚠️ *Aclaración rápida:* FR-Logistics es un *almacén/3PL de pago B2B* — cobramos desde $0.55/unidad o $6/paquete. No es empleo, no es curso, y no pagamos por dropshipping.
+
+Si buscas servicio logístico, podemos hablar de:
 1️⃣ FBA Prep
 2️⃣ Master Case
 3️⃣ Dropshipment
@@ -96,6 +119,8 @@ Perdón, no entendí — responde EN o ES.`,
   // After 2 failed retries, default to English
   fallback_to_en: () =>
 `No problem! I'll continue in English. If you prefer Spanish at any time, just type "ES".
+
+⚠️ *Quick clarification:* FR-Logistics is a paid B2B 3PL warehouse — not a job offer, not a course.
 
 1️⃣ FBA Prep
 2️⃣ Master Case
