@@ -18,9 +18,24 @@
 //   - Hide: inbound trackings, client names, order_ids
 //   - Track views (Opción B): every access logged via log_manifest_view RPC
 //   - No digital signature (paper handoff is the legal evidence)
+//
+// Day 6 fix (2026-06-02): the token validator was hard-coded to exactly 8
+// alphanumeric chars ({8}), but the generate_public_token RPC produces
+// VARIABLE-length tokens (7 or 8 chars observed in production — e.g.
+// "khvm6bx" is 7). The rigid {8} regex rejected the 7-char tokens BEFORE
+// hitting the DB, so the page returned "Manifest not found" even though the
+// token existed and matched. Widened the validator to 6-12 alphanumeric chars
+// in both the query-param path and the path-segment fallback. The RPC itself
+// is left untouched (per Jose's decision) — this only stops the page from
+// rejecting valid short tokens.
 
 const SUPABASE_URL  = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY  = Netlify.env.get("SUPABASE_SERVICE_KEY");
+
+// Single source of truth for the public-token shape. 6-12 alphanumeric.
+// Used by both the query-param validator and the path-segment fallback.
+const TOKEN_RE      = /^[a-z0-9]{6,12}$/;
+const TOKEN_RE_PATH = /^[a-zA-Z0-9]{6,12}$/;
 
 const SB = () => ({
   apikey: SUPABASE_KEY,
@@ -750,8 +765,9 @@ export default async function handler(req) {
     //   /.netlify/functions/manifest-public/q7qbnjbb (path-style direct)
     const pathParts = url.pathname.split("/").filter(Boolean);
     const lastPart  = pathParts[pathParts.length - 1] || "";
-    // Only use the last path segment if it looks like a token (8 alphanumeric)
-    if (/^[a-zA-Z0-9]{8}$/.test(lastPart) && lastPart !== "manifest-public") {
+    // Only use the last path segment if it looks like a token (6-12 alphanumeric).
+    // Day 6: was {8} — too strict, rejected valid 7-char tokens. Now 6-12.
+    if (TOKEN_RE_PATH.test(lastPart) && lastPart !== "manifest-public") {
       token = lastPart.toLowerCase();
     }
   }
@@ -760,8 +776,11 @@ export default async function handler(req) {
   console.log("[manifest-public] pathname:", url.pathname);
   console.log("[manifest-public] resolved token:", token);
 
-  // Token format check — must be 8 alphanumeric (per generate_public_token RPC)
-  if (!token || !/^[a-z0-9]{8}$/.test(token)) {
+  // Token format check — 6-12 alphanumeric (generate_public_token RPC produces
+  // variable-length tokens; 7 and 8 chars both occur in production).
+  // Day 6 fix: was /^[a-z0-9]{8}$/ which rejected valid 7-char tokens like
+  // "khvm6bx" BEFORE the DB lookup, producing a false "Manifest not found".
+  if (!token || !TOKEN_RE.test(token)) {
     return htmlResponse(pageNotFound(token), 404);
   }
 
