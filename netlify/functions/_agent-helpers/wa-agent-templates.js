@@ -140,40 +140,56 @@ How can I help?`,
   qualify_intro_fba_prep_es: () =>
 `¡Excelente elección! 📦
 
+⚠️ *Recordatorio:* FBA Prep es un *servicio de pago desde $0.55/unidad* (no empleo, no curso).
+
 Para darte la mejor info sobre *FBA Prep*, déjame hacerte 3 preguntas rápidas. Después te conecto con Jose Fuentes para que te dé una cotización personalizada.`,
 
   qualify_intro_fba_prep_en: () =>
 `Excellent choice! 📦
+
+⚠️ *Quick reminder:* FBA Prep is a *paid service from $0.55/unit* (not a job, not a course).
 
 To give you the best info on *FBA Prep*, let me ask you 3 quick questions. Then I'll connect you with Jose Fuentes for a personalized quote.`,
 
   qualify_intro_master_case_es: () =>
 `¡Excelente! 📥
 
+⚠️ *Recordatorio:* Master Case es un *servicio de pago desde $2.50/cartón* (no empleo, no curso).
+
 Para darte la mejor info sobre *Master Case Receiving*, déjame hacerte 3 preguntas rápidas. Después te conecto con Jose Fuentes para una cotización.`,
 
   qualify_intro_master_case_en: () =>
 `Excellent! 📥
+
+⚠️ *Quick reminder:* Master Case is a *paid service from $2.50/carton* (not a job, not a course).
 
 To give you the best info on *Master Case Receiving*, let me ask you 3 quick questions. Then I'll connect you with Jose Fuentes for a quote.`,
 
   qualify_intro_dropship_es: () =>
 `¡Genial! 🚚
 
+⚠️ *Importante:* Dropshipment es un *servicio de pago desde $6/paquete* — NO pagamos por hacer dropshipping ni damos cursos. Tú nos contratas a nosotros.
+
 Para darte la mejor info sobre *Dropshipment*, déjame hacerte 3 preguntas rápidas. Después te conecto con Jose Fuentes para una cotización.`,
 
   qualify_intro_dropship_en: () =>
 `Awesome! 🚚
+
+⚠️ *Important:* Dropshipment is a *paid service from $6/package* — we do NOT pay for dropshipping, no courses. You hire us, not the other way around.
 
 To give you the best info on *Dropshipment*, let me ask you 3 quick questions. Then I'll connect you with Jose Fuentes for a quote.`,
 
   qualify_intro_ecopack_es: () =>
 `¡Me encanta! 🌱
 
+⚠️ *Recordatorio:* EcoPack+ es un *servicio de pago* (no empleo, no curso).
+
 Para darte la mejor info sobre *EcoPack+*, déjame hacerte 3 preguntas rápidas. Después te conecto con Jose Fuentes para una cotización.`,
 
   qualify_intro_ecopack_en: () =>
 `Love it! 🌱
+
+⚠️ *Quick reminder:* EcoPack+ is a *paid service* (not a job, not a course).
 
 To give you the best info on *EcoPack+*, let me ask you 3 quick questions. Then I'll connect you with Jose Fuentes for a quote.`,
 
