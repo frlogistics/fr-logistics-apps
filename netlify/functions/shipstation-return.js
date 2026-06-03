@@ -31,15 +31,15 @@ const SUPABASE_KEY = Netlify.env.get("SUPABASE_SERVICE_KEY");
 const UPS_CARRIER_ID = "se-605521";
 
 // Fixed destination: FR-Logistics warehouse (Ship To for all returns)
-// TODO: fill real warehouse address before go-live
 const WAREHOUSE_SHIP_TO = {
   name:          "FR-Logistics Miami",
   company_name:  "FR-Logistics Miami",
   phone:         "3052403172",
-  address_line1: "[WAREHOUSE ADDRESS LINE 1]",
-  city_locality: "Doral",
+  address_line1: "10893 NW 17th St",
+  address_line2: "Unit 121",
+  city_locality: "Miami",
   state_province:"FL",
-  postal_code:   "[ZIP]",
+  postal_code:   "33172",
   country_code:  "US",
 };
 
