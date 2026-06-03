@@ -7,6 +7,11 @@
 // - Inserts a row in billed_orders for each ShipStation order_id passed in
 // - Returns shipstation_marked count for verification
 //
+// NEW (Returns — return_labels):
+// - Accepts return_ids (array of return_labels UUIDs) from the billing UI
+// - Stamps billed_at + invoice_id on those return_labels rows
+// - Returns returns_marked count for verification
+//
 // POST body:
 // {
 //   client:           "LN Store, LLC",
@@ -22,7 +27,8 @@
 //   shipstation_orders: [                                        // NEW
 //     { order_id: "12345", source: "shipstation_pp", carrier_cost: 5.20 },
 //     ...
-//   ]
+//   ],
+//   return_ids:       ["uuid1","uuid2", ...]                     // NEW (returns)
 // }
 //
 // Behavior:
@@ -30,7 +36,8 @@
 // - Rejects if invoice_number already exists (409)
 // - Creates billing_runs row, UPDATEs unbilled shipments_general rows
 // - INSERTs billed_orders rows for each ShipStation order_id (non-fatal on error)
-// - Returns { ok, invoice_number, billing_id, marked_count, shipstation_marked, total_usd }
+// - UPDATEs return_labels rows (billed_at + invoice_id) for return_ids (non-fatal)
+// - Returns { ok, invoice_number, billing_id, marked_count, shipstation_marked, returns_marked, total_usd }
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -116,6 +123,7 @@ exports.handler = async (event) => {
   const notes             = (body.notes || '').trim() || null;
   let   invoiceNumber     = (body.invoice_number || '').trim();
   const shipstationOrders = Array.isArray(body.shipstation_orders) ? body.shipstation_orders : [];  // NEW
+  const returnIds         = Array.isArray(body.return_ids) ? body.return_ids.filter(Boolean) : [];  // NEW (returns)
 
   // ── Validate ────────────────────────────────────────────────────────────
   if (!client) return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'client required' }) };
@@ -195,7 +203,7 @@ exports.handler = async (event) => {
       billing_id: run.id
     });
 
-    // ── Step 3: NEW — Track ShipStation orders in billed_orders ───────────
+    // ── Step 3: Track ShipStation orders in billed_orders ─────────────────
     // Non-fatal: if this fails, the invoice is still valid. We log for visibility.
     let shipstationMarked = 0;
     if (shipstationOrders.length > 0 && clientId) {
@@ -218,6 +226,27 @@ exports.handler = async (event) => {
       }
     }
 
+    // ── Step 4: NEW — Mark return_labels rows as billed ───────────────────
+    // Non-fatal: if this fails, the invoice is still valid. We log for visibility.
+    // Stamps billed_at + invoice_id (text invoice_number) on the explicit
+    // return_ids captured by the billing UI for this client+period.
+    let returnsMarked = 0;
+    if (returnIds.length > 0) {
+      try {
+        // PostgREST `in` filter: id=in.(uuid1,uuid2,...). Guard with billed_at=is.null
+        // so a re-run never re-stamps an already-billed return.
+        const idList = returnIds.map(id => String(id)).join(',');
+        const rtnFilter = `id=in.(${idList})&billed_at=is.null`;
+        const stamped = await sbPatch('return_labels', rtnFilter, {
+          billed_at:  new Date().toISOString(),
+          invoice_id: run.invoice_number
+        });
+        returnsMarked = Array.isArray(stamped) ? stamped.length : 0;
+      } catch (err) {
+        console.warn(`return_labels mark failed: ${err.message}`);
+      }
+    }
+
     return {
       statusCode: 200,
       headers: cors,
@@ -227,6 +256,7 @@ exports.handler = async (event) => {
         billing_id:         run.id,
         marked_count:       marked.length,
         shipstation_marked: shipstationMarked,   // NEW
+        returns_marked:     returnsMarked,        // NEW (returns)
         total_usd:          totalUsd,
         period:             { start: periodStart, end: periodEnd },
         client
