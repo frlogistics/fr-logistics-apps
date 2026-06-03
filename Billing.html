@@ -314,6 +314,7 @@ const CLIENTS_API  = '/.netlify/functions/clients-list';
 const RATES_API    = '/.netlify/functions/billing-rates';
 const SS_API       = '/.netlify/functions/billing-shipstation';
 const INBOUND_API  = '/.netlify/functions/billing-inbound';
+const RETURNS_API  = '/.netlify/functions/billing-returns';
 const MARK_API     = '/.netlify/functions/billing-mark-invoiced';
 const HISTORY_API  = '/.netlify/functions/billing-history';
 const NETLIFY_EMAIL = 'https://apps.fr-logistics.net/.netlify/functions/send-onboard-email';
@@ -410,6 +411,7 @@ let _lines   = [];   // billing line items
 let _ssCarrierCost = 0;
 let _invoicedMarkable = false; // Day 4: true after PDF/CSV is generated, enables Mark-as-Invoiced button
 let _capturedSSOrders = [];    // Sprint 1: ShipStation orderIds captured in loadBilling, sent to billed_orders on Mark Invoiced
+let _capturedReturnIds = [];   // Returns: return_labels ids captured in loadBilling, marked billed on Mark Invoiced
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const g   = id => document.getElementById(id);
@@ -428,6 +430,7 @@ function resetUI() {
   _lines = [];
   _ssCarrierCost = 0;
   _capturedSSOrders = [];  // Sprint 1: clear ShipStation orderIds captured for billed_orders tracking
+  _capturedReturnIds = []; // Returns: clear return_labels ids captured for billing
   g('billingCard').style.display    = 'none';
   g('kpiSection').style.display     = 'none';
   g('shippingMarkupRow').style.display = 'none';
@@ -678,6 +681,7 @@ function getBillingLines(client) {
 
     // ─── RETURNS ────────────────────────────────────────────────────────────
     {cat:'Returns', id:'return_proc',    name:'Return Processing',           sku:'RET_PROC',    unit:'units', rate:r.return_proc||0,    qty:0, auto:true,  tip:'Auto from Inbound/Outbound portal (RMA records only)'},
+    {cat:'Returns', id:'returns_combined', name:'Returns (Labels + Pickups)', sku:'RET_COMBINED', unit:'period', rate:0, qty:0, auto:true, tip:'Auto from return_labels: UPS pickups + label cost pass-through'},
     {cat:'Returns', id:'refurb',         name:'Refurbishing & Repackaging',  sku:'RET_REFURB',  unit:'units', rate:r.refurb||0,         qty:0, auto:false, tip:'Enter units refurbished/repackaged', optional:true},
     {cat:'Returns', id:'disposal',       name:'Disposal & Recycling',        sku:'RET_DISPOSE', unit:'units', rate:r.disposal||0,       qty:0, auto:false, tip:'Enter units disposed/recycled', optional:true},
     {cat:'Returns', id:'removal_order',  name:'FBA Removal Order Processing', sku:'RET_REMOVAL', unit:'units', rate:r.removal_order||0,  qty:0, auto:false, tip:'FBA returns to 3PL warehouse', optional:true},
@@ -854,6 +858,31 @@ async function loadBilling() {
     console.warn('[Services Log] fetch failed:', err);
   }
 
+  // ── Returns: auto-load return_labels (pickups + label cost pass-through) ──
+  // billing-returns.js returns: labelCount, pickupCount, returnCarrierCost,
+  // returnIds (unbilled), billed{...}. Combined into a single "Returns" line.
+  let returnsData = { labelCount: 0, pickupCount: 0, returnCarrierCost: 0, returnIds: [], billed: null };
+  try {
+    const cidParam = _client.id
+      ? `client_id=${encodeURIComponent(_client.id)}`
+      : `client=${encodeURIComponent(searchTerm)}`;
+    const rUrl = `${RETURNS_API}?${cidParam}&start=${start}&end=${end}`;
+    const rRes = await fetch(rUrl);
+    if (rRes.ok) {
+      const rd = await rRes.json();
+      returnsData = {
+        labelCount:        rd.labelCount        || 0,
+        pickupCount:       rd.pickupCount        || 0,
+        returnCarrierCost: rd.returnCarrierCost  || 0,
+        returnIds:         rd.returnIds          || [],
+        billed:            rd.billed             || null,
+      };
+      _capturedReturnIds = returnsData.returnIds;
+    }
+  } catch (err) {
+    console.warn('[Returns] fetch failed:', err);
+  }
+
   // ── Step 3: Build billing table ───────────────────────────────────────────
   _ssCarrierCost = carrierCost;
   const markup   = +g('shippingMarkupPct').value || _client.shippingMarkup || 10;
@@ -918,6 +947,28 @@ async function loadBilling() {
         ? 'N/A — portal-only client'
         : `Carrier ${fc(carrierCost)} × (1 + ${markup}%) = ${fc(shippingCharge)}`;
     }
+
+    // Returns combined line: pickups × rate + label carrier cost × (1 + markup%)
+    if (l.id === 'returns_combined') {
+      const pickupRate     = _rates.carrier_pickup || 14.99;
+      const pickupTotal    = returnsData.pickupCount * pickupRate;
+      const labelPass      = returnsData.returnCarrierCost > 0
+        ? Math.round(returnsData.returnCarrierCost * (1 + markup / 100) * 100) / 100
+        : 0;
+      const combined       = Math.round((pickupTotal + labelPass) * 100) / 100;
+      l.rate = combined;
+      l.qty  = combined > 0 ? 1 : 0;
+      l.returnsMeta = {
+        labelCount: returnsData.labelCount,
+        pickupCount: returnsData.pickupCount,
+        pickupRate, pickupTotal,
+        carrierCost: returnsData.returnCarrierCost,
+        labelPass, markup,
+      };
+      l.tip = combined > 0
+        ? `${returnsData.pickupCount} pickups × ${fc(pickupRate)} (${fc(pickupTotal)}) + labels ${fc(returnsData.returnCarrierCost)} +${markup}% (${fc(labelPass)})`
+        : 'No return labels this period';
+    }
   });
 
   // ── Step 4: Show results ──────────────────────────────────────────────────
@@ -925,8 +976,9 @@ async function loadBilling() {
   const outLbl = outboundCount > 0 ? ` · Outbound: <b>${outboundCount}</b>` : '';
   const slCount = Object.keys(svcLogEntries).length;
   const slLbl = slCount > 0 ? ` · Services Log: <b>${slCount} entries</b>` : '';
-  const fullStatus = `${ssStatus}<br>Inbound: <b>${inboundCount}</b> · RMA: <b>${rmaCount}</b> · Drop-Ship: <b>${dropCount}</b>${outLbl}${slLbl}${wmsLbl}`;
-  setStatus(fullStatus, ordersCount > 0 || inboundCount > 0 || rmaCount > 0 || dropCount > 0 || outboundCount > 0 ? 'ok' : 'warn');
+  const rtnLbl = returnsData.labelCount > 0 ? ` · Returns: <b>${returnsData.labelCount} labels / ${returnsData.pickupCount} pickups</b>` : '';
+  const fullStatus = `${ssStatus}<br>Inbound: <b>${inboundCount}</b> · RMA: <b>${rmaCount}</b> · Drop-Ship: <b>${dropCount}</b>${outLbl}${slLbl}${rtnLbl}${wmsLbl}`;
+  setStatus(fullStatus, ordersCount > 0 || inboundCount > 0 || rmaCount > 0 || dropCount > 0 || outboundCount > 0 || returnsData.labelCount > 0 ? 'ok' : 'warn');
 
   // Update Shipping Label Fee panel
   g('ssCarrierCost').textContent    = fc(carrierCost);
@@ -946,15 +998,20 @@ async function loadBilling() {
 
   // ── Already-invoiced banner ────────────────────────────────────────────
   const banner = g('billedBanner');
+  const billedParts = [];
   if (billedInfo) {
-    const parts = [];
-    if (billedInfo.count)         parts.push(`${billedInfo.count} inbound`);
-    if (billedInfo.rmaCount)      parts.push(`${billedInfo.rmaCount} RMA`);
-    if (billedInfo.dropShipCount) parts.push(`${billedInfo.dropShipCount} drop-shipments`);
-    const invList = (billedInfo.invoices || [])
+    if (billedInfo.count)         billedParts.push(`${billedInfo.count} inbound`);
+    if (billedInfo.rmaCount)      billedParts.push(`${billedInfo.rmaCount} RMA`);
+    if (billedInfo.dropShipCount) billedParts.push(`${billedInfo.dropShipCount} drop-shipments`);
+  }
+  if (returnsData.billed && returnsData.billed.labelCount) {
+    billedParts.push(`${returnsData.billed.labelCount} return label(s)`);
+  }
+  if (billedParts.length) {
+    const invList = (billedInfo?.invoices || [])
       .map(i => `<strong>${i.invoice_number}</strong> (${fc(i.total_usd)})`)
       .join(' · ');
-    g('billedBannerText').innerHTML = `${parts.join(' · ')} already billed in ${invList || 'prior invoice(s)'}.`;
+    g('billedBannerText').innerHTML = `${billedParts.join(' · ')} already billed${invList ? ' in ' + invList : ' in a prior invoice'}.`;
     banner.style.display = 'block';
   } else {
     banner.style.display = 'none';
@@ -994,7 +1051,7 @@ function renderBillingTable() {
     } else {
       srcBadge = '<span class="source-badge src-manual">MANUAL</span>';
     }
-    const readOnly = (l.id === 'wms' && l.rate > 0) || l.fromServicesLog ? 'readonly' : '';
+    const readOnly = (l.id === 'wms' && l.rate > 0) || l.fromServicesLog || l.id === 'returns_combined' ? 'readonly' : '';
     // Find the index in _lines (not visibleLines) for updateCustomRate
     const realIdx = _lines.indexOf(l);
     const rateDisp = l.rate > 0 ? fc(l.rate) : '<input type="number" min="0" step="0.01" class="qty-inp" style="width:90px" placeholder="rate" oninput="updateCustomRate('+realIdx+',this.value)" title="Enter rate"/>';
@@ -1265,6 +1322,7 @@ function genCSV() {
     'QC_SAMPLE':        'Prep Services:Sample Intake',
     // Returns
     'RET_PROC':         'Returns & Reverse Logistics:Return Processing Fees',
+    'RET_COMBINED':     'Returns & Reverse Logistics:Return Labels & Pickups',
     'RET_REFURB':       'Returns & Reverse Logistics:Refurbishing & Repackaging',
     'RET_DISPOSE':      'Returns & Reverse Logistics:Disposal & Recycling',
     'RET_REMOVAL':      'Returns & Reverse Logistics:FBA Removal Order',
@@ -1360,6 +1418,9 @@ async function markAsInvoiced() {
   const ssOrdersLabel = shipstationOrders.length > 0
     ? `\nShipStation orders to track: ${shipstationOrders.length}`
     : '';
+  const returnsLabel = _capturedReturnIds.length > 0
+    ? `\nReturn labels to mark billed: ${_capturedReturnIds.length}`
+    : '';
 
   const confirmMsg = [
     `Mark as invoiced?`,
@@ -1367,7 +1428,7 @@ async function markAsInvoiced() {
     `Client: ${_client.displayName}`,
     `Period: ${fD(start)} – ${fD(end)}`,
     `Invoice: ${invNum}`,
-    `Total: ${fc(total)}${ssOrdersLabel}`,
+    `Total: ${fc(total)}${ssOrdersLabel}${returnsLabel}`,
     ``,
     `This will create invoice ${invNum} and mark all unbilled packages`,
     `in this period as invoiced. This action is NOT reversible from the UI.`
@@ -1392,7 +1453,8 @@ async function markAsInvoiced() {
         line_items:         lineItems,
         operator:           (window._operator || ''),
         invoice_number:     invNum,
-        shipstation_orders: shipstationOrders
+        shipstation_orders: shipstationOrders,
+        return_ids:         _capturedReturnIds
       })
     });
 
@@ -1417,6 +1479,7 @@ async function markAsInvoiced() {
       `Invoice: ${data.invoice_number}\n` +
       `Shipments invoiced (DB rows): ${data.marked_count}\n` +
       `ShipStation orders tracked: ${data.shipstation_marked || 0}\n` +
+      `Return labels marked: ${data.returns_marked || 0}\n` +
       `Total billed: ${fc(data.total_usd)}`
     );
 
