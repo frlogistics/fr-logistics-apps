@@ -104,7 +104,7 @@ async function actionCreateReturn(body) {
   const {
     client,            // 'MXS Overseas Ltd'
     client_id,         // optional uuid
-    ship_from,         // {name, company, line1, city, state, zip, phone}
+    ship_from,         // {name, company, line1, city, state, zip, phone, email}
     weight_oz,
     dims,              // {length, width, height}
     service_code,      // e.g. 'ups_ground'
@@ -181,6 +181,7 @@ async function actionCreateReturn(body) {
 
   // --- 3) schedule pickup (label-based) ---------------------------------
   let pickup = null;
+  let pickupError = null;
   if (schedule_pickup && pickup_window) {
     try {
       pickup = await ss("/pickups", "POST", {
@@ -188,6 +189,7 @@ async function actionCreateReturn(body) {
         pickup_window,
         contact_details: {
           name:  ship_from.name,
+          email: ship_from.email || "warehouse@fr-logistics.net",
           phone: ship_from.phone || "0000000000",
         },
         pickup_address: {
@@ -207,6 +209,12 @@ async function actionCreateReturn(body) {
       });
     } catch (e) {
       // non-fatal: label already created; pickup can be retried
+      pickupError = e.message;
+      // Extract the human-readable message from ShipStation's error JSON if present
+      try {
+        const m = e.message.match(/"message":"([^"]+)"/);
+        if (m) pickupError = m[1];
+      } catch(_) {}
       await sbPatch("return_labels", `id=eq.${seed.id}`, {
         notes: `${notes || ""} | pickup_failed: ${e.message}`,
       });
@@ -220,6 +228,7 @@ async function actionCreateReturn(body) {
     carrier_cost:   label.shipment_cost?.amount ?? null,
     label_url,
     pickup_confirm: pickup?.confirmation_number || pickup?.pickup_id || null,
+    pickup_error:   pickupError,   // null if no pickup requested or it succeeded
   });
 }
 
