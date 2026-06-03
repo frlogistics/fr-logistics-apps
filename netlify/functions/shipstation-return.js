@@ -99,6 +99,92 @@ async function ss(path, method = "GET", body = null) {
   return data;
 }
 
+// ─── Email notification (Resend) ──────────────────────────────────────
+const RESEND_KEY  = Netlify.env.get("RESEND_API_KEY");
+const FROM_EMAIL  = "FR-Logistics Returns <warehouse@fr-logistics.net>";
+const WAREHOUSE_CC = "warehouse@fr-logistics.net";
+
+// Fetch the label PDF bytes and return base64 (for attachment)
+async function fetchLabelPdfBase64(pdfUrl) {
+  try {
+    const r = await fetch(pdfUrl, { headers: { "API-Key": SS_API_KEY } });
+    if (!r.ok) return null;
+    const buf = await r.arrayBuffer();
+    // base64 encode
+    let binary = "";
+    const bytes = new Uint8Array(buf);
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  } catch (e) {
+    return null;
+  }
+}
+
+function returnEmailHtml({ clientName, contactName, tracking, pickupConfirm, pickupWindow, service }) {
+  const pickupBlock = pickupConfirm
+    ? `<tr><td style="padding:6px 0;color:#475569">UPS Pickup Confirmation</td>
+         <td style="padding:6px 0;font-weight:700;color:#0f172a">${pickupConfirm}</td></tr>
+       ${pickupWindow ? `<tr><td style="padding:6px 0;color:#475569">Pickup Window</td>
+         <td style="padding:6px 0;color:#0f172a">${pickupWindow.start_at?.slice(0,16).replace("T"," ")} – ${pickupWindow.end_at?.slice(11,16)}</td></tr>` : ""}`
+    : `<tr><td style="padding:6px 0;color:#475569">Pickup</td>
+         <td style="padding:6px 0;color:#0f172a">Not scheduled — please drop off at any UPS location.</td></tr>`;
+  return `<!doctype html><html><body style="margin:0;font-family:Arial,Helvetica,sans-serif;background:#f6f7fb;padding:24px">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
+    <div style="background:#0F1D35;color:#fff;padding:18px 22px">
+      <div style="font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#16a3b5;font-weight:700">FR-Logistics Miami</div>
+      <div style="font-size:20px;font-weight:800;margin-top:4px">Your Return Shipping Label</div>
+    </div>
+    <div style="padding:22px">
+      <p style="color:#0f172a;font-size:14px;margin:0 0 14px">Hello ${contactName || "there"},</p>
+      <p style="color:#475569;font-size:14px;line-height:1.5;margin:0 0 16px">
+        Your UPS return label is attached to this email as a PDF. Print it, attach it to your package, and either hand it to the UPS driver at the scheduled pickup or drop it off at any UPS location.
+      </p>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;border-top:1px solid #e2e8f0">
+        <tr><td style="padding:6px 0;color:#475569;width:45%">Tracking Number</td>
+            <td style="padding:6px 0;font-weight:700;color:#0f172a">${tracking}</td></tr>
+        <tr><td style="padding:6px 0;color:#475569">Service</td>
+            <td style="padding:6px 0;color:#0f172a">${service || "UPS Ground"}</td></tr>
+        ${pickupBlock}
+      </table>
+      <div style="margin-top:18px;padding:12px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;color:#475569">
+        The package will be returned to FR-Logistics Miami, 10893 NW 17th St, Unit 121, Miami, FL 33172.
+      </div>
+      <p style="color:#94a3b8;font-size:12px;margin:18px 0 0">If you have any questions, reply to this email.</p>
+    </div>
+  </div></body></html>`;
+}
+
+async function sendReturnEmail({ toEmail, clientName, contactName, tracking, pickupConfirm, pickupWindow, service, pdfBase64 }) {
+  if (!RESEND_KEY) return { sent: false, reason: "RESEND_API_KEY missing" };
+  const recipients = [];
+  if (toEmail) recipients.push(toEmail);
+  recipients.push(WAREHOUSE_CC);  // always copy warehouse
+
+  const payload = {
+    from: FROM_EMAIL,
+    to: recipients,
+    subject: `Return label — ${tracking}${pickupConfirm ? " · Pickup " + pickupConfirm : ""}`,
+    html: returnEmailHtml({ clientName, contactName, tracking, pickupConfirm, pickupWindow, service }),
+  };
+  if (pdfBase64) {
+    payload.attachments = [{ filename: `return-label-${tracking}.pdf`, content: pdfBase64 }];
+  }
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) return { sent: false, reason: `resend ${r.status}: ${await r.text()}` };
+    return { sent: true };
+  } catch (e) {
+    return { sent: false, reason: e.message };
+  }
+}
+
 // ─── ACTION: create_return — label + pickup + persist ─────────────────
 async function actionCreateReturn(body) {
   const {
@@ -221,6 +307,25 @@ async function actionCreateReturn(body) {
     }
   }
 
+  // --- 4) email notification (client final + warehouse copy, PDF attached) ---
+  let emailResult = { sent: false, reason: "not attempted" };
+  try {
+    const pickupConfirm = pickup ? (pickup.confirmation_number || pickup.pickup_id) : null;
+    const pdfBase64 = label_url ? await fetchLabelPdfBase64(label_url) : null;
+    emailResult = await sendReturnEmail({
+      toEmail:      ship_from.email || null,
+      clientName:   client,
+      contactName:  ship_from.name || ship_from.company,
+      tracking:     label.tracking_number,
+      pickupConfirm,
+      pickupWindow: pickup_window,
+      service:      service_code,
+      pdfBase64,
+    });
+  } catch (e) {
+    emailResult = { sent: false, reason: e.message };
+  }
+
   return jRes({
     ok:             true,
     return_id:      seed.id,
@@ -229,6 +334,8 @@ async function actionCreateReturn(body) {
     label_url,
     pickup_confirm: pickup?.confirmation_number || pickup?.pickup_id || null,
     pickup_error:   pickupError,   // null if no pickup requested or it succeeded
+    email_sent:     emailResult.sent,
+    email_error:    emailResult.sent ? null : emailResult.reason,
   });
 }
 
