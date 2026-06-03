@@ -143,6 +143,10 @@ td,th{white-space:nowrap}
 .scanner-recent-item.ok { color:#00ffae; }
 .scanner-recent-item.dup { color:#fbbf24; }
 .scanner-recent-item.err { color:#fca5a5; }
+
+/* ── RETURN LABEL MODULE ── */
+#rtnPickupFields .row{margin-top:0}
+#returnDlg .modalBody h3:first-child{margin-top:0}
 </style>
 </head>
 <body>
@@ -160,6 +164,14 @@ td,th{white-space:nowrap}
 </header>
 
 <div class="wrap">
+
+  <!-- ── RETURN LABEL · trigger button ── -->
+  <div style="max-width:1500px;margin:0 auto 12px;display:flex;justify-content:flex-end">
+    <button class="primary" id="openReturnBtn" style="font-size:13px">
+      ↩︎ Create Return Label
+    </button>
+  </div>
+
   <!-- PIN CLIENT BAR -->
   <div id="pinBar" style="display:flex;align-items:center;gap:10px;padding:10px 14px;
        background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:14px;
@@ -314,6 +326,139 @@ td,th{white-space:nowrap}
     </div>
   </div>
 </div>
+
+<!-- ── RETURN LABEL · modal ── -->
+<dialog id="returnDlg">
+  <div class="modal" style="width:min(1100px,96vw)">
+    <div class="modalHead">
+      <b>↩︎ Create Return Label — UPS</b>
+      <button id="closeReturnDlg">Close</button>
+    </div>
+    <div class="modalBody">
+      <div class="grid3" style="grid-template-columns:1fr 1fr;gap:18px;align-items:start">
+
+        <!-- LEFT: form -->
+        <div>
+          <h3 style="margin-top:0">Return details</h3>
+
+          <label>Client</label>
+          <select id="rtnClient"></select>
+
+          <h3>Pickup origin (end customer)</h3>
+          <div class="row">
+            <div>
+              <label>Name</label>
+              <input id="rtnName" placeholder="Contact name" autocomplete="off" />
+            </div>
+            <div>
+              <label>Company <span style="color:var(--bad)">*</span></label>
+              <input id="rtnCompany" placeholder="Required by UPS" autocomplete="off" />
+            </div>
+          </div>
+          <label>Address Line 1</label>
+          <input id="rtnLine1" placeholder="Street address" autocomplete="off" />
+          <div class="row">
+            <div>
+              <label>City</label>
+              <input id="rtnCity" autocomplete="off" />
+            </div>
+            <div>
+              <label>State</label>
+              <input id="rtnState" placeholder="FL" maxlength="2" autocomplete="off" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>ZIP</label>
+              <input id="rtnZip" class="mono" autocomplete="off" />
+            </div>
+            <div>
+              <label>Phone</label>
+              <input id="rtnPhone" class="mono" placeholder="3050000000" autocomplete="off" />
+            </div>
+          </div>
+
+          <h3>Package</h3>
+          <div class="row">
+            <div>
+              <label>Weight (oz)</label>
+              <input id="rtnWeight" class="mono" type="number" min="1" placeholder="80" />
+            </div>
+            <div>
+              <label>Service</label>
+              <select id="rtnService">
+                <option value="ups_ground">UPS Ground</option>
+                <option value="ups_3_day_select">UPS 3 Day Select</option>
+                <option value="ups_2nd_day_air">UPS 2nd Day Air</option>
+                <option value="ups_surepost_1_lb_or_greater">UPS Ground Saver (1 lb+)</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>L × W × H (in)</label>
+              <div style="display:flex;gap:6px">
+                <input id="rtnL" class="mono" type="number" min="1" placeholder="L" />
+                <input id="rtnW" class="mono" type="number" min="1" placeholder="W" />
+                <input id="rtnH" class="mono" type="number" min="1" placeholder="H" />
+              </div>
+            </div>
+            <div>
+              <label>Notes</label>
+              <input id="rtnNotes" placeholder="RMA #, item desc…" autocomplete="off" />
+            </div>
+          </div>
+
+          <h3>Pickup</h3>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="rtnSchedulePickup" style="width:auto" />
+            Schedule UPS pickup at this address
+          </label>
+          <div id="rtnPickupFields" style="display:none">
+            <div class="row">
+              <div>
+                <label>Pickup date</label>
+                <input id="rtnPickupDate" type="date" />
+              </div>
+              <div>
+                <label>Ready window</label>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <input id="rtnPickupStart" type="time" value="09:00" />
+                  <span style="color:var(--muted)">to</span>
+                  <input id="rtnPickupEnd" type="time" value="17:00" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="btns">
+            <button class="primary" id="rtnSubmitBtn">Generate Return Label</button>
+          </div>
+          <div id="rtnStatus" class="status">Ready.</div>
+        </div>
+
+        <!-- RIGHT: result + open returns list -->
+        <div>
+          <h3 style="margin-top:0">Result</h3>
+          <div id="rtnResult" class="qBox" style="display:none"></div>
+          <div id="rtnResultEmpty" class="hint">Generated label details will appear here.</div>
+
+          <h3 style="margin-top:16px">Open returns</h3>
+          <div class="tableWrap" style="max-height:340px">
+            <table id="rtnTbl">
+              <thead><tr><th>Date</th><th>Client</th><th>Tracking</th><th>Cost</th><th>Status</th><th>Label</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="btns">
+            <button id="rtnRefreshBtn">Refresh list</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</dialog>
 
 <!-- Label modal -->
 <dialog id="labelDlg">
@@ -814,6 +959,203 @@ td,th{white-space:nowrap}
 
   // Expose handlers for the camera scanner module
   window.doLookup = doLookup;
+</script>
+
+<!-- ── RETURN LABEL · module script (self-contained) ── -->
+<script>
+(function(){
+  const RTN_FN = "/.netlify/functions/shipstation-return";
+
+  // Self-contained client list (does not depend on the main app's scope).
+  // Same source of truth: clients-list (fr_clients).
+  let rtnClients = [];     // [{id, display}]
+  let rtnClientsLoaded = false;
+
+  function rtnStatus(msg, kind){
+    const el = document.getElementById("rtnStatus");
+    el.textContent = msg;
+    el.className = "status" + (kind ? " " + kind : "");
+  }
+
+  async function rtnLoadClients(){
+    if(rtnClientsLoaded) return;
+    try {
+      const res = await fetch("/.netlify/functions/clients-list");
+      const data = await res.json();
+      rtnClients = (Array.isArray(data) ? data : [])
+        .map(c => ({
+          id: c.id || null,
+          display: c.store_name || c.storeName || c.company || c.name || ""
+        }))
+        .filter(c => c.display)
+        .sort((a,b) => a.display.localeCompare(b.display));
+      rtnClientsLoaded = true;
+    } catch(e){
+      rtnClients = [];
+    }
+  }
+
+  // Populate client dropdown from self-loaded list
+  function rtnFillClients(){
+    const sel = document.getElementById("rtnClient");
+    if(!sel) return;
+    sel.innerHTML = `<option value="">— Select client —</option>` +
+      rtnClients.map(c => `<option value="${c.display}">${c.display}</option>`).join("");
+  }
+
+  function rtnClientId(display){
+    const m = rtnClients.find(c => c.display === display);
+    return m ? m.id : null;
+  }
+
+  // Toggle pickup fields
+  function rtnTogglePickup(){
+    const on = document.getElementById("rtnSchedulePickup").checked;
+    document.getElementById("rtnPickupFields").style.display = on ? "block" : "none";
+  }
+
+  // Build ISO 8601 pickup window from date + times
+  function rtnPickupWindow(){
+    const d = document.getElementById("rtnPickupDate").value;
+    if(!d) return null;
+    const s = document.getElementById("rtnPickupStart").value || "09:00";
+    const e = document.getElementById("rtnPickupEnd").value || "17:00";
+    // Miami ET offset handled by carrier; send local wall time as ISO date-time
+    return { start_at: `${d}T${s}:00`, end_at: `${d}T${e}:00` };
+  }
+
+  async function rtnSubmit(){
+    const clientDisplay = document.getElementById("rtnClient").value;
+    const company = document.getElementById("rtnCompany").value.trim();
+    const line1   = document.getElementById("rtnLine1").value.trim();
+    const weight  = parseFloat(document.getElementById("rtnWeight").value);
+
+    if(!clientDisplay){ rtnStatus("Select a client.", "bad"); return; }
+    if(!company){ rtnStatus("Company is required (UPS rule).", "bad"); return; }
+    if(!line1){ rtnStatus("Address Line 1 is required.", "bad"); return; }
+    if(!weight || weight < 1){ rtnStatus("Enter a valid weight in ounces.", "bad"); return; }
+
+    // Resolve client_id from self-loaded list
+    const cid = rtnClientId(clientDisplay);
+
+    const schedulePickup = document.getElementById("rtnSchedulePickup").checked;
+    const pickupWindow = schedulePickup ? rtnPickupWindow() : null;
+    if(schedulePickup && !pickupWindow){ rtnStatus("Pick a pickup date.", "bad"); return; }
+
+    const L = parseFloat(document.getElementById("rtnL").value);
+    const W = parseFloat(document.getElementById("rtnW").value);
+    const H = parseFloat(document.getElementById("rtnH").value);
+    const dims = (L && W && H) ? { length:L, width:W, height:H } : null;
+
+    const payload = {
+      action: "create_return",
+      client: clientDisplay,
+      client_id: cid,
+      ship_from: {
+        name:    document.getElementById("rtnName").value.trim() || company,
+        company: company,
+        line1:   line1,
+        city:    document.getElementById("rtnCity").value.trim(),
+        state:   document.getElementById("rtnState").value.trim().toUpperCase(),
+        zip:     document.getElementById("rtnZip").value.trim(),
+        phone:   document.getElementById("rtnPhone").value.trim() || "0000000000"
+      },
+      weight_oz: weight,
+      dims: dims,
+      service_code: document.getElementById("rtnService").value,
+      schedule_pickup: schedulePickup,
+      pickup_window: pickupWindow,
+      notes: document.getElementById("rtnNotes").value.trim()
+    };
+
+    rtnStatus("Generating label…", "");
+    document.getElementById("rtnSubmitBtn").disabled = true;
+    try {
+      const res = await fetch(RTN_FN, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if(!res.ok || !data.ok){
+        rtnStatus("Error: " + (data.detail || data.error || "label failed"), "bad");
+        return;
+      }
+      rtnStatus("Return label created successfully.", "ok");
+      rtnShowResult(data);
+      rtnLoadList();
+    } catch(e){
+      rtnStatus("Network error. Check connection.", "bad");
+    } finally {
+      document.getElementById("rtnSubmitBtn").disabled = false;
+    }
+  }
+
+  function rtnShowResult(d){
+    const box = document.getElementById("rtnResult");
+    document.getElementById("rtnResultEmpty").style.display = "none";
+    box.style.display = "block";
+    const pickup = d.pickup_confirm
+      ? `<div class="qItem" style="grid-column:1/span 2"><b>Pickup confirm</b><div class="qVal mono">${d.pickup_confirm}</div></div>`
+      : `<div class="qItem" style="grid-column:1/span 2"><b>Pickup</b><div class="qVal">Not scheduled</div></div>`;
+    box.innerHTML = `
+      <div class="qGrid">
+        <div class="qItem" style="grid-column:1/span 2"><b>Tracking</b><div class="qVal mono">${d.tracking || "—"}</div></div>
+        <div class="qItem"><b>Carrier cost</b><div class="qVal">$${d.carrier_cost != null ? d.carrier_cost : "—"}</div></div>
+        <div class="qItem"><b>Return ID</b><div class="qVal mono" style="font-size:10px">${(d.return_id||"").slice(0,8)}…</div></div>
+        ${pickup}
+      </div>
+      <div class="btns" style="margin-top:10px">
+        ${d.label_url ? `<a href="${d.label_url}" target="_blank" rel="noopener"><button class="primary">Open label PDF</button></a>` : ""}
+      </div>`;
+  }
+
+  async function rtnLoadList(){
+    try {
+      const res = await fetch(RTN_FN + "?action=list");
+      const rows = await res.json();
+      const tb = document.querySelector("#rtnTbl tbody");
+      tb.innerHTML = "";
+      (Array.isArray(rows) ? rows : []).forEach(r => {
+        const tr = document.createElement("tr");
+        const dt = r.created_at ? r.created_at.slice(0,10) : "—";
+        const cost = r.carrier_cost != null ? "$" + r.carrier_cost : "—";
+        const labelCell = r.label_url
+          ? `<a href="${r.label_url}" target="_blank" rel="noopener">PDF</a>` : "—";
+        tr.innerHTML = `<td>${dt}</td><td>${r.client||"—"}</td><td class="mono">${r.tracking||"—"}</td><td>${cost}</td><td>${r.status||"—"}</td><td>${labelCell}</td>`;
+        tb.appendChild(tr);
+      });
+    } catch(e){ /* silent */ }
+  }
+
+  // Wire up
+  function rtnInit(){
+    const openBtn = document.getElementById("openReturnBtn");
+    const dlg     = document.getElementById("returnDlg");
+    if(!openBtn || !dlg) return;
+
+    openBtn.addEventListener("click", async () => {
+      await rtnLoadClients();
+      rtnFillClients();
+      // prefill pickup date = today
+      const today = new Date().toISOString().slice(0,10);
+      const dEl = document.getElementById("rtnPickupDate");
+      if(dEl) dEl.value = today;
+      dlg.showModal();
+      rtnLoadList();
+    });
+    document.getElementById("closeReturnDlg").addEventListener("click", () => dlg.close());
+    document.getElementById("rtnSchedulePickup").addEventListener("change", rtnTogglePickup);
+    document.getElementById("rtnSubmitBtn").addEventListener("click", rtnSubmit);
+    document.getElementById("rtnRefreshBtn").addEventListener("click", rtnLoadList);
+  }
+
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", rtnInit);
+  } else {
+    rtnInit();
+  }
+})();
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════
