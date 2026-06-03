@@ -377,6 +377,8 @@ td,th{white-space:nowrap}
               <input id="rtnPhone" class="mono" placeholder="3050000000" autocomplete="off" />
             </div>
           </div>
+          <label>Email <span style="color:var(--muted)">(required if scheduling pickup)</span></label>
+          <input id="rtnEmail" class="mono" type="email" placeholder="contact@email.com" autocomplete="off" />
 
           <h3>Package</h3>
           <div class="row">
@@ -446,7 +448,7 @@ td,th{white-space:nowrap}
           <h3 style="margin-top:16px">Open returns</h3>
           <div class="tableWrap" style="max-height:340px">
             <table id="rtnTbl">
-              <thead><tr><th>Date</th><th>Client</th><th>Tracking</th><th>Cost</th><th>Status</th><th>Label</th></tr></thead>
+              <thead><tr><th>Date</th><th>Client</th><th>Tracking</th><th>Cost</th><th>Status</th><th>Pickup</th><th>Label</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -1095,19 +1097,76 @@ td,th{white-space:nowrap}
     const box = document.getElementById("rtnResult");
     document.getElementById("rtnResultEmpty").style.display = "none";
     box.style.display = "block";
-    const pickup = d.pickup_confirm
-      ? `<div class="qItem" style="grid-column:1/span 2"><b>Pickup confirm</b><div class="qVal mono">${d.pickup_confirm}</div></div>`
-      : `<div class="qItem" style="grid-column:1/span 2"><b>Pickup</b><div class="qVal">Not scheduled</div></div>`;
+
+    // Pickup card — three states: success (copyable), failed, not requested
+    let pickupCard;
+    if(d.pickup_confirm){
+      // SUCCESS — big copyable confirmation number
+      pickupCard = `
+        <div id="rtnPickupCard" style="margin-top:12px;padding:14px 16px;border-radius:12px;
+             background:rgba(31,164,99,.08);border:1px solid rgba(31,164,99,.40)">
+          <div style="display:flex;align-items:center;gap:8px;font-weight:950;color:#0f5132;font-size:13px">
+            <span style="font-size:16px">✅</span> UPS PICKUP SCHEDULED
+          </div>
+          <div style="margin-top:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:950">Confirmation number</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+            <span id="rtnPickupConfirm" class="mono" style="font-size:22px;font-weight:950;color:#0f172a;letter-spacing:.5px">${d.pickup_confirm}</span>
+            <button id="rtnCopyConfirm" type="button"
+                    style="padding:6px 12px;font-size:11px;border-radius:8px;background:rgba(31,164,99,.14);border:1px solid rgba(31,164,99,.40);color:#0f5132;font-weight:950">
+              📋 Copy
+            </button>
+          </div>
+          <div style="margin-top:6px;font-size:11px;color:var(--muted)">Give this number to the driver / keep for reference.</div>
+        </div>`;
+    } else if(d.pickup_error){
+      // FAILED — label is fine, pickup failed; show why
+      pickupCard = `
+        <div style="margin-top:12px;padding:14px 16px;border-radius:12px;
+             background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.45)">
+          <div style="display:flex;align-items:center;gap:8px;font-weight:950;color:#7a4b00;font-size:13px">
+            <span style="font-size:16px">⚠️</span> LABEL CREATED · PICKUP NOT SCHEDULED
+          </div>
+          <div style="margin-top:6px;font-size:12px;color:#7a4b00">Reason: ${d.pickup_error}</div>
+          <div style="margin-top:6px;font-size:11px;color:var(--muted)">The label is valid. You can schedule the pickup directly in UPS.com, or fix the issue and try again.</div>
+        </div>`;
+    } else {
+      // NOT REQUESTED
+      pickupCard = `
+        <div style="margin-top:12px;padding:12px 16px;border-radius:12px;
+             background:rgba(2,6,23,.03);border:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:900">
+          Pickup not requested for this label.
+        </div>`;
+    }
+
     box.innerHTML = `
       <div class="qGrid">
         <div class="qItem" style="grid-column:1/span 2"><b>Tracking</b><div class="qVal mono">${d.tracking || "—"}</div></div>
         <div class="qItem"><b>Carrier cost</b><div class="qVal">$${d.carrier_cost != null ? d.carrier_cost : "—"}</div></div>
         <div class="qItem"><b>Return ID</b><div class="qVal mono" style="font-size:10px">${(d.return_id||"").slice(0,8)}…</div></div>
-        ${pickup}
       </div>
+      ${pickupCard}
       <div class="btns" style="margin-top:10px">
         ${d.label_url ? `<a href="${d.label_url}" target="_blank" rel="noopener"><button class="primary">Open label PDF</button></a>` : ""}
       </div>`;
+
+    // Wire the copy button (only present on success)
+    const copyBtn = document.getElementById("rtnCopyConfirm");
+    if(copyBtn){
+      copyBtn.addEventListener("click", () => {
+        const txt = d.pickup_confirm;
+        const done = () => { copyBtn.textContent = "✓ Copied"; setTimeout(()=>{ copyBtn.textContent = "📋 Copy"; }, 1800); };
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(txt).then(done).catch(() => {
+            // fallback
+            const ta = document.createElement("textarea"); ta.value = txt; document.body.appendChild(ta); ta.select();
+            try{ document.execCommand("copy"); }catch(_){} document.body.removeChild(ta); done();
+          });
+        } else {
+          const ta = document.createElement("textarea"); ta.value = txt; document.body.appendChild(ta); ta.select();
+          try{ document.execCommand("copy"); }catch(_){} document.body.removeChild(ta); done();
+        }
+      });
+    }
   }
 
   async function rtnLoadList(){
@@ -1122,7 +1181,10 @@ td,th{white-space:nowrap}
         const cost = r.carrier_cost != null ? "$" + r.carrier_cost : "—";
         const labelCell = r.label_url
           ? `<a href="${r.label_url}" target="_blank" rel="noopener">PDF</a>` : "—";
-        tr.innerHTML = `<td>${dt}</td><td>${r.client||"—"}</td><td class="mono">${r.tracking||"—"}</td><td>${cost}</td><td>${r.status||"—"}</td><td>${labelCell}</td>`;
+        const pickupCell = r.pickup_scheduled && r.pickup_confirm
+          ? `<span class="mono" style="color:#0f5132;font-weight:950" title="UPS pickup confirmation">✓ ${r.pickup_confirm}</span>`
+          : `<span style="color:var(--muted)">—</span>`;
+        tr.innerHTML = `<td>${dt}</td><td>${r.client||"—"}</td><td class="mono">${r.tracking||"—"}</td><td>${cost}</td><td>${r.status||"—"}</td><td>${pickupCell}</td><td>${labelCell}</td>`;
         tb.appendChild(tr);
       });
     } catch(e){ /* silent */ }
