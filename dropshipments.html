@@ -790,25 +790,18 @@
   <aside class="sidebar">
     <div class="side-section">
       <div class="side-label">Dropshipments</div>
-      <a href="#" class="side-link active"><span class="icon">📦</span> All Packages</a>
-      <a href="#" class="side-link"><span class="icon">⏱</span> Pending</a>
-      <a href="#" class="side-link"><span class="icon">📥</span> Received</a>
-      <a href="#" class="side-link"><span class="icon">🏷</span> Labeled</a>
-      <a href="#" class="side-link"><span class="icon">✓</span> Shipped</a>
-      <a href="#" class="side-link"><span class="icon">⚠</span> Orphans</a>
-      <a href="#" class="side-link"><span class="icon">⛔</span> Exceptions</a>
+      <a href="#" class="side-link active" data-side-tab="all"><span class="icon">📦</span> All Packages</a>
+      <a href="#" class="side-link" data-side-tab="pending"><span class="icon">⏱</span> Pending</a>
+      <a href="#" class="side-link" data-side-tab="received"><span class="icon">📥</span> Received</a>
+      <a href="#" class="side-link" data-side-tab="labeled"><span class="icon">🏷</span> Labeled</a>
+      <a href="#" class="side-link" data-side-tab="shipped"><span class="icon">✓</span> Shipped</a>
+      <a href="#" class="side-link" data-side-tab="orphan"><span class="icon">⚠</span> Orphans</a>
+      <a href="#" class="side-link" data-side-tab="exception"><span class="icon">⛔</span> Exceptions</a>
     </div>
     <div class="side-section">
       <div class="side-label">Tools</div>
-      <a href="#" class="side-link"><span class="icon">📧</span> Email Pipeline</a>
-      <a href="#" class="side-link"><span class="icon">🖨</span> Batch Print</a>
       <a href="manifests.html" class="side-link"><span class="icon">📋</span> Manifests</a>
-      <a href="#" class="side-link"><span class="icon">📊</span> Analytics</a>
-    </div>
-    <div class="side-section">
-      <div class="side-label">Account</div>
-      <a href="#" class="side-link"><span class="icon">⚙</span> Settings</a>
-      <a href="#" class="side-link"><span class="icon">💬</span> Support</a>
+      <a href="dashboard.html" class="side-link"><span class="icon">📊</span> Analytics</a>
     </div>
   </aside>
 
@@ -818,7 +811,7 @@
   <div>
     <div class="hdr-title">
       Dropshipments
-      <span class="badge-beta">Day 2</span>
+      <span class="badge-beta">Live</span>
     </div>
     <div class="hdr-sub">Automated email-to-label pipeline · multi-client</div>
   </div>
@@ -2500,6 +2493,30 @@
     btn.classList.add("active");
     state.activeTab = btn.dataset.tab;
     renderRows();
+  });
+
+  // ─── Sidebar state filters ───────────────────────────────────────────
+  // The left sidebar links mirror the top tab bar. Both drive the same
+  // state.activeTab + renderRows(). Clicking either keeps the two in sync.
+  function syncActiveTab(tab) {
+    state.activeTab = tab;
+    $$(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
+    $$(".side-link[data-side-tab]").forEach(s =>
+      s.classList.toggle("active", s.dataset.sideTab === tab));
+    renderRows();
+  }
+  $$(".side-link[data-side-tab]").forEach(link => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      syncActiveTab(link.dataset.sideTab);
+    });
+  });
+  // keep sidebar in sync when a top tab is clicked too
+  $("#tabs").addEventListener("click", (e) => {
+    const btn = e.target.closest(".tab");
+    if (!btn) return;
+    $$(".side-link[data-side-tab]").forEach(s =>
+      s.classList.toggle("active", s.dataset.sideTab === btn.dataset.tab));
   });
 
   $("#clientSelect").addEventListener("change", (e) => {
