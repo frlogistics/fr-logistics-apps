@@ -185,20 +185,32 @@ async function buildInventory() {
   // exclude alternate SKUs so counts match SkuVault UI / CSV
   const products = (payload.Products || []).filter(p => p.IsAlternateSKU !== true);
 
-  let inStock = 0, low = 0, out = 0;
+  let inStock = 0, low = 0, out = 0, totalUnits = 0;
   const byClient = {};
   for (const p of products) {
     const qty = p.QuantityAvailable ?? p.QuantityOnHand ?? 0;
     const client = (p.Client && p.Client.trim()) ? p.Client : "Unassigned";
-    if (!byClient[client]) byClient[client] = { client, skus: 0, low: 0, out: 0 };
+    if (!byClient[client]) byClient[client] = { client, skus: 0, units: 0, low: 0, out: 0, items: [] };
     byClient[client].skus++;
-    if (qty <= 0)       { out++;     byClient[client].out++; }
-    else if (qty < 10)  { low++;     byClient[client].low++; }
-    else                { inStock++; }
+    byClient[client].units += qty;
+    totalUnits += qty;
+    let st;
+    if (qty <= 0)       { out++;     byClient[client].out++;  st = "out"; }
+    else if (qty < 10)  { low++;     byClient[client].low++;  st = "low"; }
+    else                { inStock++;                          st = "ok";  }
+    byClient[client].items.push({
+      sku: p.Sku,
+      title: p.Description || p.Title || "",
+      units: qty,
+      status: st,
+    });
   }
+  // sort each client's items by units desc (biggest stock first)
+  for (const c of Object.values(byClient)) c.items.sort((a, b) => b.units - a.units);
   const total = products.length;
   return {
     total_skus: total,
+    total_units: totalUnits,
     in_stock: inStock,
     low_stock: low,
     out_of_stock: out,
