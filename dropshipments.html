@@ -2397,7 +2397,7 @@
         ? `Select for batch action (status: ${r.status})`
         : `Cannot batch from status '${r.status}'`;
       return `
-        <div class="${rowClass}" data-id="${r.id}">
+        <div class="${rowClass}" data-id="${r.id}" data-created="${r.email_received_at || r.physical_received_at || r.created_at || ''}">
           <label class="check-cell" title="${checkTitle}" onclick="event.stopPropagation()">
             <input type="checkbox" class="row-check" data-row-id="${r.id}" ${selected ? "checked" : ""} ${selectable ? "" : "disabled"}>
           </label>
@@ -3068,10 +3068,12 @@
       if (!text.includes(q)) return false;
     }
     if (fromIso || toIso) {
-      // Best-effort: rows do not carry ISO timestamps in DOM. We skip
-      // date filtering when ISO is unavailable. This keeps the filter
-      // visible/decorative for date until backend adds a from/to param.
-      // (Status + search work fully client-side.)
+      // Each row now carries its creation date in data-created (ISO). Compare
+      // the date portion (YYYY-MM-DD) so From/To are inclusive whole-day bounds.
+      const created = (row.getAttribute("data-created") || "").slice(0, 10);
+      if (!created) return false;            // no date on row → exclude when filtering by date
+      if (fromIso && created < fromIso) return false;
+      if (toIso   && created > toIso)   return false;
     }
     return true;
   }
