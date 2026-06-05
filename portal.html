@@ -513,15 +513,14 @@ const PW='frlogistics2024';
 // ═══════════════════════════════════════════════════════════════════════════
 const APPS=[
   {icon:'🧾',name:'Billing Generator',desc:'Auto-billing from ShipStation + export QBO CSV',url:'billing.html'},
+  {icon:'🤝',name:'Client Onboarding',desc:'Generate & send onboarding package',url:'onboarding.html'},
   {icon:'📦',name:'Client Orders',desc:'Review and export client orders to ShipStation CSV',url:'warehouse-orders.html'},
-   {icon:'🤝',name:'Client Onboarding',desc:'Generate & send onboarding package',url:'onboarding.html'},
   {icon:'📸',name:'Content Studio',desc:'Instagram posts with AI',url:'content-studio.html'},
   {icon:'📚',name:'Docs Library',desc:'Manuales y documentación interna',url:'docs.html'},
   {icon:'📬',name:'Dropshipments',desc:'Automated email-to-label pipeline',url:'dropshipments.html'},
   {icon:'📧',name:'Email Ops',desc:'Email operations dashboard',url:'email-ops.html'},
   {icon:'📦',name:'Inbound / Outbound',desc:'Receiving & shipping tracker',url:'Inbound_Outbound.html'},
-  {icon:'📊',name:'Inventory Dashboard',desc:'SKUVault live inventory status',url:'dashboard-inventory.html'},
-  {icon:'🚦',name:'Operations Dashboard',desc:'Shipping · dropship · warehouse · billing metrics',url:'kpi-dash.html'},
+  {icon:'🚦',name:'Operations Dashboard',desc:'KPIs · SLA · profitability · inventory · ops',url:'dashboard.html'},
   {icon:'🏗️',name:'Pallets',desc:'Pallet management',url:'pallets.html'},
  {icon:'💰',name:'Quote Builder',desc:'Logistics rate quotes',url:'FR_Logistics_Quote_System_v3.html'},
   {icon:'📝',name:'Services Log',desc:'Capture warehouse services per client',url:'services-log.html'},
@@ -556,7 +555,7 @@ function switchTab(name,btn){
   const el=document.getElementById('tab'+name);
   if(el)el.classList.add('active');
   if(btn)btn.classList.add('active');
-  if(name==='Dashboard'){const fr=document.getElementById('dashFrame');if(!fr.src||fr.src===window.location.href||fr.src==='about:blank'){fr.src='kpi-dash.html';}}
+  if(name==='Dashboard'){const fr=document.getElementById('dashFrame');if(!fr.src||fr.src===window.location.href||fr.src==='about:blank'){fr.src='dashboard.html';}}
   if(name==='Pickups'&&allPickups.length===0)loadPickups();
 }
 
@@ -580,7 +579,7 @@ window.addEventListener('popstate',function(){
   const v=document.getElementById('appViewer');
   if(v&&v.style.display==='flex'){v.style.display='none';document.getElementById('appViewerFrame').src='about:blank';}
 });
-function reloadDash(){document.getElementById('dashFrame').src='kpi-dash.html?t='+Date.now();}
+function reloadDash(){document.getElementById('dashFrame').src='dashboard.html?t='+Date.now();}
 
 function loadClients(){
   const tb=document.getElementById('clientTableBody');
