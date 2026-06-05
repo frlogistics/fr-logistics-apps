@@ -405,7 +405,7 @@ function renderInv(d){
     const items = (c.items||[]).map(it=>{
       const dot = it.status==='out'?'#DC2626':it.status==='low'?'#F59E0B':'#16A34A';
       return `<tr><td style="padding-left:1.5rem"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dot};margin-right:.5rem"></span>${it.sku}</td><td class="muted-cell">${(it.title||'').slice(0,60)}</td><td class="num">${fmt(it.units)}</td></tr>`;
-    }).join('') || '<tr><td colspan="3" class="muted">No SKUs.</td></tr>';
+    }).join('') || '<tr><td colspan="3" class="muted">All SKUs out of stock.</td></tr>';
     return `<tbody class="acc-group">
       <tr class="acc-head" onclick="toggleAcc(${i})">
         <td><span class="caret" id="caret-${i}">▶</span> ${c.client}</td>
