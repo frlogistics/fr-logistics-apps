@@ -207,7 +207,7 @@
 
 <div class="pan" id="prof"><div class="syncbar"><div class="info"><span class="src-dot" id="dot-prof"></span>Last synced <b id="ago-prof">—</b></div><div class="sources"><span class="schip"><i></i>billing_runs</span></div><button class="rfbtn" data-area="prof" onclick="refreshArea('prof')"><svg fill="none" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>Refresh</button></div><div id="prof-body"></div></div>
 
-<div class="pan" id="op"><div class="syncbar"><div class="info"><span class="src-dot" id="dot-op"></span>Last synced <b id="ago-op">—</b></div><div class="sources"><span class="schip"><i></i>dropshipments</span></div><button class="rfbtn" data-area="op" onclick="refreshArea('op')"><svg fill="none" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>Refresh</button></div><div id="op-body"></div></div>
+<div class="pan" id="op"><div class="syncbar"><div class="info"><span class="src-dot" id="dot-op"></span>Last synced <b id="ago-op">—</b></div><div class="sources"><span class="schip"><i></i>dropshipments</span><span class="schip"><i></i>shipments_general</span><span class="schip"><i class="stale"></i>ShipStation</span></div><button class="rfbtn" data-area="op" onclick="refreshArea('op')"><svg fill="none" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>Refresh</button></div><div id="op-body"></div></div>
 
 <div class="pan" id="in"><div class="syncbar"><div class="info"><span class="src-dot stale" id="dot-in"></span>Last synced <b id="ago-in">not loaded</b><span class="ago">· loads on demand (SkuVault)</span></div><div class="sources"><span class="schip"><i class="stale"></i>SkuVault</span></div><button class="rfbtn" data-area="in" onclick="refreshArea('in')"><svg fill="none" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>Load Inventory</button></div><div id="in-body"><div class="muted">Click "Load Inventory" to pull live stock from SkuVault.</div></div></div>
 
@@ -330,6 +330,8 @@ function renderProf(d){
 
 function renderOp(d){
   const m = d.status_machine || {};
+  const io = d.inbound_outbound || {};
+  const ss = d.shipstation || {};
   const cols = [
     ['Pending', m.ds_pending, '#94A3B8'],
     ['Received', m.ds_received, '#3B82F6'],
@@ -339,17 +341,45 @@ function renderOp(d){
     ['Exception', m.ds_exception, '#DC2626'],
   ];
   const max = Math.max(...cols.map(c=>c[1]||0),1);
+  // hero now spans all three flows
   const hero = `<div class="hero">
-    ${hk('teal','Shipped · 30d', fmt(m.ds_shipped_30d),'','')}
-    ${hk('blue','In Pipeline', fmt((m.ds_pending||0)+(m.ds_received||0)+(m.ds_labeled||0)),'','pending+recv+labeled')}
-    ${hk('amber','Orphans', fmt(m.ds_orphan),'','no email match')}
-    ${hk('red','Exceptions', fmt(m.ds_exception),'','need review')}
+    ${hk('teal','Inbound · 30d', fmt(io.inbound_30d),'','shipments_general')}
+    ${hk('blue','Outbound · 30d', fmt(io.outbound_30d),'','shipments_general')}
+    ${hk('green','ShipStation Shipped', fmt(ss.total),'','last 30d')}
+    ${hk('purple','Dropships Shipped', fmt(m.ds_shipped_30d),'','dropshipments')}
+    ${hk('amber','Unbilled Moves', fmt(io.total_unbilled),'','⚠ need billing')}
   </div>`;
+  // Inbound/Outbound breakdown by type
+  const ioRows = [
+    ['RMA / Returns', io.rma_returns, 'Inbound'],
+    ['Inbound · Drop-Shipment', io.inbound_dropship, 'Inbound'],
+    ['Inbound · General', io.inbound_general, 'Inbound'],
+    ['Inbound · Prep Service', io.prep_service, 'Inbound'],
+    ['Outbound · Shipment', io.outbound_shipment, 'Outbound'],
+    ['Outbound · Drop-Shipment', io.outbound_dropship, 'Outbound'],
+    ['Return to Sender', io.return_to_sender, 'Outbound'],
+  ].filter(r=>r[1]>0).map(r=>`<tr><td>${r[0]}</td><td><span class="pill ${r[2]==='Inbound'?'b':'g'}">${r[2]}</span></td><td class="num">${fmt(r[1])}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No movements.</td></tr>';
+  const ioCard = `<div class="card"><div class="ct"><h3>Inbound / Outbound · by Type</h3><span class="src">shipments_general · 30d</span></div>
+    <table class="dt"><thead><tr><th>Type</th><th>Direction</th><th class="num">Count</th></tr></thead><tbody>${ioRows}</tbody></table></div>`;
+  // ShipStation by store
+  let ssCard;
+  if(ss.error){
+    ssCard = `<div class="card"><div class="ct"><h3>ShipStation · Orders Shipped</h3></div><div class="errbox">${ss.error}</div></div>`;
+  } else {
+    const ssRows = (ss.by_store||[]).map(s=>`<tr><td>${s.store}</td><td class="num">${fmt(s.count)}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No shipments in last 30 days.</td></tr>';
+    ssCard = `<div class="card"><div class="ct"><h3>ShipStation · Orders Shipped</h3><span class="src">ShipStation API · 30d</span></div>
+      <table class="dt"><thead><tr><th>Store</th><th class="num">Shipped</th></tr></thead><tbody>${ssRows}</tbody></table></div>`;
+  }
+  // Dropship status machine
   const stack = `<div class="card"><div class="ct"><h3>Dropship Status Machine</h3><span class="src">dropshipments.status</span></div>
     <div class="stack">${cols.map(c=>`<div class="col"><div class="bars" style="height:${Math.max(Math.round(100*(c[1]||0)/max),4)}%"><div class="seg" style="background:${c[2]};height:100%"></div></div><div class="cn">${c[0]} · ${fmt(c[1])}</div></div>`).join('')}</div></div>`;
+  // Manifests
   const man = (d.manifests||[]).slice(0,5).map(x=>`<tr><td>${x.manifest_id}</td><td>${x.outbound_carrier}</td><td class="num">${x.package_count}</td><td>${x.status==='sealed'?'<span class="pill g">Sealed</span>':x.status==='open'?'<span class="pill y">Open</span>':'<span class="pill b">'+x.status+'</span>'}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No manifests.</td></tr>';
   const manC = `<div class="card"><div class="ct"><h3>Latest Manifests</h3></div><table class="dt"><thead><tr><th>Manifest</th><th>Carrier</th><th class="num">Pkgs</th><th>Status</th></tr></thead><tbody>${man}</tbody></table></div>`;
-  return hero + `<div class="row r-1">${stack}</div>` + `<div class="row r-1">${manC}</div>`;
+  return hero
+    + `<div class="row r-2b">${ioCard}${ssCard}</div>`
+    + `<div class="row r-1">${stack}</div>`
+    + `<div class="row r-1">${manC}</div>`;
 }
 
 function renderInv(d){
