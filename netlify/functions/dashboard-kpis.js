@@ -26,6 +26,10 @@ const SUPA_KEY  = process.env.SUPABASE_SERVICE_KEY;
 // (fr-logistics-apps) which already pulls SkuVault with caching, the
 // IsAlternateSKU !== true filter, and per-client grouping. DRY: one source.
 const SELF_BASE = process.env.URL || "https://apps.fr-logistics.net";
+// ShipStation (orders shipped) — same creds as portal-tracking.js / daily report
+const SS_KEY    = process.env.SS_API_KEY;
+const SS_SECRET = process.env.SS_API_SECRET;
+const SS_BASE   = "https://ssapi.shipstation.com";
 
 const HEADERS_SUPA = {
   "apikey":        SUPA_KEY,
@@ -105,14 +109,52 @@ async function buildProfitability() {
 }
 
 async function buildOperations() {
-  const [ops, manifests] = await Promise.all([
+  const [ops, io, ioByClient, manifests, ssShipped] = await Promise.all([
     view("v_kpi_operations"),
+    view("v_kpi_inbound_outbound"),
+    view("v_kpi_io_by_client", { order: "total.desc", limit: 10 }),
     view("v_kpi_manifests", { order: "created_at.desc", limit: 5 }),
+    shipStationShipped(),
   ]);
   return {
-    status_machine: one(ops),
-    manifests:      manifests,
+    status_machine:  one(ops),         // dropshipments status
+    inbound_outbound: one(io),         // shipments_general (Inbound/Outbound app)
+    io_by_client:    ioByClient,
+    manifests:       manifests,
+    shipstation:     ssShipped,        // orders shipped via ShipStation
   };
+}
+
+// ShipStation: count shipped orders in the last 30 days, grouped by store.
+// Mirrors the daily-ops-report.js pattern. Wrapped so a ShipStation outage
+// never breaks the rest of the Operations panel.
+async function shipStationShipped() {
+  if (!SS_KEY || !SS_SECRET) return { error: "ShipStation env vars missing", total: 0, by_store: [] };
+  try {
+    const auth = Buffer.from(`${SS_KEY}:${SS_SECRET}`).toString("base64");
+    const since = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+    // pull stores for name mapping + shipments since `since`
+    const [storesR, shipR] = await Promise.all([
+      fetch(`${SS_BASE}/stores`, { headers: { Authorization: "Basic " + auth } }),
+      fetch(`${SS_BASE}/shipments?shipDateStart=${since}&pageSize=500`, { headers: { Authorization: "Basic " + auth } }),
+    ]);
+    const stores = storesR.ok ? await storesR.json() : [];
+    const storeName = {};
+    (Array.isArray(stores) ? stores : []).forEach(s => { storeName[s.storeId] = s.storeName; });
+    const ship = shipR.ok ? await shipR.json() : { shipments: [] };
+    const shipments = (ship.shipments || []).filter(s => !s.voided);
+    const byStore = {};
+    for (const s of shipments) {
+      const nm = storeName[s.advancedOptions?.storeId] || "Unknown store";
+      byStore[nm] = (byStore[nm] || 0) + 1;
+    }
+    return {
+      total: shipments.length,
+      by_store: Object.entries(byStore).map(([store, count]) => ({ store, count })).sort((a, b) => b.count - a.count),
+    };
+  } catch (e) {
+    return { error: String(e.message || e), total: 0, by_store: [] };
+  }
 }
 
 // Inventory comes from the existing inventory.js function, which already
