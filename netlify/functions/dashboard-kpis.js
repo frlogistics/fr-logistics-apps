@@ -22,10 +22,13 @@
 
 const SUPA_URL  = process.env.SUPABASE_URL;
 const SUPA_KEY  = process.env.SUPABASE_SERVICE_KEY;
-// Inventory is NOT pulled here. We reuse the existing inventory.js function
-// (fr-logistics-apps) which already pulls SkuVault with caching, the
-// IsAlternateSKU !== true filter, and per-client grouping. DRY: one source.
-const SELF_BASE = process.env.URL || "https://apps.fr-logistics.net";
+// SkuVault: single env var "tenantToken|userToken" (existing FR convention).
+// We pull getProducts directly here (not inventory.js) because inventory.js
+// groups by warehouse (WH001) and does NOT expose the Client field, so it
+// can't drive per-client health. getProducts has Client + IsAlternateSKU.
+const SV_TOKENS = process.env.SKUVAULT_TENANT_TOKEN || "";
+const [SV_TENANT, SV_USER] = SV_TOKENS.split("|");
+const SV_BASE   = "https://app.skuvault.com/api";
 // ShipStation (orders shipped) — same creds as portal-tracking.js / daily report
 const SS_KEY    = process.env.SS_API_KEY;
 const SS_SECRET = process.env.SS_API_SECRET;
@@ -157,37 +160,43 @@ async function shipStationShipped() {
   }
 }
 
-// Inventory comes from the existing inventory.js function, which already
-// handles SkuVault auth, 5-min cache, the IsAlternateSKU !== true filter
-// (memory #25), and per-client grouping (memory #26). We just call it and
-// reshape its output into the dashboard's health KPIs. This keeps a single
-// source of truth for inventory logic instead of duplicating the SkuVault pull.
+// Inventory pulled from SkuVault getProducts, filtered IsAlternateSKU !== true
+// (memory #25, else stock multi-counts), grouped by the native Client field
+// (memory #26, matches fr_clients.name). Health thresholds: out <=0, low <10.
 async function buildInventory() {
-  const r = await fetch(`${SELF_BASE}/.netlify/functions/inventory`);
+  if (!SV_TENANT || !SV_USER) {
+    return { error: "SkuVault env vars missing", total_skus: 0, by_client: [] };
+  }
+  const r = await fetch(`${SV_BASE}/products/getProducts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      TenantToken: SV_TENANT,
+      UserToken: SV_USER,
+      PageNumber: 0,
+      PageSize: 10000,
+    }),
+  });
   if (!r.ok) {
     const txt = await r.text();
-    throw new Error(`inventory.js call failed (${r.status}): ${txt}`);
+    throw new Error(`SkuVault getProducts failed (${r.status}): ${txt}`);
   }
-  const inv = await r.json();
-  // inventory.js returns an array of SKU rows (sku, title, onHand, allocated,
-  // available, status, client). Reshape into KPIs + per-client breakdown.
-  const skus = Array.isArray(inv) ? inv : (inv.skus || inv.items || []);
+  const payload = await r.json();
+  // exclude alternate SKUs so counts match SkuVault UI / CSV
+  const products = (payload.Products || []).filter(p => p.IsAlternateSKU !== true);
 
   let inStock = 0, low = 0, out = 0;
   const byClient = {};
-  for (const s of skus) {
-    const status = s.status || (
-      (s.available ?? s.onHand ?? 0) <= 0 ? "out"
-      : (s.available ?? s.onHand ?? 0) < 10 ? "low" : "ok"
-    );
-    const client = s.client || s.Client || "Unassigned";
+  for (const p of products) {
+    const qty = p.QuantityAvailable ?? p.QuantityOnHand ?? 0;
+    const client = (p.Client && p.Client.trim()) ? p.Client : "Unassigned";
     if (!byClient[client]) byClient[client] = { client, skus: 0, low: 0, out: 0 };
     byClient[client].skus++;
-    if (status === "out")      { out++;     byClient[client].out++; }
-    else if (status === "low") { low++;     byClient[client].low++; }
-    else                       { inStock++; }
+    if (qty <= 0)       { out++;     byClient[client].out++; }
+    else if (qty < 10)  { low++;     byClient[client].low++; }
+    else                { inStock++; }
   }
-  const total = skus.length;
+  const total = products.length;
   return {
     total_skus: total,
     in_stock: inStock,
