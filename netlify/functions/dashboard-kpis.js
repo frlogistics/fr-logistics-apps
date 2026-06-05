@@ -198,12 +198,16 @@ async function buildInventory() {
     if (qty <= 0)       { out++;     byClient[client].out++;  st = "out"; }
     else if (qty < 10)  { low++;     byClient[client].low++;  st = "low"; }
     else                { inStock++;                          st = "ok";  }
-    byClient[client].items.push({
-      sku: p.Sku,
-      title: p.Description || p.Title || "",
-      units: qty,
-      status: st,
-    });
+    // Only list SKUs with stock in the detail view; 0-unit (OOS) SKUs still
+    // count in the totals above but are hidden from the dropdown to reduce noise.
+    if (qty > 0) {
+      byClient[client].items.push({
+        sku: p.Sku,
+        title: p.Description || p.Title || "",
+        units: qty,
+        status: st,
+      });
+    }
   }
   // sort each client's items by units desc (biggest stock first)
   for (const c of Object.values(byClient)) c.items.sort((a, b) => b.units - a.units);
