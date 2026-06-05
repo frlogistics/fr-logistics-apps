@@ -171,6 +171,15 @@
   .skel{background:linear-gradient(110deg,#eef2f7 30%,#f7f9fc 50%,#eef2f7 70%);background-size:200% 100%;animation:shimmer 1.1s linear infinite;border-radius:6px;color:transparent!important}
   .errbox{background:#FEE2E2;border:1px solid #FCA5A5;color:#991B1B;padding:.8rem 1rem;border-radius:10px;font-size:.82rem;font-weight:600;margin-bottom:1rem}
   .muted{color:#94A3B8;font-style:italic;font-size:.84rem;padding:.8rem 0;text-align:center}
+  /* inventory accordion */
+  table.dt.acc .acc-head{cursor:pointer;transition:background .15s}
+  table.dt.acc .acc-head:hover{background:#F8FAFD}
+  table.dt.acc .acc-head td:first-child{font-weight:700;color:#0F1D35}
+  .caret{display:inline-block;width:14px;font-size:.7rem;color:#94A3B8;transition:transform .15s}
+  table.dt.sub{margin:0;background:#FAFBFE}
+  table.dt.sub th{background:#F1F5F9;font-size:.6rem}
+  table.dt.sub td{font-size:.78rem;padding:.45rem .5rem}
+  .muted-cell{color:#94A3B8;font-size:.76rem}
 </style>
 
 </head>
@@ -386,17 +395,42 @@ function renderInv(d){
   if(d.error) return `<div class="errbox">Inventory error: ${d.error}</div>`;
   const hero = `<div class="hero">
     ${hk('teal','Total SKUs', fmt(d.total_skus),'','')}
+    ${hk('blue','Total Units', fmt(d.total_units),'','in stock')}
     ${hk('green','In Stock', fmt(d.in_stock),'', (d.health_pct||0)+'% health')}
     ${hk('amber','Low Stock', fmt(d.low_stock),'','reorder')}
     ${hk('red','Out of Stock', fmt(d.out_of_stock),'','stockout')}
   </div>`;
-  const rows = (d.by_client||[]).map(c=>{
+  const rows = (d.by_client||[]).map((c,i)=>{
     const health = c.skus?Math.round(100*(c.skus-c.low-c.out)/c.skus):0;
-    return `<tr><td>${c.client}</td><td class="num">${fmt(c.skus)}</td><td class="num">${fmt(c.low)}</td><td class="num">${fmt(c.out)}</td><td><span class="pill ${health>=60?'g':health>=30?'y':'r'}">${health}%</span></td></tr>`;
-  }).join('') || '<tr><td colspan="5" class="muted">No SKUs.</td></tr>';
-  const tbl = `<div class="card"><div class="ct"><h3>Stock Health by Client</h3><span class="src">SkuVault</span></div>
-    <table class="dt"><thead><tr><th>Client</th><th class="num">SKUs</th><th class="num">Low</th><th class="num">Out</th><th>Health</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    const items = (c.items||[]).map(it=>{
+      const dot = it.status==='out'?'#DC2626':it.status==='low'?'#F59E0B':'#16A34A';
+      return `<tr><td style="padding-left:1.5rem"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dot};margin-right:.5rem"></span>${it.sku}</td><td class="muted-cell">${(it.title||'').slice(0,60)}</td><td class="num">${fmt(it.units)}</td></tr>`;
+    }).join('') || '<tr><td colspan="3" class="muted">No SKUs.</td></tr>';
+    return `<tbody class="acc-group">
+      <tr class="acc-head" onclick="toggleAcc(${i})">
+        <td><span class="caret" id="caret-${i}">▶</span> ${c.client}</td>
+        <td class="num">${fmt(c.skus)}</td>
+        <td class="num">${fmt(c.units)}</td>
+        <td class="num">${fmt(c.low)}</td>
+        <td class="num">${fmt(c.out)}</td>
+        <td><span class="pill ${health>=60?'g':health>=30?'y':'r'}">${health}%</span></td>
+      </tr>
+      <tr class="acc-body" id="acc-${i}" style="display:none"><td colspan="6" style="padding:0">
+        <table class="dt sub"><thead><tr><th>SKU</th><th>Title</th><th class="num">Units</th></tr></thead><tbody>${items}</tbody></table>
+      </td></tr>
+    </tbody>`;
+  }).join('') || '<tbody><tr><td colspan="6" class="muted">No SKUs.</td></tr></tbody>';
+  const tbl = `<div class="card"><div class="ct"><h3>Stock Health by Client</h3><span class="src">SkuVault · click a row for SKU detail</span></div>
+    <table class="dt acc"><thead><tr><th>Client</th><th class="num">SKUs</th><th class="num">Units</th><th class="num">Low</th><th class="num">Out</th><th>Health</th></tr></thead>${rows}</table></div>`;
   return hero + `<div class="row r-1">${tbl}</div>`;
+}
+function toggleAcc(i){
+  const body=document.getElementById('acc-'+i);
+  const caret=document.getElementById('caret-'+i);
+  if(!body) return;
+  const open = body.style.display==='none';
+  body.style.display = open ? 'table-row' : 'none';
+  if(caret) caret.textContent = open ? '▼' : '▶';
 }
 
 const RENDER = { ov:renderOverview, sla:renderSla, prof:renderProf, op:renderOp, in:renderInv };
