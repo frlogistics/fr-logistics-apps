@@ -1,487 +1,263 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FR-Logistics · Executive Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Inter',-apple-system,sans-serif;background:#F4F6FB;color:#1A2238;padding:1.4rem;min-height:100vh}
-  .wrap{max-width:1460px;margin:0 auto}
-  .mock{background:#1A2238;color:#FCD34D;text-align:center;padding:.5rem;border-radius:8px;margin-bottom:1rem;font-size:.76rem;font-weight:600;letter-spacing:.03em}
+// ════════════════════════════════════════════════════════════════════════════
+// dashboard-kpis.js — FR-Logistics Executive Dashboard KPI API
+// Storage: Supabase (KPI views v_kpi_*) + SkuVault API (inventory only)
+// Pattern: same as billing-generator.js / services-log.js
+//
+// Endpoint:
+//   GET ?area=<area>
+//     area = overview | sla | profitability | operations | inventory | all
+//     (default = all)
+//
+//   Returns: { ok, area, generated_at, data: { ... } }
+//
+// Each area maps to one or more v_kpi_* views (read-only, security_invoker).
+// Inventory is NOT in Supabase — it pulls live from SkuVault, same as the
+// client portal Inventory tab. That branch is slower (external API) so the
+// dashboard's per-area refresh treats it accordingly.
+//
+// Designed for the per-area refresh buttons on dashboard v6: each button
+// calls this function with its own ?area= so only that panel re-queries,
+// independent of any cron routine.
+// ════════════════════════════════════════════════════════════════════════════
 
-  /* HEADER */
-  .hdr{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1.4rem}
-  .hdr h1{font-size:1.55rem;font-weight:800;letter-spacing:-.02em;color:#0F1D35}
-  .hdr .sub{font-size:.85rem;color:#7B8AA0;margin-top:.15rem}
-  .hdr .eb{font-size:.66rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#00B4AA;margin-bottom:.3rem}
-  .pick{display:flex;gap:.5rem;align-items:center;background:#fff;border:1px solid #E4E9F2;border-radius:10px;padding:.55rem .9rem;font-size:.82rem;font-weight:600;color:#475569;box-shadow:0 2px 8px rgba(20,30,60,.04)}
-  .pick .dot{width:8px;height:8px;border-radius:50%;background:#22C55E;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
-  /* BRAND LOGO */
-  .brand{display:flex;align-items:center;gap:.95rem}
-  .brand .logo{height:62px;width:auto;flex-shrink:0}
-  .brand .divider{width:1px;height:42px;background:#E4E9F2;flex-shrink:0}
+const SUPA_URL  = process.env.SUPABASE_URL;
+const SUPA_KEY  = process.env.SUPABASE_SERVICE_KEY;
+// SkuVault: single env var "tenantToken|userToken" (existing FR convention).
+// We pull getProducts directly here (not inventory.js) because inventory.js
+// groups by warehouse (WH001) and does NOT expose the Client field, so it
+// can't drive per-client health. getProducts has Client + IsAlternateSKU.
+const SV_TOKENS = process.env.SKUVAULT_TENANT_TOKEN || "";
+const [SV_TENANT, SV_USER] = SV_TOKENS.split("|");
+const SV_BASE   = "https://app.skuvault.com/api";
+// ShipStation (orders shipped) — same creds as portal-tracking.js / daily report
+const SS_KEY    = process.env.SS_API_KEY;
+const SS_SECRET = process.env.SS_API_SECRET;
+const SS_BASE   = "https://ssapi.shipstation.com";
 
-  /* TABS */
-  .tabs{display:flex;gap:.3rem;margin-bottom:1.3rem;flex-wrap:wrap;background:#fff;padding:.4rem;border-radius:14px;border:1px solid #E4E9F2;box-shadow:0 2px 10px rgba(20,30,60,.03)}
-  .tab{flex:1;min-width:110px;padding:.72rem .8rem;border:none;background:transparent;cursor:pointer;font-size:.82rem;font-weight:700;color:#7B8AA0;border-radius:10px;transition:.2s;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:.4rem}
-  .tab.on{background:linear-gradient(135deg,#0F1D35,#1E3A8A);color:#fff;box-shadow:0 6px 16px rgba(15,29,53,.22)}
-  .tab:hover:not(.on){background:#F0F4FB;color:#0F1D35}
-  .tab .nb{background:#00D4C8;color:#0F1D35;font-size:.56rem;font-weight:900;padding:.05rem .35rem;border-radius:999px}
-  .pan{display:none;animation:f .35s}.pan.on{display:block}
-  @keyframes f{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+const HEADERS_SUPA = {
+  "apikey":        SUPA_KEY,
+  "Authorization": "Bearer " + SUPA_KEY,
+  "Content-Type":  "application/json",
+};
 
-  /* PER-AREA REFRESH BAR */
-  .syncbar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.8rem;background:#fff;border:1px solid #E9EDF5;border-radius:14px;padding:.7rem 1.1rem;margin-bottom:1.1rem;box-shadow:0 2px 10px rgba(20,30,60,.03)}
-  .syncbar .info{display:flex;align-items:center;gap:.6rem;font-size:.8rem;color:#64748B;font-weight:600}
-  .syncbar .info .src-dot{width:9px;height:9px;border-radius:50%;background:#22C55E;box-shadow:0 0 0 3px rgba(34,197,94,.16);flex-shrink:0}
-  .syncbar .info .src-dot.stale{background:#F59E0B;box-shadow:0 0 0 3px rgba(245,158,11,.16)}
-  .syncbar .info b{color:#0F1D35;font-weight:800}
-  .syncbar .info .ago{color:#94A3B8;font-weight:600}
-  .syncbar .sources{display:flex;gap:.4rem;flex-wrap:wrap}
-  .syncbar .schip{font-size:.64rem;font-weight:700;color:#64748B;background:#F4F6FB;border:1px solid #EDF1F8;padding:.22rem .55rem;border-radius:999px;display:inline-flex;align-items:center;gap:.3rem}
-  .syncbar .schip i{width:6px;height:6px;border-radius:50%;background:#22C55E}
-  .syncbar .schip i.stale{background:#F59E0B}
-  .syncbar .schip i.err{background:#EF4444}
-  .rfbtn{display:inline-flex;align-items:center;gap:.5rem;background:linear-gradient(135deg,#0F1D35,#1E3A8A);color:#fff;border:none;border-radius:10px;padding:.6rem 1.1rem;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit;transition:.2s;box-shadow:0 4px 12px rgba(15,29,53,.18);white-space:nowrap}
-  .rfbtn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(15,29,53,.26)}
-  .rfbtn:active{transform:translateY(0)}
-  .rfbtn svg{width:15px;height:15px;stroke:#fff;transition:transform .2s}
-  .rfbtn.spinning{pointer-events:none;opacity:.85}
-  .rfbtn.spinning svg{animation:spin .7s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  .rfbtn.done{background:linear-gradient(135deg,#16A34A,#22C55E)}
-  /* loading shimmer overlay on panel during refresh */
-  .pan.loading{position:relative}
-  .pan.loading::after{content:'';position:absolute;inset:0;background:linear-gradient(110deg,rgba(255,255,255,0) 30%,rgba(255,255,255,.55) 50%,rgba(255,255,255,0) 70%);background-size:200% 100%;animation:shimmer 1.1s linear infinite;border-radius:18px;pointer-events:none;z-index:5}
-  @keyframes shimmer{to{background-position:-200% 0}}
-
-  /* HERO KPI STRIP — gradient cards like Deposito */
-  .hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin-bottom:1.1rem}
-  .hk{border-radius:18px;padding:1.3rem 1.4rem;color:#fff;position:relative;overflow:hidden;box-shadow:0 10px 24px rgba(20,30,60,.12)}
-  .hk::after{content:'';position:absolute;right:-30px;top:-30px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.1)}
-  .hk::before{content:'';position:absolute;right:-55px;bottom:-55px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.06)}
-  .hk .ic{width:42px;height:42px;border-radius:12px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;margin-bottom:.9rem;position:relative;z-index:2}
-  .hk .ic svg{width:22px;height:22px;stroke:#fff}
-  .hk .lbl{font-size:.72rem;font-weight:700;letter-spacing:.04em;opacity:.9;position:relative;z-index:2}
-  .hk .val{font-size:2.1rem;font-weight:900;line-height:1;margin-top:.35rem;letter-spacing:-.02em;position:relative;z-index:2}
-  .hk .val .u{font-size:1.05rem;font-weight:700;opacity:.85}
-  .hk .chg{font-size:.74rem;font-weight:700;margin-top:.6rem;display:inline-flex;gap:.25rem;align-items:center;background:rgba(255,255,255,.2);padding:.18rem .5rem;border-radius:999px;position:relative;z-index:2}
-  .hk.teal{background:linear-gradient(135deg,#0EA5A0,#06B6D4)}
-  .hk.green{background:linear-gradient(135deg,#16A34A,#22C55E)}
-  .hk.blue{background:linear-gradient(135deg,#2563EB,#3B82F6)}
-  .hk.purple{background:linear-gradient(135deg,#7C3AED,#A855F7)}
-  .hk.amber{background:linear-gradient(135deg,#EA580C,#F59E0B)}
-  .hk.red{background:linear-gradient(135deg,#DC2626,#EF4444)}
-
-  /* PANELS */
-  .row{display:grid;gap:1.1rem;margin-bottom:1.1rem}
-  .r-2{grid-template-columns:1.5fr 1fr}
-  .r-2b{grid-template-columns:1fr 1fr}
-  .r-3{grid-template-columns:repeat(3,1fr)}
-  .r-1{grid-template-columns:1fr}
-  @media(max-width:900px){.r-2,.r-2b,.r-3{grid-template-columns:1fr}}
-  .card{background:#fff;border:1px solid #E9EDF5;border-radius:18px;padding:1.3rem 1.45rem;box-shadow:0 4px 16px rgba(20,30,60,.04)}
-  .ct{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.1rem}
-  .ct h3{font-size:1rem;font-weight:800;color:#0F1D35;letter-spacing:-.01em}
-  .ct .tag{font-size:.66rem;font-weight:700;color:#94A3B8;background:#F1F5F9;padding:.25rem .6rem;border-radius:999px}
-  .ct .src{font-size:.64rem;color:#B0BAC9;font-family:monospace}
-
-  /* HEALTH GAUGE big */
-  .gauge-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
-  .gauge{position:relative;width:180px;height:180px}
-  .gauge svg{transform:rotate(-90deg)}
-  .gauge .gn{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-  .gauge .gn .big{font-size:3rem;font-weight:900;color:#0F1D35;line-height:1}
-  .gauge .gn .of{font-size:.7rem;color:#94A3B8;font-weight:700;letter-spacing:.1em}
-  .gstate{margin-top:.9rem;font-size:1.05rem;font-weight:800;color:#EA580C}
-  .gsub{font-size:.78rem;color:#7B8AA0;margin-top:.3rem;max-width:230px;line-height:1.45}
-  .gbreak{display:flex;flex-direction:column;gap:.55rem;margin-top:1.1rem;width:100%}
-  .gbreak .gr{display:flex;align-items:center;gap:.6rem;font-size:.74rem}
-  .gbreak .gr .nm{width:90px;text-align:left;color:#64748B;font-weight:600}
-  .gbreak .gr .tk{flex:1;height:8px;background:#F1F5F9;border-radius:999px;overflow:hidden}
-  .gbreak .gr .fl{height:100%;border-radius:999px}
-  .gbreak .gr .pc{width:34px;text-align:right;font-weight:800;color:#334155}
-
-  /* HEATMAP — TAT by day/client like Purchase By Week */
-  .heat{display:grid;grid-template-columns:auto repeat(7,1fr);gap:5px}
-  .heat .hl{font-size:.68rem;font-weight:700;color:#64748B;display:flex;align-items:center;padding-right:.4rem}
-  .heat .hc{aspect-ratio:1.6;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:.66rem;font-weight:700;color:#fff}
-  .heat .hh{font-size:.62rem;font-weight:700;color:#94A3B8;text-align:center;padding-bottom:.2rem}
-  .heat-leg{display:flex;align-items:center;gap:.5rem;margin-top:.9rem;font-size:.68rem;color:#7B8AA0}
-  .heat-leg .sc{display:flex;gap:3px}
-  .heat-leg .sc i{width:18px;height:11px;border-radius:3px;display:block}
-
-  /* BIG AREA CHART */
-  .chartbox{position:relative;height:230px}
-  .chartbox svg{width:100%;height:100%;overflow:visible}
-  .cleg{display:flex;gap:1.2rem;margin-top:.6rem;font-size:.74rem;color:#64748B;font-weight:600}
-  .cleg span{display:inline-flex;align-items:center;gap:.4rem}
-  .cleg i{width:12px;height:12px;border-radius:4px;display:block}
-
-  /* HORIZONTAL BARS like Top Cities */
-  .hbar{display:flex;flex-direction:column;gap:1rem}
-  .hbar .b{display:flex;align-items:center;gap:.8rem}
-  .hbar .b .nm{width:140px;font-size:.82rem;font-weight:700;color:#334155}
-  .hbar .b .tk{flex:1;height:26px;background:#F4F6FB;border-radius:8px;overflow:hidden;position:relative}
-  .hbar .b .fl{height:100%;border-radius:8px;display:flex;align-items:center;justify-content:flex-end;padding-right:.6rem;font-size:.72rem;font-weight:800;color:#fff}
-
-  /* STACKED BARS like Inventory Stock */
-  .stack{display:flex;align-items:flex-end;justify-content:space-around;height:220px;gap:1rem;padding-top:1rem}
-  .stack .col{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end;gap:.5rem}
-  .stack .bars{width:60%;max-width:54px;display:flex;flex-direction:column;border-radius:8px 8px 0 0;overflow:hidden;box-shadow:0 4px 10px rgba(20,30,60,.08)}
-  .stack .bars .seg{width:100%}
-  .stack .cn{font-size:.72rem;font-weight:700;color:#64748B}
-
-  /* DONUT */
-  .donut-wrap{display:flex;align-items:center;gap:1.4rem;flex-wrap:wrap}
-  .donut{position:relative;width:150px;height:150px;flex-shrink:0}
-  .donut svg{transform:rotate(-90deg)}
-  .donut .dc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-  .donut .dc .n{font-size:1.7rem;font-weight:900;color:#0F1D35}
-  .donut .dc .l{font-size:.62rem;color:#94A3B8;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
-  .dleg{display:flex;flex-direction:column;gap:.7rem;flex:1;min-width:150px}
-  .dleg .dr{display:flex;align-items:center;gap:.6rem;font-size:.8rem}
-  .dleg .dr i{width:12px;height:12px;border-radius:4px}
-  .dleg .dr .v{margin-left:auto;font-weight:800;color:#334155}
-
-  /* MINI KPI under panels */
-  .mini{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.8rem}
-  .mk{background:#F8FAFD;border:1px solid #EDF1F8;border-radius:12px;padding:.9rem 1rem}
-  .mk .l{font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#94A3B8}
-  .mk .v{font-size:1.4rem;font-weight:900;color:#0F1D35;margin-top:.2rem}
-  .mk .v .u{font-size:.8rem;color:#94A3B8;font-weight:700}
-  .mk .c{font-size:.68rem;font-weight:700;margin-top:.25rem}
-  .up{color:#16A34A}.down{color:#DC2626}.flat{color:#94A3B8}
-
-  /* TABLE */
-  table.dt{width:100%;border-collapse:collapse;font-size:.83rem}
-  table.dt th{text-align:left;padding:.6rem .5rem;color:#94A3B8;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;font-weight:800;border-bottom:2px solid #F1F5F9}
-  table.dt td{padding:.7rem .5rem;border-bottom:1px solid #F4F6FB;color:#334155;font-weight:500}
-  table.dt tr:last-child td{border-bottom:none}
-  table.dt .num{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
-  .pill{font-size:.64rem;font-weight:800;padding:.22rem .6rem;border-radius:999px}
-  .pill.g{background:#DCFCE7;color:#166534}.pill.y{background:#FEF3C7;color:#92400E}.pill.r{background:#FEE2E2;color:#991B1B}.pill.b{background:#DBEAFE;color:#1E40AF}
-  .note{background:#EFF6FF;border:1px dashed #93C5FD;color:#1E40AF;padding:.6rem .9rem;border-radius:10px;font-size:.73rem;margin-bottom:1.1rem}
-  .alert{background:linear-gradient(135deg,#FEE2E2,#FECACA);border-left:5px solid #DC2626;padding:1rem 1.2rem;border-radius:12px;font-size:.86rem;color:#7F1D1D;margin-bottom:1.1rem;display:flex;gap:.7rem;align-items:center}
-</style>
-
-<style>
-  .skel{background:linear-gradient(110deg,#eef2f7 30%,#f7f9fc 50%,#eef2f7 70%);background-size:200% 100%;animation:shimmer 1.1s linear infinite;border-radius:6px;color:transparent!important}
-  .errbox{background:#FEE2E2;border:1px solid #FCA5A5;color:#991B1B;padding:.8rem 1rem;border-radius:10px;font-size:.82rem;font-weight:600;margin-bottom:1rem}
-  .muted{color:#94A3B8;font-style:italic;font-size:.84rem;padding:.8rem 0;text-align:center}
-  /* inventory accordion */
-  table.dt.acc .acc-head{cursor:pointer;transition:background .15s}
-  table.dt.acc .acc-head:hover{background:#F8FAFD}
-  table.dt.acc .acc-head td:first-child{font-weight:700;color:#0F1D35}
-  .caret{display:inline-block;width:14px;font-size:.7rem;color:#94A3B8;transition:transform .15s}
-  table.dt.sub{margin:0;background:#FAFBFE}
-  table.dt.sub th{background:#F1F5F9;font-size:.6rem}
-  table.dt.sub td{font-size:.78rem;padding:.45rem .5rem}
-  .muted-cell{color:#94A3B8;font-size:.76rem}
-</style>
-
-</head>
-<body>
-<div class="wrap">
-
-<!-- HEADER -->
-<div class="hdr">
-  <div class="brand">
-    <img class="logo" src="data:image/png;base64,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" alt="FR-Logistics" />
-    <div class="divider"></div>
-    <div>
-      <div class="eb">Executive Dashboard</div>
-      <h1>Operations Command Center</h1>
-      <div class="sub">Jose Fuentes · Operations Manager</div>
-    </div>
-  </div>
-  <div class="pick"><span class="dot"></span><span id="clock">Live</span></div>
-</div>
-
-<!-- TABS -->
-<div class="tabs">
-  <button class="tab on" data-t="ov">Overview</button>
-  <button class="tab" data-t="sla">SLA &amp; Performance</button>
-  <button class="tab" data-t="prof">Profitability</button>
-  <button class="tab" data-t="op">Operations</button>
-  <button class="tab" data-t="in">Inventory</button>
-</div>
-
-<!-- PANELS (rendered dynamically) -->
-<div class="pan on" id="ov"><div class="syncbar"><div class="info"><span class="src-dot" id="dot-ov"></span>Last synced <b id="ago-ov">—</b></div><div class="sources"><span class="schip"><i></i>Supabase</span></div><button class="rfbtn" data-area="ov" onclick="refreshArea('ov')"><svg fill="none" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>Refresh</button></div><div id="ov-body"></div></div>
-
-<div class="pan" id="sla"><div class="syncbar"><div class="info"><span class="src-dot" id="dot-sla"></span>Last synced <b id="ago-sla">—</b></div><div class="sources"><span class="schip"><i></i>dropshipments</span><span class="schip"><i></i>manifests</span></div><button class="rfbtn" data-area="sla" onclick="refreshArea('sla')"><svg fill="none" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>Refresh</button></div><div id="sla-body"></div></div>
-
-<div class="pan" id="prof"><div class="syncbar"><div class="info"><span class="src-dot" id="dot-prof"></span>Last synced <b id="ago-prof">—</b></div><div class="sources"><span class="schip"><i></i>billing_runs</span></div><button class="rfbtn" data-area="prof" onclick="refreshArea('prof')"><svg fill="none" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>Refresh</button></div><div id="prof-body"></div></div>
-
-<div class="pan" id="op"><div class="syncbar"><div class="info"><span class="src-dot" id="dot-op"></span>Last synced <b id="ago-op">—</b></div><div class="sources"><span class="schip"><i></i>dropshipments</span><span class="schip"><i></i>shipments_general</span><span class="schip"><i class="stale"></i>ShipStation</span></div><button class="rfbtn" data-area="op" onclick="refreshArea('op')"><svg fill="none" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>Refresh</button></div><div id="op-body"></div></div>
-
-<div class="pan" id="in"><div class="syncbar"><div class="info"><span class="src-dot stale" id="dot-in"></span>Last synced <b id="ago-in">not loaded</b><span class="ago">· loads on demand (SkuVault)</span></div><div class="sources"><span class="schip"><i class="stale"></i>SkuVault</span></div><button class="rfbtn" data-area="in" onclick="refreshArea('in')"><svg fill="none" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>Load Inventory</button></div><div id="in-body"><div class="muted">Click "Load Inventory" to pull live stock from SkuVault.</div></div></div>
-
-</div>
-<script>
-// ============================================================================
-// FR-Logistics Executive Dashboard — front-end engine
-// Talks to /.netlify/functions/dashboard-kpis?area=<area>
-// ============================================================================
-const API = "/.netlify/functions/dashboard-kpis";
-const state = {};            // cache of last data per area
-const synced = {};           // last sync timestamp per area
-
-// ---- helpers ----------------------------------------------------------------
-const $ = id => document.getElementById(id);
-const fmt = n => (n ?? 0).toLocaleString();
-const money = n => "$" + (Number(n) || 0).toLocaleString(undefined,{maximumFractionDigits:0});
-function ago(ts){
-  if(!ts) return "—";
-  const s = Math.floor((Date.now()-ts)/1000);
-  if(s<10) return "just now";
-  if(s<60) return s+"s ago";
-  if(s<3600) return Math.floor(s/60)+" min ago";
-  return Math.floor(s/3600)+" h ago";
-}
-function tatColor(h){ if(h==null) return "#D1D5DB"; if(h<18) return "#16A34A"; if(h<=24) return "#65A30D"; return "#DC2626"; }
-function slaPill(st){ return st==="healthy"?'<span class="pill g">Healthy</span>':st==="watch"?'<span class="pill y">Watch</span>':st==="breach"?'<span class="pill r">Breach</span>':'<span class="pill b">No data</span>'; }
-
-// ---- KPI card builders ------------------------------------------------------
-function hk(cls,label,val,unit,chg){
-  return `<div class="hk ${cls}"><div class="lbl">${label}</div><div class="val">${unit==='$'?'<span class="u">$</span>':''}${val}${unit&&unit!=='$'?'<span class="u">'+unit+'</span>':''}</div>${chg?`<div class="chg">${chg}</div>`:''}</div>`;
+// ── helpers ─────────────────────────────────────────────────────────────────
+function resp(code, body) {
+  return {
+    statusCode: code,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Cache-Control": "no-store",
+    },
+    body: JSON.stringify(body),
+  };
 }
 
-// ---- renderers per area -----------------------------------------------------
-function renderOverview(d){
-  const o = d.overview || d;           // tolerate area-only or full payload
-  const ov = o.overview || o;
-  const pl = (o.overview && o.pipeline) ? o.pipeline : (o.pipeline || {});
-  const sla = ov.sla_compliance_pct ?? "—";
-  const hero = `<div class="hero">
-    ${hk('teal','Active Clients', fmt(ov.active_clients), '', (ov.clients_on_portal||0)+' on portal')}
-    ${hk('green','Revenue · Last Month', fmt(ov.revenue_last_month), '$','billing_runs')}
-    ${hk('blue','Avg Dropship TAT', ov.avg_tat_hours ?? '—','h','email → ship')}
-    ${hk('purple','SLA Compliance', sla,'%','target 95%')}
-    ${hk('amber','Active Prospects', fmt(ov.active_prospects), '', (ov.won_30d||0)+' won 30d')}
-  </div>`;
-  const funnel = `<div class="row r-2b"><div class="card"><div class="ct"><h3>Sales Pipeline Funnel</h3><span class="src">wa_leads · 30d</span></div>
-    <div class="hbar">
-      ${fbar('New leads', pl.stage_new, pl.stage_new, '#A855F7,#C084FC')}
-      ${fbar('Qualifying', pl.stage_qualifying, pl.stage_new, '#6366F1,#818CF8')}
-      ${fbar('Sent to sales', pl.stage_sent_to_sales, pl.stage_new, '#3B82F6,#60A5FA')}
-      ${fbar('Won', pl.stage_won, pl.stage_new, '#16A34A,#4ADE80')}
-    </div></div>
-    <div class="card"><div class="ct"><h3>Quick Stats</h3></div><div class="mini">
-      <div class="mk"><div class="l">Win rate</div><div class="v">${pl.win_rate_pct ?? '—'}<span class="u">%</span></div></div>
-      <div class="mk"><div class="l">Lost 30d</div><div class="v">${fmt(pl.stage_lost)}</div></div>
-      <div class="mk"><div class="l">Open manifests</div><div class="v">${fmt(ov.open_manifests)}</div></div>
-    </div></div></div>`;
-  return hero + funnel;
-}
-function fbar(name,val,max,grad){
-  const pct = max ? Math.round(100*(val||0)/max) : 0;
-  return `<div class="b"><span class="nm">${name}</span><span class="tk"><span class="fl" style="width:${Math.max(pct,8)}%;background:linear-gradient(90deg,${grad})">${fmt(val)}</span></span></div>`;
-}
-
-function renderSla(d){
-  const s = d.summary || {};
-  const hero = `<div class="hero">
-    ${hk('blue','Avg TAT · email→ship', s.avg_tat_hours ?? '—','h','target 24h')}
-    ${hk('green','On-Time Ship Rate', s.on_time_pct ?? '—','%','industry 98%')}
-    ${hk('amber','Shipped · 30d', fmt(s.shipped_count),'','')}
-    ${hk('red','SLA Breaches', fmt(s.breach_count),'','of '+fmt(s.shipped_count))}
-  </div>`;
-  const rows = (d.by_client||[]).map(c=>`<tr><td>${c.client_name}</td><td class="num">${fmt(c.volume)}</td><td class="num">${c.avg_tat_hours}h</td><td class="num">${c.sla_hours}h</td><td><b style="color:${c.on_time_pct>=95?'#16A34A':c.on_time_pct>=85?'#CA8A04':'#DC2626'}">${c.on_time_pct}%</b></td><td>${slaPill(c.status)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No data in last 30 days.</td></tr>';
-  const byClient = `<div class="card"><div class="ct"><h3>SLA Compliance by Client</h3><span class="src">sla_hours</span></div>
-    <table class="dt"><thead><tr><th>Client</th><th class="num">Vol</th><th class="num">Avg TAT</th><th class="num">SLA</th><th>On-Time</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-  // distribution donut
-  const u=s.bucket_under18||0,m=s.bucket_18_24||0,o=s.bucket_over24||0,tot=u+m+o||1;
-  const c=2*Math.PI*58, du=c*u/tot, dm=c*m/tot, doo=c*o/tot;
-  const donut = `<div class="card"><div class="ct"><h3>TAT Distribution</h3><span class="tag">${tot} shipped</span></div>
-    <div class="donut-wrap"><div class="donut"><svg width="150" height="150" viewBox="0 0 150 150">
-      <circle cx="75" cy="75" r="58" fill="none" stroke="#16A34A" stroke-width="22" stroke-dasharray="${du} ${c}" stroke-dashoffset="0"/>
-      <circle cx="75" cy="75" r="58" fill="none" stroke="#F59E0B" stroke-width="22" stroke-dasharray="${dm} ${c}" stroke-dashoffset="${-du}"/>
-      <circle cx="75" cy="75" r="58" fill="none" stroke="#DC2626" stroke-width="22" stroke-dasharray="${doo} ${c}" stroke-dashoffset="${-(du+dm)}"/>
-    </svg><div class="dc"><div class="n">${s.on_time_pct??'—'}%</div><div class="l">on time</div></div></div>
-    <div class="dleg"><div class="dr"><i style="background:#16A34A"></i>Under 18h <span class="v">${u}</span></div>
-      <div class="dr"><i style="background:#F59E0B"></i>18–24h <span class="v">${m}</span></div>
-      <div class="dr"><i style="background:#DC2626"></i>Over 24h <span class="v">${o}</span></div></div></div></div>`;
-  // manifests + returns
-  const man = (d.manifests||[]).slice(0,5).map(x=>`<tr><td>${(x.manifest_id||'').replace('MAN-','')}</td><td class="num">${x.open_to_seal_hours!=null?x.open_to_seal_hours+'h':'—'}</td><td>${x.carrier_opened?'<span class="pill g">'+x.view_count+' views</span>':x.status==='open'?'<span class="pill y">Open</span>':'<span class="pill r">Not opened</span>'}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No manifests.</td></tr>';
-  const r = d.returns||{};
-  const bottom = `<div class="row r-2b"><div class="card"><div class="ct"><h3>Manifest Cycle Time</h3><span class="src">dropship_manifests</span></div>
-    <table class="dt"><thead><tr><th>Manifest</th><th class="num">Open→Seal</th><th>Carrier opened?</th></tr></thead><tbody>${man}</tbody></table></div>
-    <div class="card"><div class="ct"><h3>Returns · 30d</h3><span class="src">return_labels</span></div><div class="mini">
-      <div class="mk"><div class="l">Labels</div><div class="v">${fmt(r.labels_generated)}</div></div>
-      <div class="mk"><div class="l">Pending</div><div class="v">${fmt(r.pending_pickup)}</div></div>
-      <div class="mk"><div class="l">Billed</div><div class="v">${fmt(r.billed_count)}</div></div>
-      <div class="mk"><div class="l">Cost</div><div class="v">${money(r.billed_carrier_cost)}</div></div>
-    </div></div></div>`;
-  return hero + `<div class="row r-2">${byClient}${donut}</div>` + bottom;
-}
-
-function renderProf(d){
-  const s = d.summary || {};
-  const hero = `<div class="hero">
-    ${hk('green','Revenue', fmt(s.revenue),'$', s.billing_month||'')}
-    ${hk('blue','Invoices', fmt(s.invoice_count),'','')}
-    ${hk('purple','Avg / Invoice', fmt(s.avg_revenue_per_invoice),'$','')}
-    ${hk('amber','Method Unknown', fmt(s.method_unknown),'','⚠ populate applied_method')}
-  </div>`;
-  const max = (d.by_client||[]).reduce((m,c)=>Math.max(m,Number(c.invoiced)||0),0)||1;
-  const bars = (d.by_client||[]).map(c=>{
-    const pct=Math.round(100*(Number(c.invoiced)||0)/max);
-    const grad = c.method==='mmb'?'#F59E0B,#FBBF24':'#16A34A,#4ADE80';
-    return `<div class="b"><span class="nm">${c.client_name}</span><span class="tk"><span class="fl" style="width:${Math.max(pct,10)}%;background:linear-gradient(90deg,${grad})">${money(c.invoiced)}</span></span></div>`;
-  }).join('') || '<div class="muted">No invoices this month.</div>';
-  const byClient = `<div class="card"><div class="ct"><h3>Revenue by Client</h3><span class="src">billing_runs</span></div><div class="hbar">${bars}</div></div>`;
-  return hero + `<div class="row r-1">${byClient}</div>`;
-}
-
-function renderOp(d){
-  const m = d.status_machine || {};
-  const io = d.inbound_outbound || {};
-  const ss = d.shipstation || {};
-  const cols = [
-    ['Pending', m.ds_pending, '#94A3B8'],
-    ['Received', m.ds_received, '#3B82F6'],
-    ['Labeled', m.ds_labeled, '#A855F7'],
-    ['Shipped 30d', m.ds_shipped_30d, '#16A34A'],
-    ['Orphan', m.ds_orphan, '#F59E0B'],
-    ['Exception', m.ds_exception, '#DC2626'],
-  ];
-  const max = Math.max(...cols.map(c=>c[1]||0),1);
-  // hero now spans all three flows
-  const hero = `<div class="hero">
-    ${hk('teal','Inbound · 30d', fmt(io.inbound_30d),'','shipments_general')}
-    ${hk('blue','Outbound · 30d', fmt(io.outbound_30d),'','shipments_general')}
-    ${hk('green','ShipStation Shipped', fmt(ss.total),'','last 30d')}
-    ${hk('purple','Dropships Shipped', fmt(m.ds_shipped_30d),'','dropshipments')}
-    ${hk('amber','Unbilled Moves', fmt(io.total_unbilled),'','⚠ need billing')}
-  </div>`;
-  // Inbound/Outbound breakdown by type
-  const ioRows = [
-    ['RMA / Returns', io.rma_returns, 'Inbound'],
-    ['Inbound · Drop-Shipment', io.inbound_dropship, 'Inbound'],
-    ['Inbound · General', io.inbound_general, 'Inbound'],
-    ['Inbound · Prep Service', io.prep_service, 'Inbound'],
-    ['Outbound · Shipment', io.outbound_shipment, 'Outbound'],
-    ['Outbound · Drop-Shipment', io.outbound_dropship, 'Outbound'],
-    ['Return to Sender', io.return_to_sender, 'Outbound'],
-  ].filter(r=>r[1]>0).map(r=>`<tr><td>${r[0]}</td><td><span class="pill ${r[2]==='Inbound'?'b':'g'}">${r[2]}</span></td><td class="num">${fmt(r[1])}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No movements.</td></tr>';
-  const ioCard = `<div class="card"><div class="ct"><h3>Inbound / Outbound · by Type</h3><span class="src">shipments_general · 30d</span></div>
-    <table class="dt"><thead><tr><th>Type</th><th>Direction</th><th class="num">Count</th></tr></thead><tbody>${ioRows}</tbody></table></div>`;
-  // ShipStation by store
-  let ssCard;
-  if(ss.error){
-    ssCard = `<div class="card"><div class="ct"><h3>ShipStation · Orders Shipped</h3></div><div class="errbox">${ss.error}</div></div>`;
-  } else {
-    const ssRows = (ss.by_store||[]).map(s=>`<tr><td>${s.store}</td><td class="num">${fmt(s.count)}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No shipments in last 30 days.</td></tr>';
-    ssCard = `<div class="card"><div class="ct"><h3>ShipStation · Orders Shipped</h3><span class="src">ShipStation API · 30d</span></div>
-      <table class="dt"><thead><tr><th>Store</th><th class="num">Shipped</th></tr></thead><tbody>${ssRows}</tbody></table></div>`;
+// Query a single KPI view via PostgREST. Returns array of rows.
+async function view(name, opts = {}) {
+  let url = `${SUPA_URL}/rest/v1/${name}?select=*`;
+  if (opts.order) url += `&order=${opts.order}`;
+  if (opts.limit) url += `&limit=${opts.limit}`;
+  const r = await fetch(url, { headers: HEADERS_SUPA });
+  if (!r.ok) {
+    const txt = await r.text();
+    throw new Error(`view ${name} failed (${r.status}): ${txt}`);
   }
-  // Dropship status machine
-  const stack = `<div class="card"><div class="ct"><h3>Dropship Status Machine</h3><span class="src">dropshipments.status</span></div>
-    <div class="stack">${cols.map(c=>`<div class="col"><div class="bars" style="height:${Math.max(Math.round(100*(c[1]||0)/max),4)}%"><div class="seg" style="background:${c[2]};height:100%"></div></div><div class="cn">${c[0]} · ${fmt(c[1])}</div></div>`).join('')}</div></div>`;
-  // Manifests
-  const man = (d.manifests||[]).slice(0,5).map(x=>`<tr><td>${x.manifest_id}</td><td>${x.outbound_carrier}</td><td class="num">${x.package_count}</td><td>${x.status==='sealed'?'<span class="pill g">Sealed</span>':x.status==='open'?'<span class="pill y">Open</span>':'<span class="pill b">'+x.status+'</span>'}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No manifests.</td></tr>';
-  const manC = `<div class="card"><div class="ct"><h3>Latest Manifests</h3></div><table class="dt"><thead><tr><th>Manifest</th><th>Carrier</th><th class="num">Pkgs</th><th>Status</th></tr></thead><tbody>${man}</tbody></table></div>`;
-  return hero
-    + `<div class="row r-2b">${ioCard}${ssCard}</div>`
-    + `<div class="row r-1">${stack}</div>`
-    + `<div class="row r-1">${manC}</div>`;
+  return r.json();
 }
 
-function renderInv(d){
-  if(d.error) return `<div class="errbox">Inventory error: ${d.error}</div>`;
-  const hero = `<div class="hero">
-    ${hk('teal','Total SKUs', fmt(d.total_skus),'','')}
-    ${hk('blue','Total Units', fmt(d.total_units),'','in stock')}
-    ${hk('green','In Stock', fmt(d.in_stock),'', (d.health_pct||0)+'% health')}
-    ${hk('amber','Low Stock', fmt(d.low_stock),'','reorder')}
-    ${hk('red','Out of Stock', fmt(d.out_of_stock),'','stockout')}
-  </div>`;
-  const rows = (d.by_client||[]).map((c,i)=>{
-    const health = c.skus?Math.round(100*(c.skus-c.low-c.out)/c.skus):0;
-    const items = (c.items||[]).map(it=>{
-      const dot = it.status==='out'?'#DC2626':it.status==='low'?'#F59E0B':'#16A34A';
-      return `<tr><td style="padding-left:1.5rem"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dot};margin-right:.5rem"></span>${it.sku}</td><td class="muted-cell">${(it.title||'').slice(0,60)}</td><td class="num">${fmt(it.units)}</td></tr>`;
-    }).join('') || '<tr><td colspan="3" class="muted">All SKUs out of stock.</td></tr>';
-    return `<tbody class="acc-group">
-      <tr class="acc-head" onclick="toggleAcc(${i})">
-        <td><span class="caret" id="caret-${i}">▶</span> ${c.client}</td>
-        <td class="num">${fmt(c.skus)}</td>
-        <td class="num">${fmt(c.units)}</td>
-        <td class="num">${fmt(c.low)}</td>
-        <td class="num">${fmt(c.out)}</td>
-        <td><span class="pill ${health>=60?'g':health>=30?'y':'r'}">${health}%</span></td>
-      </tr>
-      <tr class="acc-body" id="acc-${i}" style="display:none"><td colspan="6" style="padding:0">
-        <table class="dt sub"><thead><tr><th>SKU</th><th>Title</th><th class="num">Units</th></tr></thead><tbody>${items}</tbody></table>
-      </td></tr>
-    </tbody>`;
-  }).join('') || '<tbody><tr><td colspan="6" class="muted">No SKUs.</td></tr></tbody>';
-  const tbl = `<div class="card"><div class="ct"><h3>Stock Health by Client</h3><span class="src">SkuVault · click a row for SKU detail</span></div>
-    <table class="dt acc"><thead><tr><th>Client</th><th class="num">SKUs</th><th class="num">Units</th><th class="num">Low</th><th class="num">Out</th><th>Health</th></tr></thead>${rows}</table></div>`;
-  return hero + `<div class="row r-1">${tbl}</div>`;
-}
-function toggleAcc(i){
-  const body=document.getElementById('acc-'+i);
-  const caret=document.getElementById('caret-'+i);
-  if(!body) return;
-  const open = body.style.display==='none';
-  body.style.display = open ? 'table-row' : 'none';
-  if(caret) caret.textContent = open ? '▼' : '▶';
+// A single-row view returns [{...}]; unwrap to {...} (or {} if empty).
+function one(rows) {
+  return Array.isArray(rows) && rows.length ? rows[0] : {};
 }
 
-const RENDER = { ov:renderOverview, sla:renderSla, prof:renderProf, op:renderOp, in:renderInv };
-const AREA_MAP = { ov:'overview', sla:'sla', prof:'profitability', op:'operations', in:'inventory' };
+// ── area builders ───────────────────────────────────────────────────────────
+async function buildOverview() {
+  const [overview, pipeline] = await Promise.all([
+    view("v_kpi_overview"),
+    view("v_kpi_pipeline"),
+  ]);
+  return {
+    ...one(overview),
+    pipeline: one(pipeline),
+  };
+}
 
-// ---- fetch + render ---------------------------------------------------------
-async function loadArea(tab, isRefresh){
-  const area = AREA_MAP[tab];
-  const body = $(tab+'-body');
-  const btn = document.querySelector('.rfbtn[data-area="'+tab+'"]');
-  const pan = $(tab);
-  if(btn){ btn.classList.add('spinning'); }
-  if(pan) pan.classList.add('loading');
-  if(!isRefresh && body && !body.innerHTML.trim()) body.innerHTML='<div class="muted">Loading…</div>';
-  try{
-    const r = await fetch(API+'?area='+area);
-    const j = await r.json();
-    if(!j.ok) throw new Error(j.error||'unknown error');
-    state[tab]=j.data; synced[tab]=Date.now();
-    body.innerHTML = RENDER[tab](j.data);
-    const dot=$('dot-'+tab); if(dot) dot.classList.remove('stale');
-    const a=$('ago-'+tab); if(a) a.textContent='just now';
-  }catch(e){
-    body.innerHTML = '<div class="errbox">Could not load '+area+': '+e.message+'</div>';
-  }finally{
-    if(btn) btn.classList.remove('spinning');
-    if(pan) pan.classList.remove('loading');
+async function buildSla() {
+  const [sla, byClient, manifests, returns] = await Promise.all([
+    view("v_kpi_sla"),
+    view("v_kpi_sla_by_client", { order: "volume.desc" }),
+    view("v_kpi_manifests", { order: "created_at.desc", limit: 10 }),
+    view("v_kpi_returns"),
+  ]);
+  return {
+    summary:   one(sla),
+    by_client: byClient,
+    manifests: manifests,
+    returns:   one(returns),
+  };
+}
+
+async function buildProfitability() {
+  const [prof, byClient] = await Promise.all([
+    view("v_kpi_profitability"),
+    view("v_kpi_revenue_by_client", { order: "invoiced.desc" }),
+  ]);
+  return {
+    summary:   one(prof),
+    by_client: byClient,
+  };
+}
+
+async function buildOperations() {
+  const [ops, io, ioByClient, manifests, ssShipped] = await Promise.all([
+    view("v_kpi_operations"),
+    view("v_kpi_inbound_outbound"),
+    view("v_kpi_io_by_client", { order: "total.desc", limit: 10 }),
+    view("v_kpi_manifests", { order: "created_at.desc", limit: 5 }),
+    shipStationShipped(),
+  ]);
+  return {
+    status_machine:  one(ops),         // dropshipments status
+    inbound_outbound: one(io),         // shipments_general (Inbound/Outbound app)
+    io_by_client:    ioByClient,
+    manifests:       manifests,
+    shipstation:     ssShipped,        // orders shipped via ShipStation
+  };
+}
+
+// ShipStation: count shipped orders in the last 30 days, grouped by store.
+// Mirrors the daily-ops-report.js pattern. Wrapped so a ShipStation outage
+// never breaks the rest of the Operations panel.
+async function shipStationShipped() {
+  if (!SS_KEY || !SS_SECRET) return { error: "ShipStation env vars missing", total: 0, by_store: [] };
+  try {
+    const auth = Buffer.from(`${SS_KEY}:${SS_SECRET}`).toString("base64");
+    const since = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+    // pull stores for name mapping + shipments since `since`
+    const [storesR, shipR] = await Promise.all([
+      fetch(`${SS_BASE}/stores`, { headers: { Authorization: "Basic " + auth } }),
+      fetch(`${SS_BASE}/shipments?shipDateStart=${since}&pageSize=500`, { headers: { Authorization: "Basic " + auth } }),
+    ]);
+    const stores = storesR.ok ? await storesR.json() : [];
+    const storeName = {};
+    (Array.isArray(stores) ? stores : []).forEach(s => { storeName[s.storeId] = s.storeName; });
+    const ship = shipR.ok ? await shipR.json() : { shipments: [] };
+    const shipments = (ship.shipments || []).filter(s => !s.voided);
+    const byStore = {};
+    for (const s of shipments) {
+      const nm = storeName[s.advancedOptions?.storeId] || "Unknown store";
+      byStore[nm] = (byStore[nm] || 0) + 1;
+    }
+    return {
+      total: shipments.length,
+      by_store: Object.entries(byStore).map(([store, count]) => ({ store, count })).sort((a, b) => b.count - a.count),
+    };
+  } catch (e) {
+    return { error: String(e.message || e), total: 0, by_store: [] };
   }
 }
-function refreshArea(tab){ loadArea(tab, true); }
 
-// ---- tabs -------------------------------------------------------------------
-document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
-  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
-  document.querySelectorAll('.pan').forEach(p=>p.classList.remove('on'));
-  t.classList.add('on');
-  const tab=t.dataset.t;
-  $(tab).classList.add('on');
-  if(!state[tab] && tab!=='in') loadArea(tab,false);   // lazy-load on first open
-}));
+// Inventory pulled from SkuVault getProducts, filtered IsAlternateSKU !== true
+// (memory #25, else stock multi-counts), grouped by the native Client field
+// (memory #26, matches fr_clients.name). Health thresholds: out <=0, low <10.
+async function buildInventory() {
+  if (!SV_TENANT || !SV_USER) {
+    return { error: "SkuVault env vars missing", total_skus: 0, by_client: [] };
+  }
+  const r = await fetch(`${SV_BASE}/products/getProducts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      TenantToken: SV_TENANT,
+      UserToken: SV_USER,
+      PageNumber: 0,
+      PageSize: 10000,
+    }),
+  });
+  if (!r.ok) {
+    const txt = await r.text();
+    throw new Error(`SkuVault getProducts failed (${r.status}): ${txt}`);
+  }
+  const payload = await r.json();
+  // exclude alternate SKUs so counts match SkuVault UI / CSV
+  const products = (payload.Products || []).filter(p => p.IsAlternateSKU !== true);
 
-// ---- clock + ago updater ----------------------------------------------------
-function tick(){
-  const now=new Date();
-  $('clock').textContent='Live · '+now.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+' ET';
-  Object.keys(synced).forEach(tab=>{ const a=$('ago-'+tab); if(a) a.textContent=ago(synced[tab]); });
+  let inStock = 0, low = 0, out = 0, totalUnits = 0;
+  const byClient = {};
+  for (const p of products) {
+    const qty = p.QuantityAvailable ?? p.QuantityOnHand ?? 0;
+    const client = (p.Client && p.Client.trim()) ? p.Client : "Unassigned";
+    if (!byClient[client]) byClient[client] = { client, skus: 0, units: 0, low: 0, out: 0, items: [] };
+    byClient[client].skus++;
+    byClient[client].units += qty;
+    totalUnits += qty;
+    let st;
+    if (qty <= 0)       { out++;     byClient[client].out++;  st = "out"; }
+    else if (qty < 10)  { low++;     byClient[client].low++;  st = "low"; }
+    else                { inStock++;                          st = "ok";  }
+    // Only list SKUs with stock in the detail view; 0-unit (OOS) SKUs still
+    // count in the totals above but are hidden from the dropdown to reduce noise.
+    if (qty > 0) {
+      byClient[client].items.push({
+        sku: p.Sku,
+        title: p.Description || p.Title || "",
+        units: qty,
+        status: st,
+      });
+    }
+  }
+  // sort each client's items by units desc (biggest stock first)
+  for (const c of Object.values(byClient)) c.items.sort((a, b) => b.units - a.units);
+  const total = products.length;
+  return {
+    total_skus: total,
+    total_units: totalUnits,
+    in_stock: inStock,
+    low_stock: low,
+    out_of_stock: out,
+    health_pct: total ? Math.round((inStock / total) * 1000) / 10 : 0,
+    by_client: Object.values(byClient).sort((a, b) => b.skus - a.skus),
+  };
 }
-setInterval(tick,1000); tick();
 
-// ---- initial load -----------------------------------------------------------
-loadArea('ov', false);
-</script>
-</body>
-</html>
+// ── handler ─────────────────────────────────────────────────────────────────
+exports.handler = async (event) => {
+  if (event.httpMethod === "OPTIONS") return resp(204, {});
+  if (!SUPA_URL || !SUPA_KEY) {
+    return resp(500, { ok: false, error: "Supabase env vars missing" });
+  }
+
+  const area = (event.queryStringParameters || {}).area || "all";
+  const generated_at = new Date().toISOString();
+
+  try {
+    let data;
+    switch (area) {
+      case "overview":      data = await buildOverview();      break;
+      case "sla":           data = await buildSla();           break;
+      case "profitability": data = await buildProfitability(); break;
+      case "operations":    data = await buildOperations();    break;
+      case "inventory":     data = await buildInventory();     break;
+      case "all": {
+        // full load — everything except inventory (which is slow/external);
+        // inventory loads on demand via its own refresh button
+        const [overview, sla, profitability, operations] = await Promise.all([
+          buildOverview(),
+          buildSla(),
+          buildProfitability(),
+          buildOperations(),
+        ]);
+        data = { overview, sla, profitability, operations };
+        break;
+      }
+      default:
+        return resp(400, { ok: false, error: `unknown area: ${area}` });
+    }
+    return resp(200, { ok: true, area, generated_at, data });
+  } catch (err) {
+    return resp(500, { ok: false, area, error: String(err.message || err) });
+  }
+};
