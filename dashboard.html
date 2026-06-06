@@ -352,10 +352,10 @@ function renderOp(d){
   const max = Math.max(...cols.map(c=>c[1]||0),1);
   // hero now spans all three flows
   const hero = `<div class="hero">
+    ${hk('red','ShipStation Pending', fmt(ss.pending_total),'','awaiting shipment')}
     ${hk('teal','Inbound · 30d', fmt(io.inbound_30d),'','shipments_general')}
     ${hk('blue','Outbound · 30d', fmt(io.outbound_30d),'','shipments_general')}
     ${hk('green','ShipStation Shipped', fmt(ss.total),'','last 30d')}
-    ${hk('purple','Dropships Shipped', fmt(m.ds_shipped_30d),'','dropshipments')}
     ${hk('amber','Unbilled Moves', fmt(io.total_unbilled),'','⚠ need billing')}
   </div>`;
   // Inbound/Outbound breakdown by type
@@ -370,14 +370,22 @@ function renderOp(d){
   ].filter(r=>r[1]>0).map(r=>`<tr><td>${r[0]}</td><td><span class="pill ${r[2]==='Inbound'?'b':'g'}">${r[2]}</span></td><td class="num">${fmt(r[1])}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No movements.</td></tr>';
   const ioCard = `<div class="card"><div class="ct"><h3>Inbound / Outbound · by Type</h3><span class="src">shipments_general · 30d</span></div>
     <table class="dt"><thead><tr><th>Type</th><th>Direction</th><th class="num">Count</th></tr></thead><tbody>${ioRows}</tbody></table></div>`;
-  // ShipStation by store
+  // ShipStation by store — pending (awaiting shipment) + shipped, merged
   let ssCard;
   if(ss.error){
-    ssCard = `<div class="card"><div class="ct"><h3>ShipStation · Orders Shipped</h3></div><div class="errbox">${ss.error}</div></div>`;
+    ssCard = `<div class="card"><div class="ct"><h3>ShipStation · Orders</h3></div><div class="errbox">${ss.error}</div></div>`;
   } else {
-    const ssRows = (ss.by_store||[]).map(s=>`<tr><td>${s.store}</td><td class="num">${fmt(s.count)}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No shipments in last 30 days.</td></tr>';
-    ssCard = `<div class="card"><div class="ct"><h3>ShipStation · Orders Shipped</h3><span class="src">ShipStation API · 30d</span></div>
-      <table class="dt"><thead><tr><th>Store</th><th class="num">Shipped</th></tr></thead><tbody>${ssRows}</tbody></table></div>`;
+    // merge store names from both pending and shipped maps
+    const pMap = {}; (ss.pending_by_store||[]).forEach(s=>pMap[s.store]=s.count);
+    const sMap = {}; (ss.by_store||[]).forEach(s=>sMap[s.store]=s.count);
+    const allStores = [...new Set([...Object.keys(pMap), ...Object.keys(sMap)])]
+      .sort((a,b)=>(pMap[b]||0)-(pMap[a]||0) || (sMap[b]||0)-(sMap[a]||0));
+    const ssRows = allStores.map(st=>{
+      const p = pMap[st]||0, sh = sMap[st]||0;
+      return `<tr><td>${st}</td><td class="num"><b style="color:${p>0?'#DC2626':'#94A3B8'}">${fmt(p)}</b></td><td class="num">${fmt(sh)}</td></tr>`;
+    }).join('') || '<tr><td colspan="3" class="muted">No ShipStation orders.</td></tr>';
+    ssCard = `<div class="card"><div class="ct"><h3>ShipStation · Orders by Store</h3><span class="src">ShipStation API · pending now + shipped 30d</span></div>
+      <table class="dt"><thead><tr><th>Store</th><th class="num">Pending</th><th class="num">Shipped 30d</th></tr></thead><tbody>${ssRows}</tbody></table></div>`;
   }
   // Dropship status machine
   const stack = `<div class="card"><div class="ct"><h3>Dropship Status Machine</h3><span class="src">dropshipments.status</span></div>
