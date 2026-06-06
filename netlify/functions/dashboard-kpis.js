@@ -128,22 +128,27 @@ async function buildOperations() {
   };
 }
 
-// ShipStation: count shipped orders in the last 30 days, grouped by store.
-// Mirrors the daily-ops-report.js pattern. Wrapped so a ShipStation outage
-// never breaks the rest of the Operations panel.
+// ShipStation: pull BOTH awaiting-shipment orders (actionable backlog) and
+// shipped orders in the last 30 days, each grouped by store. Mirrors the
+// daily-ops-report.js auth pattern. Wrapped so a ShipStation outage never
+// breaks the rest of the Operations panel.
 async function shipStationShipped() {
-  if (!SS_KEY || !SS_SECRET) return { error: "ShipStation env vars missing", total: 0, by_store: [] };
+  if (!SS_KEY || !SS_SECRET) return { error: "ShipStation env vars missing", pending_total: 0, pending_by_store: [], total: 0, by_store: [] };
   try {
     const auth = Buffer.from(`${SS_KEY}:${SS_SECRET}`).toString("base64");
+    const H = { Authorization: "Basic " + auth };
     const since = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
-    // pull stores for name mapping + shipments since `since`
-    const [storesR, shipR] = await Promise.all([
-      fetch(`${SS_BASE}/stores`, { headers: { Authorization: "Basic " + auth } }),
-      fetch(`${SS_BASE}/shipments?shipDateStart=${since}&pageSize=500`, { headers: { Authorization: "Basic " + auth } }),
+    // stores (name map) + shipped (last 30d) + awaiting_shipment orders (current backlog)
+    const [storesR, shipR, pendR] = await Promise.all([
+      fetch(`${SS_BASE}/stores`, { headers: H }),
+      fetch(`${SS_BASE}/shipments?shipDateStart=${since}&pageSize=500`, { headers: H }),
+      fetch(`${SS_BASE}/orders?orderStatus=awaiting_shipment&pageSize=500`, { headers: H }),
     ]);
     const stores = storesR.ok ? await storesR.json() : [];
     const storeName = {};
     (Array.isArray(stores) ? stores : []).forEach(s => { storeName[s.storeId] = s.storeName; });
+
+    // shipped
     const ship = shipR.ok ? await shipR.json() : { shipments: [] };
     const shipments = (ship.shipments || []).filter(s => !s.voided);
     const byStore = {};
@@ -151,12 +156,24 @@ async function shipStationShipped() {
       const nm = storeName[s.advancedOptions?.storeId] || "Unknown store";
       byStore[nm] = (byStore[nm] || 0) + 1;
     }
+
+    // pending (awaiting shipment) — orders carry storeId directly
+    const pend = pendR.ok ? await pendR.json() : { orders: [] };
+    const orders = pend.orders || [];
+    const pendByStore = {};
+    for (const o of orders) {
+      const nm = storeName[o.advancedOptions?.storeId ?? o.storeId] || "Unknown store";
+      pendByStore[nm] = (pendByStore[nm] || 0) + 1;
+    }
+
     return {
+      pending_total: orders.length,
+      pending_by_store: Object.entries(pendByStore).map(([store, count]) => ({ store, count })).sort((a, b) => b.count - a.count),
       total: shipments.length,
       by_store: Object.entries(byStore).map(([store, count]) => ({ store, count })).sort((a, b) => b.count - a.count),
     };
   } catch (e) {
-    return { error: String(e.message || e), total: 0, by_store: [] };
+    return { error: String(e.message || e), pending_total: 0, pending_by_store: [], total: 0, by_store: [] };
   }
 }
 
