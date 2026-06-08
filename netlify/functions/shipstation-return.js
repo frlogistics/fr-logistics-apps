@@ -16,6 +16,21 @@
 // API: ShipStation API V2 (api.shipstation.com) — supports native
 //   return_label flag + /v2/pickups endpoint (label-based pickups).
 // ────────────────────────────────────────────────────────────────────
+//
+// ════════════════════════════════════════════════════════════════════
+// MULTI-CARRIER (UPS + USPS) — added 2026-06
+//   The carrier is now selectable per return via `body.carrier` ('ups'
+//   | 'usps'). Each entry resolves its own carrier_id + default service
+//   + pickup capability. USPS is label-only (drop-off at any USPS
+//   location); pickup remains UPS-only by business decision.
+//
+//     ups  → se-605521 (FR-Logistics UPS, account WE6433, funded)   pickup ✓
+//     usps → se-595432 (ShipStation USPS / Stamps.com, balance)     pickup ✗
+//
+//   carrier_id + service codes confirmed via GET ?action=carriers.
+//   A backend guard ignores schedule_pickup for any non-UPS carrier,
+//   so a stale frontend can never book a USPS pickup by mistake.
+// ════════════════════════════════════════════════════════════════════
 
 import { getStore } from "@netlify/blobs";
 
@@ -26,9 +41,30 @@ const SS_API_KEY   = Netlify.env.get("SS_V2_API_KEY");
 const SUPABASE_URL = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY = Netlify.env.get("SUPABASE_SERVICE_KEY");
 
-// UPS carrier connected inside ShipStation (account WE6433, negotiated rates ON).
-// carrier_id confirmed in Settings → Shipping → Carriers.
-const UPS_CARRIER_ID = "se-605521";
+// ─── Carrier registry ─────────────────────────────────────────────────
+// Single source of truth for which carrier_id/service/pickup a return uses.
+// key = value sent by the UI in body.carrier (lower-case).
+const CARRIERS = {
+  ups: {
+    label:           "UPS",                 // human label + value stored in return_labels.carrier
+    carrier_id:      "se-605521",           // FR-Logistics UPS (account WE6433, negotiated rates ON)
+    default_service: "ups_ground",
+    pickup:          true,                  // UPS supports label-based pickup
+  },
+  usps: {
+    label:           "USPS",
+    carrier_id:      "se-595432",           // ShipStation USPS (Stamps.com) — paid from ShipStation Balance
+    default_service: "usps_ground_advantage",
+    pickup:          false,                 // USPS = drop-off only (business decision)
+  },
+};
+
+// Resolve a carrier key safely; default to UPS to preserve prior behaviour
+// for any caller that omits `carrier`.
+function resolveCarrier(key) {
+  const k = String(key || "ups").toLowerCase();
+  return CARRIERS[k] || CARRIERS.ups;
+}
 
 // Fixed destination: FR-Logistics warehouse (Ship To for all returns)
 const WAREHOUSE_SHIP_TO = {
@@ -123,14 +159,15 @@ async function fetchLabelPdfBase64(pdfUrl) {
   }
 }
 
-function returnEmailHtml({ clientName, contactName, tracking, pickupConfirm, pickupWindow, service }) {
+function returnEmailHtml({ carrierLabel, contactName, tracking, pickupConfirm, pickupWindow, service }) {
+  const carrierName = carrierLabel || "UPS";
   const pickupBlock = pickupConfirm
-    ? `<tr><td style="padding:6px 0;color:#475569">UPS Pickup Confirmation</td>
+    ? `<tr><td style="padding:6px 0;color:#475569">${carrierName} Pickup Confirmation</td>
          <td style="padding:6px 0;font-weight:700;color:#0f172a">${pickupConfirm}</td></tr>
        ${pickupWindow ? `<tr><td style="padding:6px 0;color:#475569">Pickup Window</td>
          <td style="padding:6px 0;color:#0f172a">${pickupWindow.start_at?.slice(0,16).replace("T"," ")} – ${pickupWindow.end_at?.slice(11,16)}</td></tr>` : ""}`
     : `<tr><td style="padding:6px 0;color:#475569">Pickup</td>
-         <td style="padding:6px 0;color:#0f172a">Not scheduled — please drop off at any UPS location.</td></tr>`;
+         <td style="padding:6px 0;color:#0f172a">Not scheduled — please drop off at any ${carrierName} location.</td></tr>`;
   return `<!doctype html><html><body style="margin:0;font-family:Arial,Helvetica,sans-serif;background:#f6f7fb;padding:24px">
   <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
     <div style="background:#0F1D35;color:#fff;padding:18px 22px">
@@ -140,13 +177,13 @@ function returnEmailHtml({ clientName, contactName, tracking, pickupConfirm, pic
     <div style="padding:22px">
       <p style="color:#0f172a;font-size:14px;margin:0 0 14px">Hello ${contactName || "there"},</p>
       <p style="color:#475569;font-size:14px;line-height:1.5;margin:0 0 16px">
-        Your UPS return label is attached to this email as a PDF. Print it, attach it to your package, and either hand it to the UPS driver at the scheduled pickup or drop it off at any UPS location.
+        Your ${carrierName} return label is attached to this email as a PDF. Print it, attach it to your package, and ${pickupConfirm ? `hand it to the ${carrierName} driver at the scheduled pickup` : `drop it off at any ${carrierName} location`}.
       </p>
       <table style="width:100%;border-collapse:collapse;font-size:14px;border-top:1px solid #e2e8f0">
         <tr><td style="padding:6px 0;color:#475569;width:45%">Tracking Number</td>
             <td style="padding:6px 0;font-weight:700;color:#0f172a">${tracking}</td></tr>
         <tr><td style="padding:6px 0;color:#475569">Service</td>
-            <td style="padding:6px 0;color:#0f172a">${service || "UPS Ground"}</td></tr>
+            <td style="padding:6px 0;color:#0f172a">${service || carrierName}</td></tr>
         ${pickupBlock}
       </table>
       <div style="margin-top:18px;padding:12px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;color:#475569">
@@ -157,7 +194,7 @@ function returnEmailHtml({ clientName, contactName, tracking, pickupConfirm, pic
   </div></body></html>`;
 }
 
-async function sendReturnEmail({ toEmail, clientName, contactName, tracking, pickupConfirm, pickupWindow, service, pdfBase64 }) {
+async function sendReturnEmail({ toEmail, carrierLabel, contactName, tracking, pickupConfirm, pickupWindow, service, pdfBase64 }) {
   if (!RESEND_KEY) return { sent: false, reason: "RESEND_API_KEY missing" };
   const recipients = [];
   if (toEmail) recipients.push(toEmail);
@@ -167,7 +204,7 @@ async function sendReturnEmail({ toEmail, clientName, contactName, tracking, pic
     from: FROM_EMAIL,
     to: recipients,
     subject: `Return label — ${tracking}${pickupConfirm ? " · Pickup " + pickupConfirm : ""}`,
-    html: returnEmailHtml({ clientName, contactName, tracking, pickupConfirm, pickupWindow, service }),
+    html: returnEmailHtml({ carrierLabel, contactName, tracking, pickupConfirm, pickupWindow, service }),
   };
   if (pdfBase64) {
     payload.attachments = [{ filename: `return-label-${tracking}.pdf`, content: pdfBase64 }];
@@ -190,20 +227,34 @@ async function actionCreateReturn(body) {
   const {
     client,            // 'MXS Overseas Ltd'
     client_id,         // optional uuid
+    carrier,           // 'ups' | 'usps' (defaults to ups)
     ship_from,         // {name, company, line1, city, state, zip, phone, email}
     weight_oz,
     dims,              // {length, width, height}
-    service_code,      // e.g. 'ups_ground'
+    service_code,      // e.g. 'ups_ground' / 'usps_ground_advantage'
     pickup_window,     // {start_at, end_at}  ISO 8601
     schedule_pickup,   // boolean
     notes,
   } = body;
 
-  // --- validation (UPS requires company on ship-from) -------------------
+  // --- resolve carrier first (drives validation + payload) --------------
+  const carrierCfg = resolveCarrier(carrier);
+  const isUPS = carrierCfg.carrier_id === CARRIERS.ups.carrier_id;
+
+  // --- validation -------------------------------------------------------
   if (!client)              return jRes({ error: "client required" }, 400);
   if (!ship_from?.line1)    return jRes({ error: "ship_from address required" }, 400);
-  if (!ship_from?.company)  return jRes({ error: "ship_from.company required (UPS rule)" }, 400);
+  // company is a UPS rule; USPS does not require it, but we keep it if provided
+  if (isUPS && !ship_from?.company)
+    return jRes({ error: "ship_from.company required (UPS rule)" }, 400);
   if (!weight_oz)           return jRes({ error: "weight required" }, 400);
+
+  // --- pickup guard: only UPS may schedule a pickup ---------------------
+  // Even if a stale UI sends schedule_pickup:true for USPS, we ignore it.
+  const wantsPickup = !!schedule_pickup && carrierCfg.pickup;
+
+  // resolved service: explicit service_code wins, else carrier default
+  const resolvedService = service_code || carrierCfg.default_service;
 
   // --- 1) seed pending row so nothing is lost on partial failure --------
   const seed = await sbInsert("return_labels", {
@@ -213,22 +264,22 @@ async function actionCreateReturn(body) {
     ship_from_json: ship_from,
     weight_oz,
     dims_json:     dims || null,
-    carrier:       "UPS",
-    service:       service_code || null,
-    pickup_window: pickup_window || null,
+    carrier:       carrierCfg.label,     // 'UPS' | 'USPS'
+    service:       resolvedService,
+    pickup_window: wantsPickup ? (pickup_window || null) : null,
     notes:         notes || null,
   });
 
   // --- 2) create the label (V2 native return flag) ----------------------
-  // carrier_id resolved (se-605521). service_code defaults to ups_ground;
-  // confirm exact code via GET ?action=carriers (lists each carrier's services).
+  // carrier_id + service resolved from CARRIERS registry.
   const labelPayload = {
     shipment: {
-      carrier_id:   UPS_CARRIER_ID,                 // route to your UPS (WE6433)
-      service_code: service_code || "ups_ground",
+      carrier_id:   carrierCfg.carrier_id,
+      service_code: resolvedService,
       ship_from: {
         name:          ship_from.name,
-        company_name:  ship_from.company,
+        // company_name only sent if present (USPS may omit it)
+        ...(ship_from.company ? { company_name: ship_from.company } : {}),
         phone:         ship_from.phone || "0000000000",
         address_line1: ship_from.line1,
         city_locality: ship_from.city,
@@ -265,10 +316,10 @@ async function actionCreateReturn(body) {
     label_url,
   });
 
-  // --- 3) schedule pickup (label-based) ---------------------------------
+  // --- 3) schedule pickup (label-based) — UPS only ----------------------
   let pickup = null;
   let pickupError = null;
-  if (schedule_pickup && pickup_window) {
+  if (wantsPickup && pickup_window) {
     try {
       pickup = await ss("/pickups", "POST", {
         label_ids: [label.label_id],
@@ -314,12 +365,12 @@ async function actionCreateReturn(body) {
     const pdfBase64 = label_url ? await fetchLabelPdfBase64(label_url) : null;
     emailResult = await sendReturnEmail({
       toEmail:      ship_from.email || null,
-      clientName:   client,
+      carrierLabel: carrierCfg.label,
       contactName:  ship_from.name || ship_from.company,
       tracking:     label.tracking_number,
       pickupConfirm,
       pickupWindow: pickup_window,
-      service:      service_code,
+      service:      resolvedService,
       pdfBase64,
     });
   } catch (e) {
@@ -329,6 +380,7 @@ async function actionCreateReturn(body) {
   return jRes({
     ok:             true,
     return_id:      seed.id,
+    carrier:        carrierCfg.label,
     tracking:       label.tracking_number,
     carrier_cost:   label.shipment_cost?.amount ?? null,
     label_url,
