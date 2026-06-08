@@ -331,7 +331,7 @@ td,th{white-space:nowrap}
 <dialog id="returnDlg">
   <div class="modal" style="width:min(1100px,96vw)">
     <div class="modalHead">
-      <b>↩︎ Create Return Label — UPS</b>
+      <b>↩︎ Create Return Label — <span id="rtnCarrierTitle">UPS</span></b>
       <button id="closeReturnDlg">Close</button>
     </div>
     <div class="modalBody">
@@ -380,6 +380,14 @@ td,th{white-space:nowrap}
           <label>Email <span style="color:var(--muted)">(required if scheduling pickup)</span></label>
           <input id="rtnEmail" class="mono" type="email" placeholder="contact@email.com" autocomplete="off" />
 
+          <h3>Carrier</h3>
+          <label>Return carrier</label>
+          <select id="rtnCarrier">
+            <option value="ups" selected>UPS Ground</option>
+            <option value="usps">USPS Ground Advantage</option>
+          </select>
+          <div class="hint" id="rtnCarrierHint">UPS supports scheduled pickup at the customer address.</div>
+
           <h3>Package</h3>
           <div class="row">
             <div>
@@ -388,12 +396,7 @@ td,th{white-space:nowrap}
             </div>
             <div>
               <label>Service</label>
-              <select id="rtnService">
-                <option value="ups_ground">UPS Ground</option>
-                <option value="ups_3_day_select">UPS 3 Day Select</option>
-                <option value="ups_2nd_day_air">UPS 2nd Day Air</option>
-                <option value="ups_surepost_1_lb_or_greater">UPS Ground Saver (1 lb+)</option>
-              </select>
+              <select id="rtnService"></select>
             </div>
           </div>
           <div class="row">
@@ -412,10 +415,13 @@ td,th{white-space:nowrap}
           </div>
 
           <h3>Pickup</h3>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <label id="rtnPickupLabel" style="display:flex;align-items:center;gap:8px;cursor:pointer">
             <input type="checkbox" id="rtnSchedulePickup" style="width:auto" />
             Schedule UPS pickup at this address
           </label>
+          <div class="hint" id="rtnPickupDisabledNote" style="display:none;color:#7a4b00">
+            Pickup is available with UPS only. For USPS, the customer drops the package at any USPS location.
+          </div>
           <div id="rtnPickupFields" style="display:none">
             <div class="row">
               <div>
@@ -968,6 +974,52 @@ td,th{white-space:nowrap}
 (function(){
   const RTN_FN = "/.netlify/functions/shipstation-return";
 
+  // Service options per carrier (value = ShipStation service_code)
+  const RTN_SERVICES = {
+    ups: [
+      ["ups_ground",                  "UPS Ground"],
+      ["ups_3_day_select",            "UPS 3 Day Select"],
+      ["ups_2nd_day_air",             "UPS 2nd Day Air"],
+      ["ups_surepost_1_lb_or_greater","UPS Ground Saver (1 lb+)"],
+    ],
+    usps: [
+      ["usps_ground_advantage", "USPS Ground Advantage"],
+      ["usps_priority_mail",    "USPS Priority Mail"],
+    ],
+  };
+
+  // React to carrier change: repopulate services, toggle pickup, update title.
+  function rtnApplyCarrier(){
+    const carrier = document.getElementById("rtnCarrier").value || "ups";
+    const svc = document.getElementById("rtnService");
+    svc.innerHTML = (RTN_SERVICES[carrier] || RTN_SERVICES.ups)
+      .map(([v,l]) => `<option value="${v}">${l}</option>`).join("");
+
+    const isUPS = carrier === "ups";
+    const title = document.getElementById("rtnCarrierTitle");
+    if(title) title.textContent = isUPS ? "UPS" : "USPS";
+
+    // Pickup is UPS-only
+    const chk    = document.getElementById("rtnSchedulePickup");
+    const lbl    = document.getElementById("rtnPickupLabel");
+    const note   = document.getElementById("rtnPickupDisabledNote");
+    const fields = document.getElementById("rtnPickupFields");
+    if(isUPS){
+      chk.disabled = false;
+      lbl.style.opacity = "1";
+      lbl.style.cursor = "pointer";
+      if(note) note.style.display = "none";
+    } else {
+      // USPS: force-off and lock
+      chk.checked = false;
+      chk.disabled = true;
+      lbl.style.opacity = ".55";
+      lbl.style.cursor = "not-allowed";
+      if(fields) fields.style.display = "none";
+      if(note) note.style.display = "block";
+    }
+  }
+
   // Self-contained client list (does not depend on the main app's scope).
   // Same source of truth: clients-list (fr_clients).
   let rtnClients = [];     // [{id, display}]
@@ -1033,7 +1085,8 @@ td,th{white-space:nowrap}
     const weight  = parseFloat(document.getElementById("rtnWeight").value);
 
     if(!clientDisplay){ rtnStatus("Select a client.", "bad"); return; }
-    if(!company){ rtnStatus("Company is required (UPS rule).", "bad"); return; }
+    const carrierSel = document.getElementById("rtnCarrier").value || "ups";
+    if(carrierSel === "ups" && !company){ rtnStatus("Company is required (UPS rule).", "bad"); return; }
     if(!line1){ rtnStatus("Address Line 1 is required.", "bad"); return; }
     if(!weight || weight < 1){ rtnStatus("Enter a valid weight in ounces.", "bad"); return; }
 
@@ -1053,6 +1106,7 @@ td,th{white-space:nowrap}
       action: "create_return",
       client: clientDisplay,
       client_id: cid,
+      carrier: document.getElementById("rtnCarrier").value || "ups",
       ship_from: {
         name:    document.getElementById("rtnName").value.trim() || company,
         company: company,
@@ -1207,6 +1261,7 @@ td,th{white-space:nowrap}
       const today = new Date().toISOString().slice(0,10);
       const dEl = document.getElementById("rtnPickupDate");
       if(dEl) dEl.value = today;
+      rtnApplyCarrier();   // seed services + pickup state for the default carrier
       dlg.showModal();
       rtnLoadList();
     });
@@ -1214,6 +1269,7 @@ td,th{white-space:nowrap}
     document.getElementById("rtnSchedulePickup").addEventListener("change", rtnTogglePickup);
     document.getElementById("rtnSubmitBtn").addEventListener("click", rtnSubmit);
     document.getElementById("rtnRefreshBtn").addEventListener("click", rtnLoadList);
+    document.getElementById("rtnCarrier").addEventListener("change", rtnApplyCarrier);
   }
 
   if(document.readyState === "loading"){
