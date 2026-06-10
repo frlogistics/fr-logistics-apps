@@ -180,6 +180,26 @@
   table.dt.sub th{background:#F1F5F9;font-size:.6rem}
   table.dt.sub td{font-size:.78rem;padding:.45rem .5rem}
   .muted-cell{color:#94A3B8;font-size:.76rem}
+
+  /* ---- WAREHOUSE OCCUPANCY TAB ---- */
+  .whgrid{display:grid;gap:5px}
+  .whlvl{font-size:.62rem;font-weight:800;color:#94A3B8;display:flex;align-items:center;justify-content:flex-end;padding-right:.4rem}
+  .whcell{position:relative;border:none;border-radius:9px;min-height:52px;padding:.45rem .5rem;cursor:pointer;font-family:inherit;text-align:left;transition:.15s;box-shadow:inset 0 0 0 1px rgba(15,29,53,.07)}
+  .whcell:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(15,29,53,.18)}
+  .whcell .c{font-size:.6rem;font-weight:800;letter-spacing:.02em}
+  .whcell .p{font-size:.88rem;font-weight:900;font-variant-numeric:tabular-nums}
+  .whcell.lt .c,.whcell.lt .p{color:#0F1D35}
+  .whcell.dk .c,.whcell.dk .p{color:#fff}
+  .whcell.wk{background:repeating-linear-gradient(45deg,#E7EBF1,#E7EBF1 5px,#F1F4F9 5px,#F1F4F9 10px);cursor:default}
+  .whcell.wk:hover{transform:none;box-shadow:inset 0 0 0 1px rgba(15,29,53,.07)}
+  .whcell .w{position:absolute;top:5px;right:6px;width:7px;height:7px;border-radius:50%;background:#F59E0B;box-shadow:0 0 0 2px rgba(255,255,255,.85)}
+  .whbins{display:grid;grid-template-columns:repeat(auto-fill,minmax(36px,1fr));gap:4px}
+  .whbin{border:none;border-radius:6px;min-height:26px;font-size:.58rem;font-weight:700;cursor:pointer;font-family:inherit;font-variant-numeric:tabular-nums;box-shadow:inset 0 0 0 1px rgba(15,29,53,.06)}
+  .whbin:hover{outline:2px solid #1E3A8A}
+  .whleg{display:flex;gap:1rem;flex-wrap:wrap;font-size:.68rem;color:#7B8AA0;font-weight:600;margin-bottom:1rem;align-items:center}
+  .whleg i{display:inline-block;width:13px;height:13px;border-radius:4px;margin-right:.3rem;vertical-align:-2px}
+  .whbar{height:10px;background:#F1F5F9;border-radius:999px;overflow:hidden;margin:.6rem 0 1rem}
+  .whbar i{display:block;height:100%;border-radius:999px}
 </style>
 
 </head>
@@ -206,6 +226,7 @@
   <button class="tab" data-t="sla">SLA &amp; Performance</button>
   <button class="tab" data-t="prof">Profitability</button>
   <button class="tab" data-t="op">Operations</button>
+  <button class="tab" data-t="wh">Warehouse</button>
   <button class="tab" data-t="in">Inventory</button>
 </div>
 
@@ -217,6 +238,8 @@
 <div class="pan" id="prof"><div class="syncbar"><div class="info"><span class="src-dot" id="dot-prof"></span>Last synced <b id="ago-prof">—</b></div><div class="sources"><span class="schip"><i></i>billing_runs</span></div><button class="rfbtn" data-area="prof" onclick="refreshArea('prof')"><svg fill="none" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>Refresh</button></div><div id="prof-body"></div></div>
 
 <div class="pan" id="op"><div class="syncbar"><div class="info"><span class="src-dot" id="dot-op"></span>Last synced <b id="ago-op">—</b></div><div class="sources"><span class="schip"><i></i>dropshipments</span><span class="schip"><i></i>shipments_general</span><span class="schip"><i class="stale"></i>ShipStation</span></div><button class="rfbtn" data-area="op" onclick="refreshArea('op')"><svg fill="none" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>Refresh</button></div><div id="op-body"></div></div>
+
+<div class="pan" id="wh"><div class="syncbar"><div class="info"><span class="src-dot" id="dot-wh"></span>Last synced <b id="ago-wh">—</b><span class="ago">· SkuVault sync every 2h</span></div><div class="sources"><span class="schip"><i></i>v_wh_occupancy</span><span class="schip"><i></i>SkuVault</span></div><button class="rfbtn" data-area="wh" onclick="refreshArea('wh')"><svg fill="none" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>Refresh</button></div><div id="wh-body"></div></div>
 
 <div class="pan" id="in"><div class="syncbar"><div class="info"><span class="src-dot stale" id="dot-in"></span>Last synced <b id="ago-in">not loaded</b><span class="ago">· loads on demand (SkuVault)</span></div><div class="sources"><span class="schip"><i class="stale"></i>SkuVault</span></div><button class="rfbtn" data-area="in" onclick="refreshArea('in')"><svg fill="none" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>Load Inventory</button></div><div id="in-body"><div class="muted">Click "Load Inventory" to pull live stock from SkuVault.</div></div></div>
 
@@ -441,8 +464,69 @@ function toggleAcc(i){
   if(caret) caret.textContent = open ? '▼' : '▶';
 }
 
-const RENDER = { ov:renderOverview, sla:renderSla, prof:renderProf, op:renderOp, in:renderInv };
-const AREA_MAP = { ov:'overview', sla:'sla', prof:'profitability', op:'operations', in:'inventory' };
+
+// ---- warehouse occupancy --------------------------------------------------
+let WHL = {}, WHD = {};
+function whRamp(p){ if(p==null) return ['#E7EBF1',false]; if(p>=90) return ['#DC2626',true]; if(p>=70) return ['#F59E0B',false]; if(p>=45) return ['#0EA5A0',true]; if(p>=15) return ['#4ADE80',false]; return ['#EAF3F0',false]; }
+function whCell(l){
+  if(!l) return '<div></div>';
+  if(!l.is_storage) return `<div class="whcell wk"><div class="c">${l.location_code}</div><div class="c" style="font-size:.52rem;color:#94A3B8">WORK</div></div>`;
+  const [bg,dk] = whRamp(l.occupancy_pct);
+  return `<button class="whcell ${dk?'dk':'lt'}" style="background:${bg}" onclick="whShowLoc('${l.location_code}')" title="${l.units} units · ${l.sku_count} SKUs"><div class="c">${l.location_code}</div><div class="p">${l.occupancy_pct??0}%</div>${l.units_missing_dims>0?'<span class="w" title="Units missing dims"></span>':''}</button>`;
+}
+function whRackGrid(prefix,cols,levels){
+  let h = `<div class="whgrid" style="grid-template-columns:26px repeat(${cols},1fr)">`;
+  for(let lvl=levels; lvl>=1; lvl--){
+    h += `<div class="whlvl">L${String(lvl).padStart(2,'0')}</div>`;
+    for(let col=1; col<=cols; col++){
+      h += whCell(WHL[prefix+String(col).padStart(2,'0')+String(lvl).padStart(2,'0')]);
+    }
+  }
+  return h + '</div>';
+}
+function whShowLoc(code){
+  const l = WHL[code]; if(!l) return;
+  const rows = (WHD[code]||[]).slice().sort((a,b)=>b.qty-a.qty).map(r=>`<tr><td>${r.sku}</td><td class="num">${fmt(r.qty)}</td><td class="num">${r.cuft!=null?r.cuft:'<span class="pill y">no dims</span>'}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">Empty location.</td></tr>';
+  const p = l.occupancy_pct ?? 0;
+  const [bg] = whRamp(p);
+  const sub = l.is_storage ? `${fmt(l.occupied_cuft)} / ${fmt(l.effective_cuft)} ft³ effective · ${p}%` : 'Work area — no storage';
+  $('wh-detail').innerHTML = `<div class="ct"><h3>${code}</h3><span class="tag">${l.zone} · ${l.position_type}</span></div>
+    <div style="font-size:.78rem;color:#64748B;font-weight:600">${sub}</div>
+    <div class="whbar"><i style="width:${Math.min(100,p)}%;background:${bg}"></i></div>
+    <table class="dt"><thead><tr><th>SKU</th><th class="num">Units</th><th class="num">ft³</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function renderWh(d){
+  WHL = {}; (d.locations||[]).forEach(l=>WHL[l.location_code]=l);
+  WHD = d.detail || {};
+  const z = n => (d.summary||[]).find(s=>s.zone===n) || {};
+  const G = z('GLOBAL'), A = z('RACK_A'), B = z('RACK_B'), BN = z('BINS');
+  const totalUnits = (d.locations||[]).reduce((s,l)=>s+(l.units||0),0);
+  const covPct = totalUnits ? Math.round(100*(totalUnits-(G.units_missing_dims||0))/totalUnits) : 0;
+  const hero = `<div class="hero">
+    ${hk('teal','Global Occupancy', G.occupancy_pct??0,'%', fmt(G.occupied_cuft)+' / '+fmt(G.effective_cuft)+' ft³ effective')}
+    ${hk('blue','Positions In Use', fmt(G.occupied_positions)+' / '+fmt(G.storage_positions),'', fmt((G.storage_positions||0)-(G.occupied_positions||0))+' available')}
+    ${hk('green','Units On Hand', fmt(totalUnits),'','SkuVault primary SKUs')}
+    ${hk(covPct<80?'amber':'green','Dimension Coverage', covPct,'%', fmt(G.units_missing_dims)+' units not measured')}
+  </div>`;
+  const leg = `<div class="whleg"><span><i style="background:#EAF3F0"></i>0–15%</span><span><i style="background:#4ADE80"></i>15–45%</span><span><i style="background:#0EA5A0"></i>45–70%</span><span><i style="background:#F59E0B"></i>70–90%</span><span><i style="background:#DC2626"></i>90%+</span><span><i style="background:repeating-linear-gradient(45deg,#E7EBF1,#E7EBF1 4px,#F1F4F9 4px,#F1F4F9 8px)"></i>Work area</span><span><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#F59E0B;margin-right:.3rem"></span>Units missing dims</span></div>`;
+  const racks = `<div class="row r-2b">
+    <div class="card"><div class="ct"><h3>Rack A</h3><span class="tag">${A.occupancy_pct??0}% · ${fmt(A.occupied_cuft)} ft³</span></div>${whRackGrid('RA',8,4)}</div>
+    <div class="card"><div class="ct"><h3>Rack B</h3><span class="tag">${B.occupancy_pct??0}% · ${fmt(B.occupied_cuft)} ft³</span></div>${whRackGrid('RB',4,4)}</div></div>`;
+  const bins = (d.locations||[]).filter(l=>l.zone==='BINS').sort((a,b)=>a.location_code.localeCompare(b.location_code)).map(l=>{
+    const [bg,dk] = whRamp(l.occupancy_pct);
+    return `<button class="whbin" style="background:${bg};color:${dk?'#fff':'#334155'}" onclick="whShowLoc('${l.location_code}')" title="${l.location_code} · ${l.occupancy_pct??0}% · ${l.units} u">${l.location_code.replace(/^F/,'')}</button>`;
+  }).join('');
+  const others = (d.locations||[]).filter(l=>!['RACK_A','RACK_B','BINS'].includes(l.zone)).map(whCell).join('');
+  const binsCard = `<div class="row r-2">
+    <div class="card"><div class="ct"><h3>Fulfillment Bins</h3><span class="tag">${BN.occupancy_pct??0}% · ${(d.locations||[]).filter(l=>l.zone==='BINS').length} bins</span></div><div class="whbins">${bins}</div>
+      <div class="ct" style="margin:1rem 0 .6rem"><h3 style="font-size:.82rem">Floor &amp; Stations</h3></div>
+      <div class="whgrid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">${others}</div></div>
+    <div class="card" id="wh-detail"><div class="ct"><h3>Location Detail</h3></div><div class="muted">Click any position or bin to see its SKUs.</div></div></div>`;
+  return hero + leg + racks + binsCard;
+}
+
+const RENDER = { ov:renderOverview, sla:renderSla, prof:renderProf, op:renderOp, in:renderInv, wh:renderWh };
+const AREA_MAP = { ov:'overview', sla:'sla', prof:'profitability', op:'operations', in:'inventory', wh:'warehouse' };
 
 // ---- fetch + render ---------------------------------------------------------
 async function loadArea(tab, isRefresh){
@@ -454,11 +538,14 @@ async function loadArea(tab, isRefresh){
   if(pan) pan.classList.add('loading');
   if(!isRefresh && body && !body.innerHTML.trim()) body.innerHTML='<div class="muted">Loading…</div>';
   try{
-    const r = await fetch(API+'?area='+area);
+    const url = tab==='wh' ? '/.netlify/functions/occupancy-data' : API+'?area='+area;
+    const r = await fetch(url);
     const j = await r.json();
-    if(!j.ok) throw new Error(j.error||'unknown error');
-    state[tab]=j.data; synced[tab]=Date.now();
-    body.innerHTML = RENDER[tab](j.data);
+    if(tab==='wh'){ if(j.error) throw new Error(j.error); }
+    else if(!j.ok) throw new Error(j.error||'unknown error');
+    const data = tab==='wh' ? j : j.data;
+    state[tab]=data; synced[tab]=Date.now();
+    body.innerHTML = RENDER[tab](data);
     const dot=$('dot-'+tab); if(dot) dot.classList.remove('stale');
     const a=$('ago-'+tab); if(a) a.textContent='just now';
   }catch(e){
