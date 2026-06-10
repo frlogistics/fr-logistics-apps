@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ocupación del Warehouse · FR-Logistics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#16222F; --paper:#F5F7F9; --card:#FFFFFF; --line:#DCE3EA;
+  --muted:#6B7886; --blue:#0F4C81;
+  --occ0:#EAF3F0; --occ1:#69C3A5; --occ2:#2FA98C; --occ3:#E8A13D; --occ4:#D64545;
+  --work:#E2E6EB;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--paper);color:var(--ink);font-size:14px}
+.wrap{max-width:1240px;margin:0 auto;padding:20px 24px 60px}
+header{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;
+  border-bottom:2px solid var(--ink);padding-bottom:12px;margin-bottom:20px}
+h1{font-family:'Barlow Semi Condensed',sans-serif;font-size:26px;font-weight:700;letter-spacing:.3px;text-transform:uppercase}
+h1 span{color:var(--blue)}
+#sync{font-size:12px;color:var(--muted)}
+#sync b{color:var(--ink)}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.kpi .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:6px}
+.kpi .val{font-family:'Barlow Semi Condensed',sans-serif;font-size:30px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.kpi .sub{font-size:12px;color:var(--muted);margin-top:5px}
+.kpi.alert .val{color:var(--occ3)}
+
+.zones{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:900px){.zones{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px}
+.panel h2{font-family:'Barlow Semi Condensed',sans-serif;font-size:16px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.5px;display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+.panel h2 small{font-family:'Inter';font-size:12px;font-weight:500;color:var(--muted);text-transform:none;letter-spacing:0}
+
+/* Elevación de rack: columnas x niveles, nivel 01 abajo (vista de frente) */
+.rack{display:grid;gap:4px}
+.cell{position:relative;border-radius:4px;min-height:46px;padding:5px 6px;cursor:pointer;
+  border:1px solid rgba(22,34,47,.12);transition:transform .08s, box-shadow .08s}
+.cell:hover{transform:translateY(-1px);box-shadow:0 2px 8px rgba(22,34,47,.18);z-index:2}
+.cell:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+.cell .code{font-family:'Barlow Semi Condensed';font-size:11px;font-weight:600;letter-spacing:.3px}
+.cell .pct{font-family:'Barlow Semi Condensed';font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.cell.dark .code,.cell.dark .pct{color:#fff}
+.cell.work{background:repeating-linear-gradient(45deg,var(--work),var(--work) 5px,#EDF0F3 5px,#EDF0F3 10px);cursor:default}
+.cell.work .code{color:var(--muted)}
+.cell.work:hover{transform:none;box-shadow:none}
+.cell .warn{position:absolute;top:4px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--occ3);
+  box-shadow:0 0 0 2px rgba(255,255,255,.7)}
+.lvl-lbl{font-size:10px;color:var(--muted);text-align:right;padding-right:6px;align-self:center;font-variant-numeric:tabular-nums}
+
+.bins-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(34px,1fr));gap:3px}
+.bin{border-radius:3px;min-height:26px;font-size:9px;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;border:1px solid rgba(22,34,47,.1);font-variant-numeric:tabular-nums;color:rgba(22,34,47,.75)}
+.bin.dark{color:#fff}
+.bin:hover{outline:2px solid var(--blue);z-index:2}
+
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin:14px 0 22px;align-items:center}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-2px}
+
+/* Drawer de detalle */
+#drawer{position:fixed;top:0;right:-420px;width:400px;max-width:92vw;height:100vh;background:var(--card);
+  border-left:1px solid var(--line);box-shadow:-8px 0 30px rgba(22,34,47,.15);transition:right .2s ease;
+  z-index:50;padding:20px;overflow-y:auto}
+#drawer.open{right:0}
+#drawer h3{font-family:'Barlow Semi Condensed';font-size:22px;font-weight:700;text-transform:uppercase}
+#drawer .meta{font-size:12px;color:var(--muted);margin:4px 0 14px}
+#drawer .bar{height:10px;background:var(--occ0);border-radius:5px;overflow:hidden;margin-bottom:16px}
+#drawer .bar i{display:block;height:100%;border-radius:5px}
+#drawer table{width:100%;border-collapse:collapse;font-size:13px}
+#drawer th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);
+  padding:6px 4px;border-bottom:1px solid var(--line)}
+#drawer td{padding:7px 4px;border-bottom:1px solid #EEF1F4;font-variant-numeric:tabular-nums}
+#drawer td.r,#drawer th.r{text-align:right}
+#drawer .nodims{color:var(--occ3);font-size:11px;font-weight:600}
+#dclose{position:absolute;top:14px;right:14px;border:1px solid var(--line);background:var(--paper);
+  border-radius:6px;width:30px;height:30px;font-size:15px;cursor:pointer}
+#overlay{position:fixed;inset:0;background:rgba(22,34,47,.25);opacity:0;pointer-events:none;transition:opacity .2s;z-index:40}
+#overlay.show{opacity:1;pointer-events:auto}
+#loading{text-align:center;padding:80px 0;color:var(--muted)}
+.err{background:#FBEDED;border:1px solid var(--occ4);color:#7C2626;border-radius:8px;padding:14px;margin-bottom:16px;display:none}
+@media (prefers-reduced-motion: reduce){*{transition:none !important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Ocupación <span>del Warehouse</span></h1>
+    <div id="sync">Cargando…</div>
+  </header>
+
+  <div class="err" id="err"></div>
+  <div id="loading">Cargando datos de ocupación…</div>
+
+  <div id="app" style="display:none">
+    <div class="kpis" id="kpis"></div>
+
+    <div class="legend">
+      <span><i style="background:var(--occ0)"></i>0–15%</span>
+      <span><i style="background:var(--occ1)"></i>15–45%</span>
+      <span><i style="background:var(--occ2)"></i>45–70%</span>
+      <span><i style="background:var(--occ3)"></i>70–90%</span>
+      <span><i style="background:var(--occ4)"></i>90%+</span>
+      <span><i style="background:repeating-linear-gradient(45deg,#E2E6EB,#E2E6EB 3px,#EDF0F3 3px,#EDF0F3 6px)"></i>Área de trabajo</span>
+      <span><i style="background:#fff;border:1px solid var(--line);position:relative"><b style="position:absolute;top:1px;right:1px;width:5px;height:5px;border-radius:50%;background:var(--occ3);display:block"></b></i>Unidades sin medidas</span>
+    </div>
+
+    <div class="zones">
+      <div class="panel">
+        <h2>Rack A <small id="ra-sub"></small></h2>
+        <div class="rack" id="rack-a"></div>
+      </div>
+      <div class="panel">
+        <h2>Rack B <small id="rb-sub"></small></h2>
+        <div class="rack" id="rack-b"></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px">
+      <h2>Bins de Fulfillment <small id="bins-sub"></small></h2>
+      <div class="bins-grid" id="bins"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Otras ubicaciones <small>Floor y estaciones</small></h2>
+      <div class="rack" id="others" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))"></div>
+    </div>
+  </div>
+</div>
+
+<div id="overlay"></div>
+<aside id="drawer" aria-label="Detalle de ubicación">
+  <button id="dclose" aria-label="Cerrar">✕</button>
+  <h3 id="d-code"></h3>
+  <div class="meta" id="d-meta"></div>
+  <div class="bar"><i id="d-bar"></i></div>
+  <table>
+    <thead><tr><th>SKU</th><th class="r">Unidades</th><th class="r">ft³</th></tr></thead>
+    <tbody id="d-rows"></tbody>
+  </table>
+</aside>
+
+<script>
+const API = '/.netlify/functions/occupancy-data';
+const $ = (id) => document.getElementById(id);
+
+function ramp(p){
+  if (p == null) return ['var(--work)', false];
+  if (p >= 90) return ['var(--occ4)', true];
+  if (p >= 70) return ['var(--occ3)', false];
+  if (p >= 45) return ['var(--occ2)', true];
+  if (p >= 15) return ['var(--occ1)', false];
+  return ['var(--occ0)', false];
+}
+const fmt = (n) => Number(n).toLocaleString('en-US');
+
+let DETAIL = {}, LOCS = {};
+
+function openDrawer(code){
+  const l = LOCS[code]; if (!l) return;
+  $('d-code').textContent = code;
+  const cap = l.is_storage ? `${l.occupied_cuft} / ${l.effective_cuft} ft³ efectivos` : 'Área de trabajo — no almacena';
+  $('d-meta').textContent = `${l.zone} · ${l.position_type} · ${cap}`;
+  const p = l.occupancy_pct ?? 0;
+  const bar = $('d-bar');
+  bar.style.width = Math.min(100, p) + '%';
+  bar.style.background = ramp(p)[0];
+  const rows = (DETAIL[code] || []).sort((a,b) => b.qty - a.qty);
+  $('d-rows').innerHTML = rows.length
+    ? rows.map(r => `<tr><td>${r.sku}</td><td class="r">${fmt(r.qty)}</td>
+        <td class="r">${r.cuft != null ? r.cuft : '<span class="nodims">sin medidas</span>'}</td></tr>`).join('')
+    : '<tr><td colspan="3" style="color:var(--muted);padding:16px 4px">Ubicación vacía</td></tr>';
+  $('drawer').classList.add('open');
+  $('overlay').classList.add('show');
+}
+function closeDrawer(){ $('drawer').classList.remove('open'); $('overlay').classList.remove('show'); }
+$('dclose').onclick = closeDrawer;
+$('overlay').onclick = closeDrawer;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+function cellEl(l){
+  const d = document.createElement('button');
+  const [bg, dark] = l.is_storage ? ramp(l.occupancy_pct) : [null, false];
+  d.className = 'cell' + (l.is_storage ? (dark ? ' dark' : '') : ' work');
+  if (l.is_storage) d.style.background = bg;
+  d.innerHTML = `<div class="code">${l.location_code}</div>` +
+    (l.is_storage ? `<div class="pct">${l.occupancy_pct ?? 0}%</div>` : `<div class="code" style="font-size:9px">WORK</div>`) +
+    (l.units_missing_dims > 0 ? '<span class="warn" title="Unidades sin medidas"></span>' : '');
+  d.title = `${l.location_code} · ${l.units} unidades · ${l.sku_count} SKUs`;
+  d.onclick = () => openDrawer(l.location_code);
+  return d;
+}
+
+// Elevación: parsea RA{col}{lvl}, pinta niveles de arriba (04) a abajo (01)
+function buildRack(containerId, prefix, cols, levels){
+  const c = $(containerId);
+  c.style.gridTemplateColumns = `28px repeat(${cols}, 1fr)`;
+  for (let lvl = levels; lvl >= 1; lvl--){
+    const lbl = document.createElement('div');
+    lbl.className = 'lvl-lbl'; lbl.textContent = 'N' + String(lvl).padStart(2,'0');
+    c.appendChild(lbl);
+    for (let col = 1; col <= cols; col++){
+      const code = `${prefix}${String(col).padStart(2,'0')}${String(lvl).padStart(2,'0')}`;
+      const l = LOCS[code];
+      if (l) c.appendChild(cellEl(l));
+      else { const ph = document.createElement('div'); c.appendChild(ph); }
+    }
+  }
+}
+
+async function init(){
+  try {
+    const res = await fetch(API);
+    if (!res.ok) throw new Error('API ' + res.status);
+    const data = await res.json();
+    DETAIL = data.detail || {};
+    for (const l of data.locations) LOCS[l.location_code] = l;
+
+    const G = data.summary.find(s => s.zone === 'GLOBAL') || {};
+    const totalUnits = data.locations.reduce((s,l) => s + (l.units||0), 0);
+    const covered = totalUnits - (G.units_missing_dims || 0);
+    const covPct = totalUnits ? Math.round(covered / totalUnits * 100) : 0;
+
+    $('kpis').innerHTML = `
+      <div class="kpi"><div class="lbl">Ocupación global</div>
+        <div class="val">${G.occupancy_pct ?? 0}%</div>
+        <div class="sub">${fmt(G.occupied_cuft||0)} / ${fmt(G.effective_cuft||0)} ft³ efectivos</div></div>
+      <div class="kpi"><div class="lbl">Posiciones ocupadas</div>
+        <div class="val">${G.occupied_positions||0} / ${G.storage_positions||0}</div>
+        <div class="sub">${(G.storage_positions||0)-(G.occupied_positions||0)} disponibles</div></div>
+      <div class="kpi"><div class="lbl">Unidades en piso</div>
+        <div class="val">${fmt(totalUnits)}</div>
+        <div class="sub">${fmt(Object.keys(DETAIL).reduce((s,k)=>s+DETAIL[k].length,0))} líneas SKU-ubicación</div></div>
+      <div class="kpi ${covPct < 80 ? 'alert' : ''}"><div class="lbl">Cobertura de medidas</div>
+        <div class="val">${covPct}%</div>
+        <div class="sub">${fmt(G.units_missing_dims||0)} unidades sin medir — el % real es mayor</div></div>`;
+
+    buildRack('rack-a', 'RA', 8, 4);
+    buildRack('rack-b', 'RB', 4, 4);
+    const zr = (z) => data.summary.find(s => s.zone === z) || {};
+    $('ra-sub').textContent = `${zr('RACK_A').occupancy_pct ?? 0}% · ${fmt(zr('RACK_A').occupied_cuft||0)} ft³`;
+    $('rb-sub').textContent = `${zr('RACK_B').occupancy_pct ?? 0}% · ${fmt(zr('RACK_B').occupied_cuft||0)} ft³`;
+
+    // Bins F*
+    const bins = data.locations.filter(l => l.zone === 'BINS')
+      .sort((a,b) => a.location_code.localeCompare(b.location_code));
+    const bc = $('bins');
+    for (const l of bins){
+      const b = document.createElement('button');
+      const [bg, dark] = ramp(l.occupancy_pct);
+      b.className = 'bin' + (dark ? ' dark' : '');
+      b.style.background = bg;
+      b.textContent = l.location_code.replace(/^F/, '');
+      b.title = `${l.location_code} · ${l.occupancy_pct ?? 0}% · ${l.units} u`;
+      b.onclick = () => openDrawer(l.location_code);
+      bc.appendChild(b);
+    }
+    $('bins-sub').textContent = `${zr('BINS').occupancy_pct ?? 0}% · ${bins.length} bins`;
+
+    // Floor / work / virtual
+    const others = data.locations.filter(l => !['RACK_A','RACK_B','BINS'].includes(l.zone));
+    const oc = $('others');
+    for (const l of others) oc.appendChild(cellEl(l));
+
+    $('sync').innerHTML = `Último sync de SkuVault: <b>${l10n(data.locations[0]?.synced_at)}</b> · se actualiza cada 2 horas`;
+    $('loading').style.display = 'none';
+    $('app').style.display = 'block';
+  } catch (e) {
+    $('loading').style.display = 'none';
+    const er = $('err');
+    er.style.display = 'block';
+    er.textContent = 'No se pudieron cargar los datos de ocupación. Verifica que occupancy-data esté desplegada. Detalle: ' + e.message;
+  }
+}
+function l10n(iso){
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('es-US', { dateStyle:'medium', timeStyle:'short', timeZone:'America/New_York' });
+}
+init();
+</script>
+</body>
+</html>
