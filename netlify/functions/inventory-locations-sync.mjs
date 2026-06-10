@@ -42,7 +42,7 @@ async function svPage(pageNumber) {
     body: JSON.stringify({
       TenantToken,
       UserToken,
-      IsReturnByCodes: true,
+      IsReturnByCodes: false,
       PageNumber: pageNumber,
       PageSize: PAGE_SIZE,
     }),
