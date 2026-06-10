@@ -1,12 +1,11 @@
-// netlify/functions/inventory-locations-sync.js
+// netlify/functions/inventory-locations-sync.mjs
 // FR-Logistics · Warehouse Occupancy Module · Sprint 1
 // Sincroniza SkuVault getInventoryByLocation -> Supabase inventory_by_location
 // Snapshot completo: borra e inserta en cada corrida.
 //
 // Env vars (ya existentes en Netlify):
 //   SUPABASE_URL, SUPABASE_SERVICE_KEY
-//   SKUVAULT_TENANT_TOKEN, SKUVAULT_USER_TOKEN
-//   (verificar nombres exactos contra inventory.js — usar los mismos)
+//   SKUVAULT_TENANT_TOKEN  (formato "tenant|user", igual que inventory.js)
 //
 // Programada cada 2 horas. También se puede invocar manual:
 //   GET https://apps.fr-logistics.net/.netlify/functions/inventory-locations-sync
@@ -25,13 +24,24 @@ const resp = (status, body) => new Response(JSON.stringify(body), {
   },
 });
 
+function svTokens() {
+  // Compatible con el patron de inventory.js: SKUVAULT_TENANT_TOKEN = "tenant|user"
+  const t = process.env.SKUVAULT_TENANT_TOKEN || '';
+  if (t.includes('|')) {
+    const [TenantToken, UserToken] = t.split('|');
+    return { TenantToken, UserToken };
+  }
+  return { TenantToken: t, UserToken: process.env.SKUVAULT_USER_TOKEN || '' };
+}
+
 async function svPage(pageNumber) {
+  const { TenantToken, UserToken } = svTokens();
   const res = await fetch(SV_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      TenantToken: process.env.SKUVAULT_TENANT_TOKEN,
-      UserToken: process.env.SKUVAULT_USER_TOKEN,
+      TenantToken,
+      UserToken,
       IsReturnByCodes: true,
       PageNumber: pageNumber,
       PageSize: PAGE_SIZE,
