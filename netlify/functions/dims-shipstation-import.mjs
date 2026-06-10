@@ -18,8 +18,8 @@ const resp = (status, body) => new Response(JSON.stringify(body), {
 });
 
 function ssAuth() {
-  const key = process.env.SHIPSTATION_API_KEY;
-  const secret = process.env.SHIPSTATION_API_SECRET;
+  const key = process.env.SS_API_KEY;
+const secret = process.env.SS_API_SECRET;
   return 'Basic ' + Buffer.from(`${key}:${secret}`).toString('base64');
 }
 
