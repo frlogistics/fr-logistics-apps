@@ -1,31 +1,22 @@
 // netlify/functions/inventory-locations-sync.mjs
-// FR-Logistics · Warehouse Occupancy Module · Sprint 1
-// Sincroniza SkuVault getInventoryByLocation -> Supabase inventory_by_location
+// FR-Logistics · Warehouse Occupancy · Sprint 1 (v3)
+// SkuVault getProducts (filtro IsAlternateSKU) + getInventoryByLocation -> Supabase
 // Snapshot completo: borra e inserta en cada corrida.
-//
-// Env vars (ya existentes en Netlify):
-//   SUPABASE_URL, SUPABASE_SERVICE_KEY
-//   SKUVAULT_TENANT_TOKEN  (formato "tenant|user", igual que inventory.js)
-//
-// Programada cada 2 horas. También se puede invocar manual:
-//   GET https://apps.fr-logistics.net/.netlify/functions/inventory-locations-sync
+// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SKUVAULT_TENANT_TOKEN ("tenant|user")
+// Manual: GET https://apps.fr-logistics.net/.netlify/functions/inventory-locations-sync
 
-const SV_URL = 'https://app.skuvault.com/api/inventory/getInventoryByLocation';
+const SV_BASE = 'https://app.skuvault.com/api';
 const PAGE_SIZE = 1000;
-const THROTTLE_MS = 7000; // SkuVault: ~10 calls/min por endpoint
+const THROTTLE_MS = 7000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const resp = (status, body) => new Response(JSON.stringify(body), {
   status,
-  headers: {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-  },
+  headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
 });
 
 function svTokens() {
-  // Compatible con el patron de inventory.js: SKUVAULT_TENANT_TOKEN = "tenant|user"
   const t = process.env.SKUVAULT_TENANT_TOKEN || '';
   if (t.includes('|')) {
     const [TenantToken, UserToken] = t.split('|');
@@ -34,25 +25,35 @@ function svTokens() {
   return { TenantToken: t, UserToken: process.env.SKUVAULT_USER_TOKEN || '' };
 }
 
-async function svPage(pageNumber) {
-  const { TenantToken, UserToken } = svTokens();
-  const res = await fetch(SV_URL, {
+async function sv(path, body) {
+  const res = await fetch(`${SV_BASE}/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      TenantToken,
-      UserToken,
-      IsReturnByCodes: false,
-      PageNumber: pageNumber,
-      PageSize: PAGE_SIZE,
-    }),
+    body: JSON.stringify({ ...svTokens(), ...body }),
   });
   if (res.status === 429) {
-    await sleep(60000); // throttled: esperar 1 min y reintentar una vez
-    return svPage(pageNumber);
+    await sleep(60000);
+    return sv(path, body);
   }
-  if (!res.ok) throw new Error(`SkuVault ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error(`SkuVault ${path} ${res.status}: ${await res.text()}`);
   return res.json();
+}
+
+// Set de SKUs primarios (excluye alternos), mismo criterio que el tab Inventory
+async function primarySkus() {
+  const primaries = new Set();
+  let page = 0;
+  for (;;) {
+    const data = await sv('products/getProducts', { PageNumber: page, PageSize: 10000 });
+    const prods = data.Products || [];
+    for (const p of prods) {
+      if (p.IsAlternateSKU !== true && p.Sku) primaries.add(p.Sku.trim());
+    }
+    if (prods.length < 10000) break;
+    page += 1;
+    await sleep(THROTTLE_MS);
+  }
+  return primaries;
 }
 
 async function sb(path, init = {}) {
@@ -73,17 +74,25 @@ async function sb(path, init = {}) {
 export default async () => {
   const started = Date.now();
   try {
-    // 1. Traer todas las páginas de SkuVault
+    const primaries = await primarySkus();
+    await sleep(THROTTLE_MS);
+
     const records = [];
     let page = 0;
+    let skippedAlt = 0;
     for (;;) {
-      const data = await svPage(page);
+      const data = await sv('inventory/getInventoryByLocation', {
+        IsReturnByCodes: false,
+        PageNumber: page,
+        PageSize: PAGE_SIZE,
+      });
       const items = data.Items || {};
       const skus = Object.keys(items);
       if (skus.length === 0) break;
 
       for (const sku of skus) {
-        // Agregar por (sku, location, reserve) — SkuVault puede repetir entradas
+        const clean = sku.trim();
+        if (!primaries.has(clean)) { skippedAlt += 1; continue; }
         const agg = {};
         for (const loc of items[sku]) {
           const code = (loc.LocationCode || '').trim();
@@ -93,12 +102,7 @@ export default async () => {
         }
         for (const [key, qty] of Object.entries(agg)) {
           const [location_code, reserve] = key.split('|');
-          records.push({
-            sku,
-            location_code,
-            quantity: qty,
-            is_reserve: reserve === '1',
-          });
+          records.push({ sku: clean, location_code, quantity: qty, is_reserve: reserve === '1' });
         }
       }
 
@@ -107,7 +111,6 @@ export default async () => {
       await sleep(THROTTLE_MS);
     }
 
-    // 2. Snapshot completo: borrar e insertar en lotes
     await sb('inventory_by_location?sku=neq.__none__', { method: 'DELETE' });
 
     const synced_at = new Date().toISOString();
@@ -116,15 +119,14 @@ export default async () => {
       await sb('inventory_by_location', {
         method: 'POST',
         headers: { Prefer: 'return=minimal,resolution=merge-duplicates' },
-        body: JSON.stringify(
-          records.slice(i, i + BATCH).map((r) => ({ ...r, synced_at }))
-        ),
+        body: JSON.stringify(records.slice(i, i + BATCH).map((r) => ({ ...r, synced_at }))),
       });
     }
 
     return resp(200, {
       ok: true,
-      pages: page + 1,
+      primaries: primaries.size,
+      skipped_alternates: skippedAlt,
       rows: records.length,
       ms: Date.now() - started,
     });
@@ -135,5 +137,5 @@ export default async () => {
 };
 
 export const config = {
-  schedule: '0 */2 * * *', // cada 2 horas
+  schedule: '0 */2 * * *',
 };
