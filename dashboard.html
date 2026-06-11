@@ -561,7 +561,7 @@ function renderWh(d){
     <div class="card" id="wh-detail"><div class="ct"><h3>Location Detail</h3></div><div class="muted">Click any position or bin to see its SKUs.</div></div></div>`;
   const trendCard = `<div class="card"><div class="ct"><h3>Occupancy Trend</h3><span class="src">wh_occupancy_snapshots \u00b7 daily 11:55 PM ET</span></div>${whTrendSvg(d.trend)}</div>`;
   const clientCard = `<div class="card"><div class="ct"><h3>Occupancy by Client</h3><span class="src">v_wh_occupancy_by_client</span></div>${whClientBars(d.by_client)}</div>`;
-  return hero + leg + racks + `<div class="row r-2b">${trendCard}${clientCard}</div>` + binsCard;
+  return hero + leg + racks + binsCard + `<div class="row r-2b">${trendCard}${clientCard}</div>`;
 }
 
 const RENDER = { ov:renderOverview, sla:renderSla, prof:renderProf, op:renderOp, in:renderInv, wh:renderWh };
