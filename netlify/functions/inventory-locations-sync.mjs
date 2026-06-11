@@ -41,8 +41,8 @@ async function sv(path, body) {
 
 // SKUs primarios (excluye alternos) + cliente por SKU, mismo criterio que el tab Inventory
 function clientOf(p) {
-  // Campo de cliente en SkuVault: Classification, con fallback a Attributes
-  if (p.Classification && String(p.Classification).trim()) return String(p.Classification).trim();
+  // Campo nativo Client de SkuVault (matchea fr_clients.name), igual que dashboard-kpis.js
+  if (p.Client && String(p.Client).trim()) return String(p.Client).trim();
   for (const a of p.Attributes || []) {
     if (/client/i.test(a.Name || '') && a.Value) return String(a.Value).trim();
   }
