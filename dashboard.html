@@ -497,6 +497,41 @@ function whShowLoc(code){
     <div class="whbar"><i style="width:${Math.min(100,p)}%;background:${bg}"></i></div>
     <table class="dt"><thead><tr><th>SKU</th><th class="num">Units</th><th class="num">ft³</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
+function whTrendSvg(trend){
+  const T = (trend||[]).filter(t=>t.occupancy_pct!=null);
+  if(T.length < 2) return `<div class="muted">Collecting daily snapshots \u2014 trend appears after 2+ days (${T.length} so far).</div>`;
+  const W=560, H=170, P=28;
+  const xs = i => P + i*(W-2*P)/(T.length-1);
+  const ys = v => H-P - (Math.min(100,Math.max(0,v))/100)*(H-2*P);
+  const line = key => T.map((t,i)=>`${i?'L':'M'}${xs(i).toFixed(1)},${ys(Number(t[key])).toFixed(1)}`).join(' ');
+  const occ = line('occupancy_pct');
+  const uti = line('utilization_pct');
+  const area = occ + ` L${xs(T.length-1).toFixed(1)},${H-P} L${xs(0).toFixed(1)},${H-P} Z`;
+  const grid = [25,50,75].map(g=>`<line x1="${P}" y1="${ys(g)}" x2="${W-P}" y2="${ys(g)}" stroke="#EDF1F8"/><text x="${P-6}" y="${ys(g)+3}" font-size="8" fill="#94A3B8" text-anchor="end">${g}%</text>`).join('');
+  const last = T[T.length-1];
+  const fmtD = s => { const d=new Date(s+'T12:00:00'); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); };
+  return `<div class="chartbox" style="height:190px"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    ${grid}
+    <path d="${area}" fill="rgba(14,165,160,.12)"/>
+    <path d="${occ}" fill="none" stroke="#0EA5A0" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="${uti}" fill="none" stroke="#3B82F6" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round"/>
+    <circle cx="${xs(T.length-1)}" cy="${ys(Number(last.occupancy_pct))}" r="3.5" fill="#0EA5A0"/>
+    <text x="${P}" y="${H-8}" font-size="8.5" fill="#94A3B8">${fmtD(T[0].snapshot_date)}</text>
+    <text x="${W-P}" y="${H-8}" font-size="8.5" fill="#94A3B8" text-anchor="end">${fmtD(last.snapshot_date)}</text>
+  </svg></div>
+  <div class="cleg"><span><i style="background:#0EA5A0"></i>Volumetric occupancy</span><span><i style="background:#3B82F6"></i>Position utilization</span></div>`;
+}
+
+function whClientBars(byClient){
+  const rows = (byClient||[]).filter(c=>Number(c.occupied_cuft)>0);
+  if(!rows.length) return '<div class="muted">No client data yet.</div>';
+  const max = Math.max(...rows.map(c=>Number(c.occupied_cuft)),1);
+  return `<div class="hbar">` + rows.map(c=>{
+    const pct = Math.round(100*Number(c.occupied_cuft)/max);
+    return `<div class="b"><span class="nm" title="${c.skus} SKUs \u00b7 ${fmt(c.units)} units">${c.client}</span><span class="tk"><span class="fl" style="width:${Math.max(pct,12)}%;background:linear-gradient(90deg,#0EA5A0,#06B6D4)">${fmt(Math.round(c.occupied_cuft))} ft\u00b3</span></span><span style="width:42px;text-align:right;font-size:.72rem;font-weight:800;color:#64748B">${c.pct_of_occupied??0}%</span></div>`;
+  }).join('') + `</div>`;
+}
+
 function renderWh(d){
   WHL = {}; (d.locations||[]).forEach(l=>WHL[l.location_code]=l);
   WHD = d.detail || {};
@@ -524,7 +559,9 @@ function renderWh(d){
       <div class="ct" style="margin:1rem 0 .6rem"><h3 style="font-size:.82rem">Floor &amp; Stations</h3></div>
       <div class="whgrid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">${others}</div></div>
     <div class="card" id="wh-detail"><div class="ct"><h3>Location Detail</h3></div><div class="muted">Click any position or bin to see its SKUs.</div></div></div>`;
-  return hero + leg + racks + binsCard;
+  const trendCard = `<div class="card"><div class="ct"><h3>Occupancy Trend</h3><span class="src">wh_occupancy_snapshots \u00b7 daily 11:55 PM ET</span></div>${whTrendSvg(d.trend)}</div>`;
+  const clientCard = `<div class="card"><div class="ct"><h3>Occupancy by Client</h3><span class="src">v_wh_occupancy_by_client</span></div>${whClientBars(d.by_client)}</div>`;
+  return hero + leg + racks + `<div class="row r-2b">${trendCard}${clientCard}</div>` + binsCard;
 }
 
 const RENDER = { ov:renderOverview, sla:renderSla, prof:renderProf, op:renderOp, in:renderInv, wh:renderWh };
