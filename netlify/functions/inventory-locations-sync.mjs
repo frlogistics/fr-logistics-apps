@@ -1,5 +1,5 @@
 // netlify/functions/inventory-locations-sync.mjs
-// FR-Logistics · Warehouse Occupancy · Sprint 1 (v3)
+// FR-Logistics · Warehouse Occupancy · Sprint 3 (v4: + client mapping)
 // SkuVault getProducts (filtro IsAlternateSKU) + getInventoryByLocation -> Supabase
 // Snapshot completo: borra e inserta en cada corrida.
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SKUVAULT_TENANT_TOKEN ("tenant|user")
@@ -39,21 +39,35 @@ async function sv(path, body) {
   return res.json();
 }
 
-// Set de SKUs primarios (excluye alternos), mismo criterio que el tab Inventory
+// SKUs primarios (excluye alternos) + cliente por SKU, mismo criterio que el tab Inventory
+function clientOf(p) {
+  // Campo de cliente en SkuVault: Classification, con fallback a Attributes
+  if (p.Classification && String(p.Classification).trim()) return String(p.Classification).trim();
+  for (const a of p.Attributes || []) {
+    if (/client/i.test(a.Name || '') && a.Value) return String(a.Value).trim();
+  }
+  return 'Unassigned';
+}
+
 async function primarySkus() {
   const primaries = new Set();
+  const clients = {};
   let page = 0;
   for (;;) {
     const data = await sv('products/getProducts', { PageNumber: page, PageSize: 10000 });
     const prods = data.Products || [];
     for (const p of prods) {
-      if (p.IsAlternateSKU !== true && p.Sku) primaries.add(p.Sku.trim());
+      if (p.IsAlternateSKU !== true && p.Sku) {
+        const sku = p.Sku.trim();
+        primaries.add(sku);
+        clients[sku] = clientOf(p);
+      }
     }
     if (prods.length < 10000) break;
     page += 1;
     await sleep(THROTTLE_MS);
   }
-  return primaries;
+  return { primaries, clients };
 }
 
 async function sb(path, init = {}) {
@@ -74,7 +88,7 @@ async function sb(path, init = {}) {
 export default async () => {
   const started = Date.now();
   try {
-    const primaries = await primarySkus();
+    const { primaries, clients } = await primarySkus();
     await sleep(THROTTLE_MS);
 
     const records = [];
@@ -123,8 +137,20 @@ export default async () => {
       });
     }
 
+    // Upsert de mapeo SKU -> cliente para los SKUs en piso
+    const skusOnFloor = [...new Set(records.map((r) => r.sku))];
+    const clientRows = skusOnFloor.map((sku) => ({ sku, client: clients[sku] || 'Unassigned' }));
+    for (let i = 0; i < clientRows.length; i += BATCH) {
+      await sb('wh_sku_clients?on_conflict=sku', {
+        method: 'POST',
+        headers: { Prefer: 'return=minimal,resolution=merge-duplicates' },
+        body: JSON.stringify(clientRows.slice(i, i + BATCH)),
+      });
+    }
+
     return resp(200, {
       ok: true,
+      clients_mapped: clientRows.length,
       primaries: primaries.size,
       skipped_alternates: skippedAlt,
       rows: records.length,
