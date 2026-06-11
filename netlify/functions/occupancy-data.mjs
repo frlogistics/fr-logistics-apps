@@ -1,6 +1,7 @@
 // netlify/functions/occupancy-data.mjs
-// FR-Logistics · Warehouse Occupancy · Sprint 2
-// API de solo lectura para occupancy.html — lee las vistas de Supabase.
+// FR-Logistics · Warehouse Occupancy · Sprint 3 Phase 2 (v2)
+// API de solo lectura para el tab Warehouse — summary, locations, detail,
+// by_client (billing) y trend (snapshots diarios).
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY
 
 const CACHE_TTL_MS = 2 * 60 * 1000;
@@ -29,11 +30,13 @@ export default async (req) => {
     return new Response(JSON.stringify(cache.data), { status: 200, headers: { ...headers, 'X-Cache': 'HIT' } });
   }
   try {
-    const [summary, locations, inventory, dims] = await Promise.all([
+    const [summary, locations, inventory, dims, byClient, trend] = await Promise.all([
       sb('v_wh_occupancy_summary?select=*'),
       sb('v_wh_occupancy?select=*&order=location_code.asc'),
       sb('inventory_by_location?select=sku,location_code,quantity&order=quantity.desc&limit=2000'),
       sb('wh_product_dims?select=sku,cuft_per_unit&limit=2000'),
+      sb('v_wh_occupancy_by_client?select=*'),
+      sb('wh_occupancy_snapshots?zone=eq.GLOBAL&select=snapshot_date,utilization_pct,occupancy_pct,occupied_cuft&order=snapshot_date.asc&limit=120'),
     ]);
 
     const cuft = Object.fromEntries(dims.map((d) => [d.sku, d.cuft_per_unit]));
@@ -52,6 +55,8 @@ export default async (req) => {
       summary,
       locations,
       detail,
+      by_client: byClient,
+      trend,
     };
     cache = { data: payload, ts: Date.now() };
     return new Response(JSON.stringify(payload), { status: 200, headers: { ...headers, 'X-Cache': 'MISS' } });
