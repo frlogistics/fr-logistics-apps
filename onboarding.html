@@ -784,16 +784,20 @@ function buildEmailHTML(c, es){
     welcome:`&iexcl;Bienvenido a <b>FR-Logistics</b>! Estamos muy contentos de apoyar a <b>${esc(c.clientName)}</b> en su operaci&oacute;n log&iacute;stica. Adjunto encontrar&aacute; su paquete de onboarding.`,
     next:'Pr&oacute;ximos pasos',
     s1:'Revise el Rate Card y el Checklist de Onboarding',
-    s2:'Env&iacute;e la informaci&oacute;n de sus productos a',
-    s3:'Agende su llamada de Discovery',
+    s2:'Env&iacute;e la informaci&oacute;n de sus productos a <a href="mailto:ops@fr-logistics.net" style="color:#0ea55f">ops@fr-logistics.net</a>',
+    s3:'Su contacto de almac&eacute;n ser&aacute; <b>Joe Raymond</b>, Warehouse Manager &mdash; env&iacute;e packing lists y datos de sus env&iacute;os a <a href="mailto:warehouse@fr-logistics.net" style="color:#0ea55f">warehouse@fr-logistics.net</a>',
+    s4:'Direcci&oacute;n del warehouse: <b>10893 NW 17th St. Unit 121, Miami, FL 33172</b>',
+    s5:'Si lo desea, puede <a href="https://calendly.com/fr-logistics" style="color:#0ea55f">agendar una llamada introductoria</a> (opcional)',
     notes:'Notas',
   } : {
     dear:`Dear ${esc(c.contactName)||'there'},`,
     welcome:`Welcome to <b>FR-Logistics</b>! We are excited to support <b>${esc(c.clientName)}</b> on your logistics operations. Please find your onboarding package attached.`,
     next:'Next Steps',
     s1:'Review Rate Card and Onboarding Checklist',
-    s2:'Send product info to',
-    s3:'Schedule your Discovery Call',
+    s2:'Send product info to <a href="mailto:ops@fr-logistics.net" style="color:#0ea55f">ops@fr-logistics.net</a>',
+    s3:'Your warehouse contact will be <b>Joe Raymond</b>, Warehouse Manager &mdash; send packing lists and shipment details to <a href="mailto:warehouse@fr-logistics.net" style="color:#0ea55f">warehouse@fr-logistics.net</a>',
+    s4:'Warehouse address: <b>10893 NW 17th St. Unit 121, Miami, FL 33172</b>',
+    s5:'Optionally, <a href="https://calendly.com/fr-logistics" style="color:#0ea55f">schedule an intro call</a> if you would like one',
     notes:'Notes',
   };
   return `<!DOCTYPE html><html><body style="margin:0;padding:28px 12px;font-family:Arial,sans-serif;background:#f1f5f9">
@@ -808,10 +812,12 @@ function buildEmailHTML(c, es){
   <p style="font-size:13px;color:#475569;line-height:1.6;margin:0 0 18px">${T.welcome}</p>
   <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:9px;padding:14px 16px;margin-bottom:16px">
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#059669;margin-bottom:7px">${T.next}</div>
-    <div style="font-size:12.5px;color:#0f172a;line-height:1.7">
+    <div style="font-size:12.5px;color:#0f172a;line-height:1.8">
       <b>1.</b> ${T.s1}<br>
-      <b>2.</b> ${T.s2} <a href="mailto:info@fr-logistics.net" style="color:#0ea55f">info@fr-logistics.net</a><br>
-      <b>3.</b> <a href="https://calendly.com/fr-logistics" style="color:#0ea55f">${T.s3}</a>
+      <b>2.</b> ${T.s2}<br>
+      <b>3.</b> ${T.s3}<br>
+      <b>4.</b> ${T.s4}<br>
+      <b>5.</b> ${T.s5}
     </div>
   </div>
   ${c.notes?`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin-bottom:14px"><p style="font-size:11px;color:#92400e;margin:0;font-style:italic">${T.notes}: ${esc(c.notes)}</p></div>`:''}
@@ -882,8 +888,8 @@ async function startOnboarding() {
       subject,
       htmlBody: buildEmailHTML(c, es),
       textBody: es
-        ? `Estimado/a ${c.contactName||''},\n\n¡Bienvenido a FR-Logistics! Adjunto encontrará su paquete de onboarding.\n\nSaludos,\n${c.prepBy}\nFR-Logistics | (786) 300-1443`
-        : `Dear ${c.contactName||'there'},\n\nWelcome to FR-Logistics! Please find your onboarding package attached.\n\nBest,\n${c.prepBy}\nFR-Logistics | (786) 300-1443`,
+        ? `Estimado/a ${c.contactName||''},\n\n¡Bienvenido a FR-Logistics! Adjunto encontrará su paquete de onboarding.\n\nPróximos pasos:\n1. Revise el Rate Card y el Checklist de Onboarding\n2. Envíe la información de sus productos a ops@fr-logistics.net\n3. Su contacto de almacén será Joe Raymond, Warehouse Manager — packing lists y datos de envíos a warehouse@fr-logistics.net\n4. Dirección del warehouse: 10893 NW 17th St. Unit 121, Miami, FL 33172\n5. Si lo desea, agende una llamada introductoria: calendly.com/fr-logistics (opcional)\n\nSaludos,\n${c.prepBy}\nFR-Logistics | (786) 300-1443`
+        : `Dear ${c.contactName||'there'},\n\nWelcome to FR-Logistics! Please find your onboarding package attached.\n\nNext steps:\n1. Review Rate Card and Onboarding Checklist\n2. Send product info to ops@fr-logistics.net\n3. Your warehouse contact will be Joe Raymond, Warehouse Manager — send packing lists and shipment details to warehouse@fr-logistics.net\n4. Warehouse address: 10893 NW 17th St. Unit 121, Miami, FL 33172\n5. Optionally, schedule an intro call: calendly.com/fr-logistics\n\nBest,\n${c.prepBy}\nFR-Logistics | (786) 300-1443`,
       attachments: [
         { base64: rcB64,   name: `FR_RateCard_${safeName}.pdf`,   mimeType: 'application/pdf' },
         { base64: clB64,   name: `FR_Checklist_${safeName}.pdf`,  mimeType: 'application/pdf' },
