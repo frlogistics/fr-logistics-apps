@@ -158,6 +158,19 @@
                padding:12px 14px;margin-bottom:8px;background:#fff;cursor:pointer;
                font-family:'DM Sans',sans-serif;transition:all .12s}
     .lead-card:hover{border-color:#86efac;background:#f0fdf4}
+
+    /* LEAD SEARCH BAR (inside modal) */
+    .lead-search-wrap{position:relative;padding:10px 20px 4px;flex-shrink:0}
+    .lead-search-input{width:100%;box-sizing:border-box;padding:10px 34px 10px 38px;
+                       border:1px solid #e2e8f0;border-radius:10px;font-size:14px;outline:none;
+                       background:#f8fafc;transition:border-color .15s,box-shadow .15s,background .15s}
+    .lead-search-input:focus{border-color:#16a34a;background:#fff;box-shadow:0 0 0 3px rgba(22,163,74,.1)}
+    .lead-search-icon{position:absolute;left:31px;top:50%;transform:translateY(-50%);
+                      font-size:15px;color:#94a3b8;pointer-events:none}
+    .lead-search-clear{position:absolute;right:30px;top:50%;transform:translateY(-50%);
+                       background:none;border:none;color:#94a3b8;font-size:15px;cursor:pointer;
+                       display:none;line-height:1;padding:2px 4px}
+    .lead-search-clear:hover{color:#dc2626}
   </style>
 </head>
 <body>
@@ -311,7 +324,19 @@
               border:none;cursor:pointer;border-radius:8px;padding:6px 11px;font-size:13px;
               font-weight:600;">✕</button>
     </div>
-    <div style="padding:13px 20px 6px;font-size:12px;color:#64748b;flex-shrink:0;">
+
+    <!-- ▼▼▼ LEAD SEARCH BAR ▼▼▼ -->
+    <div class="lead-search-wrap">
+      <span class="lead-search-icon">🔍</span>
+      <input id="leadSearch" class="lead-search-input" type="text" autocomplete="off"
+             placeholder="Buscar por nombre, teléfono o email…"
+             oninput="filterLeads()"/>
+      <button id="leadSearchClear" class="lead-search-clear" type="button"
+              onclick="clearLeadSearch()" title="Limpiar">✕</button>
+    </div>
+    <!-- ▲▲▲ LEAD SEARCH BAR ▲▲▲ -->
+
+    <div style="padding:6px 20px 6px;font-size:12px;color:#64748b;flex-shrink:0;">
       Ranked by quality — 🟢 ready to quote · 🟡 good · 🟠 basic · ⚪ minimal.
       <strong>Volume still needs your qualification.</strong>
     </div>
@@ -489,6 +514,11 @@
 // 2026-05-29 — Added "Import from WhatsApp Lead": pulls leads from wa_leads via
 //   /.netlify/functions/quote-leads, pre-fills client fields, and links the quote
 //   back to the lead (source_lead_id) + advances the WA Lead Capture pipeline.
+//
+// 2026-06-16 — Added in-modal lead search: a single search box filters the loaded
+//   leads in memory, auto-detecting phone (3+ digits) / email (@) / name. No
+//   endpoint change; phone matching uses digit-only normalization to stay aligned
+//   with the wa_leads (+) vs wa_messages (no +) storage difference.
 // ════════════════════════════════════════════════════════════════════════════
 
 const SK='fr_q_v4';  // bumped from v3 to invalidate old localStorage drafts
@@ -591,6 +621,7 @@ const safe=s=>(s||'Quote').replace(/[^a-z0-9]+/gi,'_').replace(/^_|_$/g,'');
 // IMPORT FROM WHATSAPP LEAD
 // ════════════════════════════════════════════════════════════════════════════
 let _sourceLeadId = null;
+let _leadsCache = [];   // leads loaded into the modal, kept in memory for search
 
 // service enum / free text -> matches one of the <select id="channel"> options
 function inferLeadChannel(lead){
@@ -610,42 +641,107 @@ function leadEmailLooksOff(email){
          /g[i1l]mail\.|gmial\.|hotmial\.|yaho\./i.test(email);
 }
 
+// digits-only normalization — aligns wa_leads (+) with raw search input
+function normPhone(s){ return String(s||'').replace(/\D/g,''); }
+
 async function openLeadImport(){
   $('leadModal').style.display='flex';
+  const search=$('leadSearch');
+  if(search) search.value='';                  // reset search each open
+  const clr=$('leadSearchClear'); if(clr) clr.style.display='none';
   const list=$('leadList');
   list.innerHTML='<div style="color:#94a3b8;text-align:center;padding:24px 0;">Loading leads…</div>';
   try{
     const res=await fetch(LEADS_API);
     const leads=await res.json();
     if(!Array.isArray(leads) || !leads.length){
+      _leadsCache=[];
       list.innerHTML='<div style="color:#94a3b8;text-align:center;padding:24px 0;"><em>No importable leads in the last 60 days.</em></div>';
       return;
     }
-    // Quality tier emoji comes from the endpoint's _score (0-3).
-    const tierFor=s=>s>=3?'🟢':s===2?'🟡':s===1?'🟠':'⚪';
-    list.innerHTML=leads.map(l=>{
-      const date=new Date(l.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'});
-      const svc=(l.service && l.service!=='other')
-        ? l.service.replace(/_/g,' ')
-        : (l.service_detail ? l.service_detail.slice(0,42)+'…' : 'general inquiry');
-      const emailOff=(typeof l._emailOff==='boolean')?l._emailOff:leadEmailLooksOff(l.email);
-      const flag=emailOff?' <span style="color:#d97706;" title="Check email">⚠️</span>':'';
-      const tier=tierFor(l._score||0);
-      const vol=l.monthly_volume?` · 📦 ${l.monthly_volume}`:'';
-      const json=encodeURIComponent(JSON.stringify(l));
-      return `<button class="lead-card" onclick='pickLead("${json}")'>
-        <div style="display:flex;justify-content:space-between;align-items:baseline;">
-          <strong style="font-size:14px;color:#0f172a;">${tier} ${l.name||'(no name)'}${flag}</strong>
-          <span style="color:#94a3b8;font-size:11px;">${date}</span>
-        </div>
-        <div style="color:#64748b;font-size:12px;margin-top:2px;">
-          ${svc} · ${(l.language||'').toUpperCase()}${vol} ${l.phone?'· '+l.phone:''}
-        </div>
-      </button>`;
-    }).join('');
+    _leadsCache=leads;                          // keep for in-memory search
+    renderLeadList(_leadsCache);
+    if(search) search.focus();
   }catch(e){
+    _leadsCache=[];
     list.innerHTML=`<div style="color:#dc2626;padding:16px 0;">Error loading leads: ${e.message}</div>`;
   }
+}
+
+// Renders an array of leads into #leadList. Used for both the full list and
+// filtered results, so the quality ranking/tiers stay identical in both.
+function renderLeadList(leads){
+  const list=$('leadList');
+  if(!Array.isArray(leads) || !leads.length){
+    list.innerHTML='<div style="color:#94a3b8;text-align:center;padding:24px 0;font-size:13px;"><em>Sin coincidencias en los leads cargados.</em></div>';
+    return;
+  }
+  // Quality tier emoji comes from the endpoint's _score (0-3).
+  const tierFor=s=>s>=3?'🟢':s===2?'🟡':s===1?'🟠':'⚪';
+  list.innerHTML=leads.map(l=>{
+    const date=new Date(l.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    const svc=(l.service && l.service!=='other')
+      ? l.service.replace(/_/g,' ')
+      : (l.service_detail ? l.service_detail.slice(0,42)+'…' : 'general inquiry');
+    const emailOff=(typeof l._emailOff==='boolean')?l._emailOff:leadEmailLooksOff(l.email);
+    const flag=emailOff?' <span style="color:#d97706;" title="Check email">⚠️</span>':'';
+    const tier=tierFor(l._score||0);
+    const vol=l.monthly_volume?` · 📦 ${l.monthly_volume}`:'';
+    const json=encodeURIComponent(JSON.stringify(l));
+    return `<button class="lead-card" onclick='pickLead("${json}")'>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;">
+        <strong style="font-size:14px;color:#0f172a;">${tier} ${l.name||'(no name)'}${flag}</strong>
+        <span style="color:#94a3b8;font-size:11px;">${date}</span>
+      </div>
+      <div style="color:#64748b;font-size:12px;margin-top:2px;">
+        ${svc} · ${(l.language||'').toUpperCase()}${vol} ${l.phone?'· '+l.phone:''}
+      </div>
+    </button>`;
+  }).join('');
+}
+
+// Decide if a lead matches the search term. Auto-detects type:
+//   · digits only (3+) -> phone (normalized both sides)
+//   · contains "@"     -> email
+//   · otherwise        -> name / service text / email substring
+function leadMatchesQuery(l, q){
+  q=q.trim().toLowerCase();
+  if(!q) return true;
+
+  const digits=normPhone(q);
+  const looksPhone=/^[\d\s()+\-]+$/.test(q) && digits.length>=3;
+  if(looksPhone){
+    return normPhone(l.phone).includes(digits);
+  }
+  if(q.includes('@')){
+    return String(l.email||'').toLowerCase().includes(q);
+  }
+  const hay=(
+    String(l.name||'')+' '+
+    String(l.service||'')+' '+
+    String(l.service_detail||'')+' '+
+    String(l.email||'')
+  ).toLowerCase();
+  return hay.includes(q);
+}
+
+// Live filter — runs on every keystroke in the search box.
+function filterLeads(){
+  const box=$('leadSearch');
+  const clr=$('leadSearchClear');
+  if(!box) return;
+  const q=box.value;
+  if(clr) clr.style.display=q ? 'block' : 'none';
+  const filtered=q.trim() ? _leadsCache.filter(l=>leadMatchesQuery(l,q)) : _leadsCache;
+  renderLeadList(filtered);
+}
+
+function clearLeadSearch(){
+  const box=$('leadSearch');
+  if(box) box.value='';
+  const clr=$('leadSearchClear'); if(clr) clr.style.display='none';
+  renderLeadList(_leadsCache);
+  if(box) box.focus();
 }
 
 function pickLead(encoded){
