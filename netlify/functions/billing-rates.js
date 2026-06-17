@@ -15,8 +15,19 @@
 // Endpoints:
 //   GET ?client=NAME             → full rate card for that client (with fallback)
 //   GET ?client=DEFAULT          → just the default rates
-//   GET ?action=catalog          → service catalog (53 entries from fr_service_catalog VIEW)
+//   GET ?action=catalog          → service catalog (from fr_service_catalog)
 //   GET ?action=list-clients     → all clients with custom rates (for admin UI)
+//
+// Pick & Pack weight tiers:
+//   FUL_PP1 is a single service_code whose object is enriched with a `tiers`
+//   block so the whole ecosystem stays consistent without breaking callers
+//   that still read only `rate`. Tiers (by total billable order weight in lb):
+//     Small      <= 1.50 lb  → pick_pack_sm  (DEFAULT 3.00)
+//     Standard   1.51–3.00   → pick_pack_st  (DEFAULT 4.00)
+//     Oversized  > 3.00 lb   → pick_pack_ov  (DEFAULT 5.00)
+//     Additional item        → pick_pack_add (DEFAULT 0.50, also FUL_PPN)
+//   FUL_PP1.rate == Small tier (back-compat). Billing Generator must read
+//   FUL_PP1.tiers and classify each order by weight via classifyPickPackTier().
 //
 // Response shape (single client):
 //   {
@@ -24,6 +35,7 @@
 //     is_default: false,
 //     rates: {
 //       "INB_CARTON": { code, name, unit, rate, category, source: "client"|"default" },
+//       "FUL_PP1":    { code, name, unit, rate, category, source, tiers: {...} },
 //       ...
 //     },
 //     policy: { shipping_markup: 10.0, mmb: null, billing_source: "ss_store" },
@@ -40,9 +52,44 @@ const sbHeaders = {
   "Content-Type":  "application/json"
 };
 
+// ─── Pick & Pack weight-tier configuration ──────────────────────────────────
+// Canonical thresholds (lb) and the fr_client_rates columns each tier reads.
+// Kept here as the single source so the API, billing generator, quote builder,
+// and public calculator all agree.
+const PP_TIER = {
+  columns:    { small: "pick_pack_sm", standard: "pick_pack_st",
+                oversized: "pick_pack_ov", additional: "pick_pack_add" },
+  fallback:   { small: 3.00, standard: 4.00, oversized: 5.00, additional: 0.50 },
+  thresholds: { small_max: 1.50, standard_max: 3.00 }  // inclusive upper bounds
+};
+
+// Classify an order's billable weight (lb) into a Pick & Pack tier + rate.
+// Exported so billing-generator can import the SAME logic instead of
+// re-implementing the thresholds. `tiers` is the object found at
+// rates.FUL_PP1.tiers; if omitted, canonical fallbacks are used.
+export function classifyPickPackTier(weightLb, tiers) {
+  const t = tiers || {
+    small:      PP_TIER.fallback.small,
+    standard:   PP_TIER.fallback.standard,
+    oversized:  PP_TIER.fallback.oversized,
+    thresholds: PP_TIER.thresholds
+  };
+  const th = t.thresholds || PP_TIER.thresholds;
+  const w  = Number(weightLb);
+  // Null / 0 / invalid weight → safest tier (Small) so missing data never overcharges.
+  if (!Number.isFinite(w) || w <= 0)   return { tier: "small",     rate: t.small };
+  if (w <= th.small_max)               return { tier: "small",     rate: t.small };
+  if (w <= th.standard_max)            return { tier: "standard",  rate: t.standard };
+  return { tier: "oversized", rate: t.oversized };
+}
+
 // ─── service_code ↔ fr_client_rates column name mapping ─────────────────────
 // Single source of truth for which service maps to which column.
 // Add new rows here when fr_client_rates gets new columns.
+//
+// NOTE: FUL_PP1 maps to pick_pack_sm (the Small/base tier) so the generic
+// resolver yields the correct base `rate`. The full tier block is attached
+// afterward in buildRateCard() from the PP_TIER columns.
 const RATE_COLUMN_MAP = {
   // Inbound
   "INB_CARTON":    "inbound_carton",
@@ -76,7 +123,7 @@ const RATE_COLUMN_MAP = {
   "QC_PHOTO":      "qc_photo",
   "QC_SAMPLE":     "sku_intake",
   // Fulfillment
-  "FUL_PP1":       "pick_pack",
+  "FUL_PP1":       "pick_pack_sm",     // base = Small tier; tiers block added in buildRateCard
   "FUL_PPN":       "pick_pack_add",
   "FUL_OUT_CART":  "outbound_carton",
   "FUL_OUT_PAL":   "outbound_pallet",
@@ -173,6 +220,33 @@ async function fetchClientsWithRates() {
   return res.json();
 }
 
+// ─── Rate resolver: client row > DEFAULT row > catalog fallback ─────────────
+function resolveColumn(colName, clientRow, defaultRow, catalogDefault) {
+  if (clientRow && clientRow[colName] != null) {
+    return { rate: Number(clientRow[colName]), source: "client" };
+  }
+  if (defaultRow[colName] != null) {
+    return { rate: Number(defaultRow[colName]), source: "default" };
+  }
+  return { rate: Number(catalogDefault) || 0, source: "catalog" };
+}
+
+// Build the Pick & Pack tiers block for a client using the same resolver.
+// Each tier resolves independently so a per-client override on any single
+// tier (via fr_client_rates) is respected; missing values fall back to DEFAULT
+// then to the canonical fallback.
+function buildPickPackTiers(clientRow, defaultRow) {
+  const pick = (col, fb) =>
+    resolveColumn(col, clientRow, defaultRow, fb).rate;
+  return {
+    small:      pick(PP_TIER.columns.small,      PP_TIER.fallback.small),
+    standard:   pick(PP_TIER.columns.standard,   PP_TIER.fallback.standard),
+    oversized:  pick(PP_TIER.columns.oversized,  PP_TIER.fallback.oversized),
+    additional: pick(PP_TIER.columns.additional, PP_TIER.fallback.additional),
+    thresholds: { ...PP_TIER.thresholds }
+  };
+}
+
 // ─── Build full rate card for a client ──────────────────────────────────────
 async function buildRateCard(clientName) {
   const isDefault = clientName === "DEFAULT";
@@ -207,20 +281,8 @@ async function buildRateCard(clientName) {
       continue;
     }
 
-    // Look up the rate: client row > default row > catalog default_rate
-    let rate = null;
-    let source = "default";
-
-    if (clientRow && clientRow[colName] != null) {
-      rate = Number(clientRow[colName]);
-      source = "client";
-    } else if (defaultRow[colName] != null) {
-      rate = Number(defaultRow[colName]);
-      source = "default";
-    } else {
-      rate = Number(svc.default_rate) || 0;
-      source = "catalog";
-    }
+    const { rate, source } =
+      resolveColumn(colName, clientRow, defaultRow, svc.default_rate);
 
     rates[svc.service_code] = {
       code:     svc.service_code,
@@ -230,6 +292,14 @@ async function buildRateCard(clientName) {
       category: svc.category,
       source
     };
+  }
+
+  // Enrich Pick & Pack with its weight tiers. FUL_PP1.rate already equals the
+  // Small tier (mapped to pick_pack_sm), so adding the block is non-breaking:
+  // callers that read only `rate` keep working; tier-aware callers (Billing
+  // Generator) read `tiers` and classify per order via classifyPickPackTier().
+  if (rates.FUL_PP1) {
+    rates.FUL_PP1.tiers = buildPickPackTiers(clientRow, defaultRow);
   }
 
   // Policy fields from fr_clients (or empty defaults)
