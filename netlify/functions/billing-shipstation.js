@@ -3,10 +3,18 @@
 // Mode 2 (cf1):   get ALL recent orders, filter by advancedOptions.customField1 client-side,
 //                 then cross-reference with period shipments by orderId
 //
-// NEW (Sprint 1 — billed_orders):
+// billed_orders (Sprint 1):
 // When client_id is provided, queries billed_orders table and excludes order_ids
 // already invoiced. Also returns orderIds array so the frontend can pass them
 // back to billing-mark-invoiced for tracking.
+//
+// Pick & Pack weight tiers (2026-06-17):
+// Each unbilled shipment is classified by total billable weight (normalized to
+// pounds) into Small / Standard / Oversized. The function returns the per-tier
+// order counts (ppSmall, ppStandard, ppOversized) so billing-generator can bill
+// Pick & Pack at the correct tier rate. Thresholds mirror billing-rates
+// FUL_PP1.tiers.thresholds (small_max 1.50 lb, standard_max 3.00 lb). Weight
+// missing / 0 → Small (never overcharge on missing data).
 //
 // WHY client-side filter on orders (not shipments):
 // - ShipStation /orders?customField1= API filter does NOT work
@@ -16,6 +24,47 @@
 const SS = 'https://ssapi.shipstation.com';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+
+// ─── Pick & Pack weight tier thresholds (pounds) ────────────────────────────
+// Keep in sync with billing-rates.js PP_TIER.thresholds.
+const PP_THRESHOLDS = { small_max: 1.50, standard_max: 3.00 };
+
+// Normalize a ShipStation weight object { value, units } to pounds.
+// ShipStation units are one of: 'pounds', 'ounces', 'grams'. Anything missing
+// or unparseable returns 0 (→ classified as Small downstream).
+function weightToLb(weight) {
+  if (!weight || weight.value == null) return 0;
+  const v = Number(weight.value);
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  switch (String(weight.units || '').toLowerCase()) {
+    case 'ounces': return v / 16;
+    case 'grams':  return v / 453.59237;
+    case 'pounds':
+    default:       return v;   // assume pounds if unit absent
+  }
+}
+
+// Classify a shipment's weight (lb) into a P&P tier key.
+function ppTierOf(weightLb) {
+  const w = Number(weightLb);
+  if (!Number.isFinite(w) || w <= 0)   return 'small';
+  if (w <= PP_THRESHOLDS.small_max)    return 'small';
+  if (w <= PP_THRESHOLDS.standard_max) return 'standard';
+  return 'oversized';
+}
+
+// Given a list of shipments, return per-tier order counts.
+function tallyTiers(shipments) {
+  const t = { ppSmall: 0, ppStandard: 0, ppOversized: 0 };
+  for (const s of shipments) {
+    const lb = weightToLb(s.weight);
+    const tier = ppTierOf(lb);
+    if (tier === 'small')          t.ppSmall++;
+    else if (tier === 'standard')  t.ppStandard++;
+    else                           t.ppOversized++;
+  }
+  return t;
+}
 
 async function ssGet(url, auth) {
   const r = await fetch(url, { headers: auth });
@@ -35,7 +84,7 @@ async function fetchAllPages(url, auth) {
   return out;
 }
 
-// NEW: Fetch billed order_ids for a client from Supabase
+// Fetch billed order_ids for a client from Supabase.
 // Returns Set<string> of order_ids already in billed_orders for this client.
 // Fails gracefully (returns empty Set) if Supabase unreachable — never blocks billing.
 async function getBilledOrderIds(clientId) {
@@ -76,7 +125,7 @@ exports.handler = async (event) => {
   const end      = (p.end   || '').trim();
   const store    = (p.store || '').trim();
   const cf1      = (p.cf1   || '').trim();
-  const clientId = (p.client_id || '').trim();  // NEW
+  const clientId = (p.client_id || '').trim();
 
   if (!start || !end)      return { statusCode: 400, headers: h, body: JSON.stringify({ error: 'start and end required' }) };
   if (!store && !cf1)      return { statusCode: 400, headers: h, body: JSON.stringify({ error: 'store or cf1 required' }) };
@@ -86,7 +135,7 @@ exports.handler = async (event) => {
     const [allShipments, storeList, billedSet] = await Promise.all([
       fetchAllPages(`${SS}/shipments?shipDateStart=${start}&shipDateEnd=${end}`, auth),
       ssGet(`${SS}/stores?showInactive=false`, auth).catch(() => []),
-      getBilledOrderIds(clientId),  // NEW
+      getBilledOrderIds(clientId),
     ]);
 
     // Build storeId → storeName map
@@ -109,6 +158,7 @@ exports.handler = async (event) => {
       const allMatched = enriched.filter(s => s._store === pat);
       const unbilled   = allMatched.filter(s => !billedSet.has(String(s.orderId)));
       const billed     = allMatched.filter(s =>  billedSet.has(String(s.orderId)));
+      const tiers      = tallyTiers(unbilled);
 
       return {
         statusCode: 200,
@@ -121,12 +171,18 @@ exports.handler = async (event) => {
           carrierCost:  round(unbilled.reduce((s, x) => s + (x.shipmentCost || 0), 0)),
           storeMatched: allMatched.length > 0,
           storeNames:   allStoreNames,
-          // NEW: order IDs for billed_orders tracking
+          // Pick & Pack weight-tier order counts
+          ppSmall:      tiers.ppSmall,
+          ppStandard:   tiers.ppStandard,
+          ppOversized:  tiers.ppOversized,
+          // order IDs for billed_orders tracking (now include tier + weight)
           orderIds: unbilled.map(s => ({
             order_id:     String(s.orderId),
             carrier_cost: round(s.shipmentCost || 0),
+            weight_lb:    round(weightToLb(s.weight)),
+            pp_tier:      ppTierOf(weightToLb(s.weight)),
           })),
-          // NEW: informative billed counter
+          // informative billed counter
           billed: {
             count:       billed.length,
             carrierCost: round(billed.reduce((s, x) => s + (x.shipmentCost || 0), 0)),
@@ -154,6 +210,9 @@ exports.handler = async (event) => {
           carrierCost: 0,
           totalCount:  enriched.length,
           storeNames:  allStoreNames,
+          ppSmall:     0,
+          ppStandard:  0,
+          ppOversized: 0,
           orderIds:    [],
           billed:      { count: 0, carrierCost: 0 },
           note:        `No shipped orders found with Custom Field 1 = "${cf1}". Tag orders in ShipStation.`,
@@ -165,6 +224,7 @@ exports.handler = async (event) => {
     const matchedShipments  = enriched.filter(s => orderIdSet.has(s.orderId));
     const unbilledShipments = matchedShipments.filter(s => !billedSet.has(String(s.orderId)));
     const billedShipments   = matchedShipments.filter(s =>  billedSet.has(String(s.orderId)));
+    const tiers             = tallyTiers(unbilledShipments);
 
     return {
       statusCode: 200,
@@ -177,12 +237,16 @@ exports.handler = async (event) => {
         totalCount:   enriched.length,
         carrierCost:  round(unbilledShipments.reduce((sum, s) => sum + (s.shipmentCost || 0), 0)),
         storeNames:   allStoreNames,
-        // NEW
+        // Pick & Pack weight-tier order counts
+        ppSmall:      tiers.ppSmall,
+        ppStandard:   tiers.ppStandard,
+        ppOversized:  tiers.ppOversized,
         orderIds: unbilledShipments.map(s => ({
           order_id:     String(s.orderId),
           carrier_cost: round(s.shipmentCost || 0),
+          weight_lb:    round(weightToLb(s.weight)),
+          pp_tier:      ppTierOf(weightToLb(s.weight)),
         })),
-        // NEW
         billed: {
           count:       billedShipments.length,
           carrierCost: round(billedShipments.reduce((s, x) => s + (x.shipmentCost || 0), 0)),
