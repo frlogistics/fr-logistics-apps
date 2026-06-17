@@ -622,6 +622,19 @@ function mapApiRatesToLegacy(apiRates) {
       out[lineKey] = parseFloat(entry.rate);
     }
   }
+  // Pick & Pack weight tiers from FUL_PP1.tiers (single source of truth).
+  // Stored as separate keys so the 3 tier rows can each read their own rate.
+  const pp = apiRates.FUL_PP1;
+  if (pp && pp.tiers && pp.tiers.small != null) {
+    out.pick_pack_sm = parseFloat(pp.tiers.small);
+    out.pick_pack_st = parseFloat(pp.tiers.standard);
+    out.pick_pack_ov = parseFloat(pp.tiers.oversized);
+  } else {
+    // Fallback: old API without tiers → use flat pick_pack for all three.
+    out.pick_pack_sm = out.pick_pack || 0;
+    out.pick_pack_st = out.pick_pack || 0;
+    out.pick_pack_ov = out.pick_pack || 0;
+  }
   return out;
 }
 
@@ -649,7 +662,9 @@ function getBillingLines(client) {
     {cat:'Storage', id:'storage_lt',   name:'Long-Term Storage (180+ days)', sku:'STO_LT',   unit:'racks/mo', rate:r.storage_lt||0,   qty:0, auto:false, tip:'Inventory >180 days without movement', optional:true},
 
     // ─── FULFILLMENT ────────────────────────────────────────────────────────
-    {cat:'Fulfillment', id:'pick_pack',     name:'Pick & Pack — 1st Item',     sku:'FUL_PP1', unit:'orders', rate:r.pick_pack||0,     qty:0, auto:true,  tip:'Auto from ShipStation shipped orders'},
+    {cat:'Fulfillment', id:'pick_pack_sm',  name:'Pick & Pack — Small (≤1.5 lb)',     sku:'FUL_PP1', unit:'orders', rate:r.pick_pack_sm||0, qty:0, auto:true,  tip:'Auto from ShipStation — orders ≤1.5 lb', optional:true},
+    {cat:'Fulfillment', id:'pick_pack_st',  name:'Pick & Pack — Standard (1.5–3 lb)', sku:'FUL_PP1', unit:'orders', rate:r.pick_pack_st||0, qty:0, auto:true,  tip:'Auto from ShipStation — orders 1.5–3 lb', optional:true},
+    {cat:'Fulfillment', id:'pick_pack_ov',  name:'Pick & Pack — Oversized (>3 lb)',   sku:'FUL_PP1', unit:'orders', rate:r.pick_pack_ov||0, qty:0, auto:true,  tip:'Auto from ShipStation — orders >3 lb', optional:true},
     {cat:'Fulfillment', id:'pick_pack_add', name:'Pick & Pack — Additional',   sku:'FUL_PPN', unit:'items',  rate:r.pick_pack_add||0, qty:0, auto:false, tip:'2nd+ item per order', optional:true},
     {cat:'Fulfillment', id:'boxing',        name:'Boxing / Collating Units',   sku:'PRP_BOXING', unit:'units', rate:r.boxing||0,     qty:0, auto:false, tip:'Enter total units boxed/collated'},
     {cat:'Fulfillment', id:'sorting',       name:'Sorting (per unit)',         sku:'PRP_SORT_UNIT', unit:'units', rate:r.sorting||0,  qty:0, auto:false, tip:'Fine sorting per unit', optional:true},
@@ -736,6 +751,9 @@ async function loadBilling() {
   const bsrc = (_client.billingSource || _client.billing_source || '').toLowerCase().trim();
 
   let ordersCount   = 0;
+  let ppSmall       = 0;
+  let ppStandard    = 0;
+  let ppOversized   = 0;
   let inboundCount  = 0;
   let rmaCount      = 0;
   let dropCount     = 0;
@@ -756,6 +774,9 @@ async function loadBilling() {
 
       if (d.storeMatched) {
         ordersCount  = d.count || 0;
+        ppSmall      = d.ppSmall || 0;
+        ppStandard   = d.ppStandard || 0;
+        ppOversized  = d.ppOversized || 0;
         carrierCost  = d.carrierCost || 0;
         _capturedSSOrders = (d.orderIds || []).map(o => ({...o, source: 'shipstation_pp'}));
         const billedExtra = (d.billed && d.billed.count > 0)
@@ -779,6 +800,9 @@ async function loadBilling() {
       if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
 
       ordersCount = d.count || 0;
+      ppSmall     = d.ppSmall || 0;
+      ppStandard  = d.ppStandard || 0;
+      ppOversized = d.ppOversized || 0;
       carrierCost = d.carrierCost || 0;
       _capturedSSOrders = (d.orderIds || []).map(o => ({...o, source: 'shipstation_cf1'}));
 
@@ -921,7 +945,9 @@ async function loadBilling() {
   };
 
   _lines.forEach(l => {
-    if (l.id === 'pick_pack')          l.qty = ordersCount;
+    if (l.id === 'pick_pack_sm')       { l.qty = ppSmall;     l.auto = true; }
+    if (l.id === 'pick_pack_st')       { l.qty = ppStandard;  l.auto = true; }
+    if (l.id === 'pick_pack_ov')       { l.qty = ppOversized; l.auto = true; }
     if (l.id === 'inbound_carton')     l.qty = inboundCount;
     if (l.id === 'return_proc')        l.qty = rmaCount;
     if (l.id === 'drop_shipment')      l.qty = dropCount;
@@ -1288,6 +1314,11 @@ function genCSV() {
     'STO_LT':           'Storage & Warehousing:Long-Term Storage Fees',
     // Fulfillment
     'FUL_PP1':          'Fulfillment Service:Fulfillment Process (Pick & Pack)',
+    // Pick & Pack weight tiers — mapped by row id (sku is shared FUL_PP1).
+    // Resolver below prefers QBO_NAMES[l.id] so each tier hits its own QBO item.
+    'pick_pack_sm':     'Fulfillment Service:Fulfillment Pick & Pack — Small',
+    'pick_pack_st':     'Fulfillment Service:Fulfillment Pick & Pack — Standard',
+    'pick_pack_ov':     'Fulfillment Service:Fulfillment Pick & Pack — Oversized',
     'FUL_PPN':          'Fulfillment Service:Pick & Pack Additional Item',
     'FUL_OUT_CART':     'Storage & Warehousing:Outbound Fees Package',
     'FUL_OUT_PAL':      'Storage & Warehousing:Outbound Fees Pallets',
@@ -1351,7 +1382,7 @@ function genCSV() {
   const activeLines = _lines.filter(l => l.qty > 0);
 
   activeLines.forEach((l, i) => {
-    const serviceName = QBO_NAMES[l.sku] || l.sku || l.name;
+    const serviceName = QBO_NAMES[l.id] || QBO_NAMES[l.sku] || l.sku || l.name;
     const amount      = (l.qty * l.rate).toFixed(2);
     rows.push([
       invNo,                                    // *InvoiceNo
