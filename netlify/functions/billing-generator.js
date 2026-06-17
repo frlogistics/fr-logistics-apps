@@ -1,6 +1,7 @@
 // ════════════════════════════════════════════════════════════════════════════
 // billing-generator.js — FR-Logistics Monthly Invoice Builder
 // REFACTORED 2026-05-07 (Phase 3.1) — Now consumes billing-rates API v2
+// UPDATED   2026-06-17 — Pick & Pack billed by ShipStation weight tier
 //
 // Endpoints:
 //   GET  ?action=preview&client_id=X&period=YYYY-MM   → preview line items
@@ -14,8 +15,14 @@
 //   - service_code values are now CANONICAL (PRP_BOXING vs old BCUIB, etc.)
 //     to match fr_service_catalog VIEW and fr_services_log post-migration
 //   - buildLineItem reads new billing-rates API format: rateCard[code].rate
-//     (was: rateCard[rate_col] — which broke after Phase 2 deploy)
-//   - rate_col field DEPRECATED (kept for reference only — not used in lookups)
+//   - Pick & Pack (FUL_PP1) is now billed in 3 weight tiers (Small/Standard/
+//     Oversized). billing-shipstation returns per-tier order counts
+//     (ppSmall/ppStandard/ppOversized) by classifying each shipment's weight.
+//     Each tier reads its rate from rateCard.FUL_PP1.tiers (single source of
+//     truth from billing-rates). Tiers with 0 orders are auto-hidden (optional).
+//     All three tiers share the canonical service_code FUL_PP1 for billing/
+//     traceability but carry distinct qbo_name values so QBO reports split by
+//     weight. The additional-item rate (FUL_PPN) stays manual.
 // ════════════════════════════════════════════════════════════════════════════
 
 const SUPA_URL = process.env.SUPABASE_URL;
@@ -36,10 +43,10 @@ const HEADERS_RESP = {
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-// SERVICE CATALOG — 53 canonical services
+// SERVICE CATALOG — canonical services
 //
 // `code` matches the canonical service_code in fr_service_catalog VIEW and
-//  fr_services_log entries (post Phase 1.5 migration).
+//  fr_services_log entries.
 // `qbo_name` is what shows up on the QBO invoice line.
 // `source` determines where the quantity comes from:
 //   - 'fixed':         quantity = 1 if rate>0, else 0 (e.g. WMS subscription)
@@ -48,8 +55,10 @@ const HEADERS_RESP = {
 //   - 'services_log':  quantity from fr_services_pending_billing view (manual entries)
 //   - 'manual':        quantity entered by Jose in billing.html UI
 // `auto_qty` only used when source = 'inbound' or 'shipstation'.
+// `ppTier`: when set (small|standard|oversized), buildLineItem pulls the rate
+//           from rateCard.FUL_PP1.tiers[ppTier] instead of rateCard[code].rate.
 // `optional`: line is hidden when qty=0 AND rate=0 (keeps invoice clean).
-// `__shipping_label__` and `__custom__` are special rate sources (not from rate_col).
+// `__shipping_label__` and `__custom__` are special rate sources.
 // ════════════════════════════════════════════════════════════════════════════
 const SERVICE_CATALOG = [
   // ── FIXED MONTHLY ────────────────────────────────────────────────────────
@@ -69,7 +78,13 @@ const SERVICE_CATALOG = [
   { code: 'INB_XDOCK_PAL', qbo_name: 'CD-Inbound-Pal',                             name: 'Cross-Docking (pallet)',              unit: 'pallet',         source: 'manual',      optional: true },
 
   // ── FULFILLMENT / OUTBOUND ────────────────────────────────────────────────
-  { code: 'FUL_PP1',       qbo_name: 'Fulfillment Process (Pick & Pack)',          name: 'Pick & Pack — 1st Item',              unit: 'order',          source: 'shipstation', auto_qty: 'orderCount' },
+  // Pick & Pack — 1st Item, split into 3 weight tiers. All share code FUL_PP1
+  // (canonical) but each pulls its rate from rateCard.FUL_PP1.tiers[ppTier] and
+  // its quantity from the ShipStation per-tier order count. optional:true hides
+  // any tier with 0 orders so the invoice stays clean.
+  { code: 'FUL_PP1', ppTier: 'small',     qbo_name: 'Fulfillment Pick & Pack — Small',     name: 'Pick & Pack — Small (≤1.5 lb)',      unit: 'order', source: 'shipstation', auto_qty: 'ppSmall',     optional: true },
+  { code: 'FUL_PP1', ppTier: 'standard',  qbo_name: 'Fulfillment Pick & Pack — Standard',  name: 'Pick & Pack — Standard (1.5–3 lb)',  unit: 'order', source: 'shipstation', auto_qty: 'ppStandard',  optional: true },
+  { code: 'FUL_PP1', ppTier: 'oversized', qbo_name: 'Fulfillment Pick & Pack — Oversized', name: 'Pick & Pack — Oversized (>3 lb)',    unit: 'order', source: 'shipstation', auto_qty: 'ppOversized', optional: true },
   { code: 'FUL_PPN',       qbo_name: 'Pick & Pack Additional Item',                name: 'Pick & Pack — Additional Item',       unit: 'item',           source: 'manual',      optional: true },
   { code: 'FUL_LABEL_MARKUP', qbo_name: 'Shipping Label Fee',                      name: 'Shipping Label Fee (cost + markup)',  unit: 'period',         source: 'shipstation', auto_qty: 'shippingLabel', specialRate: '__shipping_label__' },
   { code: 'FUL_OUT_CART',  qbo_name: 'Outbound Fees Package',                      name: 'Outbound Fees — Package',             unit: 'pkg',            source: 'inbound',     auto_qty: 'outboundCount' },
@@ -172,6 +187,10 @@ async function getPreview(params, event) {
     orderCount:            ssData.count || 0,
     carrierCost:           ssData.carrierCost || 0,
     shippingLabel:         (ssData.carrierCost || 0) > 0 ? 1 : 0,
+    // Pick & Pack weight-tier counts (default 0 when ShipStation skipped/portal)
+    ppSmall:               ssData.ppSmall || 0,
+    ppStandard:            ssData.ppStandard || 0,
+    ppOversized:           ssData.ppOversized || 0,
     count:                 inbData.count || 0,
     rmaCount:              inbData.rmaCount || 0,
     inboundDropshipCount:  inbData.inboundDropshipCount || 0,
@@ -227,10 +246,10 @@ async function getPreview(params, event) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// buildLineItem — REFACTORED for billing-rates API v2
+// buildLineItem — reads billing-rates API v2
 //
-// Old format:  rateCard.qc            → 45.00
-// New format:  rateCard.QC_HOUR.rate  → 45.00 (also: name, unit, category, source)
+// Standard:    rateCard.QC_HOUR.rate            → 45.00
+// Pick & Pack: rateCard.FUL_PP1.tiers[ppTier]   → 3.00 / 4.00 / 5.00 by weight
 // ────────────────────────────────────────────────────────────────────────────
 function buildLineItem(svc, rateCard, sources, servicesByCode, client) {
   let rate = 0;
@@ -241,6 +260,17 @@ function buildLineItem(svc, rateCard, sources, servicesByCode, client) {
     rate = round2(sources.carrierCost * (1 + pct / 100));
   } else if (svc.specialRate === '__custom__') {
     rate = 0;  // user enters in billing.html UI
+  } else if (svc.ppTier) {
+    // Pick & Pack weight tier: read from rateCard.FUL_PP1.tiers[tier].
+    // Falls back to the flat FUL_PP1.rate, then 0, if tiers are unavailable
+    // (e.g. API not yet redeployed) — never crashes the preview.
+    const entry = rateCard.FUL_PP1;
+    const tiers = entry && entry.tiers ? entry.tiers : null;
+    if (tiers && tiers[svc.ppTier] != null) {
+      rate = parseFloat(tiers[svc.ppTier]);
+    } else {
+      rate = entry && entry.rate != null ? parseFloat(entry.rate) : 0;
+    }
   } else {
     // Read rate from billing-rates API v2 response: rateCard[code].rate
     const entry = rateCard[svc.code];
@@ -267,7 +297,12 @@ function buildLineItem(svc, rateCard, sources, servicesByCode, client) {
       hasMovement = quantity > 0;
     } else {
       quantity = sources[svc.auto_qty] || 0;
-      detail = quantity > 0 ? `${quantity} ${svc.unit}s shipped (store)` : '';
+      // Tier lines describe the weight band; others keep the generic wording.
+      if (svc.ppTier) {
+        detail = quantity > 0 ? `${quantity} orders @ ${svc.ppTier} weight tier` : '';
+      } else {
+        detail = quantity > 0 ? `${quantity} ${svc.unit}s shipped (store)` : '';
+      }
       hasMovement = quantity > 0;
     }
   }
@@ -301,6 +336,7 @@ function buildLineItem(svc, rateCard, sources, servicesByCode, client) {
     has_movement:  hasMovement,
     is_fixed:      !!svc.fixed,
     optional:      !!svc.optional,
+    pp_tier:       svc.ppTier || null,
   };
 }
 
@@ -500,7 +536,7 @@ async function callBillingRates(baseUrl, clientName) {
 }
 
 async function callShipStation(baseUrl, client, from, to) {
-  const empty = { mode: 'skipped', count: 0, carrierCost: 0, storeMatched: false, storeNames: [] };
+  const empty = { mode: 'skipped', count: 0, carrierCost: 0, storeMatched: false, storeNames: [], ppSmall: 0, ppStandard: 0, ppOversized: 0 };
   const billingSource = (client.billing_source || '').toLowerCase().trim();
   if (billingSource === 'portal') return { ...empty, mode: 'portal' };
   if (billingSource === 'ss_store') {
