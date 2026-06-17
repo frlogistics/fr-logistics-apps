@@ -834,10 +834,24 @@ function buildCatalog(apiRates){
     .map(t => {
       const apiEntry = apiRates[t.code];
       if(!apiEntry || apiEntry.rate == null) return null;
-      return {
+      const built = {
         ...t,
         rate: parseFloat(apiEntry.rate)
       };
+      // FUL_PP1 carries weight tiers — attach them so the row can render a
+      // tier selector. Base rate starts at Small (matches apiEntry.rate).
+      if(t.code === 'FUL_PP1' && apiEntry.tiers){
+        const tr = apiEntry.tiers;
+        if(tr.small != null && tr.standard != null && tr.oversized != null){
+          built.tiers = {
+            small:     parseFloat(tr.small),
+            standard:  parseFloat(tr.standard),
+            oversized: parseFloat(tr.oversized)
+          };
+          built.rate = built.tiers.small;  // default to Small tier
+        }
+      }
+      return built;
     })
     .filter(Boolean);
   _ratesLoaded = true;
@@ -874,6 +888,11 @@ function renderSvcs(){
         </div>
         <div class="scfg">
           <div class="f"><label>Description</label><input id="desc_${s.id}" value="${s.desc}" oninput="saveDraft()"/></div>
+          ${s.tiers?`<div class="f"><label>Weight Tier</label><select id="tier_${s.id}" onchange="onTierChange('${s.id}')">
+            <option value="small">Small ≤1.5 lb — ${fmt(s.tiers.small)}</option>
+            <option value="standard">Standard 1.5–3 lb — ${fmt(s.tiers.standard)}</option>
+            <option value="oversized">Oversized &gt;3 lb — ${fmt(s.tiers.oversized)}</option>
+          </select></div>`:''}
           <div class="f"><label>Qty</label><input id="qty_${s.id}" type="number" min="0" step="0.01" value="${q}" onchange="syncSummary();saveDraft()"/></div>
           <div class="f"><label>Rate $</label><input id="rate_${s.id}" type="number" min="0" step="0.01" value="${s.rate}" onchange="syncSummary();saveDraft()"/></div>
         </div>
@@ -888,6 +907,18 @@ function renderSvcs(){
 function onChk(id){
   const c=$(`chk_${id}`),k=$(`card_${id}`);
   if(k)k.classList.toggle('chk',c.checked);
+  syncSummary(); saveDraft();
+}
+
+// Weight-tier selector handler — writes the chosen tier's rate into rate_${id}.
+// Reads tiers from the SVCS entry (loaded from billing-rates FUL_PP1.tiers).
+function onTierChange(id){
+  const svc = SVCS.find(s=>s.id===id);
+  const sel = $(`tier_${id}`);
+  const rateEl = $(`rate_${id}`);
+  if(!svc || !svc.tiers || !sel || !rateEl) return;
+  const r = svc.tiers[sel.value];
+  if(r != null) rateEl.value = r;
   syncSummary(); saveDraft();
 }
 
