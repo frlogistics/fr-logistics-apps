@@ -1,22 +1,19 @@
 // netlify/functions/portal-returns.js
 // FR-Logistics Client Portal — Tracking tab, "Returns" section
 //
-// Returns the last 30 days of RETURN LABELS for the client linked to
-// ?portal_user=<email>.  These are INBOUND shipments (end customer ->
-// FR-Logistics warehouse) created by the "Create Return Label" module in
-// Inbound_Outbound.html and stored in Supabase table `return_labels`.
+// Two modes, decided by ?portal_user=:
 //
-// SECURITY — COST IS NEVER EXPOSED TO THE CLIENT:
-//   The SELECT below enumerates ONLY client-safe columns. The internal
-//   billing fields — carrier_cost, billed_at, invoice_id, label_url —
-//   are deliberately NOT selected, so they never leave Postgres and never
-//   travel over the network to the client's browser. This is server-side
-//   redaction, not CSS hiding: the cost is physically absent from the JSON.
+//   CLIENT MODE (any portal_user matching fr_clients.portal_user):
+//     Returns the last 30 days of that client's own return labels.
+//     SAFE COLUMNS ONLY — carrier_cost / billed_at / invoice_id / label_url
+//     are NEVER selected, so cost physically never reaches the client.
 //
-// Client resolution:
-//   `return_labels.client_id` is the SAME uuid as `fr_clients.id`, which is
-//   exactly the clientId that portal-tracking.js already resolves from
-//   portal_user. We filter returns by that uuid — no fragile text matching.
+//   ADMIN MODE (portal_user === ADMIN_EMAIL, i.e. warehouse@):
+//     Returns the last 30 days of ALL clients' return labels, WITH cost
+//     and client name, for internal warehouse review. No client filter.
+//
+// `return_labels.client_id` === `fr_clients.id`. Client mode filters by
+// that uuid (resolved from portal_user). Admin mode skips the filter.
 
 const ALLOWED_ORIGINS = [
   'https://fr-logistics.net',
@@ -29,9 +26,15 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 const WINDOW_DAYS = 30;
 
+// Internal operator. Sees ALL returns WITH cost.
+const ADMIN_EMAIL = 'warehouse@fr-logistics.net';
+
 // Client-safe columns ONLY. Do NOT add carrier_cost / billed_at /
 // invoice_id / label_url here — those are internal billing fields.
-const SAFE_COLUMNS = 'created_at,status,carrier,service,tracking,ship_from_json';
+const CLIENT_COLUMNS = 'created_at,status,carrier,service,tracking,ship_from_json';
+
+// Admin view additionally exposes client + carrier_cost.
+const ADMIN_COLUMNS  = 'created_at,status,carrier,service,tracking,ship_from_json,client,carrier_cost';
 
 function corsHeaders(origin) {
   const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
@@ -56,7 +59,6 @@ async function sbFetch(path) {
   });
 }
 
-// Map a ShipStation/UPS service code to a friendly carrier+service label.
 function prettyCarrier(carrier, service) {
   const c = (carrier || '').toUpperCase();
   const svc = (service || '')
@@ -65,7 +67,6 @@ function prettyCarrier(carrier, service) {
   return svc ? `${c} ${svc}` : c;
 }
 
-// Normalize the stored status into a small, client-friendly set.
 function prettyStatus(status) {
   const s = (status || '').toLowerCase();
   if (s === 'in_transit') return 'In Transit';
@@ -88,26 +89,34 @@ export const handler = async (event) => {
       return resp(400, { ok: false, error: 'missing portal_user' }, origin);
     }
 
-    // 1) Resolve the client by portal_user -> fr_clients.id
-    const clientRes = await sbFetch(
-      `fr_clients?portal_user=eq.${encodeURIComponent(portalUser)}&select=id,company&limit=1`
-    );
-    const clientRows = await clientRes.json();
-    if (!Array.isArray(clientRows) || clientRows.length === 0) {
-      return resp(200, { ok: true, mode: 'no_client', returns: [] }, origin);
-    }
-    const clientId = clientRows[0].id;
+    const isAdmin = portalUser.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    const since = new Date(Date.now() - WINDOW_DAYS * 86400 * 1000).toISOString();
 
-    // 2) Pull last-30-days returns for that client_id — SAFE COLUMNS ONLY.
-    const since = new Date(Date.now() - WINDOW_DAYS * 86400 * 1000)
-      .toISOString();
-    const retRes = await sbFetch(
-      `return_labels?client_id=eq.${clientId}` +
+    let url;
+    if (isAdmin) {
+      // ADMIN: all clients, last 30 days, WITH cost.
+      url =
+        `return_labels?created_at=gte.${since}` +
+        `&select=${ADMIN_COLUMNS}` +
+        `&order=created_at.desc`;
+    } else {
+      // CLIENT: resolve client_id, filter by it, SAFE columns only.
+      const clientRes = await sbFetch(
+        `fr_clients?portal_user=eq.${encodeURIComponent(portalUser)}&select=id&limit=1`
+      );
+      const clientRows = await clientRes.json();
+      if (!Array.isArray(clientRows) || clientRows.length === 0) {
+        return resp(200, { ok: true, mode: 'no_client', isAdmin: false, returns: [] }, origin);
+      }
+      const clientId = clientRows[0].id;
+      url =
+        `return_labels?client_id=eq.${clientId}` +
         `&created_at=gte.${since}` +
-        `&select=${SAFE_COLUMNS}` +
-        `&order=created_at.desc`
-    );
+        `&select=${CLIENT_COLUMNS}` +
+        `&order=created_at.desc`;
+    }
 
+    const retRes = await sbFetch(url);
     if (!retRes.ok) {
       const txt = await retRes.text();
       return resp(502, { ok: false, error: 'supabase_error', detail: txt }, origin);
@@ -115,11 +124,10 @@ export const handler = async (event) => {
 
     const rows = await retRes.json();
 
-    // 3) Shape each row for the UI. carrier_cost is not present here at all.
     const returns = (Array.isArray(rows) ? rows : []).map((r) => {
       const from = r.ship_from_json || {};
       const cityState = [from.city, from.state].filter(Boolean).join(', ');
-      return {
+      const base = {
         date: r.created_at ? r.created_at.slice(0, 10) : '',
         recipient: from.name || '—',
         origin: cityState || '—',
@@ -127,10 +135,31 @@ export const handler = async (event) => {
         tracking: r.tracking || '',
         status: prettyStatus(r.status),
       };
+      if (isAdmin) {
+        base.client = r.client || '—';
+        const cost = parseFloat(r.carrier_cost);
+        base.cost = Number.isFinite(cost) ? cost : null;
+      }
+      return base;
     });
 
-    return resp(200, { ok: true, mode: 'ok', count: returns.length, returns }, origin);
+    const out = {
+      ok: true,
+      mode: 'ok',
+      isAdmin,
+      count: returns.length,
+      returns,
+    };
+
+    if (isAdmin) {
+      out.total_cost = returns.reduce(
+        (sum, r) => sum + (typeof r.cost === 'number' ? r.cost : 0),
+        0
+      );
+    }
+
+    return resp(200, out, origin);
   } catch (err) {
-    return resp(500, { ok: false, error: String(err && err.message || err) }, origin);
+    return resp(500, { ok: false, error: String((err && err.message) || err) }, origin);
   }
 };
