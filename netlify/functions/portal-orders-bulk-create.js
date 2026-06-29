@@ -11,6 +11,22 @@
 // (no template re-typing for the client) and keeps a single canonical
 // shape across the system.
 //
+// CSV defaults per client (added June 2026):
+//   fr_clients.csv_defaults is a JSONB of agreed fixed values keyed by
+//   ShipStation header name. We apply them to EVERY row right after mapping
+//   and BEFORE validation, so:
+//     (a) the client can't accidentally clear "Shipping Service" or
+//         "Notes to the Buyer" by leaving them blank — they get the
+//         contract values regardless;
+//     (b) for fields that DO persist in client_orders (Shipping Service,
+//         Notes to the Buyer), the agreed value lands in the DB and flows
+//         to the ShipStation export.
+//   Fields that DON'T persist in client_orders (Custom Field 1, Order
+//   Source) are still listed in csv_defaults — they are injected at export
+//   time by portal-warehouse-orders.js. We leave them in the row here so
+//   the validation summary the client sees stays consistent with the
+//   template.
+//
 // Body: { portal_user: "email", rows: [ { "Order #": "...", "Recipient Full Name": "...", ... } ] }
 //
 // Rows with the same "Order #" are merged into a single order with
@@ -47,6 +63,13 @@ const HEADER_MAP = {
   'Item Quantity': 'item_quantity',
   'Item Unit Price': 'item_unit_price',
 };
+
+// Headers from csv_defaults that map to fields we actually persist in
+// client_orders. The OTHERS in csv_defaults (Custom Field 1, Order Source)
+// are intentionally NOT in HEADER_MAP — they're injected at export time by
+// portal-warehouse-orders.js. We track them here so we know which keys are
+// safe to push into the mapped row before validation.
+const PERSISTED_DEFAULT_HEADERS = ['Shipping Service', 'Notes to the Buyer'];
 
 // Required ShipStation headers — what we surface in error messages so the
 // client recognises the column names from their own export.
@@ -118,6 +141,29 @@ function mapRow(rawRow) {
   }
   if (out.country_code !== undefined) out.country_code = normaliseCountry(out.country_code);
   return out;
+}
+
+// Force the agreed per-client defaults onto a mapped row. Runs AFTER mapRow,
+// BEFORE validateRow. Overrides whatever the client put in the CSV — that's
+// the whole point: "fixed values" means fixed, not "suggested". Returns the
+// same row (mutated) for caller convenience.
+//
+// csvDefaults is the raw fr_clients.csv_defaults JSONB; its keys are
+// ShipStation headers. We only act on the keys whose internal DB column we
+// actually persist (PERSISTED_DEFAULT_HEADERS). Custom Field 1 / Order
+// Source are no-ops here on purpose — they live in csv_defaults so the
+// frontend template can pre-fill them and so the warehouse export can read
+// them at export time, but they never land in client_orders.
+function applyDefaults(mappedRow, csvDefaults) {
+  if (!csvDefaults || typeof csvDefaults !== 'object') return mappedRow;
+  for (const header of PERSISTED_DEFAULT_HEADERS) {
+    const value = csvDefaults[header];
+    if (value === undefined || value === null || String(value).trim() === '') continue;
+    const dbCol = HEADER_MAP[header];
+    if (!dbCol) continue; // defensive — would only happen if PERSISTED_DEFAULT_HEADERS got out of sync
+    mappedRow[dbCol] = String(value);
+  }
+  return mappedRow;
 }
 
 function corsHeaders(origin) {
@@ -252,13 +298,11 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers, body: JSON.stringify({ error: `Too many rows (max ${MAX_ROWS})` }) };
   }
 
-  // Map ShipStation headers → internal field names BEFORE validation.
-  const rows = rawRows.map(mapRow);
-
   try {
-    // 1. Resolve client by portal_user.
+    // 1. Resolve client by portal_user — include csv_defaults so we can apply
+    //    them to every row before validation. Single round trip.
     const clientRes = await sbFetch(
-      `fr_clients?portal_user=eq.${encodeURIComponent(portalUser)}&select=id,name`
+      `fr_clients?portal_user=eq.${encodeURIComponent(portalUser)}&select=id,name,csv_defaults`
     );
     if (!clientRes.ok) {
       const t = await clientRes.text();
@@ -269,8 +313,15 @@ exports.handler = async (event) => {
       return { statusCode: 404, headers, body: JSON.stringify({ error: 'No client linked to this portal user' }) };
     }
     const client = clients[0];
+    const csvDefaults = client.csv_defaults || {};
 
-    // 2. Validate every row. Build valid list + row_errors list.
+    // 2. Map ShipStation headers → internal field names, then force the
+    //    per-client defaults. Order matters: map first so the defaults land
+    //    on the internal column names, then defaults overwrite whatever the
+    //    client may have typed for those fields.
+    const rows = rawRows.map((rawRow) => applyDefaults(mapRow(rawRow), csvDefaults));
+
+    // 3. Validate every row. Build valid list + row_errors list.
     const validRows = [];
     const rowErrors = [];
     rows.forEach((row, i) => {
@@ -279,7 +330,7 @@ exports.handler = async (event) => {
       else validRows.push({ row, row_index: i + 1 });
     });
 
-    // 3. Check for duplicate order_numbers across THIS client (existing in DB).
+    // 4. Check for duplicate order_numbers across THIS client (existing in DB).
     if (validRows.length > 0) {
       const numbersInBatch = Array.from(new Set(validRows.map((r) => String(r.row.order_number).trim())));
       const numList = numbersInBatch.map((n) => `"${n.replace(/"/g, '\\"')}"`).join(',');
@@ -322,10 +373,10 @@ exports.handler = async (event) => {
       };
     }
 
-    // 4. Group valid rows into orders by order_number.
+    // 5. Group valid rows into orders by order_number.
     const orders = groupRows(validRows);
 
-    // 5. Insert orders one by one, then items.
+    // 6. Insert orders one by one, then items.
     const created = [];
     const failed = [];
     for (const grp of orders) {
