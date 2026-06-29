@@ -9,6 +9,17 @@
 // Endpoints (single function, ?action= switch):
 //   GET  ?action=list&status=pending      -> orders for the queue
 //   POST ?action=export  body:{order_ids:[...], exported_by:"..."}  -> CSV + mark exported
+//
+// CSV defaults per client (added June 2026):
+//   Two of the four fixed-per-client headers — "Custom Field 1" and
+//   "Order Source" — do NOT persist in client_orders. They are injected
+//   here at export time, read from fr_clients.csv_defaults. This keeps the
+//   client table clean and lets the agreed value follow the client even if
+//   the value changes (e.g. Order Source becomes "Shopify-FRLog" later).
+//   Fallback behaviour preserves the previous defaults so other clients
+//   (without csv_defaults set) keep working exactly as before:
+//     - Custom Field 1 fallback → client name (was already this way)
+//     - Order Source  fallback → 'FR-Logistics' (was hardcoded)
 
 const ALLOWED_ORIGINS = [
   'https://apps.fr-logistics.net',
@@ -71,12 +82,29 @@ function splitName(full) {
   return { first: parts[0], last: parts.slice(1).join(' ') };
 }
 
+// Resolve a single header value from csv_defaults, with a fallback if the
+// client doesn't have csv_defaults configured or doesn't override that key.
+// Trims the value because csv_defaults is hand-typed at onboarding.
+function defaultFor(csvDefaults, header, fallback) {
+  if (csvDefaults && Object.prototype.hasOwnProperty.call(csvDefaults, header)) {
+    const v = csvDefaults[header];
+    if (v !== null && v !== undefined && String(v).trim() !== '') return String(v).trim();
+  }
+  return fallback;
+}
+
 // Build CSV rows for one order. ShipStation expects one row per item;
 // order-level fields repeat on each row, item-level fields differ.
-function orderToRows(order, clientName) {
+function orderToRows(order, clientName, csvDefaults) {
   const items = order.client_order_items || [];
   const { first, last } = splitName(order.recipient_name);
   const orderDate = fmtDate(order.created_at);
+
+  // Two fields that don't live in client_orders are injected here from
+  // csv_defaults. Fallbacks preserve the pre-csv_defaults behaviour for
+  // clients that haven't been onboarded with explicit defaults.
+  const customField1 = defaultFor(csvDefaults, 'Custom Field 1', clientName || '');
+  const orderSource = defaultFor(csvDefaults, 'Order Source', 'FR-Logistics');
 
   // Order-level values keyed by header name. Anything not set -> '' .
   const base = {
@@ -92,10 +120,10 @@ function orderToRows(order, clientName) {
     'Length(in)': '',
     'Width(in)': '',
     'Weight(oz)': '',
-    'Custom Field 1': clientName || '',
+    'Custom Field 1': customField1,
     'Custom Field 2': '',
     'Custom Field 3': '',
-    'Order Source': 'FR-Logistics',
+    'Order Source': orderSource,
     'Notes to the Buyer': order.notes_to_buyer || '',
     'Notes from the Buyer': '',
     'Internal Notes': order.internal_notes || '',
@@ -218,15 +246,21 @@ exports.handler = async (event) => {
     }
 
     try {
-      // Resolve client names.
-      const clientsRes = await sbFetch('fr_clients?select=id,name');
+      // Resolve client names AND csv_defaults — same single round trip as
+      // before, just selecting one extra column. Anywhere we need the
+      // client's agreed fixed values we read csvDefaultsById[id].
+      const clientsRes = await sbFetch('fr_clients?select=id,name,csv_defaults');
       if (!clientsRes.ok) {
         const t = await clientsRes.text();
         return { statusCode: 502, headers, body: JSON.stringify({ error: 'Clients lookup failed', detail: t }) };
       }
       const clients = await clientsRes.json();
       const clientById = {};
-      clients.forEach((c) => { clientById[c.id] = c.name; });
+      const csvDefaultsById = {};
+      clients.forEach((c) => {
+        clientById[c.id] = c.name;
+        csvDefaultsById[c.id] = c.csv_defaults || {};
+      });
 
       // Fetch the selected orders with items. Only 'pending' orders are exportable.
       const idList = orderIds.map((id) => `"${id}"`).join(',');
@@ -260,7 +294,7 @@ exports.handler = async (event) => {
       // Build CSV.
       const lines = [CSV_HEADERS.map(csvCell).join(',')];
       exportable.forEach((o) => {
-        const rows = orderToRows(o, clientById[o.client_id]);
+        const rows = orderToRows(o, clientById[o.client_id], csvDefaultsById[o.client_id]);
         rows.forEach((r) => lines.push(r));
       });
       const csv = lines.join('\r\n');
