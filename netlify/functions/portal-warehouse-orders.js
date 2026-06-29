@@ -100,11 +100,20 @@ function orderToRows(order, clientName, csvDefaults) {
   const { first, last } = splitName(order.recipient_name);
   const orderDate = fmtDate(order.created_at);
 
-  // Two fields that don't live in client_orders are injected here from
+  // Fields that don't live in client_orders are injected here from
   // csv_defaults. Fallbacks preserve the pre-csv_defaults behaviour for
   // clients that haven't been onboarded with explicit defaults.
+  //   - Custom Field 1 / Order Source: ShipStation routing/billing tags.
+  //   - Buyer Email: required so ShipStation can email the tracking link
+  //     to the end customer. Since FR-Logistics runs ONE shared ShipStation
+  //     account across 7 clients, the "Also send to" BCC there is set to
+  //     warehouse@fr-logistics.net (global). The per-client recipient HAS
+  //     to ride on the order row itself, not on the account. No fallback
+  //     value — if a client hasn't agreed on a Buyer Email at onboarding,
+  //     better to leave it blank than to leak someone else's email.
   const customField1 = defaultFor(csvDefaults, 'Custom Field 1', clientName || '');
   const orderSource = defaultFor(csvDefaults, 'Order Source', 'FR-Logistics');
+  const buyerEmail = defaultFor(csvDefaults, 'Buyer Email', '');
 
   // Order-level values keyed by header name. Anything not set -> '' .
   const base = {
@@ -132,7 +141,7 @@ function orderToRows(order, clientName, csvDefaults) {
     'Buyer Full Name': '',
     'Buyer First Name': '',
     'Buyer Last Name': '',
-    'Buyer Email': '',
+    'Buyer Email': buyerEmail,
     'Buyer Phone': '',
     'Buyer Username': '',
     'Recipient Full Name': order.recipient_name || '',
