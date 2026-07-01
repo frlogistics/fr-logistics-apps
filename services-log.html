@@ -421,9 +421,51 @@ async function loadCatalog() {
   const data = await r.json();
   if (!Array.isArray(data)) throw new Error('Failed to load catalog');
   CATALOG = data;
-  const opts = '<option value="">— Select service —</option>' +
-    CATALOG.map(s => `<option value="${s.service_code}">${escapeHTML(s.service_name)}</option>`).join('');
-  document.getElementById('f-service').innerHTML = opts;
+  document.getElementById('f-service').innerHTML = buildServiceOptions(CATALOG);
+}
+
+// Build a grouped <optgroup> dropdown: category → (optional subcategory) → services.
+// Services are ordered by the catalog's sort_order (already applied server-side).
+function buildServiceOptions(catalog) {
+  let html = '<option value="">— Select service —</option>';
+
+  // Group by category, preserving first-seen order (which follows sort_order)
+  const catOrder = [];
+  const byCat = {};
+  catalog.forEach(s => {
+    const cat = s.category || 'Other';
+    if (!byCat[cat]) { byCat[cat] = []; catOrder.push(cat); }
+    byCat[cat].push(s);
+  });
+
+  catOrder.forEach(cat => {
+    const items = byCat[cat];
+
+    // Split items with a subcategory from those without
+    const noSub = items.filter(s => !s.subcategory);
+    const subMap = {};
+    const subOrder = [];
+    items.filter(s => s.subcategory).forEach(s => {
+      if (!subMap[s.subcategory]) { subMap[s.subcategory] = []; subOrder.push(s.subcategory); }
+      subMap[s.subcategory].push(s);
+    });
+
+    // Top-level category optgroup holds items with no subcategory
+    if (noSub.length) {
+      html += `<optgroup label="${escapeAttr(cat)}">` +
+        noSub.map(s => `<option value="${s.service_code}">${escapeHTML(s.service_name)}</option>`).join('') +
+        `</optgroup>`;
+    }
+
+    // Each subcategory becomes its own optgroup, labelled "Category › Subcategory"
+    subOrder.forEach(sub => {
+      html += `<optgroup label="${escapeAttr(cat + ' › ' + sub)}">` +
+        subMap[sub].map(s => `<option value="${s.service_code}">${escapeHTML(s.service_name)}</option>`).join('') +
+        `</optgroup>`;
+    });
+  });
+
+  return html;
 }
 
 async function loadEntries() {
