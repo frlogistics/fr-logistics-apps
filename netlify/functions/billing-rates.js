@@ -36,6 +36,15 @@
 //   SQL migration 20260703_casillero_rates.sql) and matching rows in the
 //   fr_service_catalog VIEW rebuild.
 //
+// 2026-07-03 v2 — Casillero Model D pricing refined: DS_CONSOL is now a flat
+//   $6 per outbound order (applies to single-pkg and consolidated shipments
+//   alike, display renamed to "Casillero Outbound Order"), plus new
+//   DS_ADDITIONAL_PKG ($1.50) charged per additional package beyond the 1st
+//   in the same order. Rewards consolidation on the per-package cost curve
+//   while respecting the original $6 flat commitment made in the June quote.
+//   REQUIRES 20260703_casillero_additional_pkg.sql (adds ds_additional_pkg
+//   column) and the v2 fr_service_catalog VIEW rebuild.
+//
 // Response shape (single client):
 //   {
 //     client_name: "Milano Brands LLC",
@@ -163,6 +172,7 @@ const RATE_COLUMN_MAP = {
   "DS_INTAKE":     "ds_intake",
   "DS_STORAGE":    "ds_storage",
   "DS_CONSOL":     "ds_consol",
+  "DS_ADDITIONAL_PKG": "ds_additional_pkg",
   "DS_PHOTO":      "ds_photo",
   "DS_REPACK_XL":  "ds_repack_xl",
   "DS_RTS":        "ds_rts",
