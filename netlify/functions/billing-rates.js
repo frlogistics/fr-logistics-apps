@@ -29,6 +29,13 @@
 //   FUL_PP1.rate == Small tier (back-compat). Billing Generator must read
 //   FUL_PP1.tiers and classify each order by weight via classifyPickPackTier().
 //
+// 2026-07-03 — Added 8 Dropshipments — Casillero mappings (DS_INTAKE,
+//   DS_STORAGE, DS_CONSOL, DS_PHOTO, DS_REPACK_XL, DS_RTS, DS_DISPOSAL) +
+//   TEC_PORTAL_PREM for the casillero client portal fee (Eugenio Piñeiro
+//   launch). REQUIRES matching columns in fr_client_rates (see companion
+//   SQL migration 20260703_casillero_rates.sql) and matching rows in the
+//   fr_service_catalog VIEW rebuild.
+//
 // Response shape (single client):
 //   {
 //     client_name: "Milano Brands LLC",
@@ -147,10 +154,19 @@ const RATE_COLUMN_MAP = {
   "B2B_RETAIL":    "retail_dist",
   // Technology
   "TEC_WMS":       "wms",
+  "TEC_PORTAL_PREM": "tec_portal_prem",   // 2026-07-03 casillero client portal fee
   "TEC_INTEG":     "marketplace",
   "TEC_SETUP":     "setup_fee",
   "TEC_AMZ_PLAN":  "amz_shipment_plan",
   // TEC_CUSTOM has no column — manual billing only
+  // Dropshipments — Casillero (2026-07-03, Eugenio Piñeiro launch)
+  "DS_INTAKE":     "ds_intake",
+  "DS_STORAGE":    "ds_storage",
+  "DS_CONSOL":     "ds_consol",
+  "DS_PHOTO":      "ds_photo",
+  "DS_REPACK_XL":  "ds_repack_xl",
+  "DS_RTS":        "ds_rts",
+  "DS_DISPOSAL":   "ds_disposal",
   // Special
   "SPC_SKU_SUR":   "sku_surcharge"
   // SPC_SHOE, SPC_GARMENT, SPC_HAZMAT live in fr_clients.rate_overrides JSONB
