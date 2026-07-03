@@ -528,6 +528,16 @@
 //   REQUIRES matching rates in fr_client_rates DEFAULT (or billing-rates.js
 //   column mapping updated) — services without a rate get filtered out by
 //   buildCatalog() and never render in the UI. See loadRates → buildCatalog.
+//
+// 2026-07-03 v2 — Casillero Model D pricing refined:
+//   • DS_CONSOL renamed to "Casillero Outbound Order (flat)" — clarifies it's
+//     a flat per-order fee (applies to single-package and consolidated alike)
+//   • NEW DS_ADDITIONAL_PKG @ $1.50 — charged per package beyond the 1st in
+//     the same outbound order, covers extra gather + master pack labor
+//   • DS_INTAKE description refined to specify "arrival proof photo (exterior
+//     label)" — distinguishes it from DS_PHOTO which is on-demand content photo
+//   Pricing curve: 1-pkg=$8.50, 3-pkg=$16.50 ($5.50/pkg), 10-pkg=$44.50
+//   ($4.45/pkg). Rewards consolidation without breaking $6 flat commitment.
 // ════════════════════════════════════════════════════════════════════════════
 
 const SK='fr_q_v4';  // bumped from v3 to invalidate old localStorage drafts
@@ -606,9 +616,10 @@ const SVCS_TEMPLATE = [
   // Import consolidation model (US inbound → LATAM outbound via client's own
   // FedEx account). First launch client: Eugenio Piñeiro (EP). See
   // dropship_end_clients + dropship_consolidations tables for the data model.
-  {id:'DS_INTAKE',    code:'DS_INTAKE',    name:'Dropshipment Intake',           cat:'Dropshipments — Casillero', unit:'per package',         src:null, dq:0, desc:'Scan, photo, tag to Suite ID, rack location on inbound receipt'},
+  {id:'DS_INTAKE',    code:'DS_INTAKE',    name:'Dropshipment Intake',           cat:'Dropshipments — Casillero', unit:'per package',         src:null, dq:0, desc:'Receive, scan tracking, arrival proof photo (exterior label), tag to Suite ID, rack assignment'},
   {id:'DS_STORAGE',   code:'DS_STORAGE',   name:'Dropshipment Storage',          cat:'Dropshipments — Casillero', unit:'per package / week',  src:null, dq:0, desc:'First 21 days free from receipt — beyond grace, per package per week', note:'21-day grace applies before storage fees'},
-  {id:'DS_CONSOL',    code:'DS_CONSOL',    name:'Dropshipment Consolidation',    cat:'Dropshipments — Casillero', unit:'per outbound order',  src:null, dq:0, desc:'Gather packages, master pack, apply master label, integrate to outbound manifest'},
+  {id:'DS_CONSOL',    code:'DS_CONSOL',    name:'Casillero Outbound Order (flat)', cat:'Dropshipments — Casillero',unit:'per outbound order',  src:null, dq:0, desc:'Flat fee per outbound order — includes master label application, manifest integration, FedEx handoff. Applies to single-package or consolidated shipments.'},
+  {id:'DS_ADDITIONAL_PKG',code:'DS_ADDITIONAL_PKG',name:'Additional Package in Order',cat:'Dropshipments — Casillero',unit:'per additional pkg',src:null, dq:0, desc:'Each package beyond the 1st in the same outbound consolidation — covers extra gather and master pack labor'},
   {id:'DS_PHOTO',     code:'DS_PHOTO',     name:'Content Photo & Manifest Detail',cat:'Dropshipments — Casillero',unit:'per outbound order',  src:null, dq:0, desc:'Photo of consolidated content before sealing master box (on-demand)'},
   {id:'DS_REPACK_XL', code:'DS_REPACK_XL', name:'Reinforced Repack / Master Box XL',cat:'Dropshipments — Casillero',unit:'per outbound order',src:null,dq:0, desc:'Reinforced repack or master box XL for fragile or oversized consolidations'},
   {id:'DS_RTS',       code:'DS_RTS',       name:'Return to Sender',              cat:'Dropshipments — Casillero', unit:'per package',         src:null, dq:0, desc:'Return handling flat fee plus actual carrier cost pass-through', note:'Plus actual carrier charges'},
