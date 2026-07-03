@@ -519,6 +519,15 @@
 //   leads in memory, auto-detecting phone (3+ digits) / email (@) / name. No
 //   endpoint change; phone matching uses digit-only normalization to stay aligned
 //   with the wa_leads (+) vs wa_messages (no +) storage difference.
+//
+// 2026-07-03 — Added 8 new services for the "Dropshipments — Casillero" mode
+//   (import consolidation model, first launch client Eugenio Piñeiro / EP):
+//     • DS_INTAKE, DS_STORAGE, DS_CONSOL, DS_PHOTO, DS_REPACK_XL,
+//       DS_RTS, DS_DISPOSAL       — new category "Dropshipments — Casillero"
+//     • TEC_PORTAL_PREM           — new row in existing "Technology" category
+//   REQUIRES matching rates in fr_client_rates DEFAULT (or billing-rates.js
+//   column mapping updated) — services without a rate get filtered out by
+//   buildCatalog() and never render in the UI. See loadRates → buildCatalog.
 // ════════════════════════════════════════════════════════════════════════════
 
 const SK='fr_q_v4';  // bumped from v3 to invalidate old localStorage drafts
@@ -593,6 +602,18 @@ const SVCS_TEMPLATE = [
   {id:'FUL_PICKUP',   code:'FUL_PICKUP',   name:'Carrier Facility Pickup',       cat:'Cross-Docking', unit:'per request',src:null, dq:0, desc:'LTL/FTL carrier pickup coordination'},
   {id:'FUL_LABEL_APP',code:'FUL_LABEL_APP',name:'Shipping Label Application',    cat:'Cross-Docking', unit:'per label',  src:null, dq:0, desc:'Apply pre-printed shipping labels'},
 
+  // ─── DROPSHIPMENTS — CASILLERO ──────────────────────────────────────────
+  // Import consolidation model (US inbound → LATAM outbound via client's own
+  // FedEx account). First launch client: Eugenio Piñeiro (EP). See
+  // dropship_end_clients + dropship_consolidations tables for the data model.
+  {id:'DS_INTAKE',    code:'DS_INTAKE',    name:'Dropshipment Intake',           cat:'Dropshipments — Casillero', unit:'per package',         src:null, dq:0, desc:'Scan, photo, tag to Suite ID, rack location on inbound receipt'},
+  {id:'DS_STORAGE',   code:'DS_STORAGE',   name:'Dropshipment Storage',          cat:'Dropshipments — Casillero', unit:'per package / week',  src:null, dq:0, desc:'First 21 days free from receipt — beyond grace, per package per week', note:'21-day grace applies before storage fees'},
+  {id:'DS_CONSOL',    code:'DS_CONSOL',    name:'Dropshipment Consolidation',    cat:'Dropshipments — Casillero', unit:'per outbound order',  src:null, dq:0, desc:'Gather packages, master pack, apply master label, integrate to outbound manifest'},
+  {id:'DS_PHOTO',     code:'DS_PHOTO',     name:'Content Photo & Manifest Detail',cat:'Dropshipments — Casillero',unit:'per outbound order',  src:null, dq:0, desc:'Photo of consolidated content before sealing master box (on-demand)'},
+  {id:'DS_REPACK_XL', code:'DS_REPACK_XL', name:'Reinforced Repack / Master Box XL',cat:'Dropshipments — Casillero',unit:'per outbound order',src:null,dq:0, desc:'Reinforced repack or master box XL for fragile or oversized consolidations'},
+  {id:'DS_RTS',       code:'DS_RTS',       name:'Return to Sender',              cat:'Dropshipments — Casillero', unit:'per package',         src:null, dq:0, desc:'Return handling flat fee plus actual carrier cost pass-through', note:'Plus actual carrier charges'},
+  {id:'DS_DISPOSAL',  code:'DS_DISPOSAL',  name:'Package Disposal',              cat:'Dropshipments — Casillero', unit:'per package',         src:null, dq:0, desc:'Package disposal when end client abandons or refuses shipment'},
+
   // ─── B2B / WHOLESALE ────────────────────────────────────────────────────
   {id:'B2B_CART',     code:'B2B_CART',     name:'B2B Master Carton Pick',        cat:'B2B / Wholesale', unit:'per carton',   src:null, dq:0, desc:'B2B carton pick for wholesale orders'},
   {id:'B2B_PALLET',   code:'B2B_PALLET',   name:'B2B Pallet Build & Wrap',       cat:'B2B / Wholesale', unit:'per pallet',   src:null, dq:0, desc:'Build, wrap, and label B2B pallet'},
@@ -600,6 +621,7 @@ const SVCS_TEMPLATE = [
 
   // ─── TECHNOLOGY ─────────────────────────────────────────────────────────
   {id:'TEC_WMS',      code:'TEC_WMS',      name:'WMS / Automated Tech Fee',      cat:'Technology', unit:'per month',   src:null, dq:1, desc:'Monthly WMS access fee with ShipStation integration'},
+  {id:'TEC_PORTAL_PREM',code:'TEC_PORTAL_PREM',name:'Client Portal + Premium Tracking',cat:'Technology',unit:'per month',src:null,dq:1,desc:'Dedicated client portal (End Clients, Buckets, Consolidations, Reports) + end-client notification service + multi-language public tracking'},
   {id:'TEC_INTEG',    code:'TEC_INTEG',    name:'Marketplace Integration',       cat:'Technology', unit:'one-time',    src:null, dq:1, desc:'One-time setup of Shopify / Amazon / marketplace integration'},
   {id:'TEC_SETUP',    code:'TEC_SETUP',    name:'Account Setup / Onboarding',    cat:'Technology', unit:'one-time',    src:null, dq:0, desc:'One-time account onboarding and configuration'},
 
