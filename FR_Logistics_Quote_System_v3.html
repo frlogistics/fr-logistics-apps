@@ -538,6 +538,19 @@
 //     label)" — distinguishes it from DS_PHOTO which is on-demand content photo
 //   Pricing curve: 1-pkg=$8.50, 3-pkg=$16.50 ($5.50/pkg), 10-pkg=$44.50
 //   ($4.45/pkg). Rewards consolidation without breaking $6 flat commitment.
+//
+// 2026-07-07 — Pick & Pack tier migration FIX. billing-rates.js migrated the
+//   flat FUL_PP1 (+ single-object `tiers`) to THREE canonical catalog codes:
+//     FUL_PP_SM  ($3.00, ≤1.5 lb) · FUL_PP_STD ($4.00, 1.5–3 lb) · FUL_PP_OVS ($5.00, >3 lb)
+//   The old FUL_PP1 code no longer exists in the API response, so buildCatalog()
+//   was silently DROPPING the entire Pick & Pack row (filter(Boolean) on the
+//   missing apiEntry). This build re-anchors the single P&P row to the three
+//   codes: the template entry now carries `tierCodes` {small,standard,oversized};
+//   buildCatalog reads all three API rates into `tiers`, and the weight-tier
+//   <select> writes the chosen tier's rate into rate_FUL_PP1 as before. The
+//   volume auto-fill (applyVolumeBindings) still binds ORDERS → qty_FUL_PP1.
+//   FUL_PPN (additional item) was likewise remapped to FUL_PP_STD is NOT done —
+//   additional-item logic stays out of the quote (handled at billing time).
 // ════════════════════════════════════════════════════════════════════════════
 
 const SK='fr_q_v4';  // bumped from v3 to invalidate old localStorage drafts
@@ -562,8 +575,12 @@ const SVCS_TEMPLATE = [
   {id:'INB_ECO',      code:'INB_ECO',      name:'EcoPack+ Reception',            cat:'Inbound / Receiving', unit:'per package', src:null, dq:0, desc:'EcoPack+ pickup service for residents', note:'FR-Logistics exclusive'},
 
   // ─── DTC / FBM FULFILLMENT ──────────────────────────────────────────────
-  {id:'FUL_PP1',      code:'FUL_PP1',      name:'Pick & Pack — 1st Item',        cat:'DTC / FBM Fulfillment', unit:'per order', src:'orders', dq:0, auto:true, desc:'Order preparation for the first item (Shopify / Amazon FBM)'},
-  {id:'FUL_PPN',      code:'FUL_PPN',      name:'Additional Item per Order',     cat:'DTC / FBM Fulfillment', unit:'each',      src:null,     dq:0, desc:'Each item beyond the first in same order'},
+  // Pick & Pack: single UI row anchored to the three canonical catalog codes
+  // (FUL_PP_SM / FUL_PP_STD / FUL_PP_OVS). tierCodes tells buildCatalog which
+  // API entries to read into the `tiers` block for the weight-tier selector.
+  // The row keeps id 'FUL_PP1' so qty_FUL_PP1 / rate_FUL_PP1 bindings and the
+  // ORDERS auto-fill stay intact.
+  {id:'FUL_PP1',      code:'FUL_PP_SM',    name:'Pick & Pack (per order)',       cat:'DTC / FBM Fulfillment', unit:'per order', src:'orders', dq:0, auto:true, desc:'Order preparation — first item (Shopify / Amazon FBM). Rate by total order weight tier.', tierCodes:{small:'FUL_PP_SM',standard:'FUL_PP_STD',oversized:'FUL_PP_OVS'}},
   {id:'FUL_RUSH',     code:'FUL_RUSH',     name:'Same-Day Rush Surcharge',       cat:'DTC / FBM Fulfillment', unit:'per order', src:null,     dq:0, desc:'Same-day dispatch for urgent orders', note:'Add-on'},
   {id:'FUL_HEAVY',    code:'FUL_HEAVY',    name:'Heavy Order Surcharge',         cat:'DTC / FBM Fulfillment', unit:'per heavy order', src:null, dq:0, desc:'Surcharge for orders requiring 2-person handling', note:'Items >50 lbs'},
   {id:'FUL_BOX_UP',   code:'FUL_BOX_UP',   name:'Box Upgrade / Double-Boxing',   cat:'DTC / FBM Fulfillment', unit:'per order', src:null,     dq:0, desc:'Premium packaging for high-value items'},
@@ -865,26 +882,31 @@ function showRatesOk(){
 function buildCatalog(apiRates){
   SVCS = SVCS_TEMPLATE
     .map(t => {
-      const apiEntry = apiRates[t.code];
-      if(!apiEntry || apiEntry.rate == null) return null;
-      const built = {
-        ...t,
-        rate: parseFloat(apiEntry.rate)
-      };
-      // FUL_PP1 carries weight tiers — attach them so the row can render a
-      // tier selector. Base rate starts at Small (matches apiEntry.rate).
-      if(t.code === 'FUL_PP1' && apiEntry.tiers){
-        const tr = apiEntry.tiers;
-        if(tr.small != null && tr.standard != null && tr.oversized != null){
+      // ── Pick & Pack: anchored to the three canonical tier codes ──────────
+      // Its `code` (FUL_PP_SM) is the Small-tier API entry; tierCodes points at
+      // all three. Read them into a `tiers` block for the weight-tier selector.
+      if(t.tierCodes){
+        const sm  = apiRates[t.tierCodes.small];
+        const std = apiRates[t.tierCodes.standard];
+        const ovs = apiRates[t.tierCodes.oversized];
+        // Need at least the Small tier to render the row at all.
+        if(!sm || sm.rate == null) return null;
+        const built = { ...t, rate: parseFloat(sm.rate) };
+        if(std && std.rate != null && ovs && ovs.rate != null){
           built.tiers = {
-            small:     parseFloat(tr.small),
-            standard:  parseFloat(tr.standard),
-            oversized: parseFloat(tr.oversized)
+            small:     parseFloat(sm.rate),
+            standard:  parseFloat(std.rate),
+            oversized: parseFloat(ovs.rate)
           };
           built.rate = built.tiers.small;  // default to Small tier
         }
+        return built;
       }
-      return built;
+
+      // ── Standard single-rate services ────────────────────────────────────
+      const apiEntry = apiRates[t.code];
+      if(!apiEntry || apiEntry.rate == null) return null;
+      return { ...t, rate: parseFloat(apiEntry.rate) };
     })
     .filter(Boolean);
   _ratesLoaded = true;
@@ -944,7 +966,7 @@ function onChk(id){
 }
 
 // Weight-tier selector handler — writes the chosen tier's rate into rate_${id}.
-// Reads tiers from the SVCS entry (loaded from billing-rates FUL_PP1.tiers).
+// Reads tiers from the SVCS entry (loaded from billing-rates FUL_PP_SM/STD/OVS).
 function onTierChange(id){
   const svc = SVCS.find(s=>s.id===id);
   const sel = $(`tier_${id}`);
@@ -997,7 +1019,14 @@ function getLines(){
     .map(s=>{
       const qty=+$(`qty_${s.id}`).value||0,rate=+$(`rate_${s.id}`).value||0;
       const desc=$(`desc_${s.id}`).value.trim()||s.desc;
-      return{id:s.id,code:s.code,service:s.name,cat:s.cat,desc,unit:s.unit,qty,rate,total:qty*rate,auto:s.auto?'Yes':'No'};
+      // Resolve the canonical export code for tiered services from the selected tier.
+      let code=s.code;
+      if(s.tiers){
+        const sel=$(`tier_${s.id}`);
+        const tc=s.tierCodes||{};
+        if(sel&&tc[sel.value]) code=tc[sel.value];
+      }
+      return{id:s.id,code,service:s.name,cat:s.cat,desc,unit:s.unit,qty,rate,total:qty*rate,auto:s.auto?'Yes':'No'};
     }).filter(l=>l.qty>0||l.rate>0);
 }
 
@@ -1045,7 +1074,7 @@ function toggleAll(f){
 
 function saveDraft(){
   if(!_ratesLoaded) return;  // don't save during initial load
-  try{localStorage.setItem(SK,JSON.stringify({client:getClient(),sourceLeadId:_sourceLeadId,ss:SVCS.map(s=>({id:s.id,ch:$(`chk_${s.id}`)?.checked||false,q:$(`qty_${s.id}`)?.value||'',r:$(`rate_${s.id}`)?.value||'',d:$(`desc_${s.id}`)?.value||''}))}));}catch(e){}
+  try{localStorage.setItem(SK,JSON.stringify({client:getClient(),sourceLeadId:_sourceLeadId,ss:SVCS.map(s=>({id:s.id,ch:$(`chk_${s.id}`)?.checked||false,q:$(`qty_${s.id}`)?.value||'',r:$(`rate_${s.id}`)?.value||'',d:$(`desc_${s.id}`)?.value||'',t:$(`tier_${s.id}`)?.value||''}))}));}catch(e){}
 }
 
 function loadDraft(){
@@ -1065,8 +1094,9 @@ function loadDraft(){
     }
     if(Array.isArray(dr.ss)){
       dr.ss.forEach(l=>{
-        const ch=$(`chk_${l.id}`),k=$(`card_${l.id}`),q=$(`qty_${l.id}`),r=$(`rate_${l.id}`),d=$(`desc_${l.id}`);
+        const ch=$(`chk_${l.id}`),k=$(`card_${l.id}`),q=$(`qty_${l.id}`),r=$(`rate_${l.id}`),d=$(`desc_${l.id}`),tsel=$(`tier_${l.id}`);
         if(ch){ch.checked=!!l.ch;if(k)k.classList.toggle('chk',!!l.ch);}
+        if(tsel&&l.t){tsel.value=l.t;}   // restore tier before rate so rate wins
         if(q&&l.q!=='')q.value=l.q; if(r&&l.r!=='')r.value=l.r; if(d&&l.d!=='')d.value=l.d;
       });
     }
