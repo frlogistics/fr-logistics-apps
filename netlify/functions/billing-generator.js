@@ -52,8 +52,20 @@ const HEADERS_RESP = {
 //   - 'fixed':         quantity = 1 if rate>0, else 0 (e.g. WMS subscription)
 //   - 'inbound':       quantity from billing-inbound function (warehouse log)
 //   - 'shipstation':   quantity from billing-shipstation function (ShipStation API)
-//   - 'services_log':  quantity from fr_services_pending_billing view (manual entries)
+//   - 'services_log':  quantity from fr_services_pending_billing view (warehouse entries)
 //   - 'manual':        quantity entered by Jose in billing.html UI
+//
+// HYBRID AUTO-FILL (2026-07-13): EVERY 'manual' line now also checks the
+// Services Log first. If the warehouse logged an entry for that service_code in
+// the period (present in fr_services_pending_billing), the line auto-fills its
+// quantity + rate from the log and is flagged from_log:true — while remaining
+// fully editable in billing.html so Jose can override or add to it. If there is
+// no log entry, the line behaves exactly as before (blank, manual entry). This
+// makes pallet/carton/B2B lines like INB_PALLET and FUL_OUT_PAL reflect the
+// Services Log automatically without losing manual-entry capability for clients
+// who don't use the Services Log. No catalog source change required — the
+// fallback is applied uniformly to all manual lines in buildLineItem.
+//
 // `auto_qty` only used when source = 'inbound' or 'shipstation'.
 // `ppTier`: when set (small|standard|oversized), buildLineItem pulls the rate
 //           from rateCard.FUL_PP1.tiers[ppTier] instead of rateCard[code].rate.
@@ -316,12 +328,29 @@ function buildLineItem(svc, rateCard, sources, servicesByCode, client) {
     quantity = sl ? parseFloat(sl.total_quantity) || 0 : 0;
     if (sl) {
       // services_log entries snapshot the rate at log-time — prefer that over current rate
-      if (sl.unit_rate && parseFloat(sl.unit_rate) > 0) rate = parseFloat(sl.unit_rate);
-      detail = `${sl.entry_count || 1} entries logged`;
+      if (sl.avg_unit_rate && parseFloat(sl.avg_unit_rate) > 0) rate = parseFloat(sl.avg_unit_rate);
+      detail = `${sl.entry_count || 1} ${(sl.entry_count || 1) === 1 ? 'entry' : 'entries'} logged`;
     }
     hasMovement = quantity > 0;
   }
-  // 'manual' source: quantity stays 0, Jose enters in billing.html UI
+  // 'manual' source: HYBRID auto-fill. Check the Services Log first — if the
+  // warehouse logged this service_code in the period, auto-fill qty + rate from
+  // the log (from_log:true) while keeping the line editable in billing.html.
+  // If no log entry exists, the line stays blank for manual entry as before.
+
+  let fromLog = false;
+
+  if (svc.source === 'manual') {
+    const sl = servicesByCode[svc.code];
+    if (sl && (parseFloat(sl.total_quantity) || 0) > 0) {
+      quantity = parseFloat(sl.total_quantity) || 0;
+      // Snapshot the rate logged at service-time; fall back to current rate card
+      if (sl.avg_unit_rate && parseFloat(sl.avg_unit_rate) > 0) rate = parseFloat(sl.avg_unit_rate);
+      detail = `${sl.entry_count || 1} ${(sl.entry_count || 1) === 1 ? 'entry' : 'entries'} logged`;
+      hasMovement = true;
+      fromLog = true;
+    }
+  }
 
   return {
     service_code:  svc.code,
@@ -337,6 +366,7 @@ function buildLineItem(svc, rateCard, sources, servicesByCode, client) {
     is_fixed:      !!svc.fixed,
     optional:      !!svc.optional,
     pp_tier:       svc.ppTier || null,
+    from_log:      fromLog,
   };
 }
 
