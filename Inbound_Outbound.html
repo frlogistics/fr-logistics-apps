@@ -167,6 +167,9 @@ td,th{white-space:nowrap}
 
   <!-- ── RETURN LABEL + WAREHOUSE RELEASE · trigger buttons ── -->
   <div style="max-width:1500px;margin:0 auto 12px;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap">
+    <button class="primary" id="openWhLogBtn" style="font-size:13px;background:linear-gradient(135deg,rgba(22,163,181,.14),rgba(15,39,72,.08));border-color:rgba(22,163,181,.40)">
+      🗂 Releases Log
+    </button>
     <button class="primary" id="openWhRelBtn" style="font-size:13px;background:linear-gradient(135deg,rgba(226,59,59,.14),rgba(15,39,72,.08));border-color:rgba(226,59,59,.40)">
       📦 Warehouse Release — Local Pickup
     </button>
@@ -635,6 +638,39 @@ td,th{white-space:nowrap}
       </div>
       <div class="modalBtns tools">
         <button class="primary" id="whLabelPrint">Print 4x6</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<!-- ── WAREHOUSE RELEASES · Log / history ── -->
+<dialog id="whLogDlg">
+  <div class="modal" style="width:min(920px,97vw)">
+    <div class="modalHead">
+      <b>🗂 Warehouse Releases — Log</b>
+      <button id="whLogClose">Close</button>
+    </div>
+    <div class="modalBody">
+      <div style="display:flex;gap:10px;margin-bottom:12px">
+        <input id="whLogSearch" placeholder="Search WHR-id, client, or person…" style="flex:1" />
+        <button class="primary" id="whLogSearchBtn">Search</button>
+        <button id="whLogRefresh">↻ Refresh</button>
+      </div>
+      <div id="whLogStatus" class="hint" style="margin:0 0 8px">Loading…</div>
+      <div style="max-height:60vh;overflow:auto;border:1px solid var(--line);border-radius:10px">
+        <table class="logTable" style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="position:sticky;top:0;background:var(--card);z-index:1">
+              <th style="text-align:left;padding:9px 10px">Release</th>
+              <th style="text-align:left;padding:9px 10px">Date</th>
+              <th style="text-align:left;padding:9px 10px">Client</th>
+              <th style="text-align:left;padding:9px 10px">Cargo</th>
+              <th style="text-align:left;padding:9px 10px">Picked up by</th>
+              <th style="text-align:right;padding:9px 10px">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="whLogBody"></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -1941,6 +1977,7 @@ td,th{white-space:nowrap}
       finalDoc.save(`${releaseId}_POD.pdf`);
 
       // 5) … and open the printable 4x6 label with QR.
+      dlg.close();
       openWhLabel({ releaseId, clientLabel, data, podUrl });
 
       setStatus(`✔ Released ${releaseId}. POD downloaded. 4x6 label ready to print.`,"ok");
@@ -1955,7 +1992,7 @@ td,th{white-space:nowrap}
   };
 
   // ── 4x6 label with QR (uses the app's QRCode lib already loaded) ──
-  function openWhLabel({ releaseId, clientLabel, data, podUrl }){
+  function openWhLabel({ releaseId, clientLabel, data, podUrl, releasedAt }){
     const dlgL=$("whLabelDlg");
     $("WL_release").textContent = releaseId;
     $("WL_client").textContent  = clientLabel || "—";
@@ -1963,8 +2000,9 @@ td,th{white-space:nowrap}
     $("WL_ref").textContent     = data.reference || "—";
     $("WL_pickup").textContent  = data.pickedBy || "—";
     $("WL_company").textContent = data.pickupCompany || "—";
-    $("WL_date").textContent    = new Date().toLocaleDateString("en-US");
-    $("WL_time").textContent    = new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"});
+    const dt = releasedAt ? new Date(releasedAt) : new Date();
+    $("WL_date").textContent    = dt.toLocaleDateString("en-US");
+    $("WL_time").textContent    = dt.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"});
     // QR payload: the POD URL if we have it, else the release id as text.
     const qrText = podUrl || releaseId;
     $("WL_qrhint").textContent = podUrl ? "Scan to open the signed POD" : "Scan for release ID";
@@ -1982,6 +2020,63 @@ td,th{white-space:nowrap}
   });
   $("whRelClose").addEventListener("click",()=>dlg.close());
   window.addEventListener("resize",()=>{ if(dlg.open) fitCanvas(); });
+
+  // ── Releases Log ──
+  const logDlg=$("whLogDlg");
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+  let LOG_ROWS=[];
+
+  async function loadLog(term){
+    const body=$("whLogBody"); const st=$("whLogStatus");
+    st.textContent="Loading…"; body.innerHTML="";
+    try{
+      const url = PROXY + (term ? ("?q="+encodeURIComponent(term)) : "");
+      const r = await fetch(url);
+      if(!r.ok) throw new Error(await r.text());
+      const out = await r.json();
+      LOG_ROWS = out.rows || [];
+      if(!LOG_ROWS.length){ st.textContent = term ? "No releases match your search." : "No releases yet."; return; }
+      st.textContent = LOG_ROWS.length + " release(s)";
+      body.innerHTML = LOG_ROWS.map((row,i)=>{
+        const d = row.released_at ? new Date(row.released_at) : null;
+        const dateStr = d ? d.toLocaleDateString("en-US")+" "+d.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}) : "—";
+        const cargo = esc(row.cargo_type||"—")+" · "+(row.qty_units||1);
+        const pod = row.pod_pdf_url
+          ? `<a href="${esc(row.pod_pdf_url)}" target="_blank" class="del" style="text-decoration:none;font-weight:800">POD</a>`
+          : `<span class="hint">no POD</span>`;
+        return `<tr style="border-top:1px solid var(--line)">
+          <td class="mono" style="padding:8px 10px;font-weight:800">${esc(row.release_id)}</td>
+          <td style="padding:8px 10px;white-space:nowrap">${esc(dateStr)}</td>
+          <td style="padding:8px 10px">${esc(row.client)}</td>
+          <td style="padding:8px 10px;white-space:nowrap">${cargo}</td>
+          <td style="padding:8px 10px">${esc(row.picked_up_by||"—")}</td>
+          <td style="padding:8px 10px;text-align:right;white-space:nowrap">
+            ${pod}
+            <button class="whLogLabel" data-i="${i}" style="margin-left:8px;font-size:12px;font-weight:800;background:none;border:1px solid var(--line);border-radius:7px;padding:4px 9px;cursor:pointer">🏷 Label</button>
+          </td>
+        </tr>`;
+      }).join("");
+      body.querySelectorAll(".whLogLabel").forEach(b=>{
+        b.addEventListener("click",()=>{
+          const row = LOG_ROWS[+b.dataset.i];
+          logDlg.close();
+          openWhLabel({
+            releaseId: row.release_id,
+            clientLabel: row.client,
+            data: { cargoType: row.cargo_type, qty: row.qty_units, reference: row.reference, pickedBy: row.picked_up_by, pickupCompany: row.pickup_company },
+            podUrl: row.pod_pdf_url || null,
+            releasedAt: row.released_at || null
+          });
+        });
+      });
+    }catch(e){ st.textContent="Error: "+(e.message||e); }
+  }
+
+  $("openWhLogBtn").addEventListener("click",()=>{ logDlg.showModal(); loadLog(""); });
+  $("whLogClose").addEventListener("click",()=>logDlg.close());
+  $("whLogRefresh").addEventListener("click",()=>{ $("whLogSearch").value=""; loadLog(""); });
+  $("whLogSearchBtn").addEventListener("click",()=>loadLog($("whLogSearch").value.trim()));
+  $("whLogSearch").addEventListener("keydown",e=>{ if(e.key==="Enter") loadLog($("whLogSearch").value.trim()); });
 })();
 </script>
 </body>
