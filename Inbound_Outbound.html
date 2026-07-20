@@ -165,8 +165,11 @@ td,th{white-space:nowrap}
 
 <div class="wrap">
 
-  <!-- ── RETURN LABEL · trigger button ── -->
-  <div style="max-width:1500px;margin:0 auto 12px;display:flex;justify-content:flex-end">
+  <!-- ── RETURN LABEL + WAREHOUSE RELEASE · trigger buttons ── -->
+  <div style="max-width:1500px;margin:0 auto 12px;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap">
+    <button class="primary" id="openWhRelBtn" style="font-size:13px;background:linear-gradient(135deg,rgba(226,59,59,.14),rgba(15,39,72,.08));border-color:rgba(226,59,59,.40)">
+      📦 Warehouse Release — Local Pickup
+    </button>
     <button class="primary" id="openReturnBtn" style="font-size:13px">
       ↩︎ Create Return Label
     </button>
@@ -504,6 +507,134 @@ td,th{white-space:nowrap}
       </div>
       <div class="modalBtns tools">
         <button class="primary" id="printBtn">Print 4x6</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<!-- ── WAREHOUSE RELEASE (Local Pickup) · modal ── -->
+<dialog id="whRelDlg">
+  <div class="modal" style="width:min(760px,96vw)">
+    <div class="modalHead">
+      <b>📦 Warehouse Release — Local Pickup <span class="pill out" style="margin-left:6px">POD</span></b>
+      <button id="whRelClose">Close</button>
+    </div>
+    <div class="modalBody">
+      <div class="row">
+        <div>
+          <label>Client (Company / Brand)</label>
+          <select id="whClient"></select>
+        </div>
+        <div>
+          <label>Reference / Order / SKU / Description</label>
+          <input id="whReference" placeholder="RMA-2291, PO-4471, 12 boxes apparel…" />
+        </div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div>
+          <label>Cargo Type</label>
+          <select id="whCargoType">
+            <option value="cartons">Cartons</option>
+            <option value="pallets">Pallets</option>
+            <option value="mixed">Mixed</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label>Qty (bultos)</label>
+          <input id="whQty" type="number" min="1" value="1" class="mono" />
+        </div>
+        <div>
+          <label>Weight (lb)</label>
+          <input id="whWeight" type="number" min="0" step="0.1" class="mono" placeholder="opt." />
+        </div>
+      </div>
+      <label>Pallet IDs (optional, comma-separated)</label>
+      <input id="whPalletIds" class="mono" placeholder="FRL-A-0007, FRL-A-0008" />
+
+      <h3>Collected By</h3>
+      <div class="row">
+        <div>
+          <label>Person picking up (name) *</label>
+          <input id="whPickedBy" placeholder="Full name" />
+        </div>
+        <div>
+          <label>Company / Broker (optional)</label>
+          <input id="whPickupCompany" placeholder="3rd-party company" />
+        </div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div>
+          <label>ID / Document #</label>
+          <input id="whIdDoc" placeholder="DL / ID (opt.)" />
+        </div>
+        <div>
+          <label>Vehicle Plate</label>
+          <input id="whPlate" class="mono" placeholder="opt." />
+        </div>
+        <div>
+          <label>Released By (operator)</label>
+          <input id="whOperator" placeholder="Your name" />
+        </div>
+      </div>
+
+      <h3>Cargo Photo (optional)</h3>
+      <div id="whPhotoBox" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <label for="whPhotoInput" style="border:1px dashed var(--line);border-radius:10px;width:72px;height:72px;display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--muted);cursor:pointer">＋</label>
+        <input id="whPhotoInput" type="file" accept="image/*" capture="environment" multiple style="display:none" />
+      </div>
+      <div class="hint">Take a photo of the cargo. Up to 4.</div>
+
+      <h3>Signature <span class="pill out">REQUIRED</span></h3>
+      <div style="border:1px dashed rgba(226,59,59,.45);border-radius:12px;background:#fffafa;padding:8px">
+        <canvas id="whSig" style="width:100%;height:150px;border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+          <span class="hint" style="margin-top:0">Sign above — person collecting the cargo</span>
+          <button type="button" id="whSigClear" class="del">Clear</button>
+        </div>
+      </div>
+
+      <label>Notes</label>
+      <textarea id="whNotes" placeholder="Condition, seals, special instructions…"></textarea>
+
+      <div class="modalBtns">
+        <button class="primary" id="whSaveBtn">Save Release &amp; Generate POD</button>
+        <button id="whPreviewBtn">Preview PDF</button>
+      </div>
+      <div id="whStatus" class="status" style="display:none"></div>
+    </div>
+  </div>
+</dialog>
+
+<!-- ── WAREHOUSE RELEASE · 4x6 label + QR ── -->
+<dialog id="whLabelDlg">
+  <div class="modal">
+    <div class="modalHead">
+      <b>📦 Release Label 4x6 + QR</b>
+      <button id="whLabelClose">Close</button>
+    </div>
+    <div class="modalBody">
+      <div style="display:flex;justify-content:center">
+        <div class="label" id="whLabel">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:16px;font-weight:950;letter-spacing:.5px">FR-LOGISTICS</div>
+            <div style="font-size:12px;font-weight:950;border:1.5px solid #e23b3b;color:#e23b3b;border-radius:6px;padding:2px 8px">LOCAL PICKUP</div>
+          </div>
+          <div class="track mono" id="WL_release" style="font-size:26px">—</div>
+          <div class="meta">
+            <div style="grid-column:1/span 2"><b>Client</b><div class="client" id="WL_client">—</div></div>
+            <div style="grid-column:1/span 2"><b>Cargo</b><span id="WL_cargo">—</span></div>
+            <div style="grid-column:1/span 2"><b>Reference</b><span id="WL_ref">—</span></div>
+            <div><b>Picked up by</b><span id="WL_pickup">—</span></div>
+            <div><b>Company</b><span id="WL_company">—</span></div>
+            <div><b>Date</b><span id="WL_date">—</span></div>
+            <div><b>Time</b><span id="WL_time">—</span></div>
+          </div>
+          <div class="qrWrap"><div><div id="WL_qr"></div><div class="qrHint" id="WL_qrhint">Scan to open the signed POD</div></div></div>
+        </div>
+      </div>
+      <div class="modalBtns tools">
+        <button class="primary" id="whLabelPrint">Print 4x6</button>
       </div>
     </div>
   </div>
@@ -967,6 +1098,10 @@ td,th{white-space:nowrap}
 
   // Expose handlers for the camera scanner module
   window.doLookup = doLookup;
+
+  // Expose client roster + helper for the Warehouse Release module
+  window.getMasterClient = getMasterClient;
+  Object.defineProperty(window, "clientNames", { get: () => clientNames, configurable: true });
 </script>
 
 <!-- ── RETURN LABEL · module script (self-contained) ── -->
@@ -1581,6 +1716,272 @@ td,th{white-space:nowrap}
   } else {
     bindWhenReady();
   }
+})();
+</script>
+
+<!-- ── WAREHOUSE RELEASE (Local Pickup) · module script (self-contained) ── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+(function(){
+  const PROXY = "/.netlify/functions/wh-release-proxy"; // handles insert + storage upload + next-id
+  const $ = id => document.getElementById(id);
+  const dlg = $("whRelDlg");
+  const statusEl = $("whStatus");
+  function setStatus(msg,kind){ statusEl.style.display="block"; statusEl.className="status "+(kind||""); statusEl.textContent=msg; }
+  function clearStatus(){ statusEl.style.display="none"; statusEl.textContent=""; }
+
+  // ── Populate client dropdown from the app's already-loaded roster ──
+  function fillClients(){
+    const sel=$("whClient");
+    // Reuse the main app's clientNames (display names) if present
+    const names = (window.clientNames && window.clientNames.length>1)
+      ? window.clientNames
+      : [""];
+    sel.innerHTML = names.map(n => n
+      ? `<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`
+      : `<option value="">Select client…</option>`).join("");
+  }
+
+  // ── Signature pad ──
+  const canvas=$("whSig"), ctx=canvas.getContext("2d");
+  let drawing=false, hasSig=false, last=null;
+  function fitCanvas(){
+    const r=canvas.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+    if(!r.width) return;
+    canvas.width=r.width*dpr; canvas.height=r.height*dpr;
+    ctx.scale(dpr,dpr); ctx.lineWidth=2.2; ctx.lineCap="round"; ctx.strokeStyle="#0f172a";
+  }
+  function pos(e){ const r=canvas.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:t.clientX-r.left,y:t.clientY-r.top}; }
+  function sStart(e){ drawing=true; last=pos(e); e.preventDefault(); }
+  function sMove(e){ if(!drawing)return; const p=pos(e); ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke(); last=p; hasSig=true; e.preventDefault(); }
+  function sEnd(){ drawing=false; }
+  ["mousedown","touchstart"].forEach(ev=>canvas.addEventListener(ev,sStart,{passive:false}));
+  ["mousemove","touchmove"].forEach(ev=>canvas.addEventListener(ev,sMove,{passive:false}));
+  ["mouseup","mouseleave","touchend"].forEach(ev=>canvas.addEventListener(ev,sEnd));
+  $("whSigClear").onclick=()=>{ ctx.clearRect(0,0,canvas.width,canvas.height); hasSig=false; };
+
+  // ── Photos ──
+  let photos=[];
+  function downscale(file,maxW){
+    return new Promise(res=>{
+      const img=new Image(), rd=new FileReader();
+      rd.onload=()=>{ img.onload=()=>{
+        const scale=Math.min(1,maxW/img.width);
+        const c=document.createElement("canvas"); c.width=img.width*scale; c.height=img.height*scale;
+        c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+        res(c.toDataURL("image/jpeg",0.82));
+      }; img.src=rd.result; };
+      rd.readAsDataURL(file);
+    });
+  }
+  $("whPhotoInput").addEventListener("change", async e=>{
+    const files=[...e.target.files].slice(0,4-photos.length);
+    for(const f of files){
+      const dataUrl=await downscale(f,1400); photos.push({dataUrl});
+      const img=document.createElement("img"); img.src=dataUrl;
+      img.style.cssText="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer";
+      img.title="tap to remove";
+      img.onclick=()=>{ const i=photos.findIndex(p=>p.dataUrl===dataUrl); if(i>-1)photos.splice(i,1); img.remove(); };
+      $("whPhotoBox").insertBefore(img, $("whPhotoBox").querySelector("label"));
+    }
+    e.target.value="";
+  });
+
+  function collect(){
+    return {
+      reference:$("whReference").value.trim(),
+      cargoType:$("whCargoType").value,
+      qty:+$("whQty").value||1,
+      weight:$("whWeight").value?(+$("whWeight").value):null,
+      palletIds:$("whPalletIds").value.trim(),
+      pickedBy:$("whPickedBy").value.trim(),
+      pickupCompany:$("whPickupCompany").value.trim(),
+      idDoc:$("whIdDoc").value.trim(),
+      plate:$("whPlate").value.trim(),
+      operator:$("whOperator").value.trim(),
+      notes:$("whNotes").value.trim()
+    };
+  }
+  function validate(){
+    if(!$("whClient").value) return "Select a client.";
+    if(!$("whPickedBy").value.trim()) return "Enter who is picking up the cargo.";
+    if((+$("whQty").value||0)<1) return "Qty must be at least 1.";
+    if(!hasSig) return "Signature is required to release.";
+    return null;
+  }
+
+  // ── POD PDF builder ──
+  function buildPOD({releaseId,clientLabel,data,sigDataUrl,photoDataUrls}){
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF({unit:"pt",format:"letter"});
+    const W=doc.internal.pageSize.getWidth();
+    const navy=[15,39,72],teal=[22,163,181],red=[226,59,59],ink=[15,23,42],muted=[71,85,105];
+    let y;
+    doc.setFillColor(...navy); doc.rect(0,0,W,90,"F");
+    doc.setFillColor(...teal); doc.roundedRect(40,26,40,40,6,6,"F");
+    doc.setTextColor(255,255,255); doc.setFont("helvetica","bold"); doc.setFontSize(17);
+    doc.text("FR",60,52,{align:"center"});
+    doc.setFontSize(16); doc.text("DELIVERY RECEIPT",96,42);
+    doc.setFont("helvetica","normal"); doc.setFontSize(9.5); doc.setTextColor(159,182,212);
+    doc.text("FR-Logistics · 10893 NW 17th St, Unit 121, Doral, FL 33172",96,58);
+    doc.text("Proof of Delivery — Local Pickup / Warehouse Release",96,72);
+    doc.setTextColor(...red); doc.setFont("helvetica","bold"); doc.setFontSize(12);
+    doc.text(releaseId,W-40,40,{align:"right"});
+    doc.setTextColor(159,182,212); doc.setFont("helvetica","normal"); doc.setFontSize(9);
+    doc.text(new Date().toLocaleString("en-US"),W-40,56,{align:"right"});
+    doc.setFillColor(...red); doc.roundedRect(W-118,64,78,16,8,8,"F");
+    doc.setTextColor(255,255,255); doc.setFont("helvetica","bold"); doc.setFontSize(8);
+    doc.text("LOCAL PICKUP",W-79,75,{align:"center"});
+    y=120;
+    function field(label,val,x,w){
+      doc.setTextColor(...muted); doc.setFont("helvetica","bold"); doc.setFontSize(8);
+      doc.text(label.toUpperCase(),x,y);
+      doc.setTextColor(...ink); doc.setFont("helvetica","normal"); doc.setFontSize(11);
+      doc.text(String(val||"—"),x,y+15,{maxWidth:w});
+    }
+    field("Client",clientLabel,40,250); field("Reference",data.reference,310,260); y+=42;
+    field("Cargo Type",data.cargoType,40,120); field("Quantity (bultos)",data.qty,170,120); field("Weight (lb)",data.weight||"—",310,120); y+=42;
+    if(data.palletIds){ field("Pallet IDs",data.palletIds,40,500); y+=42; }
+    doc.setDrawColor(...teal); doc.setLineWidth(1); doc.line(40,y,W-40,y); y+=24;
+    doc.setTextColor(...teal); doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.text("COLLECTED BY",40,y); y+=8;
+    field("Name",data.pickedBy,40,250); field("Company / Broker",data.pickupCompany,310,250); y+=42;
+    field("ID / Document",data.idDoc,40,120); field("Vehicle Plate",data.plate,170,120); field("Released By",data.operator,310,200); y+=48;
+    if(data.notes){
+      doc.setTextColor(...muted); doc.setFont("helvetica","bold"); doc.setFontSize(8); doc.text("NOTES",40,y);
+      doc.setTextColor(...ink); doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.text(data.notes,40,y+14,{maxWidth:W-80}); y+=44;
+    }
+    doc.setTextColor(...muted); doc.setFont("helvetica","bold"); doc.setFontSize(8);
+    doc.text("SIGNATURE — RECEIVED IN GOOD ORDER",40,y);
+    if(sigDataUrl){ try{ doc.addImage(sigDataUrl,"PNG",40,y+6,220,80); }catch(e){} }
+    doc.setDrawColor(...muted); doc.setLineWidth(.5); doc.line(40,y+90,260,y+90);
+    doc.setFontSize(8); doc.setTextColor(...muted);
+    doc.text(`${data.pickedBy||""}  ·  ${new Date().toLocaleDateString("en-US")}`,40,y+102);
+    if(photoDataUrls&&photoDataUrls[0]){
+      doc.setTextColor(...muted); doc.setFont("helvetica","bold"); doc.setFontSize(8); doc.text("CARGO PHOTO",310,y);
+      try{ doc.addImage(photoDataUrls[0],"JPEG",310,y+6,150,110); }catch(e){}
+    }
+    y+=130;
+    doc.setDrawColor(...navy); doc.setLineWidth(1); doc.line(40,y,W-40,y); y+=16;
+    doc.setTextColor(...muted); doc.setFont("helvetica","normal"); doc.setFontSize(8);
+    doc.text("This document certifies the merchandise described above was released from FR-Logistics (WH01) and",40,y);
+    doc.text("collected on-site by the person signing. No carrier or tracking applies to a local pickup.",40,y+11);
+    const extra=(photoDataUrls||[]).slice(1);
+    if(extra.length){
+      doc.addPage(); let py=54;
+      doc.setTextColor(...navy); doc.setFont("helvetica","bold"); doc.setFontSize(13);
+      doc.text(`${releaseId} — Additional Cargo Photos`,40,py); py+=20;
+      extra.forEach((p,i)=>{ try{ doc.addImage(p,"JPEG",40,py,240,180); }catch(e){} if(i%2===1)py+=192; });
+    }
+    return doc;
+  }
+
+  // ── Preview ──
+  $("whPreviewBtn").onclick=()=>{
+    const err=validate(); if(err){ setStatus(err,"bad"); return; }
+    const data=collect();
+    const doc=buildPOD({ releaseId:"WHR-PREVIEW", clientLabel:$("whClient").value, data,
+      sigDataUrl:hasSig?canvas.toDataURL("image/png"):null, photoDataUrls:photos.map(p=>p.dataUrl) });
+    window.open(doc.output("bloburl"),"_blank");
+  };
+
+  // ── Save ──
+  $("whSaveBtn").onclick=async ()=>{
+    const err=validate(); if(err){ setStatus(err,"bad"); return; }
+    const btn=$("whSaveBtn"); btn.disabled=true;
+    const clientLabel=$("whClient").value;
+    const c = window.getMasterClient ? window.getMasterClient(clientLabel) : null;
+    const data=collect();
+    try{
+      setStatus("Saving release…","");
+      const palletArr = data.palletIds ? data.palletIds.split(",").map(s=>s.trim()).filter(Boolean) : [];
+      const sigDataUrl = canvas.toDataURL("image/png");
+      const photoUrls  = photos.map(p=>p.dataUrl);
+
+      // 1) Create the release — proxy generates WHR id, uploads sig/photos, inserts row.
+      const res = await fetch(PROXY, {
+        method:"POST", headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({
+          client: clientLabel,
+          client_id: c ? c.id : null,
+          reference: data.reference||null,
+          cargo_type: data.cargoType,
+          qty_units: data.qty,
+          pallet_ids: palletArr,
+          weight_lb: data.weight,
+          picked_up_by: data.pickedBy,
+          pickup_company: data.pickupCompany||null,
+          id_document: data.idDoc||null,
+          vehicle_plate: data.plate||null,
+          operator: data.operator||null,
+          notes: data.notes||null,
+          signature_data_url: sigDataUrl,
+          photo_data_urls: photoUrls
+        })
+      });
+      if(!res.ok) throw new Error(await res.text());
+      const out = await res.json();
+      const releaseId = out.release_id || out.releaseId || "WHR";
+
+      // 2) Build the POD PDF now that we have the real WHR id.
+      setStatus("Generating POD…","");
+      const finalDoc = buildPOD({ releaseId, clientLabel, data, sigDataUrl, photoDataUrls:photoUrls });
+
+      // 3) Upload the PDF and get its public URL (so the label QR can point to it).
+      let podUrl = null;
+      try{
+        const pdfDataUrl = finalDoc.output("datauristring");
+        const r2 = await fetch(PROXY, {
+          method:"POST", headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ attach_pod:true, release_id:releaseId, pod_pdf_data_url:pdfDataUrl })
+        });
+        if(r2.ok){ podUrl = (await r2.json()).pod_pdf_url || null; }
+      }catch(e){ /* non-fatal — operator still gets the downloaded PDF */ }
+
+      // 4) Hand the PDF to the operator (download) …
+      finalDoc.save(`${releaseId}_POD.pdf`);
+
+      // 5) … and open the printable 4x6 label with QR.
+      openWhLabel({ releaseId, clientLabel, data, podUrl });
+
+      setStatus(`✔ Released ${releaseId}. POD downloaded. 4x6 label ready to print.`,"ok");
+      setTimeout(()=>{
+        ["whReference","whWeight","whPalletIds","whPickedBy","whPickupCompany","whIdDoc","whPlate","whNotes"].forEach(id=>$(id).value="");
+        $("whQty").value=1; $("whSigClear").click(); photos=[];
+        $("whPhotoBox").querySelectorAll("img").forEach(t=>t.remove());
+      },500);
+    }catch(e){
+      setStatus("Error: "+e.message,"bad");
+    }finally{ btn.disabled=false; }
+  };
+
+  // ── 4x6 label with QR (uses the app's QRCode lib already loaded) ──
+  function openWhLabel({ releaseId, clientLabel, data, podUrl }){
+    const dlgL=$("whLabelDlg");
+    $("WL_release").textContent = releaseId;
+    $("WL_client").textContent  = clientLabel || "—";
+    $("WL_cargo").textContent   = (data.cargoType||"—") + " · " + (data.qty||1) + " bulto(s)";
+    $("WL_ref").textContent     = data.reference || "—";
+    $("WL_pickup").textContent  = data.pickedBy || "—";
+    $("WL_company").textContent = data.pickupCompany || "—";
+    $("WL_date").textContent    = new Date().toLocaleDateString("en-US");
+    $("WL_time").textContent    = new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"});
+    // QR payload: the POD URL if we have it, else the release id as text.
+    const qrText = podUrl || releaseId;
+    $("WL_qrhint").textContent = podUrl ? "Scan to open the signed POD" : "Scan for release ID";
+    const box=$("WL_qr"); box.innerHTML="";
+    new QRCode(box,{ text:qrText, width:150, height:150, correctLevel:QRCode.CorrectLevel.M });
+    dlgL.showModal();
+  }
+  $("whLabelClose").addEventListener("click",()=>$("whLabelDlg").close());
+  $("whLabelPrint").addEventListener("click",()=>window.print());
+
+  // ── Open / close wiring ──
+  $("openWhRelBtn").addEventListener("click",()=>{
+    clearStatus(); fillClients(); dlg.showModal();
+    setTimeout(fitCanvas,60);
+  });
+  $("whRelClose").addEventListener("click",()=>dlg.close());
+  window.addEventListener("resize",()=>{ if(dlg.open) fitCanvas(); });
 })();
 </script>
 </body>
