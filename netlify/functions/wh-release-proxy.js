@@ -59,13 +59,35 @@ exports.handler = async (event) => {
       statusCode: 204,
       headers: {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
       },
     };
   }
-  if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
   if (!SB_URL || !SB_KEY) return json(500, { error: "Server not configured (missing SUPABASE env vars)" });
+
+  // ── GET: list / search releases for the Releases Log ──
+  if (event.httpMethod === "GET") {
+    try {
+      const q = (event.queryStringParameters || {});
+      const term = (q.q || "").trim();
+      const limit = Math.min(parseInt(q.limit || "100", 10) || 100, 300);
+      const cols = "id,release_id,client,reference,cargo_type,qty_units,picked_up_by,pickup_company,vehicle_plate,operator,pod_pdf_url,signature_url,photo_urls,notes,status,released_at";
+      let url = `${SB_URL}/rest/v1/warehouse_releases?select=${cols}&order=released_at.desc&limit=${limit}`;
+      if (term) {
+        // match WHR id, client, or person collecting
+        const enc = encodeURIComponent(`%${term}%`);
+        url += `&or=(release_id.ilike.${enc},client.ilike.${enc},picked_up_by.ilike.${enc})`;
+      }
+      const r = await fetch(url, { headers: H });
+      if (!r.ok) throw new Error(`list ${r.status}: ${await r.text()}`);
+      return json(200, { rows: await r.json() });
+    } catch (e) {
+      return json(500, { error: String(e.message || e) });
+    }
+  }
+
+  if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
 
   let p;
   try { p = JSON.parse(event.body || "{}"); } catch { return json(400, { error: "Bad JSON" }); }
