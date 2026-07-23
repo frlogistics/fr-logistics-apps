@@ -92,10 +92,16 @@
     @media print{
       html,body{margin:0!important;padding:0!important;height:auto!important;overflow:visible!important;background:#fff!important}
       header,.wrap,.modalHead,.modalBtns,.modalBody .hint,.modalBody .tools,footer{display:none!important}
-      dialog{display:block!important;position:static!important;margin:0!important;padding:0!important;overflow:visible!important}
+      /* Only the OPEN dialog prints. Without [open] every <dialog> in the page
+         renders and you get one blank sheet per dialog. */
+      dialog{display:none!important}
+      dialog[open]{display:block!important;position:static!important;margin:0!important;padding:0!important;overflow:visible!important}
       .modal{border:none!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;width:auto!important}
       .modalBody{padding:0!important}
-      .label{width:4in!important;height:6in!important;padding:0.10in!important;border:none!important;border-radius:0!important;overflow:hidden!important}
+      /* Anything inside the open dialog that is not the label must not print */
+      dialog[open] .noprint{display:none!important}
+      .label{width:4in!important;height:6in!important;padding:0.10in!important;border:none!important;border-radius:0!important;overflow:hidden!important;page-break-after:avoid!important;break-after:avoid!important}
+      .label:last-child{page-break-after:auto!important}
     }
     footer{border-top:1px solid var(--line);background:rgba(255,255,255,.72);padding:12px 18px}
     .footRow{max-width:100%;max-width:1500px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -103,13 +109,58 @@
     .welcome b{color:var(--text);font-weight:950}
     .liam{height:46px;width:auto;display:block;border-radius:12px;border:1px solid rgba(15,23,42,.10);background:#fff;padding:6px}
   
-/* ── Mobile Responsive Patch ── */
-@media(max-width:900px){
-body,html{overflow-x:hidden!important}
-.container,.wrapper,.main,.content,.page{width:100%!important;max-width:100%!important;padding-left:8px!important;padding-right:8px!important}
-table{width:100%!important;display:block!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch}
-td,th{white-space:nowrap}
+/* ── Responsive · PC / iPad / iPhone ──────────────────────────────
+   Targets the classes this app actually uses (.grid3, .row, .modal…).
+   The previous patch aimed at .container/.wrapper/.main, which don't
+   exist in this markup, so the 3-column layout never collapsed.        */
+
+/* iPad landscape and small laptops — 3 cols is too tight, go to 2 */
+@media(max-width:1180px){
+  .grid3{grid-template-columns:1fr 1fr!important}
+  /* Queries panel is the widest — let it span the full row */
+  .grid3 > .card:nth-child(3){grid-column:1 / -1}
 }
+
+/* iPad portrait / large phones — single column */
+@media(max-width:820px){
+  html,body{overflow-x:hidden}
+  .grid3{grid-template-columns:1fr!important;gap:12px}
+  .grid3 > .card:nth-child(3){grid-column:auto}
+  .wrap{padding:12px!important}
+  .headRow{flex-wrap:wrap;gap:8px}
+  .headRow .brandTxt h1{font-size:15px}
+  /* Action buttons stack full width instead of overflowing */
+  .wrap > div[style*="justify-content:flex-end"]{justify-content:stretch!important}
+  .wrap > div[style*="justify-content:flex-end"] > button{flex:1 1 100%}
+  /* Pin bar wraps */
+  #pinBar{flex-wrap:wrap!important}
+  #pinBar select{min-width:0!important;flex:1 1 100%}
+  /* Modals use nearly the whole screen */
+  .modal{width:97vw!important;max-height:92vh;overflow:auto}
+  dialog{padding:0!important}
+  /* Two-up form rows become single column */
+  .row{grid-template-columns:1fr!important}
+  .qGrid{grid-template-columns:1fr!important}
+  /* Tables scroll horizontally instead of blowing out the layout */
+  .tableWrap{overflow-x:auto!important;-webkit-overflow-scrolling:touch}
+  .tableWrap table{min-width:640px}
+}
+
+/* iPhone — tighten typography and touch targets */
+@media(max-width:520px){
+  .wrap{padding:9px!important}
+  .card{padding:12px!important}
+  h2{font-size:14px}
+  input,select,textarea,button{font-size:16px!important} /* 16px stops iOS zoom-on-focus */
+  button{min-height:44px}                                 /* comfortable tap target */
+  header .sub{display:none}                               /* drop the tagline */
+  .label{transform:scale(.82);transform-origin:top center} /* label preview fits */
+  .modalBtns{flex-direction:column}
+  .modalBtns > button{width:100%}
+}
+
+/* Never shrink the printed label, whatever the screen did */
+@media print{ .label{transform:none!important} }
 
 /* ── BARCODE SCANNER ── */
 .scan-input-group { position:relative; display:flex; gap:6px; align-items:stretch; }
@@ -240,12 +291,22 @@ td,th{white-space:nowrap}
 
       <label>Notes (optional)</label>
       <textarea id="inNotes" placeholder="Boxes, damages, special instructions..."></textarea>
-      <div class="btns">
+      <!-- ── Photo record (optional) ── -->
+      <label style="margin-top:10px">Photo Record (optional)</label>
+      <div id="inPhotoBox" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <label for="inPhotoInput" title="Add photo"
+               style="border:1px dashed var(--line);border-radius:10px;width:60px;height:60px;display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--muted);cursor:pointer">＋</label>
+        <input id="inPhotoInput" type="file" accept="image/*" capture="environment" multiple style="display:none" />
+      </div>
+      <div class="hint">Document condition/damage on arrival. Up to 4 photos.</div>
+
+      <div class="btns" style="margin-top:10px">
         <button class="primary" id="saveInboundBtn">Save Inbound</button>
         <button id="labelInboundBtn">Label / Print</button>
       </div>
       <div id="inStatus" class="status">Ready.</div>
       <div class="hint">Tag preview: <span class="pill in">INBOUND</span></div>
+      <div style="margin-top:6px"><button id="inEmailBtn" style="font-size:12px;font-weight:800">✉ Email client</button></div>
     </div>
 
     <!-- OUTBOUND -->
@@ -277,6 +338,7 @@ td,th{white-space:nowrap}
       </div>
       <div id="outStatus" class="status">Ready.</div>
       <div class="hint">Tag preview: <span class="pill out">OUTBOUND</span></div>
+      <div style="margin-top:6px"><button id="outEmailBtn" style="font-size:12px;font-weight:800">✉ Email client</button></div>
     </div>
 
     <!-- QUERIES -->
@@ -638,6 +700,7 @@ td,th{white-space:nowrap}
       </div>
       <div class="modalBtns tools">
         <button class="primary" id="whLabelPrint">Print 4x6</button>
+        <button id="whLabelEmail">✉ Email client</button>
       </div>
     </div>
   </div>
@@ -671,6 +734,22 @@ td,th{white-space:nowrap}
           </thead>
           <tbody id="whLogBody"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<!-- ── WAREHOUSE RELEASE · photo viewer ── -->
+<dialog id="whPhotosDlg">
+  <div class="modal" style="width:min(560px,96vw)">
+    <div class="modalHead">
+      <b>📷 <span id="whPhotosTitle">Cargo Photos</span></b>
+      <button id="whPhotosClose">Close</button>
+    </div>
+    <div class="modalBody">
+      <div id="whPhotosBody" style="max-height:70vh;overflow:auto"></div>
+      <div class="modalBtns tools">
+        <button class="primary" id="whPhotosEmail">✉ Email to client</button>
       </div>
     </div>
   </div>
@@ -721,6 +800,9 @@ td,th{white-space:nowrap}
                      : (c.services ? c.services.split(",").map(s=>s.replace(/"/g,'').trim()).filter(Boolean) : []),
         waConsent: c.wa_consent || c.waConsent || "Pending",
         lang:      c.lang || "EN",
+        email:     c.email || "",
+        notifyEmails: Array.isArray(c.ship_notify_emails) ? c.ship_notify_emails
+                      : (c.shipNotifyEmails || []),
         defaultOutboundCarrier: c.default_outbound_carrier || c.defaultOutboundCarrier || "",
       }));
       // Display name preference: storeName → company → name
@@ -1079,8 +1161,28 @@ td,th{white-space:nowrap}
         await addShipment({tracking,direction:"Inbound",createdAt:new Date().toISOString(),carrier:$("inCarrier").value,type:$("inType").value,client:clientDisplay,client_id:clientObj?clientObj.id:null,notes:$("inNotes").value.trim()});
         setLastSaved(tracking);
         setBoxStatus("inStatus","Inbound saved successfully.","ok");
+
+        /* Photo record — upload after the row exists, then attach URLs */
+        let inPhotoUrls = [];
+        if(window.INPhotos && window.INPhotos.count()){
+          setBoxStatus("inStatus","Uploading photos…","");
+          try{
+            inPhotoUrls = await window.INPhotos.upload(tracking);
+            setBoxStatus("inStatus",`Inbound saved with ${inPhotoUrls.length} photo(s).`,"ok");
+          }catch(e){
+            setBoxStatus("inStatus","Saved, but photo upload failed: "+(e.message||e),"bad");
+          }
+        }
+        /* Remember context so "Email client" can build the message */
+        window.LAST_INBOUND = {
+          tracking, clientLabel:clientDisplay, carrier:$("inCarrier").value,
+          type:$("inType").value, notes:$("inNotes").value.trim(),
+          date:new Date().toISOString(), photoUrls:inPhotoUrls
+        };
+
         /* Only clear tracking + notes — Carrier, Type, Client stay as-is */
         $("inTracking").value=""; $("inNotes").value="";
+        if(window.INPhotos) window.INPhotos.clear();
         onInClientChange(); // refresh EcoPack+ badge without resetting client
         await renderTables();
         $("inTracking").focus();
@@ -1103,6 +1205,11 @@ td,th{white-space:nowrap}
         await addShipment({tracking,direction:"Outbound",createdAt:new Date().toISOString(),carrier:$("outCarrier").value,type:$("outType").value,client:$("outClient").value,client_id:outClientObj?outClientObj.id:null,notes:$("outNotes").value.trim()});
         setLastSaved(tracking);
         setBoxStatus("outStatus","Outbound saved successfully.","ok");
+        window.LAST_OUTBOUND = {
+          tracking, clientLabel:$("outClient").value, carrier:$("outCarrier").value,
+          type:$("outType").value, notes:$("outNotes").value.trim(),
+          date:new Date().toISOString()
+        };
         /* Only clear tracking + notes — Carrier, Type, Client stay as-is */
         $("outTracking").value=""; $("outNotes").value="";
         await renderTables(); $("outTracking").focus();
@@ -1978,7 +2085,7 @@ td,th{white-space:nowrap}
 
       // 5) … and open the printable 4x6 label with QR.
       dlg.close();
-      openWhLabel({ releaseId, clientLabel, data, podUrl });
+      openWhLabel({ releaseId, clientLabel, data, podUrl, photoUrls: (out.photo_urls || []) });
 
       setStatus(`✔ Released ${releaseId}. POD downloaded. 4x6 label ready to print.`,"ok");
       setTimeout(()=>{
@@ -1992,7 +2099,7 @@ td,th{white-space:nowrap}
   };
 
   // ── 4x6 label with QR (uses the app's QRCode lib already loaded) ──
-  function openWhLabel({ releaseId, clientLabel, data, podUrl, releasedAt }){
+  function openWhLabel({ releaseId, clientLabel, data, podUrl, releasedAt, photoUrls }){
     const dlgL=$("whLabelDlg");
     $("WL_release").textContent = releaseId;
     $("WL_client").textContent  = clientLabel || "—";
@@ -2008,8 +2115,21 @@ td,th{white-space:nowrap}
     $("WL_qrhint").textContent = podUrl ? "Scan to open the signed POD" : "Scan for release ID";
     const box=$("WL_qr"); box.innerHTML="";
     new QRCode(box,{ text:qrText, width:150, height:150, correctLevel:QRCode.CorrectLevel.M });
+    // Keep context so the label's Email button can build the message
+    WH_LABEL_CTX = { releaseId, clientLabel, data, podUrl, releasedAt: releasedAt||new Date().toISOString(), photoUrls: photoUrls||[] };
     dlgL.showModal();
   }
+  let WH_LABEL_CTX = null;
+  $("whLabelEmail").addEventListener("click",()=>{
+    if(!WH_LABEL_CTX) return;
+    const c = WH_LABEL_CTX;
+    window.FREmail.open({
+      kind:"release", clientLabel:c.clientLabel, releaseId:c.releaseId,
+      reference:c.data.reference, cargoType:c.data.cargoType, qty:c.data.qty,
+      pickedBy:c.data.pickedBy, pickupCompany:c.data.pickupCompany,
+      date:c.releasedAt, podUrl:c.podUrl, photoUrls:c.photoUrls
+    });
+  });
   $("whLabelClose").addEventListener("click",()=>$("whLabelDlg").close());
   $("whLabelPrint").addEventListener("click",()=>window.print());
 
@@ -2053,6 +2173,8 @@ td,th{white-space:nowrap}
           <td style="padding:8px 10px;text-align:right;white-space:nowrap">
             ${pod}
             <button class="whLogLabel" data-i="${i}" style="margin-left:8px;font-size:12px;font-weight:800;background:none;border:1px solid var(--line);border-radius:7px;padding:4px 9px;cursor:pointer">🏷 Label</button>
+            <button class="whLogPhotos" data-i="${i}" ${(row.photo_urls&&row.photo_urls.length)?"":"disabled"} style="margin-left:6px;font-size:12px;font-weight:800;background:none;border:1px solid var(--line);border-radius:7px;padding:4px 9px;cursor:pointer;${(row.photo_urls&&row.photo_urls.length)?"":"opacity:.35;cursor:not-allowed"}">📷 ${(row.photo_urls||[]).length}</button>
+            <button class="whLogEmail" data-i="${i}" style="margin-left:6px;font-size:12px;font-weight:800;background:none;border:1px solid var(--line);border-radius:7px;padding:4px 9px;cursor:pointer">✉ Email</button>
           </td>
         </tr>`;
       }).join("");
@@ -2065,12 +2187,78 @@ td,th{white-space:nowrap}
             clientLabel: row.client,
             data: { cargoType: row.cargo_type, qty: row.qty_units, reference: row.reference, pickedBy: row.picked_up_by, pickupCompany: row.pickup_company },
             podUrl: row.pod_pdf_url || null,
-            releasedAt: row.released_at || null
+            releasedAt: row.released_at || null,
+            photoUrls: row.photo_urls || []
           });
+        });
+      });
+
+      // 📷 Photo viewer — opens the release's cargo photos
+      body.querySelectorAll(".whLogPhotos").forEach(b=>{
+        if(b.disabled) return;
+        b.addEventListener("click",()=>{
+          const row = LOG_ROWS[+b.dataset.i];
+          logDlg.close();
+          openWhPhotos(row);
+        });
+      });
+
+      // ✉ Email — Gmail draft with POD + photo links
+      body.querySelectorAll(".whLogEmail").forEach(b=>{
+        b.addEventListener("click",()=>{
+          const row = LOG_ROWS[+b.dataset.i];
+          const r = window.FREmail.open({
+            kind:"release",
+            clientLabel: row.client,
+            releaseId: row.release_id,
+            reference: row.reference,
+            cargoType: row.cargo_type,
+            qty: row.qty_units,
+            pickedBy: row.picked_up_by,
+            pickupCompany: row.pickup_company,
+            date: row.released_at,
+            podUrl: row.pod_pdf_url,
+            photoUrls: row.photo_urls || []
+          });
+          $("whLogStatus").textContent = r.to
+            ? `Draft opened for ${r.to} (${r.lang})`
+            : "Draft opened — no email on file for this client, add the recipient manually.";
         });
       });
     }catch(e){ st.textContent="Error: "+(e.message||e); }
   }
+
+  // ── Photo viewer ──
+  function openWhPhotos(row){
+    const d=$("whPhotosDlg");
+    $("whPhotosTitle").textContent = row.release_id + " — " + (row.client||"");
+    const urls = row.photo_urls || [];
+    $("whPhotosBody").innerHTML = urls.length
+      ? urls.map((u,i)=>`<a href="${u}" target="_blank" rel="noopener" style="display:block">
+           <img src="${u}" alt="Cargo photo ${i+1}" loading="lazy"
+                style="width:100%;border-radius:10px;border:1px solid var(--line);margin-bottom:10px" />
+         </a>`).join("")
+      : `<div class="hint">No photos for this release.</div>`;
+    // Signature is always present — show it too
+    if(row.signature_url){
+      $("whPhotosBody").innerHTML +=
+        `<div style="margin-top:6px"><b style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Signature</b>
+         <a href="${row.signature_url}" target="_blank" rel="noopener" style="display:block">
+           <img src="${row.signature_url}" alt="Signature"
+                style="width:100%;max-width:280px;background:#fff;border-radius:10px;border:1px solid var(--line);margin-top:6px" />
+         </a></div>`;
+    }
+    $("whPhotosEmail").onclick=()=>{
+      window.FREmail.open({
+        kind:"release", clientLabel:row.client, releaseId:row.release_id,
+        reference:row.reference, cargoType:row.cargo_type, qty:row.qty_units,
+        pickedBy:row.picked_up_by, pickupCompany:row.pickup_company,
+        date:row.released_at, podUrl:row.pod_pdf_url, photoUrls:row.photo_urls||[]
+      });
+    };
+    d.showModal();
+  }
+  $("whPhotosClose").addEventListener("click",()=>$("whPhotosDlg").close());
 
   $("openWhLogBtn").addEventListener("click",()=>{ logDlg.showModal(); loadLog(""); });
   $("whLogClose").addEventListener("click",()=>logDlg.close());
@@ -2079,5 +2267,290 @@ td,th{white-space:nowrap}
   $("whLogSearch").addEventListener("keydown",e=>{ if(e.key==="Enter") loadLog($("whLogSearch").value.trim()); });
 })();
 </script>
+<!-- ══════════════════════════════════════════════════════════════════
+     FR-EMAIL · shared Gmail-compose engine
+     One module, three templates: Inbound / Outbound / Warehouse Release.
+     No API, no backend, no key — builds a Gmail compose URL and opens it.
+     Sends from whichever Gmail session the browser has; authuser hints
+     at warehouse@fr-logistics.net.
+     ══════════════════════════════════════════════════════════════════ -->
+<script>
+window.FREmail = (function(){
+  const FROM_HINT = "warehouse@fr-logistics.net";
+  const SIGN = {
+    EN: "FR-Logistics · Warehouse WH01\n10893 NW 17th St, Unit 121, Doral, FL 33172\nwarehouse@fr-logistics.net",
+    ES: "FR-Logistics · Almacén WH01\n10893 NW 17th St, Unit 121, Doral, FL 33172\nwarehouse@fr-logistics.net"
+  };
+
+  function langOf(client){
+    const L = (client && client.lang ? String(client.lang) : "EN").toUpperCase();
+    return L === "ES" ? "ES" : "EN";
+  }
+  function fmtDate(d){
+    const dt = d ? new Date(d) : new Date();
+    return dt.toLocaleDateString("en-US") + " " +
+           dt.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"});
+  }
+  function linkList(urls, label){
+    if(!urls || !urls.length) return "";
+    return "\n" + label + ":\n" + urls.map((u,i)=>`  ${i+1}. ${u}`).join("\n") + "\n";
+  }
+
+  // ── Templates ──────────────────────────────────────────────────
+  // Each returns { subject, body }
+  const T = {
+    inbound(p, L){
+      const name = p.clientLabel || "";
+      if(L==="ES") return {
+        subject:`Mercancía Recibida — ${p.tracking} — FR-Logistics`,
+        body:
+`Estimado equipo de ${name},
+
+Confirmamos la recepción de la siguiente mercancía en nuestro almacén:
+
+  Tracking:   ${p.tracking}
+  Cliente:    ${name}
+  Tipo:       ${p.type || "Inbound"}
+  Carrier:    ${p.carrier || "—"}
+  Recibido:   ${fmtDate(p.date)}
+${p.notes ? "\n  Notas: " + p.notes + "\n" : ""}${linkList(p.photoUrls,"Registro fotográfico")}
+Quedamos atentos a cualquier consulta.
+
+Saludos cordiales,
+${SIGN.ES}`
+      };
+      return {
+        subject:`Merchandise Received — ${p.tracking} — FR-Logistics`,
+        body:
+`Dear ${name} team,
+
+We confirm receipt of the following merchandise at our warehouse:
+
+  Tracking:   ${p.tracking}
+  Client:     ${name}
+  Type:       ${p.type || "Inbound"}
+  Carrier:    ${p.carrier || "—"}
+  Received:   ${fmtDate(p.date)}
+${p.notes ? "\n  Notes: " + p.notes + "\n" : ""}${linkList(p.photoUrls,"Photo record")}
+Please let us know if you have any questions.
+
+Best regards,
+${SIGN.EN}`
+      };
+    },
+
+    outbound(p, L){
+      const name = p.clientLabel || "";
+      if(L==="ES") return {
+        subject:`Envío Despachado — ${p.tracking} — FR-Logistics`,
+        body:
+`Estimado equipo de ${name},
+
+Le informamos que el siguiente envío ha sido despachado:
+
+  Tracking:   ${p.tracking}
+  Cliente:    ${name}
+  Tipo:       ${p.type || "Outbound"}
+  Carrier:    ${p.carrier || "—"}
+  Despachado: ${fmtDate(p.date)}
+${p.notes ? "\n  Notas: " + p.notes + "\n" : ""}
+Puede rastrear su envío directamente con el carrier usando el número indicado.
+
+Saludos cordiales,
+${SIGN.ES}`
+      };
+      return {
+        subject:`Shipment Dispatched — ${p.tracking} — FR-Logistics`,
+        body:
+`Dear ${name} team,
+
+The following shipment has been dispatched:
+
+  Tracking:   ${p.tracking}
+  Client:     ${name}
+  Type:       ${p.type || "Outbound"}
+  Carrier:    ${p.carrier || "—"}
+  Dispatched: ${fmtDate(p.date)}
+${p.notes ? "\n  Notes: " + p.notes + "\n" : ""}
+You can track this shipment directly with the carrier using the number above.
+
+Best regards,
+${SIGN.EN}`
+      };
+    },
+
+    release(p, L){
+      const name = p.clientLabel || "";
+      if(L==="ES") return {
+        subject:`Comprobante de Entrega ${p.releaseId} — FR-Logistics`,
+        body:
+`Estimado equipo de ${name},
+
+Confirmamos la entrega de su mercancía mediante retiro local en nuestro almacén.
+
+  N° de Release:  ${p.releaseId}
+  Cliente:        ${name}
+  Referencia:     ${p.reference || "—"}
+  Carga:          ${p.cargoType || "—"} · ${p.qty || 1} bulto(s)
+  Retirado por:   ${p.pickedBy || "—"}
+  Empresa:        ${p.pickupCompany || "—"}
+  Fecha:          ${fmtDate(p.date)}
+${p.podUrl ? "\nComprobante firmado (PDF):\n  " + p.podUrl + "\n" : ""}${linkList(p.photoUrls,"Registro fotográfico de la carga")}
+Este comprobante incluye la firma de la persona que retiró la mercancía.
+
+Saludos cordiales,
+${SIGN.ES}`
+      };
+      return {
+        subject:`Delivery Receipt ${p.releaseId} — FR-Logistics`,
+        body:
+`Dear ${name} team,
+
+We confirm your merchandise was released via local pickup at our warehouse.
+
+  Release No.:    ${p.releaseId}
+  Client:         ${name}
+  Reference:      ${p.reference || "—"}
+  Cargo:          ${p.cargoType || "—"} · ${p.qty || 1} unit(s)
+  Picked up by:   ${p.pickedBy || "—"}
+  Company:        ${p.pickupCompany || "—"}
+  Date:           ${fmtDate(p.date)}
+${p.podUrl ? "\nSigned proof of delivery (PDF):\n  " + p.podUrl + "\n" : ""}${linkList(p.photoUrls,"Cargo photo record")}
+This receipt includes the signature of the person who collected the merchandise.
+
+Best regards,
+${SIGN.EN}`
+      };
+    }
+  };
+
+  // Resolve recipient from the master client roster (fr_clients.email)
+  function recipientFor(clientLabel){
+    const c = window.getMasterClient ? window.getMasterClient(clientLabel) : null;
+    if(!c) return { to:"", cc:"", client:null };
+    const cc = (c.notifyEmails && c.notifyEmails.length) ? c.notifyEmails.join(",") : "";
+    return { to: c.email || "", cc, client:c };
+  }
+
+  function buildUrl({to,cc,subject,body}){
+    const u = new URL("https://mail.google.com/mail/u/0/");
+    u.searchParams.set("view","cm");
+    u.searchParams.set("fs","1");
+    u.searchParams.set("authuser",FROM_HINT);
+    if(to) u.searchParams.set("to",to);
+    if(cc) u.searchParams.set("cc",cc);
+    u.searchParams.set("su",subject);
+    u.searchParams.set("body",body);
+    return u.toString();
+  }
+
+  /**
+   * open({ kind:'inbound'|'outbound'|'release', clientLabel, ...fields })
+   * Opens a prefilled Gmail draft in a new tab. Returns the recipient used.
+   */
+  function open(p){
+    const kind = p.kind || "release";
+    const { to, cc, client } = recipientFor(p.clientLabel);
+    const L = langOf(client);
+    const tpl = (T[kind] || T.release)(p, L);
+    const url = buildUrl({ to, cc, subject:tpl.subject, body:tpl.body });
+    window.open(url,"_blank","noopener");
+    return { to, cc, lang:L };
+  }
+
+  return { open, recipientFor, langOf };
+})();
+</script>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     INBOUND PHOTO RECORD + EMAIL BUTTONS
+     Photos are captured locally, compressed, then uploaded on save via
+     shipment-photos-proxy (service key stays server-side).
+     ══════════════════════════════════════════════════════════════════ -->
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const PHOTO_PROXY = "/.netlify/functions/shipment-photos-proxy";
+  const MAX = 4;
+  let photos = [];   // [{dataUrl}]
+
+  function downscale(file, maxW){
+    return new Promise((res,rej)=>{
+      const img=new Image(), rd=new FileReader();
+      rd.onerror=()=>rej(new Error("could not read file"));
+      rd.onload=()=>{ img.onerror=()=>rej(new Error("bad image"));
+        img.onload=()=>{
+          const scale=Math.min(1, maxW/img.width);
+          const c=document.createElement("canvas");
+          c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale);
+          c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+          res(c.toDataURL("image/jpeg",0.82));
+        }; img.src=rd.result; };
+      rd.readAsDataURL(file);
+    });
+  }
+
+  function addThumb(dataUrl){
+    const img=document.createElement("img");
+    img.src=dataUrl; img.title="tap to remove";
+    img.style.cssText="width:60px;height:60px;object-fit:cover;border-radius:9px;border:1px solid var(--line);cursor:pointer";
+    img.onclick=()=>{ const i=photos.findIndex(p=>p.dataUrl===dataUrl); if(i>-1)photos.splice(i,1); img.remove(); };
+    const box=$("inPhotoBox");
+    box.insertBefore(img, box.querySelector("label"));
+  }
+
+  const input=$("inPhotoInput");
+  if(input){
+    input.addEventListener("change", async e=>{
+      const files=[...e.target.files].slice(0, MAX-photos.length);
+      for(const f of files){
+        try{ const d=await downscale(f,1400); photos.push({dataUrl:d}); addThumb(d); }
+        catch(err){ console.warn("photo skipped:", err.message); }
+      }
+      e.target.value="";
+    });
+  }
+
+  window.INPhotos = {
+    count: ()=>photos.length,
+    clear: ()=>{ photos=[]; const b=$("inPhotoBox"); if(b) b.querySelectorAll("img").forEach(i=>i.remove()); },
+    async upload(tracking){
+      if(!photos.length) return [];
+      const r = await fetch(PHOTO_PROXY, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ tracking, photo_data_urls: photos.map(p=>p.dataUrl) })
+      });
+      if(!r.ok) throw new Error(await r.text());
+      const out = await r.json();
+      return out.photo_urls || [];
+    }
+  };
+
+  // ── Email buttons ──────────────────────────────────────────────
+  function notify(boxId, msg, kind){
+    const el=$(boxId); if(!el) return;
+    el.textContent=msg; el.className="status "+(kind||"");
+  }
+
+  const inBtn=$("inEmailBtn");
+  if(inBtn) inBtn.addEventListener("click",()=>{
+    const ctx = window.LAST_INBOUND;
+    if(!ctx){ notify("inStatus","Save an inbound first, then email the client.","bad"); return; }
+    const r = window.FREmail.open(Object.assign({kind:"inbound"}, ctx));
+    notify("inStatus", r.to ? `Draft opened for ${r.to} (${r.lang}).`
+                            : "Draft opened — no email on file, add the recipient manually.", "ok");
+  });
+
+  const outBtn=$("outEmailBtn");
+  if(outBtn) outBtn.addEventListener("click",()=>{
+    const ctx = window.LAST_OUTBOUND;
+    if(!ctx){ notify("outStatus","Save an outbound first, then email the client.","bad"); return; }
+    const r = window.FREmail.open(Object.assign({kind:"outbound"}, ctx));
+    notify("outStatus", r.to ? `Draft opened for ${r.to} (${r.lang}).`
+                             : "Draft opened — no email on file, add the recipient manually.", "ok");
+  });
+})();
+</script>
+
 </body>
 </html>
