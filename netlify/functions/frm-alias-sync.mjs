@@ -123,3 +123,10 @@ export default async () => {
     return resp(500, { ok: false, error: String(err.message || err) });
   }
 };
+
+// Runs daily at 10:00 UTC (~6:00 AM Miami), before the warehouse opens, so the
+// FNSKU map is fresh for the day. Offset from inventory-locations-sync (even
+// hours) to avoid stacking SkuVault rate limit. Can still be triggered manually.
+export const config = {
+  schedule: '0 10 * * *',
+};
