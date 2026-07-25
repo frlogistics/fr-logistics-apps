@@ -29,7 +29,7 @@ exports.handler = async (event) => {
   if (!code) return { statusCode: 400, headers, body: JSON.stringify({ error: 'code is required' }) };
 
   try {
-    const url = `${SUPABASE_URL}/rest/v1/wh_sku_aliases?alias_sku=eq.${encodeURIComponent(code)}&select=primary_sku,alias_type&limit=1`;
+    const url = `${SUPABASE_URL}/rest/v1/wh_fnsku_map?code=eq.${encodeURIComponent(code)}&select=sku,code_type&limit=1`;
     const resp = await fetch(url, {
       headers: {
         apikey: SUPABASE_KEY,
@@ -40,9 +40,9 @@ exports.handler = async (event) => {
     if (!resp.ok) throw new Error(`Supabase ${resp.status}: ${await resp.text()}`);
     const rows = await resp.json();
     if (rows && rows[0]) {
-      return { statusCode: 200, headers, body: JSON.stringify({ code, primary_sku: rows[0].primary_sku, alias_type: rows[0].alias_type }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ code, primary_sku: rows[0].sku, alias_type: rows[0].code_type }) };
     }
-    // No alias found — the code may already be a primary SKU
+    // No mapping found — the code may already be a merchant SKU
     return { statusCode: 200, headers, body: JSON.stringify({ code, primary_sku: null }) };
   } catch (err) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
