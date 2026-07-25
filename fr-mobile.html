@@ -217,7 +217,7 @@
         <div class="icon" id="spIcon">▣</div>
         <div class="big" id="spBig">Scan tracking</div>
         <div class="lastcode" id="spCode"></div>
-        <div class="hint" id="spHint">Pull the trigger, or tap 📷 to use the camera</div>
+        <div class="hint" id="spHint">Pull the trigger to scan. Photo button adds an image to the last package.</div>
         <input id="capture" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="none">
       </div>
 
@@ -232,7 +232,7 @@
   </main>
 
   <footer class="acts" id="foot" hidden>
-    <button class="btn ghost" id="camBtn">📷 Camera</button>
+    <button class="btn ghost" id="camBtn">📷 Photo</button>
     <button class="btn stop" id="finishBtn">Finish session</button>
   </footer>
 </div>
@@ -371,7 +371,7 @@ function setPad(state,big,hint,code){
   p.className='scanpad'+(state?(' '+state):'');
   $('spBig').textContent=big;
   $('spCode').textContent=code||'';
-  $('spHint').textContent=hint||'Pull the trigger, or tap 📷 for camera';
+  $('spHint').textContent=hint||'Pull the trigger to scan. 📷 adds a photo to the last package.';
   $('spIcon').textContent = state==='ok'?'✓' : state==='dup'?'!' : state==='err'?'✕' : '▣';
   if(state==='ok'||state==='dup'){ clearTimeout(p._t); p._t=setTimeout(()=>{ if($('scanpad')) setPad('','Scan tracking','',''); },1400); }
 }
@@ -384,7 +384,8 @@ function refreshList(){
   S.session.slice(0,40).forEach((r,i)=>{
     const li=document.createElement('li');
     if(r.removed) li.className='gone';
-    const badge = r.saving?'saving…' : r.error?('⚠ '+r.error) : (r.type.replace('Inbound ','').replace(/[()]/g,''));
+    const photoTag = r.photos ? ` 📷${r.photos>1?r.photos:''}` : '';
+    const badge = r.saving?'saving…' : r.error?('⚠ '+r.error) : (r.type.replace('Inbound ','').replace(/[()]/g,'')+photoTag);
     li.innerHTML=`<span class="code">${r.tracking}</span><span class="badge">${badge}</span>`;
     if(!r.removed){
       const b=document.createElement('button');b.className='undo';b.textContent='↺';b.title='Undo';
@@ -404,32 +405,54 @@ function undo(rec){
   setTimeout(()=>{ S.session=S.session.filter(x=>x!==rec); refreshList(); },400);
 }
 
-/* ---------- camera scan (ZXing via CDN, lazy) ---------- */
-let zxLoaded=false;
-async function cameraScan(){
-  toast('Opening camera…');
-  if(!zxLoaded){
-    await new Promise((res,rej)=>{const s=document.createElement('script');
-      s.src='https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/index.min.js';
-      s.onload=res;s.onerror=rej;document.head.appendChild(s);});
-    zxLoaded=true;
-  }
-  // Minimal overlay
-  const ov=document.createElement('div');
-  ov.style.cssText='position:fixed;inset:0;background:#000;z-index:200;display:flex;flex-direction:column';
-  ov.innerHTML='<video id="zxv" style="flex:1;object-fit:cover;width:100%"></video>'+
-    '<button id="zxc" style="height:60px;border:0;background:#123a54;color:#fff;font-size:17px;font-weight:600">Close camera</button>';
-  document.body.appendChild(ov);
-  const reader=new ZXingBrowser.BrowserMultiFormatReader();
-  let controls;
-  try{
-    controls=await reader.decodeFromVideoDevice(undefined,$('zxv'),(result)=>{
-      if(result){ const code=result.getText();
-        controls&&controls.stop(); ov.remove();
-        commitScan(code.trim()); focusCap(); }
-    });
-  }catch(e){ toast('Could not open the camera'); ov.remove(); return; }
-  $('zxc').onclick=()=>{ controls&&controls.stop(); ov.remove(); focusCap(); };
+/* ---------- package photo (native camera -> shipment-photos-proxy) ----------
+   Not a scanner: this documents the package. The photo attaches to the most
+   recent scanned tracking via the existing shipment-photos-proxy function. */
+function takePhoto(){
+  // Which package does this photo belong to? The most recent non-removed scan.
+  const target=S.session.find(r=>!r.removed);
+  if(!target){ toast('Scan a package first, then add its photo'); return; }
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*'; inp.capture='environment';
+  inp.style.display='none'; document.body.appendChild(inp);
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; inp.remove();
+    if(!file){ focusCap(); return; }
+    toast('Uploading photo…');
+    try{
+      const dataUrl=await compressImage(file, 1600, 0.72);
+      const res=await fetch(`${API_BASE}/shipment-photos-proxy`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({tracking:target.tracking, photo_data_urls:[dataUrl], attach:true})
+      });
+      if(!res.ok){ const j=await res.json().catch(()=>({})); throw new Error(j.error||('HTTP '+res.status)); }
+      const j=await res.json();
+      target.photos=(target.photos||0)+ (j.photo_urls?j.photo_urls.length:1);
+      feedback('ok'); toast('Photo added to '+target.tracking.slice(-8));
+      refreshList();
+    }catch(err){
+      feedback('err'); toast('Photo failed: '+(err.message||'try again'));
+    }
+    focusCap();
+  };
+  inp.click();
+}
+
+/* Downscale + compress to keep uploads small (AS01P is 13MP). */
+function compressImage(file, maxDim, quality){
+  return new Promise((resolve,reject)=>{
+    const img=new Image(); const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      let {width:w,height:h}=img;
+      if(Math.max(w,h)>maxDim){ const s=maxDim/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL('image/jpeg',quality));
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('bad image')); };
+    img.src=url;
+  });
 }
 
 /* ---------- clients (via Netlify function, same as other apps) ---------- */
@@ -479,7 +502,7 @@ document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go)
 document.querySelectorAll('[data-soon]').forEach(b=>b.onclick=()=>toast('Module coming soon'));
 $('backBtn').onclick=()=>go('home');
 $('finishBtn').onclick=()=>{ if(confirm('Finish the receiving session?')) go('home'); };
-$('camBtn').onclick=cameraScan;
+$('camBtn').onclick=takePhoto;
 $('loginBtn').onclick=doLogin;
 $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 // keep capture focused when tapping anywhere neutral in receiving
