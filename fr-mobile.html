@@ -387,6 +387,10 @@ function refreshList(){
     const photoTag = r.photos ? ` 📷${r.photos>1?r.photos:''}` : '';
     const badge = r.saving?'saving…' : r.error?('⚠ '+r.error) : (r.type.replace('Inbound ','').replace(/[()]/g,'')+photoTag);
     li.innerHTML=`<span class="code">${r.tracking}</span><span class="badge">${badge}</span>`;
+    if(r.photos && r.photoUrls && r.photoUrls.length){
+      li.querySelector('.badge').style.cssText='color:var(--teal-d);font-weight:700';
+      li.querySelector('.badge').onclick=(e)=>{ e.stopPropagation(); viewPhotos(r); };
+    }
     if(!r.removed){
       const b=document.createElement('button');b.className='undo';b.textContent='↺';b.title='Undo';
       b.onclick=()=>undo(r);li.appendChild(b);
@@ -403,6 +407,21 @@ function undo(rec){
     toast('Undone: '+rec.tracking.slice(-8));
   }
   setTimeout(()=>{ S.session=S.session.filter(x=>x!==rec); refreshList(); },400);
+}
+
+/* Simple full-screen photo viewer for a scanned package. */
+function viewPhotos(rec){
+  const urls=rec.photoUrls||[];
+  if(!urls.length){ toast('No photo for this package yet'); return; }
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(12,42,62,.96);z-index:200;display:flex;flex-direction:column;padding:14px;overflow-y:auto';
+  ov.innerHTML=`<div style="color:#fff;display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <b style="font-family:ui-monospace,monospace;font-size:14px">${rec.tracking}</b>
+      <button id="pvClose" style="border:0;background:rgba(255,255,255,.15);color:#fff;width:40px;height:40px;border-radius:10px;font-size:22px">×</button>
+    </div>`+
+    urls.map((u,i)=>`<img src="${u}" alt="Photo ${i+1}" style="width:100%;border-radius:12px;margin-bottom:12px" />`).join('');
+  document.body.appendChild(ov);
+  ov.querySelector('#pvClose').onclick=()=>{ ov.remove(); focusCap(); };
 }
 
 /* ---------- package photo (native camera -> shipment-photos-proxy) ----------
@@ -428,6 +447,7 @@ function takePhoto(){
       if(!res.ok){ const j=await res.json().catch(()=>({})); throw new Error(j.error||('HTTP '+res.status)); }
       const j=await res.json();
       target.photos=(target.photos||0)+ (j.photo_urls?j.photo_urls.length:1);
+      target.photoUrls=(target.photoUrls||[]).concat(j.photo_urls||[]);
       feedback('ok'); toast('Photo added to '+target.tracking.slice(-8));
       refreshList();
     }catch(err){
