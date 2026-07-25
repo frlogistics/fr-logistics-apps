@@ -54,20 +54,25 @@ async function sb(path, init = {}) {
 }
 
 // Collect every scannable code, mapped to the merchant SKU used in inventory.
-// A product row (primary or alternate) carries:
-//   Sku  = merchant SKU (what inventory_by_location stores)
-//   Code = a barcode / FNSKU for that row
-// Alternate rows repeat the same merchant Sku but with a different Code,
-// so mapping every row's Code -> its Sku captures all FNSKUs of a product.
+// A product row carries:
+//   Sku        = merchant SKU (what inventory_by_location stores)
+//   Code       = primary barcode / FNSKU
+//   PartNumber = often the ORIGINAL/alternate FNSKU (Amazon reassigns FNSKUs;
+//                the old one lands here and still comes back in the bulk scan)
+// Mapping both Code and PartNumber -> Sku captures every FNSKU an operator
+// might scan off a box, without per-product API calls.
 function collectCodes(p, out) {
   const sku = (p.Sku || '').trim();
   if (!sku) return;
   const add = (code, type) => {
     const c = (code || '').trim();
     if (!c || c === sku) return;
+    // Don't let a weaker type overwrite a primary 'code' mapping for the same code
+    if (out[c] && out[c].code_type === 'code' && type !== 'code') return;
     out[c] = { sku, code_type: type };
   };
-  add(p.Code, p.IsAlternateSKU === true ? 'alt_code' : 'code');
+  add(p.Code, 'code');
+  add(p.PartNumber, 'part_number');
   // Some accounts also expose arrays of alternates on the primary row:
   for (const ac of p.AlternateCodes || []) add(typeof ac === 'string' ? ac : (ac.Code || ac.code), 'alt_code');
   for (const as of p.AlternateSKUs || []) add(typeof as === 'string' ? as : (as.Code || as.Sku || as.code), 'alt_code');
