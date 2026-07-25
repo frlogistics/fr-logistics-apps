@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0c2a3e">
+<title>FR Mobile</title>
+<style>
+  :root{
+    --navy:#0c2a3e; --navy-2:#123a54; --teal:#0aa3a3; --teal-d:#087f7f;
+    --red:#e0483d; --amber:#f2a900; --green:#22a06b; --green-d:#1a8657;
+    --ink:#0d1b26; --paper:#f4f6f7; --line:#d5dde2; --muted:#5f7280;
+    --white:#fff; --shadow:0 2px 10px rgba(12,42,62,.10);
+    --tap:56px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--paper); color:var(--ink);
+    font-size:17px; line-height:1.35;
+    overscroll-behavior:none; user-select:none;
+  }
+  /* App shell */
+  #app{display:flex;flex-direction:column;height:100dvh;max-width:640px;margin:0 auto;background:var(--paper)}
+  header.bar{
+    background:var(--navy); color:var(--white);
+    display:flex;align-items:center;gap:10px;
+    padding:10px 12px; min-height:52px; flex:0 0 auto;
+  }
+  header.bar .back{
+    width:40px;height:40px;border:0;background:transparent;color:#fff;
+    font-size:26px;border-radius:10px;display:none;align-items:center;justify-content:center;
+  }
+  header.bar.has-back .back{display:flex}
+  header.bar h1{font-size:18px;margin:0;font-weight:650;flex:1;letter-spacing:.2px}
+  header.bar .op{
+    font-size:13px;background:rgba(255,255,255,.14);padding:5px 10px;border-radius:20px;
+    max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  main{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px}
+  .view{display:none}
+  .view.active{display:block;animation:fade .18s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  /* HOME grid */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .mod{
+    background:var(--white);border:1px solid var(--line);border-radius:16px;
+    padding:18px 14px;min-height:120px;box-shadow:var(--shadow);
+    display:flex;flex-direction:column;justify-content:space-between;
+    text-align:left;color:var(--ink);
+  }
+  .mod:active{transform:scale(.97)}
+  .mod.dim{opacity:.42}
+  .mod .ic{font-size:30px;line-height:1}
+  .mod .nm{font-size:17px;font-weight:650}
+  .mod .sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .mod .soon{font-size:10px;font-weight:700;color:var(--amber);letter-spacing:.5px}
+  .hello{padding:2px 2px 14px;color:var(--muted);font-size:14px}
+  .hello b{color:var(--ink)}
+
+  /* Receiving */
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:5px;letter-spacing:.3px;text-transform:uppercase}
+  select,input[type=text]{
+    width:100%;height:var(--tap);border:1.5px solid var(--line);border-radius:12px;
+    padding:0 14px;font-size:17px;background:var(--white);color:var(--ink);appearance:none;
+  }
+  select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235f7280' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:40px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+  /* Scan pad — the big status surface */
+  .scanpad{
+    border:2.5px dashed var(--line);border-radius:18px;background:var(--white);
+    min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:8px;margin:6px 0 14px;transition:background .12s,border-color .12s;position:relative;
+  }
+  .scanpad .big{font-size:19px;font-weight:650;color:var(--muted)}
+  .scanpad .lastcode{font-size:15px;font-family:ui-monospace,Menlo,monospace;color:var(--ink);word-break:break-all;padding:0 14px;text-align:center}
+  .scanpad .hint{font-size:12px;color:var(--muted)}
+  .scanpad.ok{background:#e7f6ef;border-color:var(--green);border-style:solid}
+  .scanpad.ok .big{color:var(--green-d)}
+  .scanpad.dup{background:#fff6e5;border-color:var(--amber);border-style:solid}
+  .scanpad.dup .big{color:#a9760a}
+  .scanpad.err{background:#fdecea;border-color:var(--red);border-style:solid}
+  .scanpad.err .big{color:var(--red)}
+  .scanpad .icon{font-size:38px;line-height:1}
+
+  /* Counter + list */
+  .counter{display:flex;align-items:baseline;gap:8px;margin:2px 0 10px;padding:0 2px}
+  .counter .n{font-size:34px;font-weight:750;color:var(--teal-d);font-variant-numeric:tabular-nums}
+  .counter .lbl{font-size:13px;color:var(--muted)}
+  ul.scans{list-style:none;margin:0;padding:0}
+  ul.scans li{
+    display:flex;align-items:center;gap:10px;background:var(--white);
+    border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;
+  }
+  ul.scans li .code{flex:1;font-family:ui-monospace,Menlo,monospace;font-size:14px;word-break:break-all}
+  ul.scans li .badge{font-size:11px;color:var(--muted);white-space:nowrap}
+  ul.scans li .undo{
+    border:0;background:#fdecea;color:var(--red);width:38px;height:38px;border-radius:10px;
+    font-size:18px;flex:0 0 auto;
+  }
+  ul.scans li.gone{opacity:.4;text-decoration:line-through}
+  .empty{color:var(--muted);text-align:center;font-size:14px;padding:18px 0}
+
+  /* Footer actions */
+  footer.acts{
+    flex:0 0 auto;display:flex;gap:10px;padding:12px 14px;
+    background:var(--white);border-top:1px solid var(--line);
+    padding-bottom:calc(12px + env(safe-area-inset-bottom));
+  }
+  .btn{
+    flex:1;height:var(--tap);border:0;border-radius:14px;font-size:16px;font-weight:650;
+    display:flex;align-items:center;justify-content:center;gap:8px;color:#fff;background:var(--teal);
+  }
+  .btn:active{transform:scale(.98)}
+  .btn.ghost{background:var(--paper);color:var(--navy);border:1.5px solid var(--line)}
+  .btn.stop{background:var(--navy)}
+  .btn:disabled{opacity:.5}
+
+  /* hidden capture input — receives trigger keystrokes without raising the keyboard */
+  #capture{position:absolute;opacity:0;height:1px;width:1px;pointer-events:none;left:-9999px}
+
+  /* Toast */
+  #toast{
+    position:fixed;left:50%;bottom:88px;transform:translateX(-50%) translateY(20px);
+    background:var(--navy);color:#fff;padding:11px 18px;border-radius:24px;font-size:14px;
+    opacity:0;transition:.2s;pointer-events:none;z-index:50;max-width:88%;text-align:center;
+  }
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* login gate */
+  #gate{position:fixed;inset:0;background:var(--navy);color:#fff;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:16px;padding:28px;z-index:100;text-align:center}
+  #gate h2{margin:0;font-size:22px}
+  #gate p{margin:0;color:#b9cdd8;font-size:14px}
+  #gate input{max-width:320px;color:var(--ink)}
+  #gate .btn{max-width:320px;width:100%}
+  #gate .err{color:#ffb4ad;font-size:13px;min-height:16px}
+  .muted-link{color:#7fd4d4;font-size:13px;background:none;border:0;text-decoration:underline}
+</style>
+</head>
+<body>
+
+<!-- LOGIN GATE -->
+<div id="gate">
+  <div style="font-size:34px;font-weight:800;letter-spacing:1px">FR<span style="color:var(--teal)">Mobile</span></div>
+  <p>Warehouse · Doral</p>
+  <input id="opname" type="text" inputmode="text" placeholder="Your name (operator)" autocomplete="off">
+  <input id="pin" type="password" inputmode="text" placeholder="PIN" autocomplete="off">
+  <button class="btn" id="loginBtn">Sign in</button>
+  <div class="err" id="loginErr"></div>
+</div>
+
+<div id="app" hidden>
+  <header class="bar" id="topbar">
+    <button class="back" id="backBtn" aria-label="Atrás">‹</button>
+    <h1 id="title">FR Mobile</h1>
+    <span class="op" id="opBadge">—</span>
+  </header>
+
+  <main id="main">
+    <!-- HOME -->
+    <section class="view active" id="v-home">
+      <div class="hello">Hi <b id="helloName">operator</b> — pick a module.</div>
+      <div class="grid">
+        <button class="mod" data-go="receiving">
+          <span class="ic">📥</span>
+          <span><span class="nm">Receiving</span><br><span class="sub">Log packages by scan</span></span>
+        </button>
+        <button class="mod dim" data-soon>
+          <span class="ic">📤</span>
+          <span><span class="nm">Outbound</span><br><span class="soon">SOON</span></span>
+        </button>
+        <button class="mod dim" data-soon>
+          <span class="ic">📍</span>
+          <span><span class="nm">Locations</span><br><span class="soon">SOON</span></span>
+        </button>
+        <button class="mod dim" data-soon>
+          <span class="ic">📦</span>
+          <span><span class="nm">Inventory</span><br><span class="soon">SOON</span></span>
+        </button>
+      </div>
+    </section>
+
+    <!-- RECEIVING -->
+    <section class="view" id="v-receiving">
+      <div class="field">
+        <label for="rClient">Client</label>
+        <select id="rClient"><option value="">Loading…</option></select>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="rType">Type</label>
+          <select id="rType">
+            <option>Inbound (General)</option>
+            <option>Inbound (Amazon FBA)</option>
+            <option>Inbound (Drop-Shipment)</option>
+            <option>Inbound (Prep Service)</option>
+            <option>Overstock</option>
+            <option>RMA (Returns)</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="rCarrier">Carrier</label>
+          <select id="rCarrier">
+            <option>Amazon</option><option>UPS</option><option>USPS</option>
+            <option>FedEx</option><option>Walmart</option><option>Other</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="scanpad" id="scanpad" tabindex="-1">
+        <div class="icon" id="spIcon">▣</div>
+        <div class="big" id="spBig">Scan tracking</div>
+        <div class="lastcode" id="spCode"></div>
+        <div class="hint" id="spHint">Pull the trigger, or tap 📷 to use the camera</div>
+        <input id="capture" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="none">
+      </div>
+
+      <div class="counter">
+        <span class="n" id="rCount">0</span>
+        <span class="lbl">packages received this session</span>
+      </div>
+
+      <ul class="scans" id="rList"></ul>
+      <div class="empty" id="rEmpty">No scans yet. The first one will show here.</div>
+    </section>
+  </main>
+
+  <footer class="acts" id="foot" hidden>
+    <button class="btn ghost" id="camBtn">📷 Camera</button>
+    <button class="btn stop" id="finishBtn">Finish session</button>
+  </footer>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ============================================================
+   FR MOBILE — corte 1: Home + Receiving + scan engine
+   Writes go through Netlify functions (service key, RLS-safe):
+     GET  /clients-list   -> client roster
+     POST /frm-receive    -> insert inbound scan into shipments_general
+   ============================================================ */
+const API_BASE='https://apps.fr-logistics.net/.netlify/functions';
+
+const S={ operator:null, clients:[], view:'home',
+  session:[], // {tracking, client, type, carrier, at, rowId}
+  seen:new Set() };
+
+/* ---------- helpers ---------- */
+const $=id=>document.getElementById(id);
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1900);}
+function buzz(pattern){ if(navigator.vibrate) navigator.vibrate(pattern); }
+let AC=null;
+function beep(type){
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    const seq = type==='ok'?[[880,0,.09]] : type==='dup'?[[660,0,.07],[660,.12,.07]] : [[200,0,.22]];
+    seq.forEach(([f,t,d])=>{const o=AC.createOscillator(),g=AC.createGain();
+      o.frequency.value=f;o.connect(g);g.connect(AC.destination);
+      const s=AC.currentTime+t;g.gain.setValueAtTime(.001,s);g.gain.exponentialRampToValueAtTime(.25,s+.01);
+      g.gain.exponentialRampToValueAtTime(.001,s+d);o.start(s);o.stop(s+d+.02);});
+  }catch(e){}
+}
+function feedback(kind){
+  if(kind==='ok'){buzz(40);beep('ok');}
+  else if(kind==='dup'){buzz([40,60,40]);beep('dup');}
+  else {buzz(200);beep('err');}
+}
+
+/* ---------- scan classifier ---------- */
+const RX_LOC=/^(R[A-Z]|F)\d{4}$/i;         // RA0101, RB0304, F0101
+const RX_FNSKU=/^X00[A-Z0-9]{7}$/i;         // FNSKU
+function classify(code){
+  if(RX_LOC.test(code)) return 'location';
+  if(RX_FNSKU.test(code)) return 'fnsku';
+  if(/^\d{12,14}$/.test(code)) return 'upc';
+  return 'tracking';
+}
+
+/* ---------- navigation ---------- */
+function go(view){
+  S.view=view;
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  $('v-'+view).classList.add('active');
+  const bar=$('topbar');
+  if(view==='home'){bar.classList.remove('has-back');$('title').textContent='FR Mobile';$('foot').hidden=true;detachCapture();}
+  else{bar.classList.add('has-back');$('foot').hidden=false;}
+  if(view==='receiving'){$('title').textContent='Receiving';attachCapture();refreshList();}
+  $('main').scrollTop=0;
+}
+
+/* ---------- capture engine (keystroke trigger, no keyboard) ----------
+   The handheld trigger types the code + Enter into the focused field.
+   We keep an off-screen input focused so the OS keyboard never opens
+   (inputmode=none), and read the buffer on Enter. */
+let capBuf='', capTimer=null, capAttached=false;
+function attachCapture(){
+  const cap=$('capture');
+  capAttached=true;
+  focusCap();
+  // Re-grab focus whenever the pad is tapped or focus drifts, but NOT when a real field is focused
+  $('scanpad').addEventListener('click',onPadTap);
+  document.addEventListener('keydown',onKey,true);
+}
+function detachCapture(){
+  capAttached=false;
+  document.removeEventListener('keydown',onKey,true);
+  const p=$('scanpad'); if(p) p.removeEventListener('click',onPadTap);
+}
+function focusCap(){ if(!capAttached)return; const c=$('capture'); if(document.activeElement!==c) c.focus({preventScroll:true}); }
+function isFormField(el){ return el && (el.tagName==='SELECT' || (el.tagName==='INPUT' && el.id!=='capture')); }
+
+function onKey(e){
+  // ignore when the user is in a real select/input
+  if(isFormField(document.activeElement)) return;
+  if(e.key==='Enter'){
+    if(capBuf.trim()) commitScan(capBuf.trim());
+    capBuf=''; e.preventDefault(); return;
+  }
+  if(e.key.length===1){ capBuf+=e.key; clearTimeout(capTimer); capTimer=setTimeout(()=>{capBuf='';},120); }
+}
+function onPadTap(){ /* placeholder: camera flow lives on the 📷 button */ focusCap(); }
+
+/* ---------- receiving logic ---------- */
+function commitScan(code){
+  const kind=classify(code);
+  if(kind!=='tracking' && kind!=='upc' && kind!=='fnsku'){
+    // a location code scanned during receiving — not expected here
+    setPad('err','That is a location','Scan the package tracking, not the location',code);
+    feedback('err'); return;
+  }
+  if(S.seen.has(code)){
+    setPad('dup','Already scanned','This tracking is already in the session',code);
+    feedback('dup'); toast('Duplicate: already scanned'); return;
+  }
+  const client=$('rClient').value;
+  if(!client){ setPad('err','No client selected','Pick a client before scanning',''); feedback('err'); toast('Pick a client first'); return; }
+  const rec={tracking:code, client, client_id:$('rClient').selectedOptions[0].dataset.id||null,
+    type:$('rType').value, carrier:$('rCarrier').value, at:new Date(), rowId:null, saving:true};
+  S.seen.add(code); S.session.unshift(rec);
+  setPad('ok','Received','',code); feedback('ok'); refreshList();
+  saveRow(rec);
+}
+
+async function saveRow(rec){
+  try{
+    const res=await fetch(`${API_BASE}/frm-receive`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        tracking:rec.tracking, client:rec.client, client_id:rec.client_id||null,
+        type:rec.type, carrier:rec.carrier, operator:S.operator||''
+      })
+    });
+    if(res.status===200){ const j=await res.json(); rec.rowId=j.id; rec.saving=false; refreshList(); return; }
+    if(res.status===409){ rec.error='Duplicate in DB'; rec.saving=false; refreshList(); toast('⚠ Already in system: '+rec.tracking.slice(-8)); return; }
+    const j=await res.json().catch(()=>({})); throw new Error(j.error||('HTTP '+res.status));
+  }catch(err){
+    rec.error='Not saved'; rec.saving=false;
+    toast('⚠ '+rec.tracking.slice(-8)+': not saved'); refreshList();
+  }
+}
+
+function setPad(state,big,hint,code){
+  const p=$('scanpad');
+  p.className='scanpad'+(state?(' '+state):'');
+  $('spBig').textContent=big;
+  $('spCode').textContent=code||'';
+  $('spHint').textContent=hint||'Pull the trigger, or tap 📷 for camera';
+  $('spIcon').textContent = state==='ok'?'✓' : state==='dup'?'!' : state==='err'?'✕' : '▣';
+  if(state==='ok'||state==='dup'){ clearTimeout(p._t); p._t=setTimeout(()=>{ if($('scanpad')) setPad('','Scan tracking','',''); },1400); }
+}
+
+function refreshList(){
+  const ul=$('rList'), n=S.session.length;
+  $('rCount').textContent=n;
+  $('rEmpty').style.display=n?'none':'block';
+  ul.innerHTML='';
+  S.session.slice(0,40).forEach((r,i)=>{
+    const li=document.createElement('li');
+    if(r.removed) li.className='gone';
+    const badge = r.saving?'saving…' : r.error?('⚠ '+r.error) : (r.type.replace('Inbound ','').replace(/[()]/g,''));
+    li.innerHTML=`<span class="code">${r.tracking}</span><span class="badge">${badge}</span>`;
+    if(!r.removed){
+      const b=document.createElement('button');b.className='undo';b.textContent='↺';b.title='Undo';
+      b.onclick=()=>undo(r);li.appendChild(b);
+    }
+    ul.appendChild(li);
+  });
+}
+
+function undo(rec){
+  rec.removed=true; S.seen.delete(rec.tracking); refreshList();
+  if(rec.rowId){
+    toast('Removed from list — already saved, delete it in Inbound/Outbound');
+  }else{
+    toast('Undone: '+rec.tracking.slice(-8));
+  }
+  setTimeout(()=>{ S.session=S.session.filter(x=>x!==rec); refreshList(); },400);
+}
+
+/* ---------- camera scan (ZXing via CDN, lazy) ---------- */
+let zxLoaded=false;
+async function cameraScan(){
+  toast('Opening camera…');
+  if(!zxLoaded){
+    await new Promise((res,rej)=>{const s=document.createElement('script');
+      s.src='https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/index.min.js';
+      s.onload=res;s.onerror=rej;document.head.appendChild(s);});
+    zxLoaded=true;
+  }
+  // Minimal overlay
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:#000;z-index:200;display:flex;flex-direction:column';
+  ov.innerHTML='<video id="zxv" style="flex:1;object-fit:cover;width:100%"></video>'+
+    '<button id="zxc" style="height:60px;border:0;background:#123a54;color:#fff;font-size:17px;font-weight:600">Close camera</button>';
+  document.body.appendChild(ov);
+  const reader=new ZXingBrowser.BrowserMultiFormatReader();
+  let controls;
+  try{
+    controls=await reader.decodeFromVideoDevice(undefined,$('zxv'),(result)=>{
+      if(result){ const code=result.getText();
+        controls&&controls.stop(); ov.remove();
+        commitScan(code.trim()); focusCap(); }
+    });
+  }catch(e){ toast('Could not open the camera'); ov.remove(); return; }
+  $('zxc').onclick=()=>{ controls&&controls.stop(); ov.remove(); focusCap(); };
+}
+
+/* ---------- clients (via Netlify function, same as other apps) ---------- */
+async function loadClients(){
+  try{
+    const res=await fetch(`${API_BASE}/clients-list`);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    const rows=Array.isArray(data)?data:(data.clients||data.data||[]);
+    // Exclude internal + inactive; display/match by company (canonical), fallback to name
+    S.clients=rows
+      .filter(c=>c.active!==false && c.type!=='Internal' && (c.status||'')!=='Internal')
+      .map(c=>({label:(c.company&&c.company.trim())||c.name, id:c.id}))
+      .filter(c=>c.label)
+      .sort((a,b)=>a.label.localeCompare(b.label));
+    // de-dup labels (two contacts, same company)
+    const seen=new Set(); S.clients=S.clients.filter(c=>{const k=c.label.toLowerCase(); if(seen.has(k))return false; seen.add(k); return true;});
+    const sel=$('rClient');
+    sel.innerHTML='<option value="">— Select client —</option>'+
+      S.clients.map(c=>`<option value="${c.label.replace(/"/g,'&quot;')}" data-id="${c.id}">${c.label}</option>`).join('');
+  }catch(err){
+    $('rClient').innerHTML='<option value="">Error loading clients</option>';
+    toast('Could not load clients');
+  }
+}
+
+/* ---------- login gate (PIN local, sin sesión Supabase) ---------- */
+const APP_PIN='frlogistics2024';
+function doLogin(){
+  const op=$('opname').value.trim();
+  const pin=$('pin').value;
+  if(!op){ $('loginErr').textContent='Enter your name'; return; }
+  if(pin!==APP_PIN){ $('loginErr').textContent='Wrong PIN'; $('pin').value=''; return; }
+  S.operator=op;
+  localStorage.setItem('frm_op',op);
+  localStorage.setItem('frm_ok','1');
+  enterApp();
+}
+function enterApp(){
+  $('gate').style.display='none'; $('app').hidden=false;
+  $('opBadge').textContent=S.operator; $('helloName').textContent=S.operator;
+  loadClients(); go('home');
+}
+
+/* ---------- wire up ---------- */
+document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
+document.querySelectorAll('[data-soon]').forEach(b=>b.onclick=()=>toast('Module coming soon'));
+$('backBtn').onclick=()=>go('home');
+$('finishBtn').onclick=()=>{ if(confirm('Finish the receiving session?')) go('home'); };
+$('camBtn').onclick=cameraScan;
+$('loginBtn').onclick=doLogin;
+$('pin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+// keep capture focused when tapping anywhere neutral in receiving
+document.addEventListener('click',e=>{ if(S.view==='receiving' && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
+// refocus capture after using a select
+['rClient','rType','rCarrier'].forEach(id=>{ document.addEventListener('change',e=>{ if(e.target.id===id) setTimeout(focusCap,60); }); });
+
+/* reanudar operador si ya pasó el PIN en este dispositivo */
+(function(){
+  const saved=localStorage.getItem('frm_op'); if(saved) $('opname').value=saved;
+  if(saved && localStorage.getItem('frm_ok')==='1'){ S.operator=saved; enterApp(); }
+})();
+</script>
+</body>
+</html>
