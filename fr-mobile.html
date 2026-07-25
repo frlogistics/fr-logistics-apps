@@ -140,6 +140,32 @@
   #gate .btn{max-width:320px;width:100%}
   #gate .err{color:#ffb4ad;font-size:13px;min-height:16px}
   .muted-link{color:#7fd4d4;font-size:13px;background:none;border:0;text-decoration:underline}
+
+  /* Locations */
+  .syncbar{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    background:var(--white);border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:12px;font-size:12px;color:var(--muted)}
+  .syncbar .syncbtn{border:1.5px solid var(--line);background:var(--paper);color:var(--navy);
+    border-radius:9px;padding:7px 12px;font-size:13px;font-weight:600;white-space:nowrap}
+  .syncbar .syncbtn:active{transform:scale(.97)}
+  .syncbar .syncbtn.busy{opacity:.6}
+  .lcard{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:16px;margin-top:4px;box-shadow:var(--shadow)}
+  .lcard .lc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .lcard .lc-code{font-family:ui-monospace,Menlo,monospace;font-size:20px;font-weight:750;color:var(--navy)}
+  .lcard .lc-sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .lcard .lc-zone{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--teal-d);background:#e7f6ef;padding:4px 9px;border-radius:20px;white-space:nowrap}
+  .occ{margin:4px 0 14px}
+  .occ .bar{height:12px;border-radius:8px;background:#eef2f4;overflow:hidden}
+  .occ .fill{height:100%;border-radius:8px;transition:width .3s}
+  .occ .lbl{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:5px}
+  .occ .fill.low{background:var(--green)} .occ .fill.mid{background:var(--amber)} .occ .fill.high{background:var(--red)}
+  .lc-list{list-style:none;margin:0;padding:0}
+  .lc-list li{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+  .lc-list li:first-child{border-top:0}
+  .lc-list .sku{flex:1;font-family:ui-monospace,Menlo,monospace;font-size:14px;font-weight:600;word-break:break-all}
+  .lc-list .cli{font-size:11px;color:var(--muted)}
+  .lc-list .qty{font-size:16px;font-weight:750;color:var(--teal-d);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .lc-empty{color:var(--muted);text-align:center;padding:16px 0;font-size:14px}
+  .lc-total{margin-top:12px;padding-top:12px;border-top:2px solid var(--line);display:flex;justify-content:space-between;font-weight:700;font-size:15px}
 </style>
 </head>
 <body>
@@ -174,9 +200,9 @@
           <span class="ic">📤</span>
           <span><span class="nm">Outbound</span><br><span class="soon">SOON</span></span>
         </button>
-        <button class="mod dim" data-soon>
+        <button class="mod" data-go="locations">
           <span class="ic">📍</span>
-          <span><span class="nm">Locations</span><br><span class="soon">SOON</span></span>
+          <span><span class="nm">Locations</span><br><span class="sub">Scan to see what's stored where</span></span>
         </button>
         <button class="mod dim" data-soon>
           <span class="ic">📦</span>
@@ -228,6 +254,23 @@
 
       <ul class="scans" id="rList"></ul>
       <div class="empty" id="rEmpty">No scans yet. The first one will show here.</div>
+    </section>
+
+    <!-- LOCATIONS (read-only lookup) -->
+    <section class="view" id="v-locations">
+      <div class="syncbar" id="syncbar">
+        <span id="syncInfo">Loading inventory…</span>
+        <button id="syncBtn" class="syncbtn">↻ Refresh</button>
+      </div>
+
+      <div class="scanpad" id="lScanpad" tabindex="-1">
+        <div class="icon" id="lIcon">▣</div>
+        <div class="big" id="lBig">Scan a location or product</div>
+        <div class="lastcode" id="lCode"></div>
+        <div class="hint" id="lHint">Location (RA0101) shows what's stored there. Product (FNSKU) shows where it is.</div>
+      </div>
+
+      <div id="lResult"></div>
     </section>
   </main>
 
@@ -290,8 +333,9 @@ function go(view){
   $('v-'+view).classList.add('active');
   const bar=$('topbar');
   if(view==='home'){bar.classList.remove('has-back');$('title').textContent='FR Mobile';$('foot').hidden=true;detachCapture();}
-  else{bar.classList.add('has-back');$('foot').hidden=false;}
-  if(view==='receiving'){$('title').textContent='Receiving';attachCapture();refreshList();}
+  else{bar.classList.add('has-back');}
+  if(view==='receiving'){$('title').textContent='Receiving';$('foot').hidden=false;attachCapture();refreshList();}
+  if(view==='locations'){$('title').textContent='Locations';$('foot').hidden=true;attachCapture();initLocations();}
   $('main').scrollTop=0;
 }
 
@@ -301,17 +345,17 @@ function go(view){
    (inputmode=none), and read the buffer on Enter. */
 let capBuf='', capTimer=null, capAttached=false;
 function attachCapture(){
-  const cap=$('capture');
   capAttached=true;
   focusCap();
-  // Re-grab focus whenever the pad is tapped or focus drifts, but NOT when a real field is focused
-  $('scanpad').addEventListener('click',onPadTap);
+  const p=$('scanpad'); if(p) p.addEventListener('click',onPadTap);
+  const lp=$('lScanpad'); if(lp) lp.addEventListener('click',onPadTap);
   document.addEventListener('keydown',onKey,true);
 }
 function detachCapture(){
   capAttached=false;
   document.removeEventListener('keydown',onKey,true);
   const p=$('scanpad'); if(p) p.removeEventListener('click',onPadTap);
+  const lp=$('lScanpad'); if(lp) lp.removeEventListener('click',onPadTap);
 }
 function focusCap(){ if(!capAttached)return; const c=$('capture'); if(document.activeElement!==c) c.focus({preventScroll:true}); }
 function isFormField(el){ return el && (el.tagName==='SELECT' || (el.tagName==='INPUT' && el.id!=='capture')); }
@@ -320,7 +364,8 @@ function onKey(e){
   // ignore when the user is in a real select/input
   if(isFormField(document.activeElement)) return;
   if(e.key==='Enter'){
-    if(capBuf.trim()) commitScan(capBuf.trim());
+    const code=capBuf.trim();
+    if(code){ if(S.view==='locations') lookupScan(code); else commitScan(code); }
     capBuf=''; e.preventDefault(); return;
   }
   if(e.key.length===1){ capBuf+=e.key; clearTimeout(capTimer); capTimer=setTimeout(()=>{capBuf='';},120); }
@@ -489,6 +534,175 @@ function compressImage(file, maxDim, quality){
   });
 }
 
+/* ========================== LOCATIONS (read-only lookup) ==========================
+   Reads the occupancy-data function (mirror of SkuVault). Never writes.
+   Location scan -> what's stored + occupancy. Product scan -> where it is. */
+const OCC={ loaded:false, loading:false, detail:{}, locations:{}, byLoc:{}, aliasCache:{}, syncedAt:null };
+
+function initLocations(){
+  setLPad('','Scan a location or product','','');
+  $('lResult').innerHTML='';
+  if(!OCC.loaded && !OCC.loading) loadOccupancy();
+  else updateSyncInfo();
+}
+
+async function loadOccupancy(){
+  OCC.loading=true;
+  $('syncInfo').textContent='Loading inventory…';
+  try{
+    const res=await fetch(`${API_BASE}/occupancy-data`);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const d=await res.json();
+    OCC.detail=d.detail||{};               // { location_code: [ {sku,qty,cuft}, ... ] }
+    OCC.locations={};                      // { location_code: {occupancy_pct, zone, ...} }
+    let lastSync=null;
+    (d.locations||[]).forEach(l=>{
+      l.occupancy_pct = l.occupancy_pct!=null ? parseFloat(l.occupancy_pct) : null;
+      OCC.locations[l.location_code]=l;
+      if(l.synced_at && (!lastSync || l.synced_at>lastSync)) lastSync=l.synced_at;
+    });
+    // Build reverse index: sku -> [ {loc, qty} ]
+    OCC.byLoc={};
+    Object.entries(OCC.detail).forEach(([loc,items])=>{
+      items.forEach(it=>{ (OCC.byLoc[it.sku]||(OCC.byLoc[it.sku]=[])).push({loc,qty:it.qty}); });
+    });
+    OCC.syncedAt=lastSync||d.generated_at||null;
+    OCC.loaded=true;
+    updateSyncInfo();
+  }catch(err){
+    $('syncInfo').textContent='Could not load inventory';
+    toast('Could not load inventory data');
+  }
+  OCC.loading=false;
+}
+
+function updateSyncInfo(){
+  // The occupancy payload reflects the last SkuVault sync stored in Supabase.
+  const when = OCC.syncedAt ? timeAgo(new Date(OCC.syncedAt)) : '—';
+  $('syncInfo').textContent = `Inventory as of ${when}`;
+}
+function timeAgo(d){
+  const s=Math.floor((Date.now()-d.getTime())/1000);
+  if(s<60) return 'just now';
+  if(s<3600) return Math.floor(s/60)+' min ago';
+  if(s<86400) return Math.floor(s/3600)+' h ago';
+  return d.toLocaleDateString()+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+}
+
+/* Refresh: triggers the SkuVault sync (slow), then reloads occupancy. */
+async function refreshFromSkuVault(){
+  const btn=$('syncBtn');
+  if(btn.classList.contains('busy')) return;
+  btn.classList.add('busy'); btn.textContent='↻ Syncing…';
+  $('syncInfo').textContent='Refreshing from SkuVault — this can take a minute…';
+  try{
+    const res=await fetch(`${API_BASE}/inventory-locations-sync`);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    OCC.loaded=false;
+    await loadOccupancy();
+    toast('Inventory refreshed');
+  }catch(err){
+    $('syncInfo').textContent='Refresh failed — showing last data';
+    toast('Refresh failed');
+    updateSyncInfo();
+  }
+  btn.classList.remove('busy'); btn.textContent='↻ Refresh';
+}
+
+/* Resolve FNSKU/UPC/alias to primary SKU via wh_sku_aliases (cached per code). */
+async function resolveSku(code){
+  if(OCC.byLoc[code]) return code;              // already a primary SKU we have stock for
+  if(OCC.aliasCache[code]!==undefined) return OCC.aliasCache[code]||code;
+  try{
+    const res=await fetch(`${API_BASE}/frm-alias?code=${encodeURIComponent(code)}`);
+    if(res.ok){ const j=await res.json(); OCC.aliasCache[code]=j.primary_sku; return j.primary_sku||code; }
+  }catch(e){}
+  OCC.aliasCache[code]=null;
+  return code;
+}
+
+async function lookupScan(code){
+  const kind=classify(code);
+  if(!OCC.loaded){ setLPad('err','Inventory not loaded','Tap Refresh to load',code); feedback('err'); return; }
+  if(kind==='location'){
+    showLocation(code.toUpperCase());
+  }else{
+    // product: resolve alias then show where it is
+    setLPad('','Looking up…','',code);
+    const sku=await resolveSku(code);
+    showProduct(code, sku);
+  }
+}
+
+function occClass(p){ return p>=90?'high':p>=60?'mid':'low'; }
+
+function showLocation(loc){
+  const meta=OCC.locations[loc];
+  const items=OCC.detail[loc]||[];
+  if(!meta && !items.length){
+    setLPad('err','Unknown location','Not in the current inventory snapshot',loc);
+    feedback('err'); $('lResult').innerHTML=''; return;
+  }
+  setLPad('ok','Location found','',loc); feedback('ok');
+  const pct = meta&&meta.occupancy_pct!=null ? Math.round(meta.occupancy_pct*10)/10 : null;
+  const zone = meta&&meta.zone ? meta.zone : '';
+  const rows = items.length
+    ? items.map(it=>`<li><div style="flex:1"><div class="sku">${it.sku}</div><div class="cli">${clientForSku(it.sku)}</div></div><span class="qty">×${it.qty}</span></li>`).join('')
+    : `<div class="lc-empty">Empty — nothing stored here</div>`;
+  $('lResult').innerHTML=`
+    <div class="lcard">
+      <div class="lc-head">
+        <div><div class="lc-code">📍 ${loc}</div><div class="lc-sub">${zone}${meta&&meta.position_type?(' · '+meta.position_type):''}</div></div>
+        ${zone?`<span class="lc-zone">${zone}</span>`:''}
+      </div>
+      ${pct!=null?`<div class="occ"><div class="bar"><div class="fill ${occClass(pct)}" style="width:${Math.min(pct,100)}%"></div></div>
+        <div class="lbl"><span>Occupancy</span><span>${pct}%</span></div></div>`:''}
+      <ul class="lc-list">${rows}</ul>
+    </div>`;
+}
+
+function showProduct(scanned, sku){
+  const locs=OCC.byLoc[sku]||[];
+  if(!locs.length){
+    setLPad('dup','Not found in stock','No location has this SKU right now',scanned);
+    feedback('dup');
+    $('lResult').innerHTML=`<div class="lcard"><div class="lc-head"><div><div class="lc-code">📦 ${scanned}</div>
+      <div class="lc-sub">${scanned!==sku?('→ '+sku+' · '):''}not currently stored</div></div></div>
+      <div class="lc-empty">No stock in any location (per last sync)</div></div>`;
+    return;
+  }
+  setLPad('ok','Product found','',scanned); feedback('ok');
+  const total=locs.reduce((s,l)=>s+l.qty,0);
+  const rows=locs.sort((a,b)=>b.qty-a.qty).map(l=>{
+    const m=OCC.locations[l.loc]; const pct=m&&m.occupancy_pct!=null?Math.round(m.occupancy_pct)+'%':'';
+    return `<li><div style="flex:1"><div class="sku">📍 ${l.loc}</div><div class="cli">${m&&m.zone?m.zone:''}${pct?(' · '+pct+' full'):''}</div></div><span class="qty">×${l.qty}</span></li>`;
+  }).join('');
+  $('lResult').innerHTML=`
+    <div class="lcard">
+      <div class="lc-head">
+        <div><div class="lc-code">📦 ${sku}</div>
+        <div class="lc-sub">${scanned!==sku?(scanned+' → '):''}${clientForSku(sku)}</div></div>
+      </div>
+      <ul class="lc-list">${rows}</ul>
+      <div class="lc-total"><span>Total in stock</span><span>${total} units</span></div>
+    </div>`;
+}
+
+function clientForSku(sku){
+  // best-effort: occupancy detail doesn't carry client, so leave blank unless known
+  return '';
+}
+
+function setLPad(state,big,hint,code){
+  const p=$('lScanpad');
+  p.className='scanpad'+(state?(' '+state):'');
+  $('lBig').textContent=big;
+  $('lCode').textContent=code||'';
+  $('lHint').textContent=hint||"Location (RA0101) shows contents. Product (FNSKU) shows where it is.";
+  $('lIcon').textContent = state==='ok'?'✓' : state==='dup'?'!' : state==='err'?'✕' : '▣';
+  if(state==='ok'){ clearTimeout(p._t); p._t=setTimeout(()=>{ const el=$('lScanpad'); if(el){el.className='scanpad';$('lIcon').textContent='▣';$('lBig').textContent='Scan a location or product';$('lCode').textContent='';} },1600); }
+}
+
 /* ---------- clients (via Netlify function, same as other apps) ---------- */
 async function loadClients(){
   try{
@@ -537,10 +751,11 @@ document.querySelectorAll('[data-soon]').forEach(b=>b.onclick=()=>toast('Module 
 $('backBtn').onclick=()=>go('home');
 $('finishBtn').onclick=()=>{ if(confirm('Finish the receiving session?')) go('home'); };
 $('camBtn').onclick=takePhoto;
+$('syncBtn').onclick=refreshFromSkuVault;
 $('loginBtn').onclick=doLogin;
 $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
-// keep capture focused when tapping anywhere neutral in receiving
-document.addEventListener('click',e=>{ if(S.view==='receiving' && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
+// keep capture focused when tapping anywhere neutral in receiving or locations
+document.addEventListener('click',e=>{ if((S.view==='receiving'||S.view==='locations') && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
 // refocus capture after using a select
 ['rClient','rType','rCarrier'].forEach(id=>{ document.addEventListener('change',e=>{ if(e.target.id===id) setTimeout(focusCap,60); }); });
 
