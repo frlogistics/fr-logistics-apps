@@ -53,27 +53,29 @@ async function sb(path, init = {}) {
   return res;
 }
 
-// Collect every scannable code, mapped to the merchant SKU used in inventory.
+// Collect every scannable code, mapped to the SKU that inventory actually uses.
 // A product row carries:
-//   Sku        = merchant SKU (what inventory_by_location stores)
+//   Sku        = this row's SKU — MAY be an Alternate SKU (a nickname)
+//   PrimarySku = the real/parent SKU that inventory_by_location stores stock under
 //   Code       = primary barcode / FNSKU
-//   PartNumber = often the ORIGINAL/alternate FNSKU (Amazon reassigns FNSKUs;
-//                the old one lands here and still comes back in the bulk scan)
-// Mapping both Code and PartNumber -> Sku captures every FNSKU an operator
-// might scan off a box, without per-product API calls.
+//   PartNumber = often the original/alternate FNSKU (Amazon reassigns FNSKUs)
+// We map every code onto the PrimarySku so lookups land on the SKU that has stock.
 function collectCodes(p, out) {
-  const sku = (p.Sku || '').trim();
+  // Prefer PrimarySku; fall back to Sku when PrimarySku is empty.
+  const sku = ((p.PrimarySku && p.PrimarySku.trim()) || (p.Sku || '').trim());
   if (!sku) return;
   const add = (code, type) => {
     const c = (code || '').trim();
     if (!c || c === sku) return;
-    // Don't let a weaker type overwrite a primary 'code' mapping for the same code
     if (out[c] && out[c].code_type === 'code' && type !== 'code') return;
     out[c] = { sku, code_type: type };
   };
   add(p.Code, 'code');
   add(p.PartNumber, 'part_number');
-  // Some accounts also expose arrays of alternates on the primary row:
+  // If this row is an alternate, its own Sku is a searchable alias -> PrimarySku
+  if (p.PrimarySku && p.Sku && p.PrimarySku.trim() !== p.Sku.trim()) {
+    add(p.Sku, 'alt_sku');
+  }
   for (const ac of p.AlternateCodes || []) add(typeof ac === 'string' ? ac : (ac.Code || ac.code), 'alt_code');
   for (const as of p.AlternateSKUs || []) add(typeof as === 'string' ? as : (as.Code || as.Sku || as.code), 'alt_code');
 }
