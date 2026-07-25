@@ -1,8 +1,7 @@
 // netlify/functions/frm-debug-product.mjs
 // ONE-OFF DIAGNOSTIC — remove after use.
-// Fetches one product by code and returns its raw SkuVault structure so we can
-// see exactly which field holds the FNSKU. Usage:
-//   GET /.netlify/functions/frm-debug-product?code=X004EZASHN
+// Shows how a product appears in the BULK scan vs. targeted, so we can see
+// which fields carry the FNSKU when NOT filtering by code.
 //   GET /.netlify/functions/frm-debug-product?sku=DAIZZY G-PINK-BLUSHING HEARTS--SET-M
 
 const SV_BASE = 'https://app.skuvault.com/api';
@@ -18,24 +17,24 @@ async function sv(path, body) {
   if (!res.ok) throw new Error(`SkuVault ${path} ${res.status}: ${await res.text()}`);
   return res.json();
 }
+const pick = p => ({ Sku: p.Sku, Code: p.Code, PartNumber: p.PartNumber, PrimarySku: p.PrimarySku, IsAlternateSKU: p.IsAlternateSKU, IsAlternateCode: p.IsAlternateCode });
 
 export default async (req) => {
   try {
     const url = new URL(req.url);
-    const code = url.searchParams.get('code');
-    const sku = url.searchParams.get('sku');
-    // Ask explicitly by ProductCodes so SkuVault returns that alternate too
-    const body = code ? { ProductCodes: [code], PageSize: 1000 }
-               : sku  ? { ProductSKUs: [sku], PageSize: 1000 }
-               : { PageSize: 2 };
-    const data = await sv('products/getProducts', body);
-    const prods = (data.Products || []).map(p => ({
-      Sku: p.Sku, Code: p.Code, IsAlternateSKU: p.IsAlternateSKU,
-      // dump every key so we can spot where the FNSKU lives
-      ALL_KEYS: Object.keys(p),
-      RAW: p,
-    }));
-    return resp(200, { count: prods.length, products: prods });
+    const sku = url.searchParams.get('sku') || 'DAIZZY G-PINK-BLUSHING HEARTS--SET-M';
+
+    // 1) Targeted by SKU — how many rows come back, and their codes?
+    const bySku = await sv('products/getProducts', { ProductSKUs: [sku], PageSize: 1000 });
+    // 2) A slice of the BULK scan — find this same product and see its fields
+    const bulk = await sv('products/getProducts', { PageNumber: 0, PageSize: 10000 });
+    const bulkMatches = (bulk.Products || []).filter(p => (p.Sku||'') === sku).map(pick);
+
+    return resp(200, {
+      targeted_by_sku: { count: (bySku.Products||[]).length, rows: (bySku.Products||[]).map(pick) },
+      bulk_scan_matches: { count: bulkMatches.length, rows: bulkMatches },
+      bulk_total_products: (bulk.Products||[]).length,
+    });
   } catch (e) {
     return resp(500, { error: String(e.message || e) });
   }
