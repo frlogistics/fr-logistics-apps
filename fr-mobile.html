@@ -399,10 +399,24 @@ function refreshList(){
   });
 }
 
-function undo(rec){
+async function undo(rec){
   rec.removed=true; S.seen.delete(rec.tracking); refreshList();
+  // If it's still saving, wait briefly for the rowId so we can delete it
+  if(rec.saving){
+    for(let i=0;i<20 && rec.saving;i++){ await new Promise(r=>setTimeout(r,100)); }
+  }
   if(rec.rowId){
-    toast('Removed from list — already saved, delete it in Inbound/Outbound');
+    // Really delete from the database via the same proxy Inbound_Outbound uses
+    try{
+      const res=await fetch(`${API_BASE}/shipments-proxy?tracking=${encodeURIComponent(rec.tracking)}`,{method:'DELETE'});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      toast('Removed: '+rec.tracking.slice(-8));
+    }catch(err){
+      // Roll back the visual removal so the operator knows it's still saved
+      rec.removed=false; S.seen.add(rec.tracking); refreshList();
+      toast('⚠ Could not delete — try again');
+      return;
+    }
   }else{
     toast('Undone: '+rec.tracking.slice(-8));
   }
