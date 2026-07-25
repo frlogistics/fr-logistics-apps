@@ -537,7 +537,7 @@ function compressImage(file, maxDim, quality){
 /* ========================== LOCATIONS (read-only lookup) ==========================
    Reads the occupancy-data function (mirror of SkuVault). Never writes.
    Location scan -> what's stored + occupancy. Product scan -> where it is. */
-const OCC={ loaded:false, loading:false, detail:{}, locations:{}, byLoc:{}, aliasCache:{}, syncedAt:null };
+const OCC={ loaded:false, loading:false, detail:{}, locations:{}, byLoc:{}, aliasCache:{}, skuClient:{}, syncedAt:null };
 
 function initLocations(){
   setLPad('','Scan a location or product','','');
@@ -568,6 +568,11 @@ async function loadOccupancy(){
     });
     OCC.syncedAt=lastSync||d.generated_at||null;
     OCC.loaded=true;
+    // Load SKU -> client map (best-effort; blank if it fails)
+    try{
+      const cr=await fetch(`${API_BASE}/frm-sku-clients`);
+      if(cr.ok){ const cj=await cr.json(); OCC.skuClient=cj.map||{}; }
+    }catch(e){ OCC.skuClient={}; }
     updateSyncInfo();
   }catch(err){
     $('syncInfo').textContent='Could not load inventory';
@@ -627,11 +632,26 @@ async function lookupScan(code){
   if(kind==='location'){
     showLocation(code.toUpperCase());
   }else{
-    // product: resolve alias then show where it is
     setLPad('','Looking up…','',code);
-    const sku=await resolveSku(code);
-    showProduct(code, sku);
+    // Try to resolve via alias first (FNSKU -> primary SKU), then flexible match.
+    const resolved=await resolveSku(code);
+    showProduct(code, resolved);
   }
+}
+
+/* Flexible product search: match the scanned code (and any alias) exactly OR
+   as a substring of an inventory SKU. Returns [{sku,loc,qty}]. */
+function findStock(scanned, resolved){
+  const needles=[scanned];
+  if(resolved && resolved!==scanned) needles.push(resolved);
+  const up=needles.map(n=>n.toUpperCase());
+  const hits=[]; // {sku, loc, qty}
+  Object.entries(OCC.byLoc).forEach(([sku,locs])=>{
+    const S=sku.toUpperCase();
+    const match = up.some(n=> S===n || S.includes(n));
+    if(match) locs.forEach(l=>hits.push({sku, loc:l.loc, qty:l.qty}));
+  });
+  return hits;
 }
 
 function occClass(p){ return p>=90?'high':p>=60?'mid':'low'; }
@@ -661,36 +681,41 @@ function showLocation(loc){
     </div>`;
 }
 
-function showProduct(scanned, sku){
-  const locs=OCC.byLoc[sku]||[];
-  if(!locs.length){
-    setLPad('dup','Not found in stock','No location has this SKU right now',scanned);
+function showProduct(scanned, resolved){
+  const hits=findStock(scanned, resolved);
+  if(!hits.length){
+    setLPad('dup','Not found in stock','No location has this item right now',scanned);
     feedback('dup');
     $('lResult').innerHTML=`<div class="lcard"><div class="lc-head"><div><div class="lc-code">📦 ${scanned}</div>
-      <div class="lc-sub">${scanned!==sku?('→ '+sku+' · '):''}not currently stored</div></div></div>
+      <div class="lc-sub">${resolved!==scanned?('→ '+resolved+' · '):''}not currently stored</div></div></div>
       <div class="lc-empty">No stock in any location (per last sync)</div></div>`;
     return;
   }
   setLPad('ok','Product found','',scanned); feedback('ok');
-  const total=locs.reduce((s,l)=>s+l.qty,0);
-  const rows=locs.sort((a,b)=>b.qty-a.qty).map(l=>{
-    const m=OCC.locations[l.loc]; const pct=m&&m.occupancy_pct!=null?Math.round(m.occupancy_pct)+'%':'';
-    return `<li><div style="flex:1"><div class="sku">📍 ${l.loc}</div><div class="cli">${m&&m.zone?m.zone:''}${pct?(' · '+pct+' full'):''}</div></div><span class="qty">×${l.qty}</span></li>`;
-  }).join('');
-  $('lResult').innerHTML=`
-    <div class="lcard">
-      <div class="lc-head">
-        <div><div class="lc-code">📦 ${sku}</div>
-        <div class="lc-sub">${scanned!==sku?(scanned+' → '):''}${clientForSku(sku)}</div></div>
-      </div>
+  // Group by SKU (a flexible match can hit more than one SKU)
+  const bySku={};
+  hits.forEach(h=>{ (bySku[h.sku]||(bySku[h.sku]=[])).push(h); });
+  const total=hits.reduce((s,h)=>s+h.qty,0);
+  const cards=Object.entries(bySku).map(([sku,locs])=>{
+    const rows=locs.sort((a,b)=>b.qty-a.qty).map(l=>{
+      const m=OCC.locations[l.loc]; const pct=m&&m.occupancy_pct!=null?Math.round(m.occupancy_pct)+'%':'';
+      return `<li><div style="flex:1"><div class="sku">📍 ${l.loc}</div><div class="cli">${m&&m.zone?m.zone:''}${pct?(' · '+pct+' full'):''}</div></div><span class="qty">×${l.qty}</span></li>`;
+    }).join('');
+    const sub=clientForSku(sku);
+    return `<div class="lcard">
+      <div class="lc-head"><div><div class="lc-code">📦 ${sku}</div>
+        <div class="lc-sub">${sub||''}</div></div></div>
       <ul class="lc-list">${rows}</ul>
-      <div class="lc-total"><span>Total in stock</span><span>${total} units</span></div>
     </div>`;
+  }).join('');
+  const totalCard = Object.keys(bySku).length>1
+    ? `<div class="lcard"><div class="lc-total"><span>Total (${Object.keys(bySku).length} SKUs matched "${scanned}")</span><span>${total} units</span></div></div>`
+    : '';
+  $('lResult').innerHTML=cards+totalCard;
 }
 
 function clientForSku(sku){
-  // best-effort: occupancy detail doesn't carry client, so leave blank unless known
-  return '';
+  return OCC.skuClient[sku] || '';
 }
 
 function setLPad(state,big,hint,code){
