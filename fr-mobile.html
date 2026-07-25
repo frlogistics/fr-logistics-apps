@@ -121,7 +121,7 @@
   .btn:disabled{opacity:.5}
 
   /* hidden capture input — receives trigger keystrokes without raising the keyboard */
-  #capture{position:absolute;opacity:0;height:1px;width:1px;pointer-events:none;left:-9999px}
+  #capture{position:fixed;opacity:0;height:1px;width:1px;pointer-events:none;left:-9999px;top:0}
 
   /* Toast */
   #toast{
@@ -188,6 +188,8 @@
   </header>
 
   <main id="main">
+    <!-- global scan capture (hidden, always present so it works in any scanning view) -->
+    <input id="capture" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="none">
     <!-- HOME -->
     <section class="view active" id="v-home">
       <div class="hello">Hi <b id="helloName">operator</b> — pick a module.</div>
@@ -196,9 +198,9 @@
           <span class="ic">📥</span>
           <span><span class="nm">Receiving</span><br><span class="sub">Log packages by scan</span></span>
         </button>
-        <button class="mod dim" data-soon>
+        <button class="mod" data-go="outbound">
           <span class="ic">📤</span>
-          <span><span class="nm">Outbound</span><br><span class="soon">SOON</span></span>
+          <span><span class="nm">Outbound</span><br><span class="sub">Log shipments by scan</span></span>
         </button>
         <button class="mod" data-go="locations">
           <span class="ic">📍</span>
@@ -244,7 +246,6 @@
         <div class="big" id="spBig">Scan tracking</div>
         <div class="lastcode" id="spCode"></div>
         <div class="hint" id="spHint">Pull the trigger to scan. Photo button adds an image to the last package.</div>
-        <input id="capture" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="none">
       </div>
 
       <div class="counter">
@@ -254,6 +255,49 @@
 
       <ul class="scans" id="rList"></ul>
       <div class="empty" id="rEmpty">No scans yet. The first one will show here.</div>
+    </section>
+
+    <!-- OUTBOUND -->
+    <section class="view" id="v-outbound">
+      <div class="field">
+        <label for="oClient">Client</label>
+        <select id="oClient"><option value="">Loading…</option></select>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="oType">Type</label>
+          <select id="oType">
+            <option>Outbound (Shipment)</option>
+            <option>Outbound (Drop-Shipment)</option>
+            <option>Outbound (Pickup EcoPack+)</option>
+            <option>Replacement</option>
+            <option>Return to Sender</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="oCarrier">Carrier</label>
+          <select id="oCarrier">
+            <option>Amazon</option><option>UPS</option><option>USPS</option>
+            <option>FedEx</option><option>Walmart</option><option>Other</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="scanpad" id="oScanpad" tabindex="-1">
+        <div class="icon" id="oIcon">▣</div>
+        <div class="big" id="oBig">Scan tracking</div>
+        <div class="lastcode" id="oCode"></div>
+        <div class="hint" id="oHint">Pull the trigger to scan. Photo button adds an image to the last shipment.</div>
+      </div>
+
+      <div class="counter">
+        <span class="n" id="oCount">0</span>
+        <span class="lbl">shipments dispatched this session</span>
+      </div>
+
+      <ul class="scans" id="oList"></ul>
+      <div class="empty" id="oEmpty">No scans yet. The first one will show here.</div>
     </section>
 
     <!-- LOCATIONS (read-only lookup) -->
@@ -292,8 +336,25 @@
 const API_BASE='https://apps.fr-logistics.net/.netlify/functions';
 
 const S={ operator:null, clients:[], view:'home',
-  session:[], // {tracking, client, type, carrier, at, rowId}
-  seen:new Set() };
+  session:[], seen:new Set(),           // receiving session (kept as-is)
+  outSession:[], outSeen:new Set() };   // outbound session
+
+// Per-mode config so receiving and outbound share one engine.
+const MODES={
+  receiving:{ direction:'Inbound', session:'session', seen:'seen',
+    ids:{ client:'rClient', type:'rType', carrier:'rCarrier',
+      pad:'scanpad', icon:'spIcon', big:'spBig', code:'spCode', hint:'spHint',
+      list:'rList', empty:'rEmpty', count:'rCount' },
+    padDefault:'Scan tracking' },
+  outbound:{ direction:'Outbound', session:'outSession', seen:'outSeen',
+    ids:{ client:'oClient', type:'oType', carrier:'oCarrier',
+      pad:'oScanpad', icon:'oIcon', big:'oBig', code:'oCode', hint:'oHint',
+      list:'oList', empty:'oEmpty', count:'oCount' },
+    padDefault:'Scan tracking' },
+};
+function mode(){ return MODES[S.view] || MODES.receiving; }
+function curSession(){ return S[mode().session]; }
+function curSeen(){ return S[mode().seen]; }
 
 /* ---------- helpers ---------- */
 const $=id=>document.getElementById(id);
@@ -335,6 +396,7 @@ function go(view){
   if(view==='home'){bar.classList.remove('has-back');$('title').textContent='FR Mobile';$('foot').hidden=true;detachCapture();}
   else{bar.classList.add('has-back');}
   if(view==='receiving'){$('title').textContent='Receiving';$('foot').hidden=false;attachCapture();refreshList();}
+  if(view==='outbound'){$('title').textContent='Outbound';$('foot').hidden=false;attachCapture();refreshList();}
   if(view==='locations'){$('title').textContent='Locations';$('foot').hidden=true;attachCapture();initLocations();}
   $('main').scrollTop=0;
 }
@@ -348,6 +410,7 @@ function attachCapture(){
   capAttached=true;
   focusCap();
   const p=$('scanpad'); if(p) p.addEventListener('click',onPadTap);
+  const op=$('oScanpad'); if(op) op.addEventListener('click',onPadTap);
   const lp=$('lScanpad'); if(lp) lp.addEventListener('click',onPadTap);
   document.addEventListener('keydown',onKey,true);
 }
@@ -355,6 +418,7 @@ function detachCapture(){
   capAttached=false;
   document.removeEventListener('keydown',onKey,true);
   const p=$('scanpad'); if(p) p.removeEventListener('click',onPadTap);
+  const op=$('oScanpad'); if(op) op.removeEventListener('click',onPadTap);
   const lp=$('lScanpad'); if(lp) lp.removeEventListener('click',onPadTap);
 }
 function focusCap(){ if(!capAttached)return; const c=$('capture'); if(document.activeElement!==c) c.focus({preventScroll:true}); }
@@ -372,24 +436,25 @@ function onKey(e){
 }
 function onPadTap(){ /* placeholder: camera flow lives on the 📷 button */ focusCap(); }
 
-/* ---------- receiving logic ---------- */
+/* ---------- scan logic (shared by receiving + outbound) ---------- */
 function commitScan(code){
+  const M=mode(), ids=M.ids, seen=curSeen(), session=curSession();
   const kind=classify(code);
   if(kind!=='tracking' && kind!=='upc' && kind!=='fnsku'){
-    // a location code scanned during receiving — not expected here
     setPad('err','That is a location','Scan the package tracking, not the location',code);
     feedback('err'); return;
   }
-  if(S.seen.has(code)){
+  if(seen.has(code)){
     setPad('dup','Already scanned','This tracking is already in the session',code);
     feedback('dup'); toast('Duplicate: already scanned'); return;
   }
-  const client=$('rClient').value;
+  const client=$(ids.client).value;
   if(!client){ setPad('err','No client selected','Pick a client before scanning',''); feedback('err'); toast('Pick a client first'); return; }
-  const rec={tracking:code, client, client_id:$('rClient').selectedOptions[0].dataset.id||null,
-    type:$('rType').value, carrier:$('rCarrier').value, at:new Date(), rowId:null, saving:true};
-  S.seen.add(code); S.session.unshift(rec);
-  setPad('ok','Received','',code); feedback('ok'); refreshList();
+  const rec={tracking:code, client, client_id:$(ids.client).selectedOptions[0].dataset.id||null,
+    type:$(ids.type).value, carrier:$(ids.carrier).value, direction:M.direction,
+    at:new Date(), rowId:null, saving:true};
+  seen.add(code); session.unshift(rec);
+  setPad('ok', M.direction==='Outbound'?'Dispatched':'Received','',code); feedback('ok'); refreshList();
   saveRow(rec);
 }
 
@@ -399,7 +464,7 @@ async function saveRow(rec){
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         tracking:rec.tracking, client:rec.client, client_id:rec.client_id||null,
-        type:rec.type, carrier:rec.carrier, operator:S.operator||''
+        type:rec.type, carrier:rec.carrier, direction:rec.direction||'Inbound', operator:S.operator||''
       })
     });
     if(res.status===200){ const j=await res.json(); rec.rowId=j.id; rec.saving=false; refreshList(); return; }
@@ -412,25 +477,27 @@ async function saveRow(rec){
 }
 
 function setPad(state,big,hint,code){
-  const p=$('scanpad');
+  const ids=mode().ids;
+  const p=$(ids.pad); if(!p) return;
   p.className='scanpad'+(state?(' '+state):'');
-  $('spBig').textContent=big;
-  $('spCode').textContent=code||'';
-  $('spHint').textContent=hint||'Pull the trigger to scan. 📷 adds a photo to the last package.';
-  $('spIcon').textContent = state==='ok'?'✓' : state==='dup'?'!' : state==='err'?'✕' : '▣';
-  if(state==='ok'||state==='dup'){ clearTimeout(p._t); p._t=setTimeout(()=>{ if($('scanpad')) setPad('','Scan tracking','',''); },1400); }
+  $(ids.big).textContent=big;
+  $(ids.code).textContent=code||'';
+  $(ids.hint).textContent=hint||'Pull the trigger to scan. 📷 adds a photo to the last package.';
+  $(ids.icon).textContent = state==='ok'?'✓' : state==='dup'?'!' : state==='err'?'✕' : '▣';
+  if(state==='ok'||state==='dup'){ clearTimeout(p._t); p._t=setTimeout(()=>{ if($(ids.pad)) setPad('','Scan tracking','',''); },1400); }
 }
 
 function refreshList(){
-  const ul=$('rList'), n=S.session.length;
-  $('rCount').textContent=n;
-  $('rEmpty').style.display=n?'none':'block';
+  const ids=mode().ids, session=curSession();
+  const ul=$(ids.list), n=session.length;
+  $(ids.count).textContent=n;
+  $(ids.empty).style.display=n?'none':'block';
   ul.innerHTML='';
-  S.session.slice(0,40).forEach((r,i)=>{
+  session.slice(0,40).forEach((r,i)=>{
     const li=document.createElement('li');
     if(r.removed) li.className='gone';
     const photoTag = r.photos ? ` 📷${r.photos>1?r.photos:''}` : '';
-    const badge = r.saving?'saving…' : r.error?('⚠ '+r.error) : (r.type.replace('Inbound ','').replace(/[()]/g,'')+photoTag);
+    const badge = r.saving?'saving…' : r.error?('⚠ '+r.error) : (r.type.replace(/^(Inbound|Outbound) /,'').replace(/[()]/g,'')+photoTag);
     li.innerHTML=`<span class="code">${r.tracking}</span><span class="badge">${badge}</span>`;
     if(r.photos && r.photoUrls && r.photoUrls.length){
       li.querySelector('.badge').style.cssText='color:var(--teal-d);font-weight:700';
@@ -445,27 +512,28 @@ function refreshList(){
 }
 
 async function undo(rec){
-  rec.removed=true; S.seen.delete(rec.tracking); refreshList();
-  // If it's still saving, wait briefly for the rowId so we can delete it
+  // Resolve which session/seen this record belongs to (by its direction)
+  const isOut = rec.direction==='Outbound';
+  const seen = isOut ? S.outSeen : S.seen;
+  const getSession = () => isOut ? S.outSession : S.session;
+  rec.removed=true; seen.delete(rec.tracking); refreshList();
   if(rec.saving){
     for(let i=0;i<20 && rec.saving;i++){ await new Promise(r=>setTimeout(r,100)); }
   }
   if(rec.rowId){
-    // Really delete from the database via the same proxy Inbound_Outbound uses
     try{
       const res=await fetch(`${API_BASE}/shipments-proxy?tracking=${encodeURIComponent(rec.tracking)}`,{method:'DELETE'});
       if(!res.ok) throw new Error('HTTP '+res.status);
       toast('Removed: '+rec.tracking.slice(-8));
     }catch(err){
-      // Roll back the visual removal so the operator knows it's still saved
-      rec.removed=false; S.seen.add(rec.tracking); refreshList();
+      rec.removed=false; seen.add(rec.tracking); refreshList();
       toast('⚠ Could not delete — try again');
       return;
     }
   }else{
     toast('Undone: '+rec.tracking.slice(-8));
   }
-  setTimeout(()=>{ S.session=S.session.filter(x=>x!==rec); refreshList(); },400);
+  setTimeout(()=>{ if(isOut) S.outSession=S.outSession.filter(x=>x!==rec); else S.session=S.session.filter(x=>x!==rec); refreshList(); },400);
 }
 
 /* Simple full-screen photo viewer for a scanned package. */
@@ -488,7 +556,7 @@ function viewPhotos(rec){
    recent scanned tracking via the existing shipment-photos-proxy function. */
 function takePhoto(){
   // Which package does this photo belong to? The most recent non-removed scan.
-  const target=S.session.find(r=>!r.removed);
+  const target=curSession().find(r=>!r.removed);
   if(!target){ toast('Scan a package first, then add its photo'); return; }
   const inp=document.createElement('input');
   inp.type='file'; inp.accept='image/*'; inp.capture='environment';
@@ -743,11 +811,13 @@ async function loadClients(){
       .sort((a,b)=>a.label.localeCompare(b.label));
     // de-dup labels (two contacts, same company)
     const seen=new Set(); S.clients=S.clients.filter(c=>{const k=c.label.toLowerCase(); if(seen.has(k))return false; seen.add(k); return true;});
-    const sel=$('rClient');
-    sel.innerHTML='<option value="">— Select client —</option>'+
+    const opts='<option value="">— Select client —</option>'+
       S.clients.map(c=>`<option value="${c.label.replace(/"/g,'&quot;')}" data-id="${c.id}">${c.label}</option>`).join('');
+    const rc=$('rClient'); if(rc) rc.innerHTML=opts;
+    const oc=$('oClient'); if(oc) oc.innerHTML=opts;
   }catch(err){
-    $('rClient').innerHTML='<option value="">Error loading clients</option>';
+    const rc=$('rClient'); if(rc) rc.innerHTML='<option value="">Error loading clients</option>';
+    const oc=$('oClient'); if(oc) oc.innerHTML='<option value="">Error loading clients</option>';
     toast('Could not load clients');
   }
 }
@@ -774,15 +844,15 @@ function enterApp(){
 document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
 document.querySelectorAll('[data-soon]').forEach(b=>b.onclick=()=>toast('Module coming soon'));
 $('backBtn').onclick=()=>go('home');
-$('finishBtn').onclick=()=>{ if(confirm('Finish the receiving session?')) go('home'); };
+$('finishBtn').onclick=()=>{ if(confirm('Finish this session?')) go('home'); };
 $('camBtn').onclick=takePhoto;
 $('syncBtn').onclick=refreshFromSkuVault;
 $('loginBtn').onclick=doLogin;
 $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
-// keep capture focused when tapping anywhere neutral in receiving or locations
-document.addEventListener('click',e=>{ if((S.view==='receiving'||S.view==='locations') && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
+// keep capture focused when tapping anywhere neutral in a scanning view
+document.addEventListener('click',e=>{ if((S.view==='receiving'||S.view==='outbound'||S.view==='locations') && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
 // refocus capture after using a select
-['rClient','rType','rCarrier'].forEach(id=>{ document.addEventListener('change',e=>{ if(e.target.id===id) setTimeout(focusCap,60); }); });
+['rClient','rType','rCarrier','oClient','oType','oCarrier'].forEach(id=>{ document.addEventListener('change',e=>{ if(e.target.id===id) setTimeout(focusCap,60); }); });
 
 /* reanudar operador si ya pasó el PIN en este dispositivo */
 (function(){
