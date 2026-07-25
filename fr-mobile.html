@@ -852,17 +852,46 @@ function fillClientDropdown(){
     clients.map(([c,v])=>`<option value="${c.replace(/"/g,'&quot;')}">${c} (${v.units} units)</option>`).join('');
 }
 
-/* Scan a product -> resolve to SKU -> find its client -> show that client's stock. */
+/* Scan a product -> show THAT product: client, total qty, and its locations. */
 async function inventoryScan(code){
   if(!OCC.loaded){ $('iHint').textContent='Inventory not loaded — tap Refresh.'; feedback('err'); return; }
   const sku=await resolveSku(code);
-  // find which real inventory SKU matches (flexible, like Locations)
   const hits=findStock(code, sku);
-  if(!hits.length){ $('iHint').textContent='No stock found for '+code; feedback('dup'); return; }
-  const client=OCC.skuClient[hits[0].sku]||'Unassigned';
+  if(!hits.length){
+    feedback('dup');
+    $('invResult').innerHTML=`<div class="lcard"><div class="lc-head"><div>
+      <div class="lc-code">📦 ${code}</div><div class="lc-sub">not currently stored</div></div></div>
+      <div class="lc-empty">No stock in any location (per last sync)</div></div>`;
+    $('iHint').textContent='No stock found for '+code;
+    return;
+  }
   feedback('ok');
-  $('invClient').value=client;
-  showClientStock(client, hits[0].sku);
+  $('invClient').value='';
+  showProductStock(code, hits);
+}
+
+/* Show one scanned product: header (client), then its locations + quantities. */
+function showProductStock(scanned, hits){
+  // hits may span more than one matched SKU; group by SKU, each with its locations.
+  const bySku={};
+  hits.forEach(h=>{ (bySku[h.sku]||(bySku[h.sku]=[])).push(h); });
+  const cards=Object.entries(bySku).map(([sku,locs])=>{
+    const client=OCC.skuClient[sku]||'Unassigned';
+    const total=locs.reduce((s,l)=>s+l.qty,0);
+    const rows=locs.sort((a,b)=>b.qty-a.qty).map(l=>{
+      const m=OCC.locations[l.loc]; const zone=m&&m.zone?m.zone:''; const pct=m&&m.occupancy_pct!=null?Math.round(m.occupancy_pct)+'%':'';
+      return `<li><div style="flex:1"><div class="sku">📍 ${l.loc}</div><div class="cli">${zone}${pct?(' · '+pct+' full'):''}</div></div><span class="qty">×${l.qty}</span></li>`;
+    }).join('');
+    return `<div class="lcard">
+      <div class="lc-head">
+        <div><div class="lc-code">📦 ${sku}</div><div class="lc-sub">${client}</div></div>
+        <span class="lc-zone">${total} units</span>
+      </div>
+      <ul class="lc-list">${rows}</ul>
+    </div>`;
+  }).join('');
+  $('invResult').innerHTML=cards;
+  $('iHint').textContent='Scanned '+scanned;
 }
 
 function showClientStock(client, highlightSku){
