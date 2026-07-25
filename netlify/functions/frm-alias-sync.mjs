@@ -53,22 +53,24 @@ async function sb(path, init = {}) {
   return res;
 }
 
-// Collect every code that could be scanned, mapped to the merchant SKU.
-// SkuVault products carry: Sku (merchant), Code (primary barcode/FNSKU),
-// and may carry alternate codes/skus. We map all non-empty codes -> Sku.
+// Collect every scannable code, mapped to the merchant SKU used in inventory.
+// A product row (primary or alternate) carries:
+//   Sku  = merchant SKU (what inventory_by_location stores)
+//   Code = a barcode / FNSKU for that row
+// Alternate rows repeat the same merchant Sku but with a different Code,
+// so mapping every row's Code -> its Sku captures all FNSKUs of a product.
 function collectCodes(p, out) {
   const sku = (p.Sku || '').trim();
   if (!sku) return;
   const add = (code, type) => {
     const c = (code || '').trim();
     if (!c || c === sku) return;
-    // last-writer-wins is fine; a code maps to one primary SKU
     out[c] = { sku, code_type: type };
   };
-  add(p.Code, 'code');
-  // Alternate codes can appear under a few possible shapes depending on account config
+  add(p.Code, p.IsAlternateSKU === true ? 'alt_code' : 'code');
+  // Some accounts also expose arrays of alternates on the primary row:
   for (const ac of p.AlternateCodes || []) add(typeof ac === 'string' ? ac : (ac.Code || ac.code), 'alt_code');
-  for (const as of p.AlternateSKUs || []) add(typeof as === 'string' ? as : (as.Code || as.Sku || as.code), 'alt_sku');
+  for (const as of p.AlternateSKUs || []) add(typeof as === 'string' ? as : (as.Code || as.Sku || as.code), 'alt_code');
 }
 
 export default async () => {
@@ -77,14 +79,16 @@ export default async () => {
     const map = {}; // code -> {sku, code_type}
     let page = 0;
     let products = 0;
+    let alternates = 0;
     for (;;) {
       const data = await sv('products/getProducts', { PageNumber: page, PageSize: 10000 });
       const prods = data.Products || [];
       for (const p of prods) {
-        // Only map codes onto the PRIMARY sku; skip alternate-sku rows as targets
-        if (p.IsAlternateSKU === true) continue;
+        // Capture codes from BOTH primary and alternate product rows.
+        // Alternate rows (IsAlternateSKU=true) carry an extra FNSKU/code that
+        // resolves to the same merchant SKU — that's the code the operator scans.
         collectCodes(p, map);
-        products += 1;
+        if (p.IsAlternateSKU === true) alternates += 1; else products += 1;
       }
       if (prods.length < 10000) break;
       page += 1;
@@ -106,7 +110,7 @@ export default async () => {
       });
     }
 
-    return resp(200, { ok: true, products, codes_mapped: rows.length, ms: Date.now() - started });
+    return resp(200, { ok: true, products, alternates, codes_mapped: rows.length, ms: Date.now() - started });
   } catch (err) {
     console.error('frm-alias-sync error:', err);
     return resp(500, { ok: false, error: String(err.message || err) });
