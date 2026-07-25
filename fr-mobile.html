@@ -206,9 +206,9 @@
           <span class="ic">📍</span>
           <span><span class="nm">Locations</span><br><span class="sub">Scan to see what's stored where</span></span>
         </button>
-        <button class="mod dim" data-soon>
+        <button class="mod" data-go="inventory">
           <span class="ic">📦</span>
-          <span><span class="nm">Inventory</span><br><span class="soon">SOON</span></span>
+          <span><span class="nm">Inventory</span><br><span class="sub">Stock by client</span></span>
         </button>
       </div>
     </section>
@@ -316,6 +316,25 @@
 
       <div id="lResult"></div>
     </section>
+
+    <!-- INVENTORY (read-only, stock by client) -->
+    <section class="view" id="v-inventory">
+      <div class="syncbar" id="invSyncbar">
+        <span id="invSyncInfo">Loading inventory…</span>
+        <button id="invSyncBtn" class="syncbtn">↻ Refresh</button>
+      </div>
+
+      <div class="field">
+        <label for="invClient">Client</label>
+        <select id="invClient"><option value="">— Select client —</option></select>
+      </div>
+
+      <div class="scanpad" id="iScanpad" tabindex="-1" style="min-height:auto;padding:14px">
+        <div class="hint" id="iHint" style="margin:0">Pick a client above, or scan any product to see its owner's stock.</div>
+      </div>
+
+      <div id="invResult"></div>
+    </section>
   </main>
 
   <footer class="acts" id="foot" hidden>
@@ -398,6 +417,7 @@ function go(view){
   if(view==='receiving'){$('title').textContent='Receiving';$('foot').hidden=false;attachCapture();refreshList();}
   if(view==='outbound'){$('title').textContent='Outbound';$('foot').hidden=false;attachCapture();refreshList();}
   if(view==='locations'){$('title').textContent='Locations';$('foot').hidden=true;attachCapture();initLocations();}
+  if(view==='inventory'){$('title').textContent='Inventory';$('foot').hidden=true;attachCapture();initInventory();}
   $('main').scrollTop=0;
 }
 
@@ -412,6 +432,7 @@ function attachCapture(){
   const p=$('scanpad'); if(p) p.addEventListener('click',onPadTap);
   const op=$('oScanpad'); if(op) op.addEventListener('click',onPadTap);
   const lp=$('lScanpad'); if(lp) lp.addEventListener('click',onPadTap);
+  const ip=$('iScanpad'); if(ip) ip.addEventListener('click',onPadTap);
   document.addEventListener('keydown',onKey,true);
 }
 function detachCapture(){
@@ -420,6 +441,7 @@ function detachCapture(){
   const p=$('scanpad'); if(p) p.removeEventListener('click',onPadTap);
   const op=$('oScanpad'); if(op) op.removeEventListener('click',onPadTap);
   const lp=$('lScanpad'); if(lp) lp.removeEventListener('click',onPadTap);
+  const ip=$('iScanpad'); if(ip) ip.removeEventListener('click',onPadTap);
 }
 function focusCap(){ if(!capAttached)return; const c=$('capture'); if(document.activeElement!==c) c.focus({preventScroll:true}); }
 function isFormField(el){ return el && (el.tagName==='SELECT' || (el.tagName==='INPUT' && el.id!=='capture')); }
@@ -429,7 +451,7 @@ function onKey(e){
   if(isFormField(document.activeElement)) return;
   if(e.key==='Enter'){
     const code=capBuf.trim();
-    if(code){ if(S.view==='locations') lookupScan(code); else commitScan(code); }
+    if(code){ if(S.view==='locations') lookupScan(code); else if(S.view==='inventory') inventoryScan(code); else commitScan(code); }
     capBuf=''; e.preventDefault(); return;
   }
   if(e.key.length===1){ capBuf+=e.key; clearTimeout(capTimer); capTimer=setTimeout(()=>{capBuf='';},120); }
@@ -796,6 +818,94 @@ function setLPad(state,big,hint,code){
   if(state==='ok'){ clearTimeout(p._t); p._t=setTimeout(()=>{ const el=$('lScanpad'); if(el){el.className='scanpad';$('lIcon').textContent='▣';$('lBig').textContent='Scan a location or product';$('lCode').textContent='';} },1600); }
 }
 
+/* ========================== INVENTORY (read-only, stock by client) ==========================
+   Reuses the same OCC data loaded by Locations: byLoc (sku->locations), skuClient
+   (sku->client), locations (metadata). Never writes. Two ways in: pick a client
+   from the list, or scan a product to jump to its owner's stock. */
+function initInventory(){
+  $('invResult').innerHTML='';
+  $('iHint').textContent='Pick a client above, or scan any product to see its owner\'s stock.';
+  if(!OCC.loaded && !OCC.loading){ loadOccupancy().then(fillClientDropdown); }
+  else { fillClientDropdown(); updateInvSyncInfo(); }
+}
+
+function updateInvSyncInfo(){
+  const when = OCC.syncedAt ? timeAgo(new Date(OCC.syncedAt)) : '—';
+  $('invSyncInfo').textContent = `Inventory as of ${when}`;
+}
+
+/* Build the client dropdown from SKUs that actually have stock. */
+function fillClientDropdown(){
+  updateInvSyncInfo();
+  // client -> {skus:Set, units:number}
+  const agg={};
+  Object.entries(OCC.byLoc).forEach(([sku,locs])=>{
+    const client=OCC.skuClient[sku]||'Unassigned';
+    const units=locs.reduce((s,l)=>s+l.qty,0);
+    if(units<=0) return;
+    (agg[client]||(agg[client]={skus:new Set(),units:0}));
+    agg[client].skus.add(sku); agg[client].units+=units;
+  });
+  const clients=Object.entries(agg).sort((a,b)=>b[1].units-a[1].units);
+  const sel=$('invClient');
+  sel.innerHTML='<option value="">— Select client —</option>'+
+    clients.map(([c,v])=>`<option value="${c.replace(/"/g,'&quot;')}">${c} (${v.units} units)</option>`).join('');
+}
+
+/* Scan a product -> resolve to SKU -> find its client -> show that client's stock. */
+async function inventoryScan(code){
+  if(!OCC.loaded){ $('iHint').textContent='Inventory not loaded — tap Refresh.'; feedback('err'); return; }
+  const sku=await resolveSku(code);
+  // find which real inventory SKU matches (flexible, like Locations)
+  const hits=findStock(code, sku);
+  if(!hits.length){ $('iHint').textContent='No stock found for '+code; feedback('dup'); return; }
+  const client=OCC.skuClient[hits[0].sku]||'Unassigned';
+  feedback('ok');
+  $('invClient').value=client;
+  showClientStock(client, hits[0].sku);
+}
+
+function showClientStock(client, highlightSku){
+  if(!client){ $('invResult').innerHTML=''; return; }
+  // Gather all SKUs of this client that have stock, grouped BY LOCATION.
+  const byLocation={}; // loc -> [ {sku, qty} ]
+  let totalUnits=0, skuSet=new Set();
+  Object.entries(OCC.byLoc).forEach(([sku,locs])=>{
+    if((OCC.skuClient[sku]||'Unassigned')!==client) return;
+    locs.forEach(l=>{
+      if(l.qty<=0) return;
+      (byLocation[l.loc]||(byLocation[l.loc]=[])).push({sku,qty:l.qty});
+      totalUnits+=l.qty; skuSet.add(sku);
+    });
+  });
+  const locs=Object.keys(byLocation).sort();
+  if(!locs.length){ $('invResult').innerHTML=`<div class="lcard"><div class="lc-empty">No stock for ${client}</div></div>`; return; }
+
+  const cards=locs.map(loc=>{
+    const meta=OCC.locations[loc];
+    const zone=meta&&meta.zone?meta.zone:'';
+    const pct=meta&&meta.occupancy_pct!=null?Math.round(meta.occupancy_pct)+'%':'';
+    const items=byLocation[loc].sort((a,b)=>b.qty-a.qty).map(it=>{
+      const hl = highlightSku && it.sku===highlightSku ? ' style="background:#e7f6ef;border-radius:8px;padding:6px 8px;margin:0 -8px"' : '';
+      return `<li${hl}><div style="flex:1"><div class="sku">${it.sku}</div></div><span class="qty">×${it.qty}</span></li>`;
+    }).join('');
+    return `<div class="lcard">
+      <div class="lc-head">
+        <div><div class="lc-code">📍 ${loc}</div><div class="lc-sub">${zone}${pct?(' · '+pct+' full'):''}</div></div>
+      </div>
+      <ul class="lc-list">${items}</ul>
+    </div>`;
+  }).join('');
+
+  const header=`<div class="lcard" style="background:var(--navy);color:#fff">
+    <div class="lc-head" style="margin:0"><div>
+      <div class="lc-code" style="color:#fff">${client}</div>
+      <div class="lc-sub" style="color:#bcd">${skuSet.size} SKUs · ${totalUnits} units · ${locs.length} locations</div>
+    </div></div></div>`;
+  $('invResult').innerHTML=header+cards;
+  $('iHint').textContent='Showing stock for '+client;
+}
+
 /* ---------- clients (via Netlify function, same as other apps) ---------- */
 async function loadClients(){
   try{
@@ -847,10 +957,12 @@ $('backBtn').onclick=()=>go('home');
 $('finishBtn').onclick=()=>{ if(confirm('Finish this session?')) go('home'); };
 $('camBtn').onclick=takePhoto;
 $('syncBtn').onclick=refreshFromSkuVault;
+$('invSyncBtn').onclick=()=>refreshFromSkuVault().then(fillClientDropdown);
+$('invClient').onchange=e=>{ showClientStock(e.target.value, null); setTimeout(focusCap,60); };
 $('loginBtn').onclick=doLogin;
 $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 // keep capture focused when tapping anywhere neutral in a scanning view
-document.addEventListener('click',e=>{ if((S.view==='receiving'||S.view==='outbound'||S.view==='locations') && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
+document.addEventListener('click',e=>{ if((S.view==='receiving'||S.view==='outbound'||S.view==='locations'||S.view==='inventory') && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
 // refocus capture after using a select
 ['rClient','rType','rCarrier','oClient','oType','oCarrier'].forEach(id=>{ document.addEventListener('change',e=>{ if(e.target.id===id) setTimeout(focusCap,60); }); });
 
