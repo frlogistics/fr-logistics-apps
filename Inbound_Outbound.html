@@ -1017,7 +1017,7 @@
     const data = await proxyFetch("GET", { tracking });
     if (!data || !data.length) return null;
     const r = data[0];
-    return { id: r.id, tracking: r.tracking, direction: r.direction, createdAt: r.received_at || r.created_at, carrier: r.carrier, type: r.type, client: r.client, notes: r.notes };
+    return { id: r.id, tracking: r.tracking, direction: r.direction, createdAt: r.received_at || r.created_at, carrier: r.carrier, type: r.type, client: r.client, notes: r.notes, photo_urls: r.photo_urls || [] };
   }
   async function getAllShipments() {
     const data = await proxyFetch("GET");
@@ -1025,7 +1025,8 @@
       id: r.id,
       tracking: r.tracking, direction: r.direction,
       createdAt: r.received_at || r.created_at,
-      carrier: r.carrier, type: r.type, client: r.client, notes: r.notes
+      carrier: r.carrier, type: r.type, client: r.client, notes: r.notes,
+      photo_urls: r.photo_urls || []
     }));
   }
   async function clearAll() {
@@ -1083,11 +1084,18 @@
       items.forEach(item=>{
         const tr=document.createElement("tr");
         const tag=item.direction==="Inbound"?`<span class="pill in">Inbound</span>`:`<span class="pill out">Outbound</span>`;
-        tr.innerHTML=`<td>${fmtDate(item.createdAt)} ${fmtTime(item.createdAt)}</td><td>${tag}</td><td class="mono">${item.tracking}</td><td>${item.client}</td><td>${item.type}</td><td>${item.carrier}</td><td style="white-space:nowrap"><button data-print="${item.tracking}">Print</button> <button class="del" data-del="${item.tracking}" title="Delete this record">🗑️</button></td>`;
+        const nPhotos=(item.photo_urls||[]).length;
+        const photoBtn=nPhotos?`<button class="ioPhotos" data-photos="${item.tracking}" title="View photos" style="margin-left:4px">📷 ${nPhotos}</button>`:"";
+        tr.innerHTML=`<td>${fmtDate(item.createdAt)} ${fmtTime(item.createdAt)}</td><td>${tag}</td><td class="mono">${item.tracking}</td><td>${item.client}</td><td>${item.type}</td><td>${item.carrier}</td><td style="white-space:nowrap"><button data-print="${item.tracking}">Print</button>${photoBtn} <button class="del" data-del="${item.tracking}" title="Delete this record">🗑️</button></td>`;
         tb.appendChild(tr);
       });
       tb.querySelectorAll("button[data-print]").forEach(btn=>btn.addEventListener("click",async()=>{ await openLabel(btn.getAttribute("data-print")); }));
       tb.querySelectorAll("button[data-del]").forEach(btn=>btn.addEventListener("click",async()=>{ await deleteShipment(btn.getAttribute("data-del")); }));
+      tb.querySelectorAll("button[data-photos]").forEach(btn=>btn.addEventListener("click",()=>{
+        const trk=btn.getAttribute("data-photos");
+        const it=items.find(x=>x.tracking===trk);
+        if(it) openShipmentPhotos(it);
+      }));
     };
     fill(ib,$("inTbl")); fill(ob,$("outTbl"));
     $("summary").textContent=`Inbound: ${ib.length} • Outbound: ${ob.length} • Total: ${data.length}`;
@@ -2226,6 +2234,31 @@
         });
       });
     }catch(e){ st.textContent="Error: "+(e.message||e); }
+  }
+
+  // ── Shipment photo viewer (Inbound/Outbound records) ──
+  function openShipmentPhotos(item){
+    const urls=item.photo_urls||[];
+    let d=document.getElementById("ioPhotosDlg");
+    if(!d){
+      d=document.createElement("dialog");
+      d.id="ioPhotosDlg";
+      d.style.cssText="border:0;border-radius:16px;max-width:440px;width:92vw;padding:0;box-shadow:0 10px 40px rgba(0,0,0,.25)";
+      d.innerHTML=`<div style="padding:16px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
+          <b id="ioPhotosTitle" style="font-size:15px"></b>
+          <button onclick="this.closest('dialog').close()" style="border:0;background:none;font-size:22px;cursor:pointer;line-height:1">×</button>
+        </div>
+        <div id="ioPhotosBody" style="padding:16px;max-height:70vh;overflow-y:auto"></div>`;
+      document.body.appendChild(d);
+    }
+    d.querySelector("#ioPhotosTitle").textContent=item.tracking+" — "+(item.client||"");
+    d.querySelector("#ioPhotosBody").innerHTML = urls.length
+      ? urls.map((u,i)=>`<a href="${u}" target="_blank" rel="noopener" style="display:block">
+           <img src="${u}" alt="Package photo ${i+1}" loading="lazy"
+                style="width:100%;border-radius:10px;border:1px solid var(--line);margin-bottom:10px" />
+         </a>`).join("")
+      : `<div class="hint">No photos for this shipment.</div>`;
+    d.showModal();
   }
 
   // ── Photo viewer ──
