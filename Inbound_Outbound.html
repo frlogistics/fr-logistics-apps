@@ -1079,6 +1079,30 @@
     const ib=data.filter(x=>x.direction==="Inbound"), ob=data.filter(x=>x.direction==="Outbound");
 
     /* FIX: added 🗑️ delete button per row alongside Print */
+    // Shipment photo viewer (Inbound/Outbound records)
+    function openShipmentPhotos(item){
+      const urls=item.photo_urls||[];
+      let d=document.getElementById("ioPhotosDlg");
+      if(!d){
+        d=document.createElement("dialog");
+        d.id="ioPhotosDlg";
+        d.style.cssText="border:0;border-radius:16px;max-width:440px;width:92vw;padding:0;box-shadow:0 10px 40px rgba(0,0,0,.25)";
+        d.innerHTML=`<div style="padding:16px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
+            <b id="ioPhotosTitle" style="font-size:15px"></b>
+            <button onclick="this.closest('dialog').close()" style="border:0;background:none;font-size:22px;cursor:pointer;line-height:1">×</button>
+          </div>
+          <div id="ioPhotosBody" style="padding:16px;max-height:70vh;overflow-y:auto"></div>`;
+        document.body.appendChild(d);
+      }
+      d.querySelector("#ioPhotosTitle").textContent=item.tracking+" — "+(item.client||"");
+      d.querySelector("#ioPhotosBody").innerHTML = urls.length
+        ? urls.map((u,i)=>`<a href="${u}" target="_blank" rel="noopener" style="display:block">
+             <img src="${u}" alt="Package photo ${i+1}" loading="lazy"
+                  style="width:100%;border-radius:10px;border:1px solid var(--line);margin-bottom:10px" />
+           </a>`).join("")
+        : `<div class="hint">No photos for this shipment.</div>`;
+      d.showModal();
+    }
     const fill=(items,tbl)=>{
       const tb=tbl.querySelector("tbody"); tb.innerHTML="";
       items.forEach(item=>{
@@ -2234,31 +2258,6 @@
         });
       });
     }catch(e){ st.textContent="Error: "+(e.message||e); }
-  }
-
-  // ── Shipment photo viewer (Inbound/Outbound records) ──
-  function openShipmentPhotos(item){
-    const urls=item.photo_urls||[];
-    let d=document.getElementById("ioPhotosDlg");
-    if(!d){
-      d=document.createElement("dialog");
-      d.id="ioPhotosDlg";
-      d.style.cssText="border:0;border-radius:16px;max-width:440px;width:92vw;padding:0;box-shadow:0 10px 40px rgba(0,0,0,.25)";
-      d.innerHTML=`<div style="padding:16px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
-          <b id="ioPhotosTitle" style="font-size:15px"></b>
-          <button onclick="this.closest('dialog').close()" style="border:0;background:none;font-size:22px;cursor:pointer;line-height:1">×</button>
-        </div>
-        <div id="ioPhotosBody" style="padding:16px;max-height:70vh;overflow-y:auto"></div>`;
-      document.body.appendChild(d);
-    }
-    d.querySelector("#ioPhotosTitle").textContent=item.tracking+" — "+(item.client||"");
-    d.querySelector("#ioPhotosBody").innerHTML = urls.length
-      ? urls.map((u,i)=>`<a href="${u}" target="_blank" rel="noopener" style="display:block">
-           <img src="${u}" alt="Package photo ${i+1}" loading="lazy"
-                style="width:100%;border-radius:10px;border:1px solid var(--line);margin-bottom:10px" />
-         </a>`).join("")
-      : `<div class="hint">No photos for this shipment.</div>`;
-    d.showModal();
   }
 
   // ── Photo viewer ──
