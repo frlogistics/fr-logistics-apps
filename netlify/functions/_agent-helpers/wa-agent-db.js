@@ -29,7 +29,7 @@ function sb() {
 // ─────────────────────────────────────────────────────────────────────
 // 1. EXISTING CLIENT LOOKUP
 // Normalizes phone (strip +, spaces, dashes) and matches against
-// wa_clients.wa_number. Returns { client, language } or null.
+// fr_clients.wa_number. Returns { clientId, clientName, preferredLanguage } or null.
 // ─────────────────────────────────────────────────────────────────────
 
 function normalizePhone(raw) {
@@ -40,9 +40,12 @@ export async function lookupExistingClient(waNumber) {
   const normalized = normalizePhone(waNumber);
   if (!normalized) return null;
 
+  // fr_clients es la fuente canonica de clientes de todo el ecosistema.
+  // wa_clients quedo obsoleta (duplicados) y ademas no tiene preferred_language,
+  // lo que hacia fallar la consulta entera y devolver null siempre.
   const { data, error } = await sb()
-    .from("wa_clients")
-    .select("id, name, company, wa_number, preferred_language, active")
+    .from("fr_clients")
+    .select("id, company, wa_number, lang, active")
     .eq("active", true);
 
   if (error) {
@@ -51,16 +54,15 @@ export async function lookupExistingClient(waNumber) {
   }
   if (!data?.length) return null;
 
-  // Match by normalized phone
   const match = data.find(
-    (c) => normalizePhone(c.wa_number) === normalized
+    (c) => c.wa_number && normalizePhone(c.wa_number) === normalized
   );
   if (!match) return null;
 
   return {
     clientId: match.id,
-    clientName: match.name || match.company || "Cliente",
-    preferredLanguage: (match.preferred_language || "").toUpperCase() || null,
+    clientName: match.company || "Cliente",
+    preferredLanguage: (match.lang || "").toUpperCase() || null,
   };
 }
 
