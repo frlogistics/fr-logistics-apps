@@ -27,6 +27,16 @@ const RESEND_KEY   = process.env.RESEND_API_KEY;
 const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY;
 const VAPID_PRIV   = process.env.VAPID_PRIVATE_KEY;
 
+// Numeros propios de FR-Logistics. Un mensaje entrante desde cualquiera de
+// estos NO es un cliente: es un auto-reply de nuestra propia infraestructura.
+// Se descarta antes de persistir, notificar o enrutar al agente.
+const FR_OWN_NUMBERS = new Set(
+  (process.env.FR_OWN_NUMBERS || "17863001443,13052403172,17867757335")
+    .split(",")
+    .map((n) => n.trim().replace(/[^0-9]/g, ""))
+    .filter(Boolean)
+);
+
 if (VAPID_PUBLIC && VAPID_PRIV) {
   webpush.setVapidDetails(
     "mailto:josefuentes@fr-logistics.net",
@@ -74,6 +84,13 @@ export default async function handler(req) {
     const newMessages = [];
     for (const msg of msgs) {
       const from = msg.from;
+
+      // Guard: ignorar numeros propios (corta el loop 305 <-> 786)
+      if (FR_OWN_NUMBERS.has(String(from || "").replace(/[^0-9]/g, ""))) {
+        console.log("[webhook] Ignorado - numero propio: " + from);
+        continue;
+      }
+
       const id   = msg.id;
       const ts   = Number(msg.timestamp);
       const text =
@@ -212,7 +229,7 @@ async function sendPush(messages) {
   if (!subs?.length) { console.log('[webhook] no active subscriptions'); return; }
   console.log('[webhook] dispatching push to ' + subs.length + ' subscribers');
   const first = messages[0];
-  const payload = JSON.stringify({ title: messages.length === 1 ? first.clientName : first.clientName + ' +' + (messages.length - 1) + ' more', body: first.text.slice(0, 140), tag: 'wa-inbox', url: 'https://apps.fr-logistics.net/portal.html#wa-inbox', icon: 'https://fr-logistics.net/wp-content/uploads/2024/03/favicon-196x196.png' });
+  const payload = JSON.stringify({ title: messages.length === 1 ? first.clientName : first.clientName + ' +' + (messages.length - 1) + ' more', body: first.text.slice(0, 140), tag: 'wa-inbox', url: 'https://apps.fr-logistics.net/portal.html#wa-inbox', icon: 'https://fr-logistics.net/assets/Fr-Logistics_Icon.png' });
   const dead = []; let ok = 0;
   await Promise.all(subs.map(async s => { try { await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 3600 }); ok++; } catch (err) { const code = err?.statusCode; if (code === 404 || code === 410) { dead.push(s.endpoint); } else { console.error('[webhook] push send err code=' + code + ' body=' + (err?.body || err?.message)); } } }));
   console.log('[webhook] push: ' + ok + '/' + subs.length + ' delivered, ' + dead.length + ' dead');
