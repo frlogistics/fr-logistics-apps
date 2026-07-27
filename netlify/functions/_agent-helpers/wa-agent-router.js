@@ -253,25 +253,32 @@ async function handleHumanShortcut(msg) {
   }
 
   // No conversation — create one straight in handoff_jose
+  // El STEP 0 (atajo humano) corre antes del lookup de cliente del STEP 2,
+  // asi que esta rama necesita consultarlo por su cuenta. Sin esto, un
+  // cliente activo que escribe "hablar con Jose" se registra como lead nuevo.
+  const existingClient = await lookupExistingClient(from);
+
   const conv = await createConversation({
     waNumber: from,
     waProfileName: clientName,
     firstMessage: text,
     language,
     languageSource: existingConv?.language ? "existing_conv" : "text_detect",
-    isExistingClient: false,
-    clientId: null,
+    isExistingClient: !!existingClient,
+    clientId: existingClient?.clientId || null,
   });
   if (!conv) return;
 
-  // Create lead row
-  const leadId = await createLeadFromConversation({
-    waNumber: from,
-    waProfileName: clientName,
-    language: language.toLowerCase(),
-    firstMessage: text,
-  });
-  if (leadId) await linkConversationToLead(conv.id, leadId);
+  // Lead row solo si NO es un cliente existente
+  if (!existingClient) {
+    const leadId = await createLeadFromConversation({
+      waNumber: from,
+      waProfileName: clientName,
+      language: language.toLowerCase(),
+      firstMessage: text,
+    });
+    if (leadId) await linkConversationToLead(conv.id, leadId);
+  }
 
   await markHandoff(conv.id, "human_shortcut", "handoff_jose");
 
