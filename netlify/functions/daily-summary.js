@@ -2,13 +2,13 @@
 // Scheduled daily at 11PM UTC (7PM EST)
 // Reads TODAY's movements from shipments_general
 // Groups by client → sends daily_summary WA to each client with activity
-// Always sends a copy to FR-Logistics monitoring number (+17863001443)
+// Always sends a copy to FR-Logistics monitoring number (+17867757335)
 
 const SUPABASE_URL  = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY  = Netlify.env.get("SUPABASE_SERVICE_KEY");
 const PHONE_ID      = Netlify.env.get("WHATSAPP_PHONE_ID");
 const WA_TOKEN      = Netlify.env.get("WHATSAPP_TOKEN");
-const FR_MONITOR    = "17863001443";  // Always CC'd — FR-Logistics ops number
+const FR_MONITOR    = Netlify.env.get("FR_MONITOR_WA") || "17867757335";  // CC interno — FR-Logistics ops
 const WA_BASE       = `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`;
 
 const SB_HEADERS = () => ({
