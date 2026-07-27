@@ -265,12 +265,14 @@ In the meantime, could you share your name and email so he can reach out?`,
   handoff_jose_complete_es: (name) =>
 `Listo, ${name}. Jose Fuentes te contactará lo antes posible al email que dejaste.
 
-Si necesitas algo urgente, puedes llamarnos al +1 786-300-1443.`,
+Si prefieres adelantarlo, agenda una llamada aquí:
+https://calendly.com/fr-logistics/discoverycall`,
 
   handoff_jose_complete_en: (name) =>
 `All set, ${name}. Jose Fuentes will reach out asap to the email you provided.
 
-If you need something urgent, you can call us at +1 786-300-1443.`,
+If you'd rather move faster, book a call here:
+https://calendly.com/fr-logistics/discoverycall`,
 
   // ───────────────────────────────────────────────────────────────
   // KILL SWITCH — agent disabled (monthly cap reached)
@@ -282,7 +284,7 @@ If you need something urgent, you can call us at +1 786-300-1443.`,
 En este momento estamos con alta demanda.
 Nuestro equipo te contactará pronto a través de info@fr-logistics.net.
 
-Si es urgente, puedes llamar al +1 786-300-1443.`,
+Si es urgente, agenda aquí: https://calendly.com/fr-logistics/discoverycall`,
 
   kill_switch_en: () =>
 `Hi! I'm Liam from FR-Logistics.
@@ -290,7 +292,7 @@ Si es urgente, puedes llamar al +1 786-300-1443.`,
 We're experiencing high demand right now.
 Our team will contact you shortly via info@fr-logistics.net.
 
-If urgent, call +1 786-300-1443.`,
+If urgent, book here: https://calendly.com/fr-logistics/discoverycall`,
 
   // ───────────────────────────────────────────────────────────────
   // EXISTING CLIENT — bot doesn't qualify, redirects to human inbox
@@ -302,14 +304,14 @@ If urgent, call +1 786-300-1443.`,
 
 Tu mensaje fue recibido. El equipo de FR-Logistics te responderá pronto.
 
-Si es urgente, puedes llamar al +1 786-300-1443.`,
+Si es urgente, escríbenos a warehouse@fr-logistics.net`,
 
   existing_client_redirect_en: (clientName) =>
 `Hi ${clientName}! 👋
 
 We received your message. The FR-Logistics team will reply soon.
 
-If urgent, you can call +1 786-300-1443.`,
+If urgent, email us at warehouse@fr-logistics.net`,
 
   // ───────────────────────────────────────────────────────────────
   // PAUSED — Jose took over manually
@@ -325,13 +327,13 @@ If urgent, you can call +1 786-300-1443.`,
 `Veo que no pudimos continuar la conversación.
 
 Cuando estés listo para retomarla, solo escríbeme aquí y te ayudo.
-Mientras tanto, puedes visitar fr-logistics.net o llamar al +1 786-300-1443.`,
+Mientras tanto, puedes visitar fr-logistics.net o agendar en https://calendly.com/fr-logistics/discoverycall`,
 
   timeout_en: () =>
 `Looks like we couldn't continue the conversation.
 
 Whenever you're ready to pick it back up, just message me here.
-Meanwhile, you can visit fr-logistics.net or call +1 786-300-1443.`,
+Meanwhile, you can visit fr-logistics.net or book at https://calendly.com/fr-logistics/discoverycall`,
 };
 
 // ─────────────────────────────────────────────────────────────────────
