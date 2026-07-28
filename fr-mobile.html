@@ -210,6 +210,10 @@
           <span class="ic">📦</span>
           <span><span class="nm">Inventory</span><br><span class="sub">Stock by client</span></span>
         </button>
+        <button class="mod" data-open="portal.html#app=pallets.html">
+          <span class="ic">🧱</span>
+          <span><span class="nm">Pallets</span><br><span class="sub">Returns pallet builder</span></span>
+        </button>
       </div>
     </section>
 
@@ -981,6 +985,7 @@ function enterApp(){
 
 /* ---------- wire up ---------- */
 document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
+document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{ location.href=b.dataset.open; });
 document.querySelectorAll('[data-soon]').forEach(b=>b.onclick=()=>toast('Module coming soon'));
 $('backBtn').onclick=()=>go('home');
 $('finishBtn').onclick=()=>{ if(confirm('Finish this session?')) go('home'); };
