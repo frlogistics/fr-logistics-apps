@@ -474,12 +474,14 @@ function go(view){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   $('v-'+view).classList.add('active');
   const bar=$('topbar');
-  if(view==='home'){bar.classList.remove('has-back');$('title').textContent='FR Mobile';$('foot').hidden=true;$('palFoot').hidden=true;detachCapture();}
+  // Reset both footers every time; each view turns on only the one it needs.
+  $('foot').hidden=true; $('palFoot').hidden=true;
+  if(view==='home'){bar.classList.remove('has-back');$('title').textContent='FR Mobile';detachCapture();}
   else{bar.classList.add('has-back');}
-  if(view==='receiving'){$('title').textContent='Receiving';$('foot').hidden=false;$('palFoot').hidden=true;attachCapture();refreshList();}
-  if(view==='outbound'){$('title').textContent='Outbound';$('foot').hidden=false;$('palFoot').hidden=true;attachCapture();refreshList();}
-  if(view==='locations'){$('title').textContent='Locations';$('foot').hidden=true;$('palFoot').hidden=true;attachCapture();initLocations();}
-  if(view==='inventory'){$('title').textContent='Inventory';$('foot').hidden=true;$('palFoot').hidden=true;attachCapture();initInventory();}
+  if(view==='receiving'){$('title').textContent='Receiving';$('foot').hidden=false;attachCapture();refreshList();}
+  if(view==='outbound'){$('title').textContent='Outbound';$('foot').hidden=false;attachCapture();refreshList();}
+  if(view==='locations'){$('title').textContent='Locations';attachCapture();initLocations();}
+  if(view==='inventory'){$('title').textContent='Inventory';attachCapture();initInventory();}
   if(view==='pallets'){$('title').textContent='Pallets';attachCapture();initPallets();}
   $('main').scrollTop=0;
 }
