@@ -106,11 +106,13 @@
   .empty{color:var(--muted);text-align:center;font-size:14px;padding:18px 0}
 
   /* Footer actions */
+  [hidden]{display:none !important;}
   footer.acts{
     flex:0 0 auto;display:flex;gap:10px;padding:12px 14px;
     background:var(--white);border-top:1px solid var(--line);
     padding-bottom:calc(12px + env(safe-area-inset-bottom));
   }
+  footer.acts[hidden]{display:none !important;}
   .btn{
     flex:1;height:var(--tap);border:0;border-radius:14px;font-size:16px;font-weight:650;
     display:flex;align-items:center;justify-content:center;gap:8px;color:#fff;background:var(--teal);
