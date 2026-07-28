@@ -210,7 +210,7 @@
           <span class="ic">📦</span>
           <span><span class="nm">Inventory</span><br><span class="sub">Stock by client</span></span>
         </button>
-        <button class="mod" data-open="portal.html#app=pallets.html">
+        <button class="mod" data-go="pallets">
           <span class="ic">🧱</span>
           <span><span class="nm">Pallets</span><br><span class="sub">Returns pallet builder</span></span>
         </button>
@@ -339,11 +339,69 @@
 
       <div id="invResult"></div>
     </section>
+
+    <!-- PALLETS (returns pallet builder — writes to pallets / pallet_packages) -->
+    <section class="view" id="v-pallets">
+      <!-- when no pallet is active: create or load -->
+      <div id="palNoPallet">
+        <div class="lcard">
+          <div class="lc-code" style="font-size:16px;margin-bottom:12px">Start a pallet</div>
+          <div class="field">
+            <label for="palClient">Client</label>
+            <select id="palClient"><option value="">— Select client —</option></select>
+          </div>
+          <div class="field">
+            <label for="palSize">Pallet size</label>
+            <select id="palSize">
+              <option>48x40 Standard</option>
+              <option>48x48</option>
+              <option>Gaylord</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <button class="btn go" id="palCreateBtn" style="width:100%;margin-top:6px">+ New pallet</button>
+        </div>
+        <div class="lcard">
+          <div class="lc-code" style="font-size:15px;margin-bottom:10px">Open pallets</div>
+          <ul class="lc-list" id="palOpenList"></ul>
+          <div class="lc-empty" id="palOpenEmpty">No open pallets.</div>
+        </div>
+      </div>
+
+      <!-- when a pallet is active: scan into it -->
+      <div id="palActive" hidden>
+        <div class="lcard" style="background:var(--navy);color:#fff">
+          <div class="lc-head" style="margin:0">
+            <div>
+              <div class="lc-code" style="color:#fff;font-size:15px" id="palId">FRP-…</div>
+              <div class="lc-sub" style="color:#bcd" id="palMeta">—</div>
+            </div>
+            <span class="lc-zone" id="palCount">0</span>
+          </div>
+        </div>
+
+        <div class="scanpad" id="pScanpad" tabindex="-1">
+          <div class="icon" id="pIcon">▣</div>
+          <div class="big" id="pBig">Scan package tracking</div>
+          <div class="lastcode" id="pCode"></div>
+          <div class="hint" id="pHint">Pull the trigger to add a package to this pallet.</div>
+        </div>
+
+        <ul class="scans" id="palPkgList"></ul>
+        <div class="empty" id="palPkgEmpty">No packages yet. Scan the first one.</div>
+      </div>
+    </section>
   </main>
 
   <footer class="acts" id="foot" hidden>
     <button class="btn ghost" id="camBtn">📷 Photo</button>
     <button class="btn stop" id="finishBtn">Finish session</button>
+  </footer>
+
+  <footer class="acts" id="palFoot" hidden>
+    <button class="btn ghost" id="palFullBtn">Mark FULL</button>
+    <button class="btn ghost" id="palWrapBtn">Wrapped ✓</button>
+    <button class="btn stop" id="palCloseBtn">Close pallet</button>
   </footer>
 </div>
 
@@ -416,12 +474,13 @@ function go(view){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   $('v-'+view).classList.add('active');
   const bar=$('topbar');
-  if(view==='home'){bar.classList.remove('has-back');$('title').textContent='FR Mobile';$('foot').hidden=true;detachCapture();}
+  if(view==='home'){bar.classList.remove('has-back');$('title').textContent='FR Mobile';$('foot').hidden=true;$('palFoot').hidden=true;detachCapture();}
   else{bar.classList.add('has-back');}
-  if(view==='receiving'){$('title').textContent='Receiving';$('foot').hidden=false;attachCapture();refreshList();}
-  if(view==='outbound'){$('title').textContent='Outbound';$('foot').hidden=false;attachCapture();refreshList();}
-  if(view==='locations'){$('title').textContent='Locations';$('foot').hidden=true;attachCapture();initLocations();}
-  if(view==='inventory'){$('title').textContent='Inventory';$('foot').hidden=true;attachCapture();initInventory();}
+  if(view==='receiving'){$('title').textContent='Receiving';$('foot').hidden=false;$('palFoot').hidden=true;attachCapture();refreshList();}
+  if(view==='outbound'){$('title').textContent='Outbound';$('foot').hidden=false;$('palFoot').hidden=true;attachCapture();refreshList();}
+  if(view==='locations'){$('title').textContent='Locations';$('foot').hidden=true;$('palFoot').hidden=true;attachCapture();initLocations();}
+  if(view==='inventory'){$('title').textContent='Inventory';$('foot').hidden=true;$('palFoot').hidden=true;attachCapture();initInventory();}
+  if(view==='pallets'){$('title').textContent='Pallets';attachCapture();initPallets();}
   $('main').scrollTop=0;
 }
 
@@ -437,6 +496,7 @@ function attachCapture(){
   const op=$('oScanpad'); if(op) op.addEventListener('click',onPadTap);
   const lp=$('lScanpad'); if(lp) lp.addEventListener('click',onPadTap);
   const ip=$('iScanpad'); if(ip) ip.addEventListener('click',onPadTap);
+  const pp=$('pScanpad'); if(pp) pp.addEventListener('click',onPadTap);
   document.addEventListener('keydown',onKey,true);
 }
 function detachCapture(){
@@ -446,6 +506,7 @@ function detachCapture(){
   const op=$('oScanpad'); if(op) op.removeEventListener('click',onPadTap);
   const lp=$('lScanpad'); if(lp) lp.removeEventListener('click',onPadTap);
   const ip=$('iScanpad'); if(ip) ip.removeEventListener('click',onPadTap);
+  const pp=$('pScanpad'); if(pp) pp.removeEventListener('click',onPadTap);
 }
 function focusCap(){ if(!capAttached)return; const c=$('capture'); if(document.activeElement!==c) c.focus({preventScroll:true}); }
 function isFormField(el){ return el && (el.tagName==='SELECT' || (el.tagName==='INPUT' && el.id!=='capture')); }
@@ -455,7 +516,7 @@ function onKey(e){
   if(isFormField(document.activeElement)) return;
   if(e.key==='Enter'){
     const code=capBuf.trim();
-    if(code){ if(S.view==='locations') lookupScan(code); else if(S.view==='inventory') inventoryScan(code); else commitScan(code); }
+    if(code){ if(S.view==='locations') lookupScan(code); else if(S.view==='inventory') inventoryScan(code); else if(S.view==='pallets') palletScan(code); else commitScan(code); }
     capBuf=''; e.preventDefault(); return;
   }
   if(e.key.length===1){ capBuf+=e.key; clearTimeout(capTimer); capTimer=setTimeout(()=>{capBuf='';},120); }
@@ -939,6 +1000,177 @@ function showClientStock(client, highlightSku){
   $('iHint').textContent='Showing stock for '+client;
 }
 
+/* ========================== PALLETS (returns pallet builder) ==========================
+   Writes to pallets / pallet_packages via anon key (same as pallets.html — those
+   tables have public RLS). Shares data with the desktop app. */
+const PAL_URL='https://rijbschnchjiuggrhfrx.supabase.co';
+// Same anon key pallets.html uses — those tables have public RLS.
+const PAL_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpamJzY2huY2hqaXVnZ3JoZnJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMTQwOTQsImV4cCI6MjA4ODg5MDA5NH0.s3T4CStjWqOvz7qDpYtjt0yVJ0iyOMAKKwxkADSEs4s';
+const PAL={ current:null };
+
+async function palFetch(method, path, body){
+  const res=await fetch(PAL_URL+path,{
+    method,
+    headers:{ 'apikey':PAL_KEY, 'Authorization':'Bearer '+PAL_KEY, 'Content-Type':'application/json',
+      'Prefer': method==='POST'?'return=representation,resolution=merge-duplicates':'' },
+    body: body?JSON.stringify(body):undefined
+  });
+  if(!res.ok){ throw new Error(await res.text()); }
+  const t=await res.text(); return t?JSON.parse(t):[];
+}
+
+function palGenId(){
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  const rnd=Math.random().toString(16).slice(2,6).toUpperCase();
+  return `FRP-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${rnd}`;
+}
+
+function initPallets(){
+  // fill client dropdown (reuse the roster already loaded)
+  const sel=$('palClient');
+  if(sel && S.clients.length && sel.options.length<=1){
+    sel.innerHTML='<option value="">— Select client —</option>'+
+      S.clients.map(c=>`<option value="${c.label.replace(/"/g,'&quot;')}">${c.label}</option>`).join('');
+  }
+  if(PAL.current) showActivePallet(); else showPalletHome();
+}
+
+function showPalletHome(){
+  $('palNoPallet').hidden=false; $('palActive').hidden=true; $('palFoot').hidden=true;
+  refreshOpenPallets();
+}
+function showActivePallet(){
+  $('palNoPallet').hidden=true; $('palActive').hidden=false; $('palFoot').hidden=false;
+  renderActivePallet();
+}
+
+async function refreshOpenPallets(){
+  const ul=$('palOpenList'), empty=$('palOpenEmpty');
+  ul.innerHTML=''; empty.style.display='block'; empty.textContent='Loading…';
+  try{
+    const rows=await palFetch('GET', `/rest/v1/pallets?app_source=eq.pallets&status=neq.FULL&order=updated_at.desc&limit=50`);
+    if(!rows.length){ empty.textContent='No open pallets.'; return; }
+    empty.style.display='none';
+    rows.forEach(r=>{
+      const li=document.createElement('li');
+      const n=(r.packages||[]).length;
+      li.innerHTML=`<div style="flex:1"><div class="sku">${r.pallet_id}</div><div class="cli">${r.client||'—'} · ${r.status||'OPEN'}</div></div><span class="qty">${n}</span>`;
+      li.style.cursor='pointer';
+      li.onclick=()=>loadPallet(r);
+      ul.appendChild(li);
+    });
+  }catch(e){ empty.textContent='Could not load pallets.'; }
+}
+
+function loadPallet(r){
+  PAL.current={ palletId:r.pallet_id, client:r.client||'', palletSize:r.pallet_size||'',
+    status:r.status||'OPEN', packages:r.packages||[], createdAt:r.created_at,
+    fullAt:r.full_at, wrappedAt:r.wrapped_at };
+  showActivePallet();
+}
+
+async function createPallet(){
+  const client=$('palClient').value.trim();
+  if(!client){ toast('Pick a client first'); return; }
+  PAL.current={ palletId:palGenId(), client, palletSize:$('palSize').value,
+    status:'OPEN', packages:[], createdAt:new Date().toISOString(), fullAt:null, wrappedAt:null };
+  try{ await savePallet(); showActivePallet(); toast('Pallet created'); }
+  catch(e){ toast('Could not create pallet'); }
+}
+
+async function savePallet(){
+  const p=PAL.current;
+  await palFetch('POST', `/rest/v1/pallets?on_conflict=pallet_id`, {
+    pallet_id:p.palletId, client:p.client||'', pallet_size:p.palletSize||'',
+    status:p.status||'OPEN', packages:p.packages||[],
+    full_at:p.fullAt||null, wrapped_at:p.wrappedAt||null,
+    updated_at:new Date().toISOString(), app_source:'pallets'
+  });
+}
+
+function setPPad(state,big,hint,code){
+  const p=$('pScanpad'); if(!p) return;
+  p.className='scanpad'+(state?(' '+state):'');
+  $('pBig').textContent=big; $('pCode').textContent=code||'';
+  $('pHint').textContent=hint||'Pull the trigger to add a package to this pallet.';
+  $('pIcon').textContent = state==='ok'?'✓' : state==='dup'?'!' : state==='err'?'✕' : '▣';
+  if(state==='ok'||state==='dup'){ clearTimeout(p._t); p._t=setTimeout(()=>{ if($('pScanpad')) setPPad('','Scan package tracking','',''); },1400); }
+}
+
+async function palletScan(code){
+  if(!PAL.current){ setPPad('err','No active pallet','Create or load a pallet first',code); feedback('err'); return; }
+  // Guard: a Pallet ID is not a package tracking
+  if(/^FRP-/i.test(code)){ setPPad('err','That is a Pallet ID','Scan the carrier label, not the pallet',code); feedback('err'); return; }
+  // Already in this pallet?
+  if((PAL.current.packages||[]).some(x=>x.tracking===code)){
+    setPPad('dup','Already on this pallet','',code); feedback('dup'); return;
+  }
+  setPPad('','Checking…','',code);
+  try{
+    // Already on another pallet?
+    const exists=await palFetch('GET', `/rest/v1/pallet_packages?tracking=eq.${encodeURIComponent(code)}&limit=1`);
+    if(exists && exists.length){
+      setPPad('dup','On another pallet',`Already on ${exists[0].pallet_id}`,code); feedback('dup');
+      toast('Already on pallet '+exists[0].pallet_id); return;
+    }
+    const pkg={tracking:code, addedAt:new Date().toISOString(), notes:''};
+    PAL.current.packages.push(pkg);
+    await savePallet();
+    await palFetch('POST', `/rest/v1/pallet_packages?on_conflict=tracking`, {tracking:code, pallet_id:PAL.current.palletId, notes:''});
+    setPPad('ok','Added',''+code, code); feedback('ok');
+    renderActivePallet();
+  }catch(e){
+    // rollback local add
+    PAL.current.packages=(PAL.current.packages||[]).filter(x=>x.tracking!==code);
+    setPPad('err','Not added','Try again',code); feedback('err');
+  }
+}
+
+async function removePackage(trk){
+  if(!PAL.current) return;
+  const prev=PAL.current.packages.slice();
+  PAL.current.packages=PAL.current.packages.filter(x=>x.tracking!==trk);
+  renderActivePallet();
+  try{
+    await savePallet();
+    await palFetch('DELETE', `/rest/v1/pallet_packages?tracking=eq.${encodeURIComponent(trk)}`);
+    toast('Removed: '+trk.slice(-8));
+  }catch(e){ PAL.current.packages=prev; renderActivePallet(); toast('Could not remove'); }
+}
+
+function renderActivePallet(){
+  const p=PAL.current; if(!p) return;
+  $('palId').textContent=p.palletId;
+  $('palMeta').textContent=`${p.client||'—'} · ${p.palletSize||''} · ${p.status||'OPEN'}`;
+  const pkgs=p.packages||[];
+  $('palCount').textContent=pkgs.length;
+  const ul=$('palPkgList'), empty=$('palPkgEmpty');
+  empty.style.display=pkgs.length?'none':'block';
+  ul.innerHTML='';
+  pkgs.slice().reverse().slice(0,60).forEach(pk=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="code">${pk.tracking}</span><span class="badge">${timeAgo(new Date(pk.addedAt))}</span>`;
+    const b=document.createElement('button');b.className='undo';b.textContent='↺';b.title='Remove';
+    b.onclick=()=>removePackage(pk.tracking);li.appendChild(b);
+    ul.appendChild(li);
+  });
+}
+
+async function palMarkStatus(newStatus){
+  if(!PAL.current) return;
+  PAL.current.status=newStatus;
+  if(newStatus==='FULL') PAL.current.fullAt=new Date().toISOString();
+  if(newStatus==='WRAPPED / READY FOR PICKUP') PAL.current.wrappedAt=new Date().toISOString();
+  try{ await savePallet(); renderActivePallet(); toast('Status: '+newStatus); }
+  catch(e){ toast('Could not update status'); }
+}
+
+function closePallet(){
+  // "Close" here = stop working on it (it stays saved). Go back to pallet home.
+  PAL.current=null;
+  showPalletHome();
+}
+
 /* ---------- clients (via Netlify function, same as other apps) ---------- */
 async function loadClients(){
   try{
@@ -993,10 +1225,15 @@ $('camBtn').onclick=takePhoto;
 $('syncBtn').onclick=refreshFromSkuVault;
 $('invSyncBtn').onclick=()=>refreshFromSkuVault().then(fillClientDropdown);
 $('invClient').onchange=e=>{ showClientStock(e.target.value, null); setTimeout(focusCap,60); };
+$('palCreateBtn').onclick=createPallet;
+$('palCloseBtn').onclick=closePallet;
+$('palFullBtn').onclick=()=>palMarkStatus('FULL');
+$('palWrapBtn').onclick=()=>palMarkStatus('WRAPPED / READY FOR PICKUP');
+['palClient','palSize'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('change',()=>setTimeout(focusCap,60)); });
 $('loginBtn').onclick=doLogin;
 $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 // keep capture focused when tapping anywhere neutral in a scanning view
-document.addEventListener('click',e=>{ if((S.view==='receiving'||S.view==='outbound'||S.view==='locations'||S.view==='inventory') && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
+document.addEventListener('click',e=>{ if((S.view==='receiving'||S.view==='outbound'||S.view==='locations'||S.view==='inventory'||S.view==='pallets') && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
 // refocus capture after using a select
 ['rClient','rType','rCarrier','oClient','oType','oCarrier'].forEach(id=>{ document.addEventListener('change',e=>{ if(e.target.id===id) setTimeout(focusCap,60); }); });
 
