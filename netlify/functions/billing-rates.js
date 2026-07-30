@@ -138,6 +138,7 @@ const RATE_COLUMN_MAP = {
   "QC_HOUR":       "qc",
   "QC_PHOTO":      "qc_photo",
   "QC_SAMPLE":     "sku_intake",
+  "PRP_DEKIT":     "de_kitting",      // 2026-07-30 — de-kitting / bundle breakdown
   // Fulfillment
   // Pick & Pack — canonical tier codes (catalog migration 2026-07-01).
   // These MUST be mapped here, otherwise buildRateCard falls into the
@@ -146,6 +147,7 @@ const RATE_COLUMN_MAP = {
   "FUL_PP_SM":     "pick_pack_sm",
   "FUL_PP_STD":    "pick_pack_st",
   "FUL_PP_OVS":    "pick_pack_ov",
+  "FUL_PP_ADD":    "pick_pack_add",   // 2026-07-30 — 2do item en adelante
   "FUL_PP1":       "pick_pack_sm",     // legacy alias (retired from catalog)
   "FUL_PPN":       "pick_pack_add",
   "FUL_OUT_CART":  "outbound_carton",
