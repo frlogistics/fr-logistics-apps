@@ -551,6 +551,19 @@
 //   volume auto-fill (applyVolumeBindings) still binds ORDERS → qty_FUL_PP1.
 //   FUL_PPN (additional item) was likewise remapped to FUL_PP_STD is NOT done —
 //   additional-item logic stays out of the quote (handled at billing time).
+//
+// 2026-07-30 — Catalog alignment. Audited all 62 SVCS_TEMPLATE codes against
+//   fr_service_catalog: zero orphans, so the P&P tier migration is clean here.
+//   Two billable catalog services were NOT quotable and are now added:
+//     FUL_PP_ADD  Pick & Pack — Additional Item  ($0.50 / additional item)
+//                 New catalog row (sort 336) reading fr_client_rates.pick_pack_add.
+//                 Supersedes the retired FUL_PPN. This reverses the 2026-07-07
+//                 decision to keep additional-item out of the quote: billing it
+//                 without quoting it means the client never saw it in the rate card.
+//     PRP_DEKIT   De-Kitting / Bundle Breakdown  ($2.00 / bundle)
+//                 Already in the catalog (sort 115) but unquotable and unbillable.
+//   Still not quotable (deliberate, manual-only): FUL_LMDP, FUL_ODPD,
+//   SUP_CARTON, SUP_PALLET, TEC_CUSTOM.
 // ════════════════════════════════════════════════════════════════════════════
 
 const SK='fr_q_v4';  // bumped from v3 to invalidate old localStorage drafts
@@ -581,6 +594,7 @@ const SVCS_TEMPLATE = [
   // The row keeps id 'FUL_PP1' so qty_FUL_PP1 / rate_FUL_PP1 bindings and the
   // ORDERS auto-fill stay intact.
   {id:'FUL_PP1',      code:'FUL_PP_SM',    name:'Pick & Pack (per order)',       cat:'DTC / FBM Fulfillment', unit:'per order', src:'orders', dq:0, auto:true, desc:'Order preparation — first item (Shopify / Amazon FBM). Rate by total order weight tier.', tierCodes:{small:'FUL_PP_SM',standard:'FUL_PP_STD',oversized:'FUL_PP_OVS'}},
+  {id:'FUL_PP_ADD',   code:'FUL_PP_ADD',   name:'Pick & Pack — Additional Item', cat:'DTC / FBM Fulfillment', unit:'per additional item', src:null, dq:0, desc:'2nd item onward within the same order. Charged on top of the weight-tier fee for the 1st item.', note:'Applies from the 2nd unit in a multi-item order'},
   {id:'FUL_RUSH',     code:'FUL_RUSH',     name:'Same-Day Rush Surcharge',       cat:'DTC / FBM Fulfillment', unit:'per order', src:null,     dq:0, desc:'Same-day dispatch for urgent orders', note:'Add-on'},
   {id:'FUL_HEAVY',    code:'FUL_HEAVY',    name:'Heavy Order Surcharge',         cat:'DTC / FBM Fulfillment', unit:'per heavy order', src:null, dq:0, desc:'Surcharge for orders requiring 2-person handling', note:'Items >50 lbs'},
   {id:'FUL_BOX_UP',   code:'FUL_BOX_UP',   name:'Box Upgrade / Double-Boxing',   cat:'DTC / FBM Fulfillment', unit:'per order', src:null,     dq:0, desc:'Premium packaging for high-value items'},
@@ -594,6 +608,7 @@ const SVCS_TEMPLATE = [
   // ─── PREP / VALUE-ADDED ─────────────────────────────────────────────────
   {id:'PRP_KIT',      code:'PRP_KIT',      name:'Kitting & Bundling (per unit)', cat:'Prep / Value-Added', unit:'per unit', src:null, dq:0, desc:'Standard 2-component kit/bundle'},
   {id:'PRP_BUNDLE',   code:'PRP_BUNDLE',   name:'Complex Bundle (3+ components)',cat:'Prep / Value-Added', unit:'per bundle', src:null, dq:0, desc:'Bundles with 3+ components'},
+  {id:'PRP_DEKIT',    code:'PRP_DEKIT',    name:'De-Kitting / Bundle Breakdown', cat:'Prep / Value-Added', unit:'per bundle', src:null, dq:0, desc:'Opening a multipack and separating components into individual sellable units', note:'Poly bagging, label removal and FNSKU on the resulting units are billed separately per unit'},
   {id:'PRP_POLY',     code:'PRP_POLY',     name:'Poly Bagging',                  cat:'Prep / Value-Added', unit:'per unit', src:null, dq:0, desc:'Suffocation warning poly bag'},
   {id:'PRP_BUBBLE',   code:'PRP_BUBBLE',   name:'Bubble Wrap Protection',        cat:'Prep / Value-Added', unit:'per unit', src:null, dq:0, desc:'Fragile-item bubble wrap protection'},
   {id:'PRP_BOXING',   code:'PRP_BOXING',   name:'Boxing / Collating Units',      cat:'Prep / Value-Added', unit:'per unit', src:null, dq:0, desc:'Boxing or collating units into shipping boxes'},
