@@ -139,7 +139,14 @@ const RATE_COLUMN_MAP = {
   "QC_PHOTO":      "qc_photo",
   "QC_SAMPLE":     "sku_intake",
   // Fulfillment
-  "FUL_PP1":       "pick_pack_sm",     // base = Small tier; tiers block added in buildRateCard
+  // Pick & Pack — canonical tier codes (catalog migration 2026-07-01).
+  // These MUST be mapped here, otherwise buildRateCard falls into the
+  // "no column" branch and returns the catalog default, ignoring any
+  // per-client rate stored in fr_client_rates.
+  "FUL_PP_SM":     "pick_pack_sm",
+  "FUL_PP_STD":    "pick_pack_st",
+  "FUL_PP_OVS":    "pick_pack_ov",
+  "FUL_PP1":       "pick_pack_sm",     // legacy alias (retired from catalog)
   "FUL_PPN":       "pick_pack_add",
   "FUL_OUT_CART":  "outbound_carton",
   "FUL_OUT_PAL":   "outbound_pallet",
@@ -324,8 +331,12 @@ async function buildRateCard(clientName) {
   // Small tier (mapped to pick_pack_sm), so adding the block is non-breaking:
   // callers that read only `rate` keep working; tier-aware callers (Billing
   // Generator) read `tiers` and classify per order via classifyPickPackTier().
-  if (rates.FUL_PP1) {
-    rates.FUL_PP1.tiers = buildPickPackTiers(clientRow, defaultRow);
+  // BUGFIX 2026-07-30: this used to attach the block only to FUL_PP1, which was
+  // removed from fr_service_catalog on 2026-07-01 — so `tiers` stopped being
+  // emitted entirely and every tier-aware caller read undefined.
+  const ppTiers = buildPickPackTiers(clientRow, defaultRow);
+  for (const code of ["FUL_PP_SM", "FUL_PP_STD", "FUL_PP_OVS", "FUL_PP1"]) {
+    if (rates[code]) rates[code].tiers = ppTiers;
   }
 
   // Policy fields from fr_clients (or empty defaults)
