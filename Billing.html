@@ -196,6 +196,10 @@ button:active{transform:scale(.97)}
   <!-- STATUS -->
   <div id="statusBar" style="display:none"></div>
 
+  <!-- ZERO-RATE GUARD (2026-07-30) — flags any line with qty > 0 but rate 0 -->
+  <div id="rateWarn" style="display:none;margin:12px 0;padding:12px 16px;border-radius:10px;
+       background:#FEF3C7;border:1px solid #F59E0B;color:#78350F;font-size:13px;line-height:1.5"></div>
+
   <!-- KPI SUMMARY -->
   <div class="kpis" id="kpiSection" style="display:none">
     <div class="kpi hi">
@@ -366,8 +370,13 @@ const API_KEY_TO_LINE_KEY = {
   'QC_PHOTO':      'qc_photo',
   'QC_SAMPLE':     'sku_intake',
   // Fulfillment
-  'FUL_PP1':       'pick_pack',
-  'FUL_PPN':       'pick_pack_add',
+  // 2026-07-30 — Pick & Pack canonical codes. The service catalog retired
+  // FUL_PP1/FUL_PPN on 2026-07-01 and replaced them with three tier codes.
+  'FUL_PP_SM':     'pick_pack_sm',
+  'FUL_PP_STD':    'pick_pack_st',
+  'FUL_PP_OVS':    'pick_pack_ov',
+  'FUL_PP1':       'pick_pack',      // legacy alias (retired) — kept for back-compat
+  'FUL_PPN':       'pick_pack_add',  // legacy alias (retired) — kept for back-compat
   'FUL_OUT_CART':  'outbound_carton',
   'FUL_OUT_PAL':   'outbound_pallet',
   'FUL_OUT_OVS':   'oversized_pallet',
@@ -439,6 +448,7 @@ function resetUI() {
   g('ssCarrierCost').textContent    = '$0.00';
   g('ssShippingCharge').textContent = '$0.00';
   g('statusBar').style.display      = 'none';
+  if (g('rateWarn')) { g('rateWarn').style.display = 'none'; g('rateWarn').innerHTML = ''; }
 }
 
 // ─── CLIENT SETUP ─────────────────────────────────────────────────────────────
@@ -624,19 +634,33 @@ function mapApiRatesToLegacy(apiRates) {
       out[lineKey] = parseFloat(entry.rate);
     }
   }
-  // Pick & Pack weight tiers from FUL_PP1.tiers (single source of truth).
-  // Stored as separate keys so the 3 tier rows can each read their own rate.
-  const pp = apiRates.FUL_PP1;
-  if (pp && pp.tiers && pp.tiers.small != null) {
-    out.pick_pack_sm = parseFloat(pp.tiers.small);
-    out.pick_pack_st = parseFloat(pp.tiers.standard);
-    out.pick_pack_ov = parseFloat(pp.tiers.oversized);
-  } else {
-    // Fallback: old API without tiers → use flat pick_pack for all three.
-    out.pick_pack_sm = out.pick_pack || 0;
-    out.pick_pack_st = out.pick_pack || 0;
-    out.pick_pack_ov = out.pick_pack || 0;
-  }
+  // ── Pick & Pack weight tiers ───────────────────────────────────────────────
+  // BUGFIX 2026-07-30. The service catalog dropped FUL_PP1 / FUL_PPN on
+  // 2026-07-01 in favour of three canonical codes (FUL_PP_SM / FUL_PP_STD /
+  // FUL_PP_OVS). This function still read apiRates.FUL_PP1, which no longer
+  // exists, so every Pick & Pack line silently resolved to rate 0 and the
+  // service was billed at zero on every invoice generated after that date.
+  //
+  // Resolution order per tier:  canonical code → legacy .tiers block →
+  // hard-coded canonical fallback. A Pick & Pack rate must NEVER end up at 0;
+  // a wrong-but-visible rate is recoverable, a silent 0 is lost revenue.
+  const PP_FALLBACK = { sm: 3.00, st: 4.00, ov: 5.00, add: 0.50 };
+  const ppNum = v => {
+    const n = parseFloat(v);
+    return (Number.isFinite(n) && n > 0) ? n : null;
+  };
+
+  const ppSm    = apiRates.FUL_PP_SM  || apiRates.FUL_PP1 || null;
+  const ppStd   = apiRates.FUL_PP_STD || null;
+  const ppOvs   = apiRates.FUL_PP_OVS || null;
+  const ppTiers = (ppSm && ppSm.tiers) || null;
+
+  out.pick_pack_sm  = ppNum(ppSm  && ppSm.rate)  || ppNum(ppTiers && ppTiers.small)      || PP_FALLBACK.sm;
+  out.pick_pack_st  = ppNum(ppStd && ppStd.rate) || ppNum(ppTiers && ppTiers.standard)   || PP_FALLBACK.st;
+  out.pick_pack_ov  = ppNum(ppOvs && ppOvs.rate) || ppNum(ppTiers && ppTiers.oversized)  || PP_FALLBACK.ov;
+  out.pick_pack_add = ppNum(out.pick_pack_add)   || ppNum(ppTiers && ppTiers.additional) || PP_FALLBACK.add;
+  out.pick_pack     = out.pick_pack_sm;  // legacy flat key, kept for stale readers
+
   return out;
 }
 
@@ -664,9 +688,9 @@ function getBillingLines(client) {
     {cat:'Storage', id:'storage_lt',   name:'Long-Term Storage (180+ days)', sku:'STO_LT',   unit:'racks/mo', rate:r.storage_lt||0,   qty:0, auto:false, tip:'Inventory >180 days without movement', optional:true},
 
     // ─── FULFILLMENT ────────────────────────────────────────────────────────
-    {cat:'Fulfillment', id:'pick_pack_sm',  name:'Pick & Pack — Small (≤1.5 lb)',     sku:'FUL_PP1', unit:'orders', rate:r.pick_pack_sm||0, qty:0, auto:true,  tip:'Auto from ShipStation — orders ≤1.5 lb', optional:true},
-    {cat:'Fulfillment', id:'pick_pack_st',  name:'Pick & Pack — Standard (1.5–3 lb)', sku:'FUL_PP1', unit:'orders', rate:r.pick_pack_st||0, qty:0, auto:true,  tip:'Auto from ShipStation — orders 1.5–3 lb', optional:true},
-    {cat:'Fulfillment', id:'pick_pack_ov',  name:'Pick & Pack — Oversized (>3 lb)',   sku:'FUL_PP1', unit:'orders', rate:r.pick_pack_ov||0, qty:0, auto:true,  tip:'Auto from ShipStation — orders >3 lb', optional:true},
+    {cat:'Fulfillment', id:'pick_pack_sm',  name:'Pick & Pack — Small (≤1.5 lb)',     sku:'FUL_PP_SM',  unit:'orders', rate:r.pick_pack_sm||0, qty:0, auto:true,  tip:'Auto from ShipStation — orders ≤1.5 lb', optional:true},
+    {cat:'Fulfillment', id:'pick_pack_st',  name:'Pick & Pack — Standard (1.5–3 lb)', sku:'FUL_PP_STD', unit:'orders', rate:r.pick_pack_st||0, qty:0, auto:true,  tip:'Auto from ShipStation — orders 1.5–3 lb', optional:true},
+    {cat:'Fulfillment', id:'pick_pack_ov',  name:'Pick & Pack — Oversized (>3 lb)',   sku:'FUL_PP_OVS', unit:'orders', rate:r.pick_pack_ov||0, qty:0, auto:true,  tip:'Auto from ShipStation — orders >3 lb', optional:true},
     {cat:'Fulfillment', id:'pick_pack_add', name:'Pick & Pack — Additional',   sku:'FUL_PPN', unit:'items',  rate:r.pick_pack_add||0, qty:0, auto:false, tip:'2nd+ item per order', optional:true},
     {cat:'Fulfillment', id:'boxing',        name:'Boxing / Collating Units',   sku:'PRP_BOXING', unit:'units', rate:r.boxing||0,     qty:0, auto:false, tip:'Enter total units boxed/collated'},
     {cat:'Fulfillment', id:'sorting',       name:'Sorting (per unit)',         sku:'PRP_SORT_UNIT', unit:'units', rate:r.sorting||0,  qty:0, auto:false, tip:'Fine sorting per unit', optional:true},
@@ -1137,6 +1161,28 @@ function recalc() {
   // Cartons = inbound_carton qty
   const cl = _lines.find(x => x.id === 'inbound_carton');
   g('kpiCartons').textContent = cl ? (cl.qty || '—') : '—';
+
+  checkZeroRates();
+}
+
+// ── ZERO-RATE GUARD (2026-07-30) ────────────────────────────────────────────
+// Any line with quantity but no rate is unbilled work. This is exactly how the
+// Pick & Pack tiers were silently billed at $0 for a full month after the
+// service catalog renamed their codes. Surface it instead of swallowing it.
+function checkZeroRates() {
+  const box = g('rateWarn');
+  if (!box) return;
+  const bad = _lines.filter(l => (l.qty > 0) && !(l.rate > 0) && l.id !== 'shipping_label_fee');
+  if (!bad.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const rows = bad.map(l =>
+    `<li><b>${l.name}</b> — ${l.qty} ${l.unit} sin tarifa (SKU <code>${l.sku}</code>)</li>`
+  ).join('');
+  box.innerHTML =
+    `<b>&#9888; Revisa antes de facturar — ${bad.length} línea(s) con cantidad y tarifa $0.00</b>` +
+    `<ul style="margin:6px 0 0 18px;padding:0">${rows}</ul>` +
+    `<div style="margin-top:6px">Si el servicio se prestó, esas líneas no se están cobrando. ` +
+    `Verifica el rate card del cliente o el código de servicio en el catálogo.</div>`;
+  box.style.display = 'block';
 }
 
 function updateQty(id, val) {
@@ -1322,9 +1368,12 @@ function genCSV() {
     'STO_SBIN':         'Storage & Warehousing:Storage Fees Small Bin',
     'STO_LT':           'Storage & Warehousing:Long-Term Storage Fees',
     // Fulfillment
-    'FUL_PP1':          'Fulfillment Service:Fulfillment Process (Pick & Pack)',
-    // Pick & Pack weight tiers — mapped by row id (sku is shared FUL_PP1).
-    // Resolver below prefers QBO_NAMES[l.id] so each tier hits its own QBO item.
+    'FUL_PP1':          'Fulfillment Service:Fulfillment Process (Pick & Pack)',  // legacy
+    // Pick & Pack weight tiers — resolvable by canonical sku AND by row id.
+    // Resolver below prefers QBO_NAMES[l.id], so both paths land on the same item.
+    'FUL_PP_SM':        'Fulfillment Service:Fulfillment Pick & Pack — Small',
+    'FUL_PP_STD':       'Fulfillment Service:Fulfillment Pick & Pack — Standard',
+    'FUL_PP_OVS':       'Fulfillment Service:Fulfillment Pick & Pack — Oversized',
     'pick_pack_sm':     'Fulfillment Service:Fulfillment Pick & Pack — Small',
     'pick_pack_st':     'Fulfillment Service:Fulfillment Pick & Pack — Standard',
     'pick_pack_ov':     'Fulfillment Service:Fulfillment Pick & Pack — Oversized',
