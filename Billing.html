@@ -369,12 +369,14 @@ const API_KEY_TO_LINE_KEY = {
   'QC_HOUR':       'qc',
   'QC_PHOTO':      'qc_photo',
   'QC_SAMPLE':     'sku_intake',
+  'PRP_DEKIT':     'de_kitting',
   // Fulfillment
   // 2026-07-30 — Pick & Pack canonical codes. The service catalog retired
   // FUL_PP1/FUL_PPN on 2026-07-01 and replaced them with three tier codes.
   'FUL_PP_SM':     'pick_pack_sm',
   'FUL_PP_STD':    'pick_pack_st',
   'FUL_PP_OVS':    'pick_pack_ov',
+  'FUL_PP_ADD':    'pick_pack_add',
   'FUL_PP1':       'pick_pack',      // legacy alias (retired) — kept for back-compat
   'FUL_PPN':       'pick_pack_add',  // legacy alias (retired) — kept for back-compat
   'FUL_OUT_CART':  'outbound_carton',
@@ -691,7 +693,7 @@ function getBillingLines(client) {
     {cat:'Fulfillment', id:'pick_pack_sm',  name:'Pick & Pack — Small (≤1.5 lb)',     sku:'FUL_PP_SM',  unit:'orders', rate:r.pick_pack_sm||0, qty:0, auto:true,  tip:'Auto from ShipStation — orders ≤1.5 lb', optional:true},
     {cat:'Fulfillment', id:'pick_pack_st',  name:'Pick & Pack — Standard (1.5–3 lb)', sku:'FUL_PP_STD', unit:'orders', rate:r.pick_pack_st||0, qty:0, auto:true,  tip:'Auto from ShipStation — orders 1.5–3 lb', optional:true},
     {cat:'Fulfillment', id:'pick_pack_ov',  name:'Pick & Pack — Oversized (>3 lb)',   sku:'FUL_PP_OVS', unit:'orders', rate:r.pick_pack_ov||0, qty:0, auto:true,  tip:'Auto from ShipStation — orders >3 lb', optional:true},
-    {cat:'Fulfillment', id:'pick_pack_add', name:'Pick & Pack — Additional',   sku:'FUL_PPN', unit:'items',  rate:r.pick_pack_add||0, qty:0, auto:false, tip:'2nd+ item per order', optional:true},
+    {cat:'Fulfillment', id:'pick_pack_add', name:'Pick & Pack — Additional Item', sku:'FUL_PP_ADD', unit:'items', rate:r.pick_pack_add||0, qty:0, auto:false, tip:'2do artículo en adelante dentro de la misma orden', optional:true},
     {cat:'Fulfillment', id:'boxing',        name:'Boxing / Collating Units',   sku:'PRP_BOXING', unit:'units', rate:r.boxing||0,     qty:0, auto:false, tip:'Enter total units boxed/collated'},
     {cat:'Fulfillment', id:'sorting',       name:'Sorting (per unit)',         sku:'PRP_SORT_UNIT', unit:'units', rate:r.sorting||0,  qty:0, auto:false, tip:'Fine sorting per unit', optional:true},
     {cat:'Fulfillment', id:'sorting_box',   name:'Categorizing (per box)',     sku:'PRP_SORT_BOX',  unit:'boxes', rate:r.sorting_box||0, qty:0, auto:false, tip:'Bulk categorization per box', optional:true},
@@ -705,6 +707,7 @@ function getBillingLines(client) {
     {cat:'Prep Services', id:'bubble_wrap',      name:'Bubble Wrap Protection',         sku:'PRP_BUBBLE',    unit:'units',   rate:r.bubble_wrap||0,      qty:0, auto:false, tip:'Enter units bubble-wrapped', optional:true},
     {cat:'Prep Services', id:'kitting',          name:'Kitting & Bundling (per unit)',  sku:'PRP_KIT',       unit:'units',   rate:r.kitting||0,          qty:0, auto:false, tip:'Enter units kitted/bundled (2 components)'},
     {cat:'Prep Services', id:'complex_bundle',   name:'Complex Bundle (3+ components)', sku:'PRP_BUNDLE',    unit:'bundles', rate:r.complex_bundle||0,   qty:0, auto:false, tip:'Bundles with 3+ components', optional:true},
+    {cat:'Prep Services', id:'de_kitting',       name:'De-Kitting / Bundle Breakdown',  sku:'PRP_DEKIT',     unit:'bundles', rate:r.de_kitting||0,       qty:0, auto:false, tip:'Apertura de multipack. Poly, ROL y FNSKU por unidad resultante se facturan aparte', optional:true},
     {cat:'Prep Services', id:'palletizing',      name:'Palletizing Labor',              sku:'PRP_PALLETIZE', unit:'pallets', rate:r.palletizing||0,      qty:0, auto:false, tip:'Enter pallets palletized'},
     {cat:'Prep Services', id:'stretch_wrap',     name:'Stretch Wrapping',               sku:'PRP_STRETCH',   unit:'pallets', rate:r.stretch_wrap||0,     qty:0, auto:false, tip:'Enter pallets stretch-wrapped'},
     {cat:'Prep Services', id:'pal_repack',       name:'Pallet Repacking & Labeling',    sku:'PRP_PALREPACK', unit:'pallets', rate:r.pal_repack||0,       qty:0, auto:false, tip:'Repack + label pallet for carrier', optional:true},
@@ -1377,7 +1380,8 @@ function genCSV() {
     'pick_pack_sm':     'Fulfillment Service:Fulfillment Pick & Pack — Small',
     'pick_pack_st':     'Fulfillment Service:Fulfillment Pick & Pack — Standard',
     'pick_pack_ov':     'Fulfillment Service:Fulfillment Pick & Pack — Oversized',
-    'FUL_PPN':          'Fulfillment Service:Pick & Pack Additional Item',
+    'FUL_PP_ADD':       'Fulfillment Service:Pick & Pack Additional Item',
+    'FUL_PPN':          'Fulfillment Service:Pick & Pack Additional Item',  // legacy
     'FUL_OUT_CART':     'Storage & Warehousing:Outbound Fees Package',
     'FUL_OUT_PAL':      'Storage & Warehousing:Outbound Fees Pallets',
     'FUL_OUT_OVS':      'Storage & Warehousing:Oversized Pallet',
@@ -1392,6 +1396,7 @@ function genCSV() {
     'FUL_ADDR_FIX':     'Fulfillment Service:Address Correction',
     // Prep
     'PRP_FNSKU':        'Prep Services:Labeling Fees',
+    'PRP_DEKIT':        'Prep Services:De-Kitting & Bundling',  // nombre exacto del item en QBO
     'PRP_POLY':         'Prep Services:Poly Bagging Fees',
     'PRP_BUBBLE':       'Prep Services:Bubble Wrap Protection',
     'PRP_BOXING':       'Prep Services:Boxing / collating units into boxes',
@@ -1438,6 +1443,21 @@ function genCSV() {
 
   // Only export lines with qty > 0
   const activeLines = _lines.filter(l => l.qty > 0);
+
+  // ── QBO ITEM GUARD (2026-07-30) ───────────────────────────────────────────
+  // Si una linea no resuelve a un item mapeado, el CSV cae al SKU o al nombre
+  // interno y QBO CREA UN PRODUCTO NUEVO en silencio al importar, ensuciando el
+  // catalogo y descuadrando los reportes por servicio. Mejor avisar antes.
+  const unmapped = activeLines.filter(l => !QBO_NAMES[l.id] && !QBO_NAMES[l.sku]);
+  if (unmapped.length) {
+    const detalle = unmapped.map(l => `  • ${l.name} (${l.sku})`).join('\n');
+    const seguir = confirm(
+      `${unmapped.length} línea(s) no tienen producto de QuickBooks asignado:\n\n${detalle}\n\n` +
+      `Si importas así, QBO va a crear productos nuevos con esos nombres.\n\n` +
+      `¿Exportar de todas formas?`
+    );
+    if (!seguir) return;
+  }
 
   activeLines.forEach((l, i) => {
     const serviceName = QBO_NAMES[l.id] || QBO_NAMES[l.sku] || l.sku || l.name;
