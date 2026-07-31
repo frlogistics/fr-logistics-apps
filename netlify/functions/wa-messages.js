@@ -266,6 +266,112 @@ export default async function handler(req, context) {
       });
     }
 
+    // ── enviar multimedia  [NEW 2026-07-31] ────────────────────────
+    // El portal manda el archivo en base64. Aqui: (1) se valida la ventana
+    // de 24h, (2) se sube el binario a Meta para obtener un media id,
+    // (3) se envia el mensaje, (4) se guarda una copia en el bucket para
+    // que la imagen tambien se vea en el hilo del portal.
+    if (body.action === "send_media" && body.to && body.base64) {
+      const to   = normalizePhone(body.to);
+      const mime = body.mimeType || "application/octet-stream";
+      const bytes = Buffer.from(body.base64, "base64");
+
+      // (1) ventana de 24h — fuera de ella Meta solo acepta plantillas
+      const lastIn = await sbSelect(
+        "wa_messages",
+        `?select=timestamp&direction=eq.inbound&from_number=eq.${to}&order=timestamp.desc&limit=1`
+      );
+      const lastTs = lastIn?.[0]?.timestamp ? new Date(lastIn[0].timestamp).getTime() : 0;
+      const hours  = lastTs ? (Date.now() - lastTs) / 36e5 : Infinity;
+      if (hours > 24) {
+        return new Response(JSON.stringify({
+          error: "window_closed",
+          message: lastTs
+            ? `La ventana de 24 h esta cerrada (ultimo mensaje del cliente hace ${Math.floor(hours)} h). Usa una plantilla aprobada.`
+            : "Este contacto nunca ha escrito, asi que no hay ventana abierta. Usa una plantilla aprobada."
+        }), { status: 409, headers: { "Content-Type": "application/json" } });
+      }
+
+      // (2) subir el binario a Meta -> media id
+      const fd = new FormData();
+      fd.append("messaging_product", "whatsapp");
+      fd.append("file", new Blob([bytes], { type: mime }), body.filename || "upload");
+      const upRes = await fetch(`${WA_BASE}/media`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${WA_TOKEN}` },
+        body: fd
+      });
+      const upJson = await upRes.json();
+      if (!upRes.ok || !upJson.id) {
+        console.error("[wa-messages] media upload failed:", JSON.stringify(upJson));
+        return new Response(JSON.stringify({ error: "upload_failed", detail: upJson }), {
+          status: 400, headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      // (3) enviar. El audio no admite caption; el documento admite filename.
+      const kind = mime.startsWith("image/") ? "image"
+                 : mime.startsWith("video/") ? "video"
+                 : mime.startsWith("audio/") ? "audio"
+                 : "document";
+      const obj = { id: upJson.id };
+      if (body.caption && kind !== "audio") obj.caption = body.caption;
+      if (kind === "document" && body.filename) obj.filename = body.filename;
+
+      const waRes = await fetch(`${WA_BASE}/messages`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${WA_TOKEN}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ messaging_product: "whatsapp", to, type: kind, [kind]: obj })
+      });
+      const result = await waRes.json();
+      if (!waRes.ok) {
+        console.error("[wa-messages] media send failed:", JSON.stringify(result));
+        return new Response(JSON.stringify(result), {
+          status: 400, headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      // (4) copia en el bucket para poder pintarla en el hilo
+      const waMsgId = result.messages?.[0]?.id || `out-${Date.now()}`;
+      const ext  = (mime.split("/")[1] || "bin").split(";")[0];
+      const path = `${to}/${waMsgId}.${ext}`;
+      try {
+        await fetch(`${SUPABASE_URL}/storage/v1/object/wa-media/${path}`, {
+          method: "POST",
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+            "Content-Type": mime,
+            "x-upsert": "true"
+          },
+          body: bytes
+        });
+      } catch (e) {
+        console.error("[wa-messages] storage copy failed:", e?.message || e);
+      }
+
+      await sbInsert("wa_messages", {
+        wa_msg_id:   waMsgId,
+        direction:   "outbound",
+        from_number: PHONE_ID || "",
+        to_number:   to,
+        client_name: body.clientName || "",
+        body:        body.caption || `[${kind}]`,
+        msg_type:    kind,
+        timestamp:   new Date().toISOString(),
+        read:        true,
+        replied:     false,
+        media_id:    upJson.id,
+        mime_type:   mime,
+        media_path:  path,
+        caption:     body.caption || null
+      });
+
+      return new Response(JSON.stringify({ ok: true, result }), {
+        status: 200, headers: { "Content-Type": "application/json" }
+      });
+    }
+
     // send template
     if (body.type && body.to && body.data) {
       const to         = normalizePhone(body.to);
