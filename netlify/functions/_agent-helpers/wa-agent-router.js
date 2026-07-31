@@ -48,6 +48,18 @@ import {
 } from "./wa-agent-qualify.js";
 import { matchFAQ, getFAQAnswer, getFAQQuestion, topNFAQs } from "./wa-agent-faq-match.js";
 import { askLLM } from "./wa-agent-llm.js";
+import {
+  isMediaPlaceholder,
+  mediaKind,
+  isClosing,
+  sendOnce,
+  bumpRetry,
+  resetRetry,
+  maxedOut,
+  nextMenuMode,
+  MENU_FULL,
+  MENU_SHORT,
+} from "./wa-agent-guards.js";
 
 /**
  * Main entry point — called per inbound message.
@@ -103,6 +115,47 @@ export async function routeIncomingMessage(msg) {
     if (existingConv?.paused_by_human) {
       console.log("[agent-router] conversation paused by human, agent silent");
       await updateConversationOnUserMessage(existingConv.id);
+      return;
+    }
+
+    // ─── STEP 3.5: MEDIA GUARD ────────────────────────────────────
+    // Added 2026-07-31. The webhook persists non-text messages as a
+    // literal placeholder ("[image]", "[audio]", ...) in `body`. Without
+    // this branch the router feeds that string into the capture flow and
+    // tries to validate "[image]" as an email address — which is exactly
+    // how a client ended up with ten identical "invalid email" replies.
+    // Liam cannot see the file, so the only honest move is: acknowledge,
+    // flag for a human, and stop.
+    if (isMediaPlaceholder(text)) {
+      const kind = mediaKind(text);
+      console.log(`[agent-router] media message (${kind}) — acknowledging, no slot-filling`);
+
+      const lang = (existingConv?.language || detectLanguage(text, fromE164).language || "en").toUpperCase();
+      const ack = lang === "ES" ? TEMPLATES.media_ack_es(kind) : TEMPLATES.media_ack_en(kind);
+
+      await sendOnce({ to: from, text: ack, clientName: "Liam" });
+
+      if (existingConv) {
+        await updateConversationOnUserMessage(existingConv.id);
+        await resetRetry(existingConv.id);
+        if (!existingConv.handoff_required) {
+          await markHandoff(existingConv.id, `media_received_${kind}`, existingConv.state);
+        }
+      }
+      return;
+    }
+
+    // ─── STEP 3.6: CLOSING GUARD ──────────────────────────────────
+    // "Gracias" / "Ok" / "Me quedó claro" are conversation enders, not
+    // answers to whatever slot we are waiting on. Acknowledge once and
+    // stay quiet — never re-ask, never re-send the menu.
+    if (existingConv && isClosing(text)) {
+      console.log("[agent-router] closing phrase detected — soft acknowledgment, no re-ask");
+      const lang = (existingConv.language || "en").toUpperCase();
+      const bye = lang === "ES" ? TEMPLATES.closing_ack_es() : TEMPLATES.closing_ack_en();
+      await sendOnce({ to: from, text: bye, clientName: "Liam" });
+      await updateConversationOnUserMessage(existingConv.id);
+      await resetRetry(existingConv.id);
       return;
     }
 
@@ -500,17 +553,16 @@ async function handleMenuReply(conv, msg) {
       return;
     }
 
-    // After the FAQ answer, re-offer the menu (decision: Path B — keep lead engaged)
-    const followup =
-      language === "ES"
-        ? TEMPLATES.faq_followup_menu_es()
-        : TEMPLATES.faq_followup_menu_en();
-    const sendMenu = await sendAndRecord({ to: from, text: followup, clientName: "Liam" });
-    if (sendMenu.ok) {
-      await recordAgentMessage(conv.id);  // stay in 'greeted'
-      // Record which FAQ was served (lightweight audit — no new column needed)
-      await updateConversationFAQHit(conv.id, faqHit.id);
+    // After the FAQ answer, offer the menu — but with DECAY.
+    // Full menu once, then a one-liner, then nothing. Re-sending the full
+    // block after every answer is what made Liam read as spam: 11 people
+    // received the identical menu 3-9 times in a single day.
+    const followup = await buildFollowup(conv.id, language);
+    if (followup) {
+      const sendMenu = await sendOnce({ to: from, text: followup, clientName: "Liam" });
+      if (sendMenu.ok && !sendMenu.suppressed) await recordAgentMessage(conv.id);
     }
+    await updateConversationFAQHit(conv.id, faqHit.id);
     return;
   }
 
@@ -550,14 +602,11 @@ async function handleMenuReply(conv, msg) {
       return;
     }
 
-    // Re-offer the menu so the conversation moves toward conversion
-    const followup =
-      language === "ES"
-        ? TEMPLATES.faq_followup_menu_es()
-        : TEMPLATES.faq_followup_menu_en();
-    const sendMenu = await sendAndRecord({ to: from, text: followup, clientName: "Liam" });
-    if (sendMenu.ok) {
-      await recordAgentMessage(conv.id);  // stay in 'greeted'
+    // Offer the menu with the same decay rule as the FAQ path.
+    const followup = await buildFollowup(conv.id, language);
+    if (followup) {
+      const sendMenu = await sendOnce({ to: from, text: followup, clientName: "Liam" });
+      if (sendMenu.ok && !sendMenu.suppressed) await recordAgentMessage(conv.id);
     }
     return;
   }
@@ -574,6 +623,23 @@ async function handleMenuReply(conv, msg) {
   if (send.ok) {
     await recordAgentMessage(conv.id);  // stay in greeted
   }
+}
+
+// Returns the follow-up text for this conversation, or null when the menu
+// has already been shown enough times. Full menu → short nudge → silence.
+async function buildFollowup(conversationId, language) {
+  const mode = await nextMenuMode(conversationId);
+  if (mode === MENU_FULL) {
+    return language === "ES"
+      ? TEMPLATES.faq_followup_menu_es()
+      : TEMPLATES.faq_followup_menu_en();
+  }
+  if (mode === MENU_SHORT) {
+    return language === "ES"
+      ? TEMPLATES.faq_followup_short_es()
+      : TEMPLATES.faq_followup_short_en();
+  }
+  return null;  // already nudged twice — say nothing
 }
 
 // Load the last N user/assistant messages from wa_messages for LLM context.
@@ -809,6 +875,7 @@ async function handleHandoffCapture(conv, msg) {
 
     // Only a name? Save it and ask for email
     if (both.name) {
+      await resetRetry(conv.id);
       await setCapturedNameEmail(conv.id, both.name, null);
       await updateLeadFromCapture(conv.lead_id, { name: both.name });
       const askEmail =
@@ -823,13 +890,17 @@ async function handleHandoffCapture(conv, msg) {
       return;
     }
 
-    // Couldn't extract anything → re-ask politely
+    // Couldn't extract anything → re-ask politely, AT MOST twice.
+    const triesName = await bumpRetry(conv.id);
+    if (maxedOut(triesName)) {
+      return await escalateToHuman(conv, msg, language, "name_capture_failed");
+    }
     const reAsk =
       language === "ES"
         ? "¿Puedes darme tu nombre completo, por favor?"
         : "Could you share your full name, please?";
-    const send = await sendAndRecord({ to: from, text: reAsk, clientName: "Liam" });
-    if (send.ok) await recordAgentMessage(conv.id);
+    const send = await sendOnce({ to: from, text: reAsk, clientName: "Liam" });
+    if (send.ok && !send.suppressed) await recordAgentMessage(conv.id);
     return;
   }
 
@@ -842,30 +913,43 @@ async function handleHandoffCapture(conv, msg) {
       return await completeHandoff(conv, msg, both.name, conv.captured_email);
     }
 
+    const triesAfter = await bumpRetry(conv.id);
+    if (maxedOut(triesAfter)) {
+      return await escalateToHuman(conv, msg, language, "name_capture_failed");
+    }
     const reAsk =
       language === "ES"
         ? "Solo necesito tu nombre, ¿puedes escribírmelo?"
         : "I just need your name — could you type it out?";
-    const send = await sendAndRecord({ to: from, text: reAsk, clientName: "Liam" });
-    if (send.ok) await recordAgentMessage(conv.id);
+    const send = await sendOnce({ to: from, text: reAsk, clientName: "Liam" });
+    if (send.ok && !send.suppressed) await recordAgentMessage(conv.id);
     return;
   }
 
   // ─── SUB-STATE: awaiting_email ──────────────────────────────────
   if (conv.sub_state === "awaiting_email") {
     if (both.email && isValidEmail(both.email)) {
+      await resetRetry(conv.id);
       await setCapturedNameEmail(conv.id, null, both.email);
       await updateLeadFromCapture(conv.lead_id, { email: both.email });
       return await completeHandoff(conv, msg, conv.captured_name, both.email);
     }
 
-    // No email or invalid format — re-ask
+    // No email or invalid format — re-ask, but AT MOST twice.
+    // This is the loop that sent one client ten identical replies on
+    // 2026-07-31: she was asking an operational question, not giving an
+    // email, and every single message got the same validation error.
+    const tries = await bumpRetry(conv.id);
+    if (maxedOut(tries)) {
+      return await escalateToHuman(conv, msg, language, "email_capture_failed");
+    }
+
     const reAsk =
       language === "ES"
         ? "No reconozco eso como un email válido. ¿Puedes verificarlo? (ej. nombre@empresa.com)"
         : "I don't recognize that as a valid email. Could you double-check? (e.g. name@company.com)";
-    const send = await sendAndRecord({ to: from, text: reAsk, clientName: "Liam" });
-    if (send.ok) await recordAgentMessage(conv.id);
+    const send = await sendOnce({ to: from, text: reAsk, clientName: "Liam" });
+    if (send.ok && !send.suppressed) await recordAgentMessage(conv.id);
     return;
   }
 
@@ -981,6 +1065,70 @@ async function saveQualifyField(conversationId, field, rawField, normalizedValue
 }
 
 // Final step of the capture flow: send confirmation + email info@
+// ─────────────────────────────────────────────────────────────────────
+// ESCALATION (added 2026-07-31)
+// Called when a capture slot has been re-asked MAX_RETRIES times without
+// a usable answer. Instead of asking forever, Liam explains himself,
+// emails what he has to info@, and goes silent so a human can take over.
+//
+// Setting paused_by_human here is deliberate: STEP 3 Branch A in
+// routeIncomingMessage() already honours that flag, so this single write
+// guarantees the agent stops talking to this person immediately.
+// ─────────────────────────────────────────────────────────────────────
+async function escalateToHuman(conv, msg, language, reason) {
+  const { from } = msg;
+  console.warn(`[agent-router] ESCALATING to human: conv=${conv.id} reason=${reason}`);
+
+  const note =
+    language === "ES"
+      ? "Disculpa, creo que no te estoy entendiendo bien. Le paso tu mensaje al equipo para que te responda una persona directamente. 🤝"
+      : "Sorry — I don't think I'm understanding you correctly. I'm passing your message to the team so a person can reply directly. 🤝";
+
+  await sendOnce({ to: from, text: note, clientName: "Liam" });
+
+  try {
+    if (!conv.info_email_sent_at) {
+      await sendHandoffEmail({
+        waNumber: from,
+        name: conv.captured_name || msg.clientName || "Lead (no name)",
+        email: conv.captured_email || "(no proporcionado)",
+        language: (language || "en").toLowerCase(),
+        serviceInterest: conv.captured_service || "other",
+        firstMessage: conv.first_message || "",
+        handoffReason: reason,
+        conversationId: conv.id,
+      });
+      await markInfoEmailSent(conv.id);
+    }
+  } catch (e) {
+    console.error(`[agent-router] escalation email failed: ${e.message}`);
+  }
+
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const sb = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY,
+      { auth: { persistSession: false } }
+    );
+    await sb
+      .from("wa_agent_conversations")
+      .update({
+        handoff_required: true,
+        handoff_reason: reason,
+        handoff_at: new Date().toISOString(),
+        sub_state: "completed",
+        paused_by_human: true,
+        paused_at: new Date().toISOString(),
+        paused_by: "agent_escalation",
+        retry_count: 0,
+      })
+      .eq("id", conv.id);
+  } catch (e) {
+    console.error(`[agent-router] escalation state update failed: ${e.message}`);
+  }
+}
+
 async function completeHandoff(conv, msg, name, email) {
   const { from } = msg;
   const language = (conv.language || "en").toUpperCase();
