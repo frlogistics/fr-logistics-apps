@@ -297,6 +297,8 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
           <div class="threadMsgs" id="threadMsgs" style="display:none"></div>
           <div class="replyBar" id="replyBar" style="display:none">
             <textarea class="replyInput" id="replyText" placeholder="Type a reply... (only within 24h of last client message)" rows="3" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendReply()}"></textarea>
+            <input type="file" id="replyFile" style="display:none" accept="image/*,application/pdf,audio/*,video/mp4" onchange="onAttachPick(this)"/>
+            <button class="replyBtn" id="attachBtn" onclick="document.getElementById('replyFile').click()" title="Adjuntar archivo" style="background:transparent;border:1px solid var(--border);color:inherit">📎</button>
             <button class="replyBtn" id="replyBtn" onclick="sendReply()">Send ↑</button>
           </div>
         </div>
@@ -751,6 +753,12 @@ function mediaHtml(m){
   if(mime.indexOf('audio/')===0)return '<audio controls src="'+src+'" style="max-width:240px;display:block;margin-bottom:6px"></audio>';
   return '<a href="'+src+'" target="_blank" rel="noopener" style="display:inline-block;margin-bottom:6px;text-decoration:underline">&#128206; Abrir archivo</a>';
 }
+// Etiqueta amigable para la lista lateral: "[image]" no le dice nada a nadie.
+function previewText(m){
+  const t=((m&&m.text)||'').trim();
+  const map={'[image]':'\uD83D\uDCF7 Imagen','[audio]':'\uD83C\uDFA4 Audio','[document]':'\uD83D\uDCCE Documento','[video]':'\uD83C\uDFAC Video','[sticker]':'\uD83C\uDFF7 Sticker','[reaction]':'\uD83D\uDC4D Reaccion'};
+  return map[t.toLowerCase()]||t;
+}
 // Con la imagen ya pintada, el marcador "[image]" sobra.
 function bodyTxt(m){
   const t=m.text||'';
@@ -773,14 +781,15 @@ function renderInboxList(){
   const sorted=Object.values(threads).sort((a,b)=>{const la=Math.max.apply(null,a.msgs.map(m=>m.timestamp||0));const lb2=Math.max.apply(null,b.msgs.map(m=>m.timestamp||0));return lb2-la;});
   if(ce)ce.textContent=sorted.length+' chat'+(sorted.length!==1?'s':'');
   if(!sorted.length){lb.innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px"><div style="font-size:28px;margin-bottom:10px">📭</div>No messages yet.<br>Send a template to get started.</div>`;return;}
-  lb.innerHTML=sorted.map(t=>{const last=t.msgs.reduce((acc,m)=>(m.timestamp||0)>(acc?.timestamp||0)?m:acc,null)||t.msgs[0];const ts=last?.timestamp?fmtTime(last.timestamp):'';const preview=(last?.text||'').substring(0,40)+(last?.text?.length>40?'…':'');const initials=(t.clientName||'?').split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();const isActive=t.phone===activePhone;const hasUnread=t.unread>0;return`<div class="inboxItem${isActive?' active':''}${hasUnread?' unread':''}" onclick="openThread('${esc(t.phone)}','${esc(t.clientName)}')"><div class="inboxAvatar">${initials}</div><div style="flex:1;min-width:0"><div class="inboxFrom">${esc(t.clientName||t.phone)}</div><div class="inboxPreview">${esc(preview||'—')}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="inboxTime">${ts}</div>${hasUnread?`<div class="inboxUnreadDot"></div>`:''}</div></div>`;}).join('');
+  lb.innerHTML=sorted.map(t=>{const last=t.msgs.reduce((acc,m)=>(m.timestamp||0)>(acc?.timestamp||0)?m:acc,null)||t.msgs[0];const ts=last?.timestamp?fmtTime(last.timestamp):'';const pvRaw=previewText(last);const preview=pvRaw.substring(0,40)+(pvRaw.length>40?'…':'');const initials=(t.clientName||'?').split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();const isActive=t.phone===activePhone;const hasUnread=t.unread>0;return`<div class="inboxItem${isActive?' active':''}${hasUnread?' unread':''}" onclick="openThread('${esc(t.phone)}','${esc(t.clientName)}')"><div class="inboxAvatar">${initials}</div><div style="flex:1;min-width:0"><div class="inboxFrom">${esc(t.clientName||t.phone)}</div><div class="inboxPreview">${esc(preview||'—')}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="inboxTime">${ts}</div>${hasUnread?`<div class="inboxUnreadDot"></div>`:''}</div></div>`;}).join('');
 }
 function openThread(phone,name){
   activePhone=phone;window._activePhone=phone;renderInboxList();
   const hdr=document.getElementById('threadHeader');const empty=document.getElementById('threadEmpty');const msgs=document.getElementById('threadMsgs');const bar=document.getElementById('replyBar');
   if(hdr)hdr.style.display='flex';if(empty)empty.style.display='none';if(msgs)msgs.style.display='flex';if(bar)bar.style.display='flex';
-  document.getElementById('threadName').textContent=name||phone;document.getElementById('threadPhone').textContent='+'+phone;
+  document.getElementById('threadPhone').textContent='+'+normPhone(phone);
   const np=normPhone(phone);const thread=allMessages.filter(m=>normPhone(m.from)===np||normPhone(m.to)===np).sort((a,b)=>a.timestamp-b.timestamp);
+  document.getElementById('threadName').textContent=thread.length?bestName(thread,np):(name||np);
   thread.filter(m=>m.direction==='inbound'&&!m.read).forEach(m=>{fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'mark_read',id:m.id})}).catch(()=>{});m.read=true;});
   msgs.innerHTML=thread.map(m=>{const dir=m.direction==='inbound'?'in':'out';const time=m.timestamp?new Date(m.timestamp*1000).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';return`<div class="bubble ${dir}">${mediaHtml(m)}${bodyTxt(m)}<span class="bubbleTime">${time}${dir==='out'?' · Sent ✓':''}</span></div>`;}).join('');
   msgs.scrollTop=msgs.scrollHeight;
@@ -793,6 +802,42 @@ function sendReply(){
   fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'reply',to:phone,text,clientName})}).then(r=>r.json()).then(res=>{if(res.error&&!res.messaging_product&&!res.messages){alert('Error: '+(res.error?.message||JSON.stringify(res)));}else{input.value='';fetch('/.netlify/functions/wa-messages').then(r=>r.json()).then(data=>{allMessages=Array.isArray(data)?data:[];renderInboxList();openThread(phone,clientName);});}}).catch(e=>alert('Error: '+e.message)).finally(()=>{btn.disabled=false;btn.textContent='Send ↑';});
 }
 window.sendReply=sendReply;
+
+// ── [NEW 2026-07-31] Enviar archivos desde el inbox ──────────────────
+// El archivo se manda en base64 dentro del JSON. Netlify corta los payloads
+// alrededor de 6 MB y base64 infla ~33%, por eso el tope de 4 MB.
+const ATTACH_MAX=4*1024*1024;
+function onAttachPick(input){
+  const f=input.files&&input.files[0];
+  if(!f)return;
+  if(f.size>ATTACH_MAX){alert('El archivo pesa '+(f.size/1048576).toFixed(1)+' MB. El maximo es 4 MB.');input.value='';return;}
+  const phone=activePhone||window._activePhone;
+  if(!phone){alert('Selecciona una conversacion primero');input.value='';return;}
+  const caption=(document.getElementById('replyText').value||'').trim();
+  const label=f.name.length>28?f.name.slice(0,25)+'...':f.name;
+  if(!confirm('Enviar "'+label+'"'+(caption?' con el texto escrito como pie de foto?':'?')))
+    {input.value='';return;}
+  const btn=document.getElementById('attachBtn');btn.disabled=true;btn.textContent='...';
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const b64=String(rd.result).split(',')[1]||'';
+    fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'send_media',to:phone,base64:b64,mimeType:f.type||'application/octet-stream',
+        filename:f.name,caption:caption||null,clientName:document.getElementById('threadName').textContent})})
+    .then(r=>r.json().then(j=>({ok:r.ok,j})))
+    .then(({ok,j})=>{
+      if(!ok){alert(j.message||('No se pudo enviar: '+JSON.stringify(j.detail||j.error||j)));return;}
+      document.getElementById('replyText').value='';
+      return fetch('/.netlify/functions/wa-messages').then(r=>r.json()).then(data=>{
+        allMessages=Array.isArray(data)?data:[];renderInboxList();openThread(phone);});
+    })
+    .catch(e=>alert('Error: '+e.message))
+    .finally(()=>{btn.disabled=false;btn.textContent='📎';input.value='';});
+  };
+  rd.onerror=()=>{alert('No se pudo leer el archivo');btn.disabled=false;btn.textContent='📎';input.value='';};
+  rd.readAsDataURL(f);
+}
+window.onAttachPick=onAttachPick;
 function replyWithTemplate(){
   if(!activePhone&&!window._activePhone)return;openSendModal();
   const phone=activePhone||window._activePhone;document.getElementById('sm_to').value=phone;
