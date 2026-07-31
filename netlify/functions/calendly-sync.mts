@@ -144,9 +144,14 @@ export default async () => {
           headers: { Prefer: "return=minimal" },
           body: JSON.stringify({
             created_at: inv.created_at,
+            // wa_leads tiene name, email y phone como NOT NULL sin default.
+            // Calendly no siempre trae telefono: el campo "text_reminder_number"
+            // solo existe si el invitado pidio recordatorio por SMS. Un one-off
+            // sin ese dato reventaba el insert con violacion de not-null, que es
+            // exactamente lo que fallo en la primera corrida del 31-jul-2026.
             name: inv.name || "(sin nombre)",
-            email: inv.email || null,
-            phone: inv.text_reminder_number || null,
+            email: inv.email || "",
+            phone: inv.text_reminder_number || "",
             country: mapCountry(answerFor(qa, "country")),
             language: lang,
             service: mapService(channels, business),
@@ -178,7 +183,11 @@ export default async () => {
         recovered.push(`${inv.name} <${inv.email}> — ${new Date(ev.start_time).toLocaleString("es")}`);
         console.log(`[calendly-sync] recuperado: ${inv.name} (${inv.email})`);
       } catch (err: any) {
-        console.error(`[calendly-sync] falló ${ev.uri}: ${err.message}`);
+        // El mensaje completo importa: la primera version fallaba aqui y el log
+        // truncado no dejaba ver si era Calendly o Supabase.
+        console.error(
+          `[calendly-sync] FALLO evento=${ev.uri.split("/").pop()} start=${ev.start_time} :: ${err?.message || err}`
+        );
       }
     }
 
