@@ -721,6 +721,43 @@ function sendWAMessage(){
   fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:t,to,data})}).then(r=>r.json()).then(res=>{if(res.messages?.[0]?.message_status==='accepted'||res.messaging_product){alert('✅ Message sent!');closeSendModal();}else alert('Response: '+JSON.stringify(res));}).catch(e=>alert('Error: '+e.message)).finally(()=>{btn.textContent='Send Message';btn.disabled=false;});
 }
 
+// ── [NEW 2026-07-31] Normalizacion de telefono en el inbox ───────────
+// Antes se agrupaba por la cadena cruda, asi que un mismo contacto salia como
+// dos chats: "7867757331" (saliente, sin el 1) y "17867757331" (entrante, como
+// lo manda Meta). Misma logica que wa-messages.js.
+function normPhone(raw){
+  let d=String(raw||'').replace(/\D/g,'');
+  if(!d)return '';
+  if(d.length===12&&d.startsWith('11'))d=d.slice(1);
+  if(d.length===10&&/^[2-9]/.test(d))d='1'+d;
+  return d;
+}
+// El titulo del chat salia del PRIMER mensaje que cayera en el hilo: por eso
+// una conversacion se titulaba con la pregunta completa del cliente y otra
+// decia "Liam". Preferimos el nombre de perfil de WhatsApp de un entrante.
+function bestName(msgs,phone){
+  const ok=n=>n&&n!==phone&&n.length<=40&&!/^liam/i.test(n)&&!/^\d+$/.test(n);
+  const inb=msgs.filter(m=>m.direction==='inbound').map(m=>m.clientName).find(ok);
+  if(inb)return inb;
+  return msgs.map(m=>m.clientName).find(ok)||phone;
+}
+// Si el mensaje trae mediaPath pintamos la imagen (o audio/enlace). El
+// endpoint firma la URL del bucket privado por 1 hora y redirige.
+function mediaHtml(m){
+  if(!m||!m.mediaPath)return '';
+  const src='/.netlify/functions/wa-messages?action=media&path='+encodeURIComponent(m.mediaPath);
+  const mime=m.mimeType||'';
+  if(mime.indexOf('image/')===0)return '<a href="'+src+'" target="_blank" rel="noopener"><img src="'+src+'" alt="imagen" style="max-width:240px;max-height:280px;border-radius:10px;display:block;margin-bottom:6px;cursor:zoom-in"></a>';
+  if(mime.indexOf('audio/')===0)return '<audio controls src="'+src+'" style="max-width:240px;display:block;margin-bottom:6px"></audio>';
+  return '<a href="'+src+'" target="_blank" rel="noopener" style="display:inline-block;margin-bottom:6px;text-decoration:underline">&#128206; Abrir archivo</a>';
+}
+// Con la imagen ya pintada, el marcador "[image]" sobra.
+function bodyTxt(m){
+  const t=m.text||'';
+  if(m.mediaPath&&/^\[[a-z]+\]$/i.test(t.trim()))return '';
+  return esc(t);
+}
+
 let allMessages=[],activePhone=null;
 window._portalState={get activePhone(){return activePhone;},set activePhone(v){activePhone=v;}};
 function loadMessages(){
@@ -731,7 +768,8 @@ window.loadMessages=loadMessages;
 function renderInboxList(){
   const lb=document.getElementById('inboxListBody');const ce=document.getElementById('inboxCount');
   const threads={};
-  allMessages.forEach(m=>{const phone=m.direction==='inbound'?m.from:m.to;if(!threads[phone]){threads[phone]={phone,clientName:m.clientName||m.from||phone,msgs:[],unread:0};}threads[phone].msgs.push(m);if(m.direction==='inbound'&&!m.read)threads[phone].unread++;});
+  allMessages.forEach(m=>{const phone=normPhone(m.direction==='inbound'?m.from:m.to);if(!phone)return;if(!threads[phone]){threads[phone]={phone,clientName:'',msgs:[],unread:0};}threads[phone].msgs.push(m);if(m.direction==='inbound'&&!m.read)threads[phone].unread++;});
+  Object.values(threads).forEach(t=>{t.clientName=bestName(t.msgs,t.phone);});
   const sorted=Object.values(threads).sort((a,b)=>{const la=Math.max.apply(null,a.msgs.map(m=>m.timestamp||0));const lb2=Math.max.apply(null,b.msgs.map(m=>m.timestamp||0));return lb2-la;});
   if(ce)ce.textContent=sorted.length+' chat'+(sorted.length!==1?'s':'');
   if(!sorted.length){lb.innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px"><div style="font-size:28px;margin-bottom:10px">📭</div>No messages yet.<br>Send a template to get started.</div>`;return;}
@@ -742,9 +780,9 @@ function openThread(phone,name){
   const hdr=document.getElementById('threadHeader');const empty=document.getElementById('threadEmpty');const msgs=document.getElementById('threadMsgs');const bar=document.getElementById('replyBar');
   if(hdr)hdr.style.display='flex';if(empty)empty.style.display='none';if(msgs)msgs.style.display='flex';if(bar)bar.style.display='flex';
   document.getElementById('threadName').textContent=name||phone;document.getElementById('threadPhone').textContent='+'+phone;
-  const thread=allMessages.filter(m=>m.from===phone||m.to===phone).sort((a,b)=>a.timestamp-b.timestamp);
+  const np=normPhone(phone);const thread=allMessages.filter(m=>normPhone(m.from)===np||normPhone(m.to)===np).sort((a,b)=>a.timestamp-b.timestamp);
   thread.filter(m=>m.direction==='inbound'&&!m.read).forEach(m=>{fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'mark_read',id:m.id})}).catch(()=>{});m.read=true;});
-  msgs.innerHTML=thread.map(m=>{const dir=m.direction==='inbound'?'in':'out';const time=m.timestamp?new Date(m.timestamp*1000).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';return`<div class="bubble ${dir}">${esc(m.text||'')}<span class="bubbleTime">${time}${dir==='out'?' · Sent ✓':''}</span></div>`;}).join('');
+  msgs.innerHTML=thread.map(m=>{const dir=m.direction==='inbound'?'in':'out';const time=m.timestamp?new Date(m.timestamp*1000).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';return`<div class="bubble ${dir}">${mediaHtml(m)}${bodyTxt(m)}<span class="bubbleTime">${time}${dir==='out'?' · Sent ✓':''}</span></div>`;}).join('');
   msgs.scrollTop=msgs.scrollHeight;
 }
 window.openThread=openThread;
