@@ -28,8 +28,14 @@ const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY;
 const VAPID_PRIV   = process.env.VAPID_PRIVATE_KEY;
 
 // Numeros propios de FR-Logistics. Un mensaje entrante desde cualquiera de
-// estos NO es un cliente: es un auto-reply de nuestra propia infraestructura.
-// Se descarta antes de persistir, notificar o enrutar al agente.
+// estos NO es un cliente: normalmente es el auto-reply de nuestra propia
+// infraestructura (la app del 786 contestandole al daily summary).
+//
+// CAMBIO 2026-07-31: antes se descartaban por completo con `continue`, lo que
+// hacia IMPOSIBLE probar el sistema desde un telefono propio — cada prueba
+// desaparecia en silencio y devolvia un falso negativo. Ahora se PERSISTEN
+// (se ven en el inbox, marcados is_internal) pero NO se enrutan al agente,
+// que es lo unico que realmente causaba bucles.
 const FR_OWN_NUMBERS = new Set(
   (process.env.FR_OWN_NUMBERS || "17863001443,13052403172,17867757335")
     .split(",")
@@ -85,19 +91,32 @@ export default async function handler(req) {
     for (const msg of msgs) {
       const from = msg.from;
 
-      // Guard: ignorar numeros propios (corta el loop 305 <-> 786)
-      if (FR_OWN_NUMBERS.has(String(from || "").replace(/[^0-9]/g, ""))) {
-        console.log("[webhook] Ignorado - numero propio: " + from);
-        continue;
+      // Guard: los numeros propios se guardan pero NO se enrutan al agente.
+      // Asi se corta el loop 305 <-> 786 sin volver invisible el mensaje.
+      const isInternal = FR_OWN_NUMBERS.has(String(from || "").replace(/[^0-9]/g, ""));
+      if (isInternal) {
+        console.log("[webhook] Numero propio (se guarda, no se enruta): " + from);
       }
 
       const id   = msg.id;
       const ts   = Number(msg.timestamp);
+
+      // Multimedia: Meta manda un objeto por tipo con { id, mime_type, caption? }.
+      // Antes solo se guardaba el marcador "[image]" y se perdian el archivo Y
+      // el texto que el cliente escribia junto a la foto.
+      const mediaObj =
+        msg.image || msg.audio || msg.video ||
+        msg.document || msg.sticker || msg.voice || null;
+      const mediaId  = mediaObj?.id || null;
+      const mimeType = mediaObj?.mime_type || null;
+      const caption  = mediaObj?.caption || null;
+
       const text =
         msg.text?.body ||
         msg.button?.text ||
         msg.interactive?.button_reply?.title ||
         msg.interactive?.list_reply?.title ||
+        caption ||                                  // el caption vale mas que el marcador
         `[${msg.type || "media"}]`;
       const contact = contacts.find((c) => c.wa_id === from);
       const clientName = contact?.profile?.name || from;
@@ -109,6 +128,10 @@ export default async function handler(req) {
         text,
         timestamp: ts,
         type: msg.type || "text",
+        mediaId,
+        mimeType,
+        caption,
+        isInternal,
       });
     }
 
@@ -146,6 +169,10 @@ export default async function handler(req) {
         timestamp:   new Date(m.timestamp * 1000).toISOString(),
         read:        false,
         replied:     false,
+        media_id:    m.mediaId  || null,
+        mime_type:   m.mimeType || null,
+        caption:     m.caption  || null,
+        is_internal: !!m.isInternal,
       }));
 
       if (rowsToInsert.length) {
@@ -196,7 +223,9 @@ async function notifyOutOfBand(messages, agentMessages) {
     sendEmail(messages).catch(e => console.error('[webhook] email error:', e?.message || e)),
     sendPush(messages).catch(e => console.error('[webhook] push error:', e?.message || e)),
     // [NEW Sprint 1] Route to Liam agent
-    routeToAgent(agentMessages || messages).catch(e => console.error('[webhook] agent error:', e?.message || e)),
+    routeToAgent((agentMessages || messages).filter(m => !m.isInternal))
+      .catch(e => console.error('[webhook] agent error:', e?.message || e)),
+    downloadMedia(messages).catch(e => console.error('[webhook] media error:', e?.message || e)),
   ]);
 }
 
@@ -241,4 +270,107 @@ function escapeHtml(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// ───────────────────────────────── Media download  [NEW 2026-07-31]
+// Meta only hands us a media ID. To keep the actual file we must:
+//   1) GET /{media-id}          -> a short-lived download URL
+//   2) GET that URL             -> the bytes (same Bearer token required)
+//   3) upload to Supabase Storage and record the path on the message row
+//
+// Meta retains media for a limited window and the URL expires within
+// minutes, so this has to happen now — there is no going back for it later.
+// Every image, audio and document received before this date is gone.
+const GRAPH_VERSION = process.env.WHATSAPP_GRAPH_VERSION || "v22.0";
+const MEDIA_BUCKET  = "wa-media";
+
+const EXT_BY_MIME = {
+  "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
+  "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/aac": "aac",
+  "video/mp4": "mp4", "video/3gpp": "3gp",
+  "application/pdf": "pdf",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+};
+
+function extFor(mime) {
+  if (!mime) return "bin";
+  const clean = String(mime).split(";")[0].trim().toLowerCase();
+  return EXT_BY_MIME[clean] || clean.split("/")[1] || "bin";
+}
+
+async function downloadMedia(messages) {
+  const withMedia = (messages || []).filter((m) => m.mediaId);
+  if (!withMedia.length) return;
+
+  const token = process.env.WHATSAPP_TOKEN;
+  const sbUrl = process.env.SUPABASE_URL;
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  if (!token || !sbUrl || !sbKey) {
+    console.error("[webhook] media: missing WHATSAPP_TOKEN / SUPABASE creds, skipping");
+    return;
+  }
+
+  console.log(`[webhook] media: downloading ${withMedia.length} file(s)`);
+
+  for (const m of withMedia) {
+    try {
+      // 1) media id -> temporary URL
+      const metaRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${m.mediaId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!metaRes.ok) {
+        console.error(`[webhook] media meta failed ${m.mediaId}: HTTP ${metaRes.status}`);
+        continue;
+      }
+      const meta = await metaRes.json();
+      if (!meta?.url) {
+        console.error(`[webhook] media meta had no url for ${m.mediaId}`);
+        continue;
+      }
+
+      // 2) fetch the bytes (Meta requires the token on this call too)
+      const binRes = await fetch(meta.url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!binRes.ok) {
+        console.error(`[webhook] media bytes failed ${m.mediaId}: HTTP ${binRes.status}`);
+        continue;
+      }
+      const bytes = Buffer.from(await binRes.arrayBuffer());
+      const mime  = meta.mime_type || m.mimeType || "application/octet-stream";
+      const path  = `${m.from}/${m.id}.${extFor(mime)}`;
+
+      // 3) store it
+      const upRes = await fetch(`${sbUrl}/storage/v1/object/${MEDIA_BUCKET}/${path}`, {
+        method: "POST",
+        headers: {
+          apikey: sbKey,
+          Authorization: `Bearer ${sbKey}`,
+          "Content-Type": mime,
+          "x-upsert": "true",
+        },
+        body: bytes,
+      });
+      if (!upRes.ok) {
+        const t = await upRes.text().catch(() => "");
+        console.error(`[webhook] media upload failed ${path}: HTTP ${upRes.status} ${t}`);
+        continue;
+      }
+
+      // 4) record the path on the message row
+      await fetch(`${sbUrl}/rest/v1/wa_messages?wa_msg_id=eq.${encodeURIComponent(m.id)}`, {
+        method: "PATCH",
+        headers: {
+          apikey: sbKey,
+          Authorization: `Bearer ${sbKey}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({ media_path: path, mime_type: mime }),
+      });
+
+      console.log(`[webhook] media saved: ${path} (${bytes.length} bytes)`);
+    } catch (err) {
+      console.error(`[webhook] media error for ${m.mediaId}:`, err?.message || err);
+    }
+  }
 }
