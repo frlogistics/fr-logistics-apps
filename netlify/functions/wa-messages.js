@@ -135,6 +135,38 @@ export default async function handler(req, context) {
   const method = req.method;
   const url    = new URL(req.url);
 
+  // ── GET ?action=media&path=... — redirige a una URL firmada  [NEW] ──
+  // El bucket wa-media es PRIVADO (son fotos de clientes: etiquetas, cajas
+  // dañadas, documentos). En vez de abrirlo al mundo, esta rama firma la
+  // ruta por 1 hora y redirige, para que el <img> del portal funcione solo.
+  if (method === "GET" && url.searchParams.get("action") === "media") {
+    const path = url.searchParams.get("path") || "";
+    if (!path) return new Response("Missing path", { status: 400 });
+    try {
+      const r = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/wa-media/${path}`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ expiresIn: 3600 })
+      });
+      if (!r.ok) {
+        console.error("[wa-messages] sign failed:", r.status, await r.text().catch(() => ""));
+        return new Response("Not found", { status: 404 });
+      }
+      const { signedURL } = await r.json();
+      return new Response(null, {
+        status: 302,
+        headers: { Location: `${SUPABASE_URL}/storage/v1${signedURL}`, "Cache-Control": "private, max-age=3000" }
+      });
+    } catch (err) {
+      console.error("[wa-messages] media error:", err);
+      return new Response("Error", { status: 500 });
+    }
+  }
+
   // ── GET — return messages ────────────────────────────────────────
   if (method === "GET") {
     try {
