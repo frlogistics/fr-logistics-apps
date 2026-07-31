@@ -6,7 +6,22 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const WA_TOKEN     = process.env.WHATSAPP_TOKEN;
 const PHONE_ID     = process.env.WHATSAPP_PHONE_ID;
-const WA_BASE      = `https://graph.facebook.com/v21.0/${PHONE_ID}`;
+const GRAPH_VER    = process.env.WHATSAPP_GRAPH_VERSION || "v22.0";
+const WA_BASE      = `https://graph.facebook.com/${GRAPH_VER}/${PHONE_ID}`;
+
+// ── Normalizacion de telefono  [NEW 2026-07-31] ───────────────────
+// Antes se hacia `body.to.replace(/\D/g,"")`, que quita simbolos pero NO
+// arregla el codigo de pais. Por eso el mismo contacto quedaba guardado como
+// "7867757331" (sin el 1) y como "17867757331", y el inbox lo mostraba como
+// dos conversaciones distintas. Caso peor: "117866331807", con el 1 duplicado,
+// al que se le enviaron 6 mensajes.
+function normalizePhone(raw) {
+  let d = String(raw || "").replace(/\D/g, "");
+  if (!d) return "";
+  if (d.length === 12 && d.startsWith("11")) d = d.slice(1);          // 1 duplicado
+  if (d.length === 10 && /^[2-9]/.test(d))  d = "1" + d;              // falta el 1
+  return d;
+}
 
 // ── Supabase helpers ──────────────────────────────────────────────
 async function sbSelect(table, params = "") {
@@ -124,9 +139,9 @@ export default async function handler(req, context) {
   if (method === "GET") {
     try {
       const limit = url.searchParams.get("limit") || "100";
-      const phone = url.searchParams.get("phone") || "";
+      const phone = normalizePhone(url.searchParams.get("phone") || "");
 
-      let params = `?order=timestamp.desc&limit=${limit}`;
+      let params = `?select=*&order=timestamp.desc&limit=${limit}`;
       if (phone) params += `&or=(from_number.eq.${phone},to_number.eq.${phone})`;
 
       const messages = await sbSelect("wa_messages", params);
@@ -142,7 +157,12 @@ export default async function handler(req, context) {
         type:       m.msg_type,
         timestamp:  Math.floor(new Date(m.timestamp).getTime() / 1000),
         read:       m.read,
-        replied:    m.replied
+        replied:    m.replied,
+        // [NEW 2026-07-31] multimedia + marca de numero interno
+        mediaPath:  m.media_path  || null,
+        mimeType:   m.mime_type   || null,
+        caption:    m.caption     || null,
+        isInternal: !!m.is_internal
       }));
 
       return new Response(JSON.stringify(mapped), {
@@ -175,7 +195,7 @@ export default async function handler(req, context) {
 
     // free-text reply
     if (body.action === "reply" && body.to && body.text) {
-      const to = body.to.replace(/\D/g, "");
+      const to = normalizePhone(body.to);
       const waPayload = {
         messaging_product: "whatsapp",
         to,
@@ -216,7 +236,7 @@ export default async function handler(req, context) {
 
     // send template
     if (body.type && body.to && body.data) {
-      const to         = body.to.replace(/\D/g, "");
+      const to         = normalizePhone(body.to);
       const components = buildComponents(body.type, body.data);
 
       if (!components) {
