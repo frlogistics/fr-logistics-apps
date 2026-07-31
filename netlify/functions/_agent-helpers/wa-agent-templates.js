@@ -237,6 +237,55 @@ _(O escríbeme tu pregunta y te respondo)_`,
 _(Or just ask me anything)_`,
 
   // ───────────────────────────────────────────────────────────────
+  // MENU DECAY (added 2026-07-31)
+  // The full menu above is sent ONCE per conversation. From the second
+  // time onward we use this one-liner, and from the third time we send
+  // nothing at all. Repeating the full menu after every single answer
+  // is what made Liam read as spam — 11 different people received the
+  // identical menu block between 3 and 9 times in a single day.
+  // ───────────────────────────────────────────────────────────────
+
+  faq_followup_short_es: () =>
+`¿Te ayudo con algo más? Escríbeme tu pregunta, o pon *5* si prefieres hablar con Jose.`,
+
+  faq_followup_short_en: () =>
+`Anything else? Just type your question, or reply *5* to talk to Jose.`,
+
+  // ───────────────────────────────────────────────────────────────
+  // MEDIA RECEIVED (added 2026-07-31)
+  // The webhook stores non-text messages as "[image]" / "[audio]" etc.
+  // Liam cannot see the file, so he must NOT run it through the capture
+  // or qualification logic — he acknowledges and hands off to a human.
+  // ───────────────────────────────────────────────────────────────
+
+  media_ack_es: (kind = "archivo") =>
+`Recibí tu ${kind === "image" ? "imagen" : kind === "audio" ? "audio" : kind === "document" ? "documento" : "archivo"} 📎
+
+No puedo abrirlo desde aquí, pero ya se lo paso al equipo para que lo revise. Te responden en breve.
+
+Si quieres adelantar algo, escríbemelo en texto y te ayudo de una vez.`,
+
+  media_ack_en: (kind = "file") =>
+`Got your ${kind === "image" ? "image" : kind === "audio" ? "voice note" : kind === "document" ? "document" : "file"} 📎
+
+I can't open it from here, but I'm passing it to the team to review. They'll get back to you shortly.
+
+If there's anything I can help with in the meantime, just type it out.`,
+
+  // ───────────────────────────────────────────────────────────────
+  // CONVERSATION CLOSE (added 2026-07-31)
+  // "Gracias" / "Ok" / "Listo" end a conversation. They are not answers
+  // to whatever slot we were waiting on, and they must never restart a
+  // flow or trigger another menu.
+  // ───────────────────────────────────────────────────────────────
+
+  closing_ack_es: () =>
+`¡Con gusto! Aquí estoy si necesitas algo más. 🤝`,
+
+  closing_ack_en: () =>
+`Happy to help! I'm here if you need anything else. 🤝`,
+
+  // ───────────────────────────────────────────────────────────────
   // HANDOFF TO JOSE (option 5 or explicit request)
   // ───────────────────────────────────────────────────────────────
 
