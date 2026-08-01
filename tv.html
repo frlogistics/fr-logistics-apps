@@ -268,7 +268,14 @@ var CFG = {
 var VIEWS = [
   {
     name: "Warehouse",
-    area: "warehouse",
+    // Se prueban en orden hasta que una traiga los campos. La ganadora se
+    // imprime en consola como [wall-board] OK para poder fijarla despues.
+    sources: [
+      "/.netlify/functions/dashboard-warehouse-stats",
+      "/.netlify/functions/occupancy-data",
+      "/.netlify/functions/dashboard-kpis?area=warehouse",
+      "/.netlify/functions/dashboard-kpis?area=all"
+    ],
     cards: [
       { label:"Global Occupancy", accent:"var(--teal)", unit:"%",
         keys:["occupancy_pct"],
@@ -286,7 +293,11 @@ var VIEWS = [
   },
   {
     name: "Operations",
-    area: "operations",
+    sources: [
+      "/.netlify/functions/dashboard-kpis?area=operations",
+      "/.netlify/functions/dashboard-kpis?area=all",
+      "/.netlify/functions/dashboard-dropship-stats"
+    ],
     cards: [
       { label:"ShipStation Pending", accent:"var(--red)",
         keys:["pending","awaiting_shipment","pending_orders"],
@@ -352,12 +363,21 @@ function tick(){
 var store = {};          // area -> json
 var lastOk = 0;          // timestamp del último fetch bueno
 
-// Pide un área. Si esa área no existe en la función (o viene vacía),
-// reintenta con ?area=all, que siempre trae todo. Así no hay que saber
-// de antemano cómo se llama cada área.
-function fetchArea(v, area, isRetry){
-  var url = CFG.API + "?area=" + area + (CFG.TOKEN ? "&" + CFG.TOKEN.replace(/^[?&]/,"") : "");
-  return fetch(url, {cache:"no-store"})
+// Prueba las fuentes de una vista en orden y se queda con la primera que
+// devuelva JSON con al menos un campo utilizable. Asi no hay que saber de
+// antemano cual funcion sirve cada metrica.
+function withToken(url){
+  if(!CFG.TOKEN) return url;
+  return url + (url.indexOf("?") === -1 ? "?" : "&") + CFG.TOKEN.replace(/^[?&]/,"");
+}
+
+function tryChain(v, i){
+  if(i >= v.sources.length){
+    console.warn("[wall-board] " + v.name + ": ninguna fuente sirvio");
+    return Promise.resolve(false);
+  }
+  var url = v.sources[i];
+  return fetch(withToken(url), {cache:"no-store"})
     .then(function(r){
       if(!r.ok) throw new Error("HTTP " + r.status);
       return r.text();                    // texto primero: si no es JSON, no revienta
@@ -366,26 +386,22 @@ function fetchArea(v, area, isRetry){
       var j;
       try { j = JSON.parse(t); }
       catch(e){ throw new Error("non-JSON response"); }
-      // ¿Trae al menos uno de los campos que esta vista necesita?
       var usable = v.cards.some(function(c){ return num(j, c.keys) !== null; });
-      if(!usable) throw new Error("no usable fields in area=" + area);
-      store[v.area] = j;
+      if(!usable) throw new Error("no usable fields");
+      store[v.name] = j;
+      console.log("[wall-board] OK " + v.name + " <- " + url);
       return true;
     })
     .catch(function(e){
-      if(!isRetry && area !== "all"){
-        console.warn("[wall-board] " + v.name + ": " + e.message + " -> retrying with area=all");
-        return fetchArea(v, "all", true);
-      }
-      console.warn("[wall-board] " + v.name + ": " + e.message);
-      return false;
+      console.warn("[wall-board] " + v.name + " x " + url + " : " + e.message);
+      return tryChain(v, i + 1);
     });
 }
 
 function load(){
   var pending = VIEWS.length, anyOk = false;
   VIEWS.forEach(function(v){
-    fetchArea(v, v.area, false).then(function(ok){
+    tryChain(v, 0).then(function(ok){
       if(ok) anyOk = true;
       if(--pending === 0){
         if(anyOk) lastOk = Date.now();
@@ -407,7 +423,7 @@ function health(){
 var idx = 0;
 
 function render(){
-  var v = VIEWS[idx], data = store[v.area];
+  var v = VIEWS[idx], data = store[v.name];
   $("viewName").textContent = v.name;
 
   var html = "";
