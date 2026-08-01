@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FR-Logistics · Wall Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* =========================================================================
+   FR-Logistics · Wall Board (tv.html)
+   Pantalla partida para televisor Amazon Fire — NO es para PC ni móvil.
+   Izquierda: sitio público fr-logistics.net en iframe.
+   Derecha : KPIs en vivo desde /.netlify/functions/dashboard-kpis
+   ========================================================================= */
+
+:root{
+  --navy:#0B2545;        /* fondo, del sistema del deck */
+  --navy-2:#123055;      /* superficie de tarjeta */
+  --navy-3:#1B3E68;      /* borde */
+  --teal:#1EA9A0;        /* ocupación / positivo */
+  --blue:#3B82F6;        /* utilización */
+  --orange:#F4A261;      /* acento del deck: rail + estado */
+  --red:#E2574C;         /* pendientes */
+  --green:#2FA84F;       /* inbound */
+  --ink:#FFFFFF;
+  --ink-2:#9DB2CE;       /* texto secundario */
+  --safe:2.6vh;          /* margen anti-overscan del televisor */
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden;background:#000}
+body{
+  font-family:"DM Sans",system-ui,sans-serif;
+  color:var(--ink);
+  padding:var(--safe);
+  background:var(--navy);
+}
+
+/* ---------- Rejilla principal 55 / 45 ---------- */
+.board{
+  height:100%;
+  display:grid;
+  grid-template-columns:55fr 45fr;
+  gap:1.4vh;
+}
+
+/* ---------- Panel izquierdo: el sitio ---------- */
+.site{
+  position:relative;
+  border-radius:1.2vh;
+  overflow:hidden;
+  background:#fff;
+}
+.site iframe{
+  position:absolute; top:0; left:0;
+  border:0;
+  /* El sitio se renderiza a 1600px de ancho y se reduce para que quepa
+     completo sin scroll. Ajusta --z si quieres verlo más grande. */
+  width:calc(100% / var(--z));
+  height:calc(100% / var(--z));
+  transform:scale(var(--z));
+  transform-origin:0 0;
+  pointer-events:none;   /* nadie va a hacer clic en una pared */
+}
+.site{--z:0.62}
+/* Panel de marca: se ve por defecto y solo se esconde si el iframe
+   carga de verdad. No es una pantalla de error — es la vista B. */
+.site .veil{
+  position:absolute; inset:0;
+  display:grid;
+  grid-template-columns:1fr auto;
+  grid-template-rows:1fr auto;
+  align-items:center; gap:0 4.5vh;
+  background:var(--navy-2); padding:6vh 5.5vh;
+  border-left:0.6vh solid var(--orange);
+}
+.site .veil.hide{display:none}
+.veil .main{display:flex;flex-direction:column;gap:3.2vh}
+.veil .kicker{font-size:1.6vh;letter-spacing:0.22em;text-transform:uppercase;color:var(--orange);font-weight:500}
+.veil h2{font-size:6.2vh;font-weight:700;letter-spacing:-0.03em;line-height:0.98}
+.veil h2 em{font-style:normal;color:var(--teal);display:block}
+.veil .svc{display:flex;flex-wrap:wrap;gap:1vh 1.2vh;max-width:32ch}
+.veil .svc span{
+  font-size:1.9vh;padding:0.8vh 1.6vh;border-radius:5vh;
+  border:0.15vh solid var(--navy-3);color:var(--ink-2);
+}
+.veil .stats{display:flex;gap:4.5vh;font-family:"DM Mono",monospace}
+.veil .stats b{display:block;font-size:4.4vh;font-weight:500;color:var(--ink);line-height:1}
+.veil .stats i{font-style:normal;font-size:1.5vh;color:var(--ink-2);letter-spacing:0.08em;text-transform:uppercase}
+.veil .foot{
+  grid-column:1 / -1; align-self:end; padding-top:4vh;
+  font-family:"DM Mono",monospace; font-size:1.7vh; color:var(--ink-2); line-height:1.7;
+}
+.veil .foot b{color:var(--ink);font-weight:500}
+
+/* El QR: módulos navy sobre blanco, que es lo que toda cámara lee sin dudar */
+.qr{display:flex;flex-direction:column;align-items:center;gap:1.6vh;width:26vh}
+.qr .plate{
+  background:#fff; border-radius:1.6vh; padding:2vh;
+  width:100%; line-height:0;
+  box-shadow:0 1.4vh 3vh rgba(0,0,0,.28);
+}
+.qr .plate svg{width:100%;height:auto;display:block}
+.qr .cap{text-align:center;line-height:1.35}
+.qr .cap b{display:block;font-size:1.9vh;font-weight:500;color:var(--ink)}
+.qr .cap i{
+  font-style:normal;display:block;margin-top:0.5vh;
+  font-family:"DM Mono",monospace;font-size:1.5vh;color:var(--orange);
+}
+
+/* ---------- Panel derecho: los KPIs ---------- */
+.kpis{
+  display:flex; flex-direction:column; gap:1.4vh;
+  min-height:0;
+}
+
+/* Cabecera */
+.head{
+  display:flex; align-items:center; gap:1.6vh;
+  padding:0 0 0 1.6vh;
+  border-left:0.6vh solid var(--orange);   /* el rail del deck */
+}
+.head .brand{
+  font-weight:700; font-size:2.5vh; letter-spacing:-0.02em; line-height:1.15;
+}
+.head .brand span{display:block;color:var(--ink-2);font-weight:400;font-size:1.5vh;letter-spacing:0.14em;text-transform:uppercase}
+.head .clock{
+  margin-left:auto; text-align:right;
+  font-family:"DM Mono",monospace;
+}
+.clock .t{font-size:3.2vh;font-weight:500;line-height:1}
+.clock .d{font-size:1.4vh;color:var(--ink-2);margin-top:0.4vh}
+
+/* Nombre de la vista + estado de datos */
+.viewbar{display:flex;align-items:center;gap:1.2vh}
+.viewbar h1{font-size:2.2vh;font-weight:500;letter-spacing:0.16em;text-transform:uppercase;color:var(--ink-2)}
+.dot{width:1.1vh;height:1.1vh;border-radius:50%;background:var(--green);flex:none}
+.dot.stale{background:var(--orange)}
+.dot.dead{background:var(--red)}
+.viewbar .sync{margin-left:auto;font-family:"DM Mono",monospace;font-size:1.4vh;color:var(--ink-2)}
+
+/* Tarjetas */
+.cards{display:flex;flex-direction:column;gap:1.4vh;flex:1;min-height:0}
+.card{
+  flex:1; min-height:0;
+  background:var(--navy-2);
+  border:0.15vh solid var(--navy-3);
+  border-left:0.6vh solid var(--accent,var(--teal));
+  border-radius:1.2vh;
+  padding:2.2vh 2.6vh;
+  display:flex; flex-direction:column; justify-content:center;
+}
+.card .label{
+  font-size:1.7vh; font-weight:500; letter-spacing:0.14em; text-transform:uppercase;
+  color:var(--ink-2); margin-bottom:0.8vh;
+}
+.card .value{
+  font-size:9.5vh; font-weight:700; line-height:0.9; letter-spacing:-0.04em;
+  color:var(--accent,var(--teal));
+  font-variant-numeric:tabular-nums;
+}
+.card .value .u{font-size:4.2vh;font-weight:500;margin-left:0.4vh}
+.card .sub{
+  margin-top:1.2vh; font-family:"DM Mono",monospace;
+  font-size:1.8vh; color:var(--ink-2);
+}
+.card.wide .value{font-size:7.5vh}
+
+/* Barra de rotación: se llena mientras dura la vista */
+.rail{height:0.6vh;background:var(--navy-3);border-radius:1vh;overflow:hidden;flex:none}
+.rail i{display:block;height:100%;width:0;background:var(--orange)}
+
+@media (prefers-reduced-motion:reduce){ .rail i{transition:none !important} }
+</style>
+</head>
+<body>
+
+<div class="board">
+
+  <!-- ============ IZQUIERDA · el sitio público ============ -->
+  <div class="site" id="site">
+    <iframe id="siteFrame" title="fr-logistics.net" scrolling="no"></iframe>
+    <div class="veil" id="veil">
+      <div class="main">
+        <div class="kicker">Amazon SPN Certified · Doral, Florida</div>
+        <h2>FR-Logistics<em>Miami</em></h2>
+
+        <div class="svc">
+          <span>Amazon FBA Prep</span>
+          <span>Shopify Fulfillment</span>
+          <span>Cross-Docking LATAM</span>
+          <span>Returns</span>
+          <span>DropShipments</span>
+          <span>EcoPack+</span>
+        </div>
+
+        <div class="stats">
+          <div><b>20+</b><i>years</i></div>
+          <div><b>9</b><i>countries</i></div>
+          <div><b>2 PM</b><i>ET cutoff</i></div>
+        </div>
+      </div>
+
+      <div class="qr">
+        <div class="plate"><svg viewBox="0 0 37 37" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"><path fill="#0B2545" d="M2 2h7v1h-7zM10 2h2v1h-2zM13 2h1v1h-1zM16 2h2v1h-2zM21 2h2v1h-2zM24 2h1v1h-1zM26 2h1v1h-1zM28 2h7v1h-7zM2 3h1v1h-1zM8 3h1v1h-1zM11 3h1v1h-1zM14 3h1v1h-1zM16 3h4v1h-4zM26 3h1v1h-1zM28 3h1v1h-1zM34 3h1v1h-1zM2 4h1v1h-1zM4 4h3v1h-3zM8 4h1v1h-1zM10 4h3v1h-3zM14 4h1v1h-1zM17 4h2v1h-2zM20 4h1v1h-1zM23 4h4v1h-4zM28 4h1v1h-1zM30 4h3v1h-3zM34 4h1v1h-1zM2 5h1v1h-1zM4 5h3v1h-3zM8 5h1v1h-1zM11 5h1v1h-1zM14 5h1v1h-1zM18 5h2v1h-2zM21 5h3v1h-3zM25 5h2v1h-2zM28 5h1v1h-1zM30 5h3v1h-3zM34 5h1v1h-1zM2 6h1v1h-1zM4 6h3v1h-3zM8 6h1v1h-1zM10 6h2v1h-2zM15 6h2v1h-2zM18 6h1v1h-1zM20 6h1v1h-1zM23 6h2v1h-2zM28 6h1v1h-1zM30 6h3v1h-3zM34 6h1v1h-1zM2 7h1v1h-1zM8 7h1v1h-1zM11 7h1v1h-1zM13 7h1v1h-1zM15 7h2v1h-2zM24 7h3v1h-3zM28 7h1v1h-1zM34 7h1v1h-1zM2 8h7v1h-7zM10 8h1v1h-1zM12 8h1v1h-1zM14 8h1v1h-1zM16 8h1v1h-1zM18 8h1v1h-1zM20 8h1v1h-1zM22 8h1v1h-1zM24 8h1v1h-1zM26 8h1v1h-1zM28 8h7v1h-7zM10 9h1v1h-1zM12 9h1v1h-1zM21 9h2v1h-2zM25 9h1v1h-1zM7 10h2v1h-2zM11 10h1v1h-1zM13 10h1v1h-1zM16 10h1v1h-1zM18 10h3v1h-3zM22 10h1v1h-1zM25 10h1v1h-1zM28 10h1v1h-1zM30 10h1v1h-1zM32 10h1v1h-1zM34 10h1v1h-1zM2 11h1v1h-1zM4 11h1v1h-1zM7 11h1v1h-1zM10 11h3v1h-3zM14 11h1v1h-1zM16 11h2v1h-2zM19 11h1v1h-1zM22 11h1v1h-1zM24 11h2v1h-2zM27 11h1v1h-1zM29 11h2v1h-2zM33 11h1v1h-1zM3 12h6v1h-6zM10 12h1v1h-1zM12 12h2v1h-2zM16 12h1v1h-1zM20 12h1v1h-1zM23 12h1v1h-1zM27 12h3v1h-3zM31 12h3v1h-3zM2 13h3v1h-3zM7 13h1v1h-1zM9 13h3v1h-3zM13 13h1v1h-1zM17 13h1v1h-1zM20 13h3v1h-3zM24 13h1v1h-1zM29 13h1v1h-1zM31 13h2v1h-2zM34 13h1v1h-1zM2 14h3v1h-3zM7 14h2v1h-2zM10 14h2v1h-2zM13 14h1v1h-1zM15 14h4v1h-4zM20 14h2v1h-2zM23 14h4v1h-4zM28 14h1v1h-1zM30 14h2v1h-2zM34 14h1v1h-1zM2 15h5v1h-5zM9 15h1v1h-1zM11 15h2v1h-2zM17 15h3v1h-3zM23 15h3v1h-3zM28 15h1v1h-1zM32 15h1v1h-1zM34 15h1v1h-1zM4 16h1v1h-1zM8 16h1v1h-1zM10 16h1v1h-1zM12 16h1v1h-1zM14 16h1v1h-1zM18 16h1v1h-1zM20 16h3v1h-3zM24 16h1v1h-1zM27 16h2v1h-2zM31 16h3v1h-3zM4 17h4v1h-4zM9 17h3v1h-3zM14 17h1v1h-1zM16 17h1v1h-1zM19 17h2v1h-2zM25 17h1v1h-1zM30 17h1v1h-1zM32 17h3v1h-3zM3 18h3v1h-3zM7 18h4v1h-4zM13 18h1v1h-1zM15 18h1v1h-1zM17 18h2v1h-2zM20 18h1v1h-1zM27 18h1v1h-1zM29 18h4v1h-4zM34 18h1v1h-1zM2 19h3v1h-3zM6 19h1v1h-1zM9 19h9v1h-9zM19 19h1v1h-1zM21 19h2v1h-2zM25 19h2v1h-2zM28 19h1v1h-1zM4 20h1v1h-1zM7 20h2v1h-2zM10 20h1v1h-1zM12 20h4v1h-4zM17 20h1v1h-1zM19 20h1v1h-1zM21 20h2v1h-2zM24 20h2v1h-2zM31 20h2v1h-2zM3 21h1v1h-1zM6 21h1v1h-1zM9 21h2v1h-2zM14 21h8v1h-8zM24 21h3v1h-3zM28 21h1v1h-1zM31 21h2v1h-2zM34 21h1v1h-1zM3 22h3v1h-3zM8 22h2v1h-2zM11 22h2v1h-2zM15 22h1v1h-1zM17 22h1v1h-1zM20 22h1v1h-1zM24 22h1v1h-1zM27 22h5v1h-5zM33 22h2v1h-2zM2 23h1v1h-1zM4 23h1v1h-1zM7 23h1v1h-1zM9 23h1v1h-1zM11 23h10v1h-10zM23 23h1v1h-1zM26 23h1v1h-1zM28 23h3v1h-3zM32 23h1v1h-1zM2 24h1v1h-1zM6 24h3v1h-3zM10 24h2v1h-2zM14 24h1v1h-1zM18 24h1v1h-1zM22 24h1v1h-1zM24 24h1v1h-1zM33 24h1v1h-1zM2 25h1v1h-1zM5 25h1v1h-1zM7 25h1v1h-1zM9 25h2v1h-2zM12 25h1v1h-1zM15 25h1v1h-1zM17 25h1v1h-1zM20 25h3v1h-3zM24 25h1v1h-1zM26 25h1v1h-1zM29 25h2v1h-2zM32 25h1v1h-1zM2 26h4v1h-4zM8 26h2v1h-2zM11 26h1v1h-1zM13 26h1v1h-1zM15 26h3v1h-3zM19 26h1v1h-1zM21 26h1v1h-1zM23 26h9v1h-9zM34 26h1v1h-1zM10 27h1v1h-1zM12 27h2v1h-2zM20 27h1v1h-1zM23 27h1v1h-1zM26 27h1v1h-1zM30 27h1v1h-1zM32 27h1v1h-1zM34 27h1v1h-1zM2 28h7v1h-7zM13 28h1v1h-1zM15 28h3v1h-3zM20 28h1v1h-1zM24 28h3v1h-3zM28 28h1v1h-1zM30 28h2v1h-2zM33 28h1v1h-1zM2 29h1v1h-1zM8 29h1v1h-1zM10 29h1v1h-1zM13 29h1v1h-1zM15 29h3v1h-3zM22 29h5v1h-5zM30 29h4v1h-4zM2 30h1v1h-1zM4 30h3v1h-3zM8 30h1v1h-1zM11 30h2v1h-2zM14 30h3v1h-3zM22 30h3v1h-3zM26 30h6v1h-6zM33 30h2v1h-2zM2 31h1v1h-1zM4 31h3v1h-3zM8 31h1v1h-1zM11 31h1v1h-1zM14 31h1v1h-1zM18 31h2v1h-2zM21 31h1v1h-1zM23 31h1v1h-1zM27 31h1v1h-1zM29 31h3v1h-3zM33 31h1v1h-1zM2 32h1v1h-1zM4 32h3v1h-3zM8 32h1v1h-1zM11 32h2v1h-2zM14 32h2v1h-2zM17 32h1v1h-1zM23 32h1v1h-1zM30 32h2v1h-2zM33 32h2v1h-2zM2 33h1v1h-1zM8 33h1v1h-1zM11 33h1v1h-1zM14 33h3v1h-3zM18 33h1v1h-1zM22 33h1v1h-1zM27 33h2v1h-2zM31 33h1v1h-1zM2 34h7v1h-7zM12 34h3v1h-3zM17 34h1v1h-1zM19 34h5v1h-5zM25 34h4v1h-4zM32 34h2v1h-2z"/></svg></div>
+        <div class="cap">
+          <b>Rates &amp; quote</b>
+          <i>fr-logistics.net</i>
+        </div>
+      </div>
+
+      <div class="foot">
+        <b>10893 NW 17th St, Unit 121</b> · Miami, FL 33172<br>
+        info@fr-logistics.net · +1 786-300-1443
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ DERECHA · los KPIs ============ -->
+  <div class="kpis">
+
+    <div class="head">
+      <div class="brand">FR-Logistics<span>Wall Board</span></div>
+      <div class="clock">
+        <div class="t" id="clockT">--:--</div>
+        <div class="d" id="clockD">—</div>
+      </div>
+    </div>
+
+    <div class="viewbar">
+      <span class="dot" id="dot"></span>
+      <h1 id="viewName">Loading</h1>
+      <span class="sync" id="sync">—</span>
+    </div>
+
+    <div class="cards" id="cards"></div>
+
+    <div class="rail"><i id="rail"></i></div>
+
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ======================= CONFIGURACIÓN =======================
+   Lo único que deberías tocar está en este bloque.
+   ============================================================ */
+var CFG = {
+  API:       "/.netlify/functions/dashboard-kpis",  // misma función del dashboard
+  SITE:      "https://fr-logistics.net/",           // panel izquierdo
+  TOKEN:     "",                                    // si algún día proteges la función: "?tv=xxxx"
+  ROTATE_MS: 20000,                                 // cada cuánto cambia de vista
+  REFRESH_MS:180000,                                // cada cuánto vuelve a pedir datos (3 min)
+  RELOAD_MS: 6*60*60*1000,                          // recarga completa cada 6h (higiene del Fire TV)
+  TZ:        "America/New_York"
+};
+
+/* ======================= VISTAS =======================
+   Cada vista = un área de dashboard-kpis + sus tarjetas.
+   'keys' son nombres de campo que se buscan en el JSON a cualquier
+   profundidad, en orden, y gana el primero que aparezca. Así la
+   página no se rompe si la función cambia de forma.
+   ====================================================== */
+var VIEWS = [
+  {
+    name: "Warehouse",
+    area: "warehouse",
+    cards: [
+      { label:"Global Occupancy", accent:"var(--teal)", unit:"%",
+        keys:["occupancy_pct"],
+        sub: function(d){
+          var a = num(d,["occupied_cuft"]), b = num(d,["effective_cuft"]);
+          return a===null||b===null ? "" : fmt(a)+" / "+fmt(b)+" ft³ effective";
+        }},
+      { label:"Position Utilization", accent:"var(--blue)", unit:"%",
+        keys:["utilization_pct"],
+        sub: function(d){
+          var o = num(d,["occupied_positions"]), t = num(d,["storage_positions"]);
+          return o===null||t===null ? "" : fmt(o)+" / "+fmt(t)+" in use · "+fmt(t-o)+" free";
+        }}
+    ]
+  },
+  {
+    name: "Operations",
+    area: "operations",
+    cards: [
+      { label:"ShipStation Pending", accent:"var(--red)",
+        keys:["pending","awaiting_shipment","pending_orders"],
+        sub: function(){ return "awaiting shipment"; }},
+      { label:"Inbound · 30d", accent:"var(--green)",
+        keys:["inbound_30d","inbound","inbound_count"],
+        sub: function(d){
+          var o = num(d,["outbound_30d","outbound","outbound_count"]);
+          return o===null ? "receipts" : "receipts · "+fmt(o)+" outbound";
+        }}
+    ]
+  }
+];
+
+/* ======================= UTILIDADES ======================= */
+var $ = function(id){ return document.getElementById(id); };
+
+// Busca una clave por nombre en cualquier nivel del JSON. Prefiere la fila
+// GLOBAL cuando el objeto trae zonas.
+function deepFind(obj, key, depth){
+  depth = depth || 0;
+  if(obj === null || typeof obj !== "object" || depth > 6) return null;
+  if(Object.prototype.hasOwnProperty.call(obj, key)){
+    var v = obj[key];
+    if(typeof v === "number") return v;
+    if(typeof v === "string" && v !== "" && !isNaN(Number(v))) return Number(v);
+  }
+  // Prioriza la entrada GLOBAL / total si existe
+  var order = [], k;
+  for(k in obj){ if(!Object.prototype.hasOwnProperty.call(obj,k)) continue;
+    var isG = /^(global|total|all|summary)$/i.test(k) ||
+              (obj[k] && obj[k].zone && /^global$/i.test(String(obj[k].zone)));
+    order[isG ? "unshift" : "push"](k);
+  }
+  for(var i=0;i<order.length;i++){
+    var r = deepFind(obj[order[i]], key, depth+1);
+    if(r !== null) return r;
+  }
+  return null;
+}
+function num(data, keys){
+  for(var i=0;i<keys.length;i++){
+    var v = deepFind(data, keys[i]);
+    if(v !== null) return v;
+  }
+  return null;
+}
+function fmt(n){
+  if(n === null || isNaN(n)) return "—";
+  return Number(n).toLocaleString("en-US",{maximumFractionDigits:1});
+}
+
+/* ======================= RELOJ ======================= */
+function tick(){
+  var now = new Date();
+  $("clockT").textContent = now.toLocaleTimeString("en-US",
+    {timeZone:CFG.TZ, hour:"numeric", minute:"2-digit", hour12:true});
+  $("clockD").textContent = now.toLocaleDateString("en-US",
+    {timeZone:CFG.TZ, weekday:"long", month:"short", day:"numeric"}).toUpperCase() + " · ET";
+}
+
+/* ======================= DATOS ======================= */
+var store = {};          // area -> json
+var lastOk = 0;          // timestamp del último fetch bueno
+
+// Pide un área. Si esa área no existe en la función (o viene vacía),
+// reintenta con ?area=all, que siempre trae todo. Así no hay que saber
+// de antemano cómo se llama cada área.
+function fetchArea(v, area, isRetry){
+  var url = CFG.API + "?area=" + area + (CFG.TOKEN ? "&" + CFG.TOKEN.replace(/^[?&]/,"") : "");
+  return fetch(url, {cache:"no-store"})
+    .then(function(r){
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      return r.text();                    // texto primero: si no es JSON, no revienta
+    })
+    .then(function(t){
+      var j;
+      try { j = JSON.parse(t); }
+      catch(e){ throw new Error("non-JSON response"); }
+      // ¿Trae al menos uno de los campos que esta vista necesita?
+      var usable = v.cards.some(function(c){ return num(j, c.keys) !== null; });
+      if(!usable) throw new Error("no usable fields in area=" + area);
+      store[v.area] = j;
+      return true;
+    })
+    .catch(function(e){
+      if(!isRetry && area !== "all"){
+        console.warn("[wall-board] " + v.name + ": " + e.message + " -> retrying with area=all");
+        return fetchArea(v, "all", true);
+      }
+      console.warn("[wall-board] " + v.name + ": " + e.message);
+      return false;
+    });
+}
+
+function load(){
+  var pending = VIEWS.length, anyOk = false;
+  VIEWS.forEach(function(v){
+    fetchArea(v, v.area, false).then(function(ok){
+      if(ok) anyOk = true;
+      if(--pending === 0){
+        if(anyOk) lastOk = Date.now();
+        health(); render();
+      }
+    });
+  });
+}
+
+function health(){
+  var dot = $("dot"), age = lastOk ? Date.now() - lastOk : Infinity;
+  dot.className = "dot" + (age > 15*60*1000 ? " dead" : age > 6*60*1000 ? " stale" : "");
+  $("sync").textContent = lastOk
+    ? "updated " + Math.max(0, Math.round(age/60000)) + " min ago"
+    : "no data from dashboard-kpis";
+}
+
+/* ======================= RENDER ======================= */
+var idx = 0;
+
+function render(){
+  var v = VIEWS[idx], data = store[v.area];
+  $("viewName").textContent = v.name;
+
+  var html = "";
+  v.cards.forEach(function(c){
+    var value = data ? num(data, c.keys) : null;
+    var sub   = (data && value !== null && c.sub) ? c.sub(data) : "";
+    html +=
+      '<div class="card' + (c.unit ? '' : ' wide') + '" style="--accent:' + c.accent + '">' +
+        '<div class="label">' + c.label + '</div>' +
+        '<div class="value">' + (value === null ? "—" : fmt(value)) +
+          (c.unit && value !== null ? '<span class="u">' + c.unit + '</span>' : '') +
+        '</div>' +
+        (sub ? '<div class="sub">' + sub + '</div>' : '') +
+      '</div>';
+  });
+  $("cards").innerHTML = html;
+
+  // reinicia la barra de rotación
+  var rail = $("rail");
+  rail.style.transition = "none"; rail.style.width = "0";
+  void rail.offsetWidth;
+  rail.style.transition = "width " + CFG.ROTATE_MS + "ms linear";
+  rail.style.width = "100%";
+}
+
+function rotate(){ idx = (idx + 1) % VIEWS.length; render(); }
+
+/* ======================= IFRAME DEL SITIO ======================= */
+function mountSite(){
+  if(!CFG.SITE){ return; }              // deja el panel de marca y ya
+  var f = $("siteFrame");
+  f.onload = function(){
+    // Un frame bloqueado por X-Frame-Options / CSP queda en about:blank, que
+    // SÍ es accesible desde aquí. Un frame que cargó de verdad es cross-origin
+    // y lanza SecurityError al tocarlo. Ese error es la señal de éxito.
+    var blocked = true;
+    try {
+      var d = f.contentDocument;
+      blocked = !d || !d.body || d.body.childElementCount === 0;
+    } catch(e){ blocked = false; }
+    if(blocked){
+      console.warn("[wall-board] site refused to embed (missing frame-ancestors header). Keeping the brand panel.");
+    } else {
+      $("veil").classList.add("hide");
+    }
+  };
+  f.src = CFG.SITE;
+}
+
+/* ======================= ARRANQUE ======================= */
+tick();      setInterval(tick, 1000);
+mountSite();
+load();      setInterval(load, CFG.REFRESH_MS);
+render();    setInterval(rotate, CFG.ROTATE_MS);
+setInterval(health, 30000);
+setTimeout(function(){ location.reload(); }, CFG.RELOAD_MS);
+
+})();
+</script>
+</body>
+</html>
