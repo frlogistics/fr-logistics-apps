@@ -1,818 +1,3369 @@
-// netlify/functions/dropshipments.js
-// Dropshipments · read/list + state machine transitions + orphan registration.
-//
-// Day 4: when a package transitions to `received` or `shipped`, we also insert
-// a row into shipments_general (Inbound/Outbound Drop-Shipment) so the
-// Billing Generator (billing.html → billing-inbound.js) can count it.
-// Sync is forward-only (revert does not delete) and idempotent (duplicate
-// trackings are swallowed silently).
-//
-// Day 5 (Manifests): when a package transitions to `shipped`, we ALSO assign
-// it to the open manifest of its outbound_carrier (creating the manifest if
-// none exists). When a `shipped` package is reverted, we clear manifest_id
-// and decrement package_count — the manifest must still be 'open' (sealed
-// manifests cannot lose packages because the artifact has been generated).
-// All manifest sync is non-fatal: failures are logged, primary update wins.
-//
-// Day 6 (Receive guard — Option 2): an orphan can ONLY transition to `received`
-// once it actually has a matched email/label. A physically-received package with
-// no email_message_id AND no label_url stays in `orphan` until the Gmail sync
-// (or a manual Process Orphan) attaches the documents. This prevents a package
-// with no printable label from leaking into the dispatch flow. The guard lives
-// here (single source of truth) so scan, batch, and drawer all behave the same.
-//
-// GET endpoints:
-//   ?action=list                         → list (with fr_clients join + config merge)
-//   ?action=list&status=pending          → filter by status
-//   ?action=list&client_id={uuid}        → filter by client
-//   ?action=get&id={uuid}                → single row with full detail
-//   ?action=lookup&tracking={num}        → find row by tracking_number (all clients)
-//   ?action=label&id={uuid}              → returns signed URL for PDF (5 min TTL)
-//   ?action=stats                        → counts by status + extended KPIs
-//                                           (shipped_today, shipped_this_month,
-//                                            received_today, orphans_aging,
-//                                            oldest_pending_hours)
-//   ?action=clients                      → active dropshipment clients
-//
-// POST endpoints (JSON body: { action, id, operator, ... }):
-//   action=receive          → pending/exception → received   (sets physical_received_at, received_by)
-//                             orphan → received ONLY if it has email_message_id OR label_url
-//   action=label            → received          → labeled    (sets labeled_at)
-//   action=ship             → labeled           → shipped    (sets shipped_at, shipped_by, manifest_id)
-//   action=revert           → received/labeled/shipped → previous status (clears ts/by/manifest_id)
-//   action=exception        → pending/received/labeled → exception (reason: body.reason)
-//   action=resolve          → exception         → pending   (clears exception_reason)
-//   action=create_orphan    → new row with status='orphan'  (body: tracking_number, client_id, operator)
-//   action=link_outbound    → set outbound_tracking + transition received→labeled
-//                             (body: id, outbound_tracking, operator, optional force:true)
-//   action=unlink_outbound  → clear outbound_tracking (status unchanged)
-//   action=process_orphan   → upload PDF + fill outbound/order/content + transition orphan→received
-//                             (body: id, outbound_tracking, outbound_carrier, order_id, content,
-//                              label_filename, pdf_base64, operator)
-//   action=delete_orphan    → permanently delete an orphan row (status='orphan' only)
-//                             (body: id, operator) — for cleaning up bad scans
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dropshipments · FR-Logistics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&family=DM+Mono&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    /* ── Brand palette (FR-Logistics + Master Cases look) ── */
+    --fr-navy: #0A2540;
+    --fr-navy-2: #1B3A5B;
+    --fr-teal: #00B4A6;
+    --fr-teal-dark: #008F84;
+    --fr-orange: #F97316;
 
-const SUPABASE_URL  = Netlify.env.get("SUPABASE_URL");
-const SUPABASE_KEY  = Netlify.env.get("SUPABASE_SERVICE_KEY");
-const SB_BUCKET     = "dropship-labels";
+    /* ── Legacy tokens (kept for back-compat with existing JS-bound classes) ── */
+    --bg: #f4f6f9;
+    --card: #fff;
+    --border: #e2e8f0;
+    --text: #0F172A;
+    --muted: #64748B;
+    --accent: #00B4A6;
+    --accent-soft: rgba(0,180,166,.12);
+    --danger: #e53e3e;
+    --shadow: 0 2px 8px rgba(0,0,0,.06);
 
-const SB = () => ({ "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" });
-async function sbSelect(t, q = "") { const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}${q}`, { headers: SB() }); if (!r.ok) throw new Error(`sbSelect ${t}: ${await r.text()}`); return r.json(); }
-async function sbInsert(t, d) { const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}`, { method: "POST", headers: { ...SB(), "Prefer": "return=representation" }, body: JSON.stringify(d) }); if (!r.ok) throw new Error(`sbInsert ${t}: ${await r.text()}`); return r.json(); }
-async function sbPatch(t, f, d) { const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}?${f}`, { method: "PATCH", headers: { ...SB(), "Prefer": "return=representation" }, body: JSON.stringify(d) }); if (!r.ok) throw new Error(`sbPatch ${t}: ${await r.text()}`); return r.json(); }
-async function sbRpc(fn, args) { const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, { method: "POST", headers: SB(), body: JSON.stringify(args) }); if (!r.ok) throw new Error(`sbRpc ${fn}: ${await r.text()}`); return r.json(); }
-async function sbSignedUrl(path, expiresIn = 300) {
-  const r = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${SB_BUCKET}/${path}`, {
-    method: "POST",
-    headers: SB(),
-    body: JSON.stringify({ expiresIn })
-  });
-  if (!r.ok) throw new Error(`sbSignedUrl: ${await r.text()}`);
-  const j = await r.json();
-  return `${SUPABASE_URL}/storage/v1${j.signedURL || j.signedUrl || j.url}`;
-}
+    --s-pending-bg: #fef9c3;      --s-pending-text: #854d0e;
+    --s-received-bg: #dbeafe;     --s-received-text: #1e40af;
+    --s-labeled-bg: #ede9fe;      --s-labeled-text: #6d28d9;
+    --s-shipped-bg: #dcfce7;      --s-shipped-text: #16a34a;
+    --s-orphan-bg: #fce7f3;       --s-orphan-text: #be185d;
+    --s-exception-bg: #fee2e2;    --s-exception-text: #dc2626;
 
-// Upload a binary blob to Supabase Storage. Used by process_orphan to push the
-// PDF that the client emailed. Path is the in-bucket path (e.g. "LN/123.pdf").
-// Uses upsert=true so re-processing an orphan overwrites cleanly.
-async function sbStorageUpload(path, bytes, contentType = "application/pdf") {
-  const url = `${SUPABASE_URL}/storage/v1/object/${SB_BUCKET}/${path}`;
-  const r = await fetch(url, {
-    method: "POST",
-    headers: {
-      "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${SUPABASE_KEY}`,
-      "Content-Type": contentType,
-      "x-upsert": "true"
-    },
-    body: bytes
-  });
-  if (!r.ok) throw new Error(`sbStorageUpload: ${r.status} ${await r.text()}`);
-  return r.json().catch(() => ({ ok: true }));
-}
+    /* ── Day 6: consolidated packages (N outbound orders, 1 inbound box) ── */
+    --grp-bg: #ede9fe;   --grp-text: #5b21b6;   --grp-line: #8b5cf6;
+    --note-bg: #fffbeb;  --note-text: #92400e;  --note-line: #f59e0b;
+  }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: 'DM Mono', monospace; }
+  .display { font-family: 'Syne', sans-serif; }
 
-// Response helpers
-const CORS = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type,Authorization" };
-const jRes = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: CORS });
+  /* ─── TOP NAV BAR (Master Cases look) ─────────────── */
+  .topnav {
+    background: var(--fr-navy);
+    color: #fff;
+    padding: 0 24px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 3px solid var(--fr-teal);
+    position: sticky;
+    top: 0;
+    z-index: 80;
+    margin-bottom: 0;
+  }
+  .topnav-logo {
+    display: flex; align-items: center; gap: 12px;
+    font-family: 'Syne', sans-serif;
+    font-weight: 800; font-size: 15px;
+    letter-spacing: 1px;
+  }
+  .topnav-logo-mark {
+    width: 38px; height: 38px;
+    background: var(--fr-teal);
+    color: var(--fr-navy);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; border-radius: 7px;
+    font-size: 14px;
+  }
+  .topnav-logo small {
+    display: block; font-size: 9px; color: #CBD5E1;
+    letter-spacing: 2px; font-weight: 400;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .topnav-back {
+    color: #CBD5E1; text-decoration: none;
+    padding: 7px 14px; font-size: 13px; border-radius: 6px;
+    font-weight: 600;
+    transition: all 0.15s;
+  }
+  .topnav-back:hover { color: #fff; background: rgba(255,255,255,0.08); }
 
-// ─── Query builders ──────────────────────────────────────────────────────────
-const SELECT_CORE = "id,client_id,tracking_number,order_id,carrier,content,qty_boxes,notes,label_url,label_filename,outbound_carrier,outbound_platform,outbound_tracking,status,email_received_at,physical_received_at,labeled_at,shipped_at,received_by,shipped_by,exception_reason,manifest_id,created_at,updated_at";
-
-// We only embed fr_clients (the one FK that exists on dropshipments).
-// dropship_client_configs is merged in application code below via client_id.
-const SELECT_WITH_CLIENT = `${SELECT_CORE},client:fr_clients(id,name,company,store_name)`;
-
-// Fetch all client configs once, build a map by client_id.
-async function loadConfigMap() {
-  const configs = await sbSelect("dropship_client_configs", "?select=client_id,client_code,display_name,rate_per_package,outbound_carrier,outbound_platform");
-  const map = {};
-  for (const c of configs) map[c.client_id] = c;
-  return map;
-}
-
-// Attach `config` to each row using the pre-built map.
-function attachConfigs(rows, configMap) {
-  for (const r of rows) r.config = configMap[r.client_id] || null;
-  return rows;
-}
-
-// ─── Manifest sync helpers (Day 5) ──────────────────────────────────────────
-// All non-fatal: if anything throws here, the caller logs and continues.
-
-// Assign a freshly-shipped package to its open manifest. Idempotent.
-// Uses the Postgres function get_or_create_open_manifest(carrier, operator)
-// which is race-safe via the partial unique index.
-async function assignToOpenManifest({ packageId, outboundCarrier, operator }) {
-  if (!packageId || !outboundCarrier) {
-    throw new Error(`assignToOpenManifest: packageId and outboundCarrier required`);
+  /* ─── PAGE WRAPPER ───────────────────────── */
+  .page-wrap {
+    padding: 24px;
+    max-width: 1600px;
+    margin: 0 auto;
   }
 
-  // Idempotency: if already assigned, do nothing.
-  const cur = await sbSelect("dropshipments", `?id=eq.${packageId}&select=manifest_id&limit=1`);
-  if (cur[0]?.manifest_id) {
-    return { already_assigned: true, manifest_id: cur[0].manifest_id };
+  /* ─── HEADER (page heading area) ─────────── */
+  .hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 14px; margin-bottom: 20px;
+  }
+  .hdr-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 26px; font-weight: 800;
+    color: var(--fr-navy);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .hdr-title .badge-beta {
+    font-family: 'DM Sans'; font-size: 10px; font-weight: 700;
+    padding: 4px 10px; border-radius: 12px;
+    background: var(--accent-soft); color: var(--fr-teal-dark);
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .hdr-sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .hdr-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  .btn {
+    background: #fff; border: 1px solid var(--border);
+    border-radius: 8px; padding: 9px 16px;
+    font-size: 13px; font-weight: 600; color: var(--text);
+    cursor: pointer; font-family: inherit;
+    display: inline-flex; align-items: center; gap: 7px;
+    transition: all .15s ease; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--fr-teal); color: var(--fr-teal); }
+  .btn-primary {
+    background: var(--fr-teal); color: #fff; border-color: var(--fr-teal);
+  }
+  .btn-primary:hover { background: var(--fr-teal-dark); border-color: var(--fr-teal-dark); color: #fff; }
+  .btn-ghost {
+    background: transparent; border-color: transparent;
+  }
+  .btn-ghost:hover { background: #f1f5f9; border-color: transparent; color: var(--fr-navy); }
+  .btn-danger {
+    background: #fff; color: var(--danger); border-color: #fecaca;
+  }
+  .btn-danger:hover { background: #fef2f2; border-color: var(--danger); color: var(--danger); }
+  .btn-lg { padding: 11px 20px; font-size: 14px; }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+  .btn .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: #16a34a;
+    box-shadow: 0 0 0 3px rgba(22,163,74,.18);
+  }
+  .btn.syncing .dot { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .op-avatar {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--fr-teal); color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 11px;
+    font-family: 'DM Sans';
+  }
+  .op-avatar.empty {
+    background: #e2e8f0; color: var(--muted);
   }
 
-  // Get or create the open manifest atomically (race-safe at DB level)
-  const result = await sbRpc("get_or_create_open_manifest", {
-    p_carrier:  outboundCarrier,
-    p_operator: operator || "system",
-  });
-  const m = Array.isArray(result) ? result[0] : result;
-  if (!m?.manifest_id) throw new Error("get_or_create_open_manifest returned no manifest");
-
-  // Assign + increment count
-  await sbPatch("dropshipments", `id=eq.${packageId}`, { manifest_id: m.manifest_id });
-  await sbRpc("manifest_increment_count", { p_manifest_id: m.manifest_id });
-
-  return {
-    already_assigned: false,
-    manifest_id:      m.manifest_id,
-    was_created:      m.was_created,
-  };
-}
-
-// On revert from shipped → labeled: clear manifest_id and decrement count,
-// but ONLY if the manifest is still open. If sealed, we hard-reject the revert
-// at the LEGAL transition layer above this function (see ship→revert handler).
-async function unassignFromManifest({ packageId, manifestId }) {
-  if (!packageId || !manifestId) return { skipped: true };
-
-  // Check the manifest status — only open manifests can shrink.
-  const mRows = await sbSelect("dropship_manifests",
-    `?manifest_id=eq.${encodeURIComponent(manifestId)}&select=status&limit=1`
-  );
-  if (!mRows.length) {
-    // Manifest disappeared (extremely rare, e.g. manual DB cleanup) — just clear the FK.
-    await sbPatch("dropshipments", `id=eq.${packageId}`, { manifest_id: null });
-    return { manifest_missing: true };
+  /* ─── CONTROLS (client + KPIs) ───────────────── */
+  .controls {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow);
   }
-  if (mRows[0].status !== "open") {
-    // This is the "sealed manifest blocks revert" case. The caller should
-    // have rejected the revert already; if we get here, something bypassed
-    // the guard. Fail loud.
-    throw new Error(`cannot unassign from manifest ${manifestId} (status=${mRows[0].status})`);
+  .label-inline {
+    font-size: 11px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.1em;
+  }
+  .client-select {
+    padding: 9px 32px 9px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px; background: #fff;
+    font-family: inherit; font-size: 13px; font-weight: 500;
+    color: var(--text); cursor: pointer; outline: none;
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+    background-size: 5px 5px;
+    background-repeat: no-repeat;
+    min-width: 200px;
+    transition: border-color 0.15s;
+  }
+  .client-select:focus, .client-select:hover { border-color: var(--fr-teal); }
+
+  .kpis { display: flex; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+  .kpi {
+    display: inline-flex; flex-direction: column; gap: 4px;
+    padding: 10px 16px; border-radius: 10px;
+    background: #f8fafc; border: 1px solid var(--border);
+    min-width: 88px;
+    transition: all 0.15s;
+  }
+  .kpi:hover {
+    background: #fff;
+    border-color: #cbd5e1;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+  }
+  .kpi-label {
+    font-size: 10px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .kpi-label::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: currentColor; opacity: .85;
+  }
+  .kpi-val {
+    font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800;
+    color: var(--fr-navy); line-height: 1;
+  }
+  .kpi.pending .kpi-label { color: var(--s-pending-text); }
+  .kpi.received .kpi-label { color: var(--s-received-text); }
+  .kpi.labeled .kpi-label { color: var(--s-labeled-text); }
+  .kpi.shipped .kpi-label { color: var(--s-shipped-text); }
+  .kpi.orphan .kpi-label { color: var(--s-orphan-text); }
+  .kpi.exception .kpi-label { color: var(--s-exception-text); }
+
+  /* ─── SCAN BAR ───────────────────────────────── */
+  /* ── Day 6: consolidated packages ─────────────────────────────────── */
+  /* One inbound box, several outbound orders. The chip and the left rule
+     exist so an operator can never look at a row and think it's the whole
+     box when it isn't. */
+  .grp-chip {
+    display:inline-block; margin-left:6px; padding:1px 7px; border-radius:999px;
+    background:var(--grp-bg); color:var(--grp-text);
+    font-family:'DM Mono',monospace; font-size:10px; font-weight:700;
+    letter-spacing:.03em; vertical-align:middle;
+  }
+  .tbl-row.in-group { box-shadow: inset 3px 0 0 var(--grp-line); }
+  .grp-note {
+    background:var(--note-bg); color:var(--note-text);
+    border-left:3px solid var(--note-line);
+    padding:10px 13px; border-radius:8px; font-size:12.5px; line-height:1.5;
+    margin:12px 0;
+  }
+  .grp-note strong { font-weight:700; }
+  .grp-list { margin:14px 0; border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  .grp-item {
+    display:grid; grid-template-columns:44px 1fr auto; gap:10px; align-items:center;
+    padding:11px 13px; border-bottom:1px solid var(--border); background:#fff;
+  }
+  .grp-item:last-child { border-bottom:none; }
+  .grp-item.done { background:#f8fafc; opacity:.68; }
+  .grp-seq {
+    font-family:'DM Mono',monospace; font-size:11px; font-weight:700;
+    color:var(--grp-text); background:var(--grp-bg);
+    border-radius:6px; padding:4px 0; text-align:center;
+  }
+  .grp-ord { font-family:'DM Mono',monospace; font-size:11.5px; color:var(--muted); }
+  .grp-cnt { font-size:13px; color:var(--text); line-height:1.35; }
+
+  .scan-wrap {
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 16px;
+    display: flex; align-items: stretch;
+    overflow: hidden;
+    transition: border-color .15s ease, box-shadow .15s ease;
+    box-shadow: var(--shadow);
+  }
+  .scan-wrap:focus-within {
+    border-color: var(--fr-teal);
+    box-shadow: 0 0 0 3px rgba(0,180,166,.15);
+  }
+  .scan-icon {
+    width: 56px;
+    display: grid; place-items: center;
+    background: var(--fr-teal);
+    color: #fff; font-size: 20px;
+    font-family: 'DM Mono';
+  }
+  #scan, .scan-wrap input {
+    flex: 1; border: 0; outline: 0; background: transparent;
+    padding: 14px 16px;
+    font-family: 'DM Mono', monospace;
+    font-size: 15px; font-weight: 500;
+    color: var(--text);
+  }
+  #scan::placeholder { color: #a0aec0; font-weight: 400; }
+  .scan-hint {
+    display: flex; align-items: center; gap: 9px;
+    padding: 0 16px;
+    font-size: 12px; color: var(--muted);
+    border-left: 1px dashed var(--border);
+  }
+  .kbd {
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    padding: 2px 7px; border: 1px solid var(--border);
+    border-radius: 4px; background: #f8fafc;
+    box-shadow: 0 1px 0 var(--border);
+    color: var(--text);
   }
 
-  await sbPatch("dropshipments", `id=eq.${packageId}`, { manifest_id: null });
-  await sbRpc("manifest_decrement_count", { p_manifest_id: manifestId });
-  return { unassigned: true };
-}
+  /* ─── TABS ───────────────────────────────────── */
+  .tabs {
+    display: flex; gap: 6px; margin-bottom: 14px;
+    overflow-x: auto; padding-bottom: 2px;
+  }
+  .tab {
+    background: #fff; border: 1px solid var(--border);
+    border-radius: 18px; padding: 8px 14px;
+    color: var(--muted); font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+    transition: all .15s; white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .tab:hover { background: #f8fafc; border-color: #cbd5e1; color: var(--fr-navy); }
+  .tab.active {
+    background: var(--fr-navy); border-color: var(--fr-navy); color: #fff;
+  }
+  .tab-count {
+    display: inline-grid; place-items: center;
+    min-width: 22px; height: 18px; padding: 0 6px;
+    border-radius: 999px; background: #f1f5f9;
+    font-family: 'DM Mono'; font-size: 10px; font-weight: 700;
+    color: var(--text);
+  }
+  .tab.active .tab-count { background: var(--fr-teal); color: #fff; }
 
-// ─── Handler ─────────────────────────────────────────────────────────────────
-export default async function handler(req) {
-  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+  /* ─── TABLE ──────────────────────────────────── */
+  .tbl-wrap {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .tbl-head, .tbl-row {
+    display: grid;
+    grid-template-columns: 38px 200px 110px 150px 1fr 110px 90px;
+    align-items: center;
+    padding: 13px 18px; gap: 14px;
+  }
+  .tbl-head {
+    background: #f8fafc;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px; font-weight: 700;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .tbl-row {
+    border-bottom: 1px solid #f1f5f9;
+    transition: background .12s ease; cursor: pointer;
+  }
+  .tbl-row:last-child { border-bottom: 0; }
+  .tbl-row:hover { background: #f8fafc; }
+  .tbl-row.selected { background: rgba(0,180,166,0.05); }
+  .tbl-row.selected:hover { background: rgba(0,180,166,0.08); }
+  .tbl-row.highlight {
+    background: #fef9c3;
+    animation: flash 1.5s ease;
+  }
+  @keyframes flash { 0% { background: #fde68a; } 100% { background: #fef9c3; } }
 
-  const url = new URL(req.url);
-  const action = url.searchParams.get("action") || "list";
+  .check-cell { display: flex; align-items: center; justify-content: center; }
+  .row-check {
+    width: 16px; height: 16px;
+    cursor: pointer;
+    accent-color: var(--fr-teal);
+  }
+  .row-check:disabled { cursor: not-allowed; opacity: 0.4; }
 
-  try {
-    // ── GET: stats (KPI strip counts + dashboard KPIs) ────────────────────
-    if (req.method === "GET" && action === "stats") {
-      const clientFilter = url.searchParams.get("client_id");
-      const clientFilterParam = clientFilter ? `&client_id=eq.${clientFilter}` : "";
+  .tracking { font-family: 'DM Mono'; font-weight: 600; font-size: 13px; color: var(--fr-navy); }
+  .tracking-small { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: 'DM Mono'; }
 
-      const rows = await sbSelect("dropshipments",
-        `?select=status,physical_received_at,shipped_at${clientFilterParam}`
-      );
-      const counts = { pending: 0, received: 0, labeled: 0, shipped: 0, orphan: 0, exception: 0, total: rows.length };
-      for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
+  .carrier-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 12px;
+    border: 1px solid var(--border);
+    background: #fff;
+    font-size: 11px; font-weight: 600;
+  }
+  .carrier-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #94a3b8; }
+  .carrier-amazon { background: #FFF7ED; border-color: #fed7aa; color: #9A3412; }
+  .carrier-amazon::before { background: #FF9900; }
+  .carrier-ups { background: #FAF5F0; border-color: #d6c5b1; color: #6B3410; }
+  .carrier-ups::before { background: #6B3410; }
+  .carrier-fedex { background: #F5F0FA; border-color: #d4c5e5; color: #4D148C; }
+  .carrier-fedex::before { background: #4D148C; }
+  .carrier-usps { background: #EFF6FF; border-color: #bfdbfe; color: #004B87; }
+  .carrier-usps::before { background: #004B87; }
+  .carrier-walmart { background: #EFF6FF; border-color: #bfdbfe; color: #0071CE; }
+  .carrier-walmart::before { background: #0071CE; }
+  .carrier-target { background: #FEF2F2; border-color: #fecaca; color: #CC0000; }
+  .carrier-target::before { background: #CC0000; }
 
-      const now    = new Date();
-      const today  = now.toISOString().slice(0, 10);
-      const monthStart = today.slice(0, 7) + "-01";
-      const sixHoursAgo = new Date(now.getTime() - 6 * 3600 * 1000);
+  .content-cell { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .content-qty { color: var(--fr-teal); font-family: 'DM Mono'; font-size: 12px; font-weight: 700; margin-right: 6px; }
 
-      let shipped_today = 0, shipped_this_month = 0, received_today = 0;
-      let oldest_pending_at = null, orphans_aging = 0;
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 11px; border-radius: 12px;
+    font-size: 11px; font-weight: 600;
+  }
+  .status-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .sb-pending   { background: var(--s-pending-bg);   color: var(--s-pending-text); }
+  .sb-pending::before { animation: pulse 1.5s infinite; }
+  .sb-received  { background: var(--s-received-bg);  color: var(--s-received-text); }
+  .sb-labeled   { background: var(--s-labeled-bg);   color: var(--s-labeled-text); }
+  .sb-shipped   { background: var(--s-shipped-bg);   color: var(--s-shipped-text); }
+  .sb-orphan    { background: var(--s-orphan-bg);    color: var(--s-orphan-text); }
+  .sb-exception { background: var(--s-exception-bg); color: var(--s-exception-text); }
 
-      for (const r of rows) {
-        if (r.shipped_at) {
-          const d = r.shipped_at.slice(0, 10);
-          if (d === today)            shipped_today += 1;
-          if (d >= monthStart)        shipped_this_month += 1;
-        }
-        if (r.physical_received_at) {
-          const d = r.physical_received_at.slice(0, 10);
-          if (d === today)            received_today += 1;
-        }
-        if (r.status === "orphan" && r.physical_received_at) {
-          const ts = new Date(r.physical_received_at);
-          if (ts < sixHoursAgo) orphans_aging += 1;
-        }
-      }
+  .age { font-family: 'DM Mono'; font-size: 12px; color: var(--muted); font-weight: 500; }
 
-      const pendingRows = await sbSelect("dropshipments",
-        `?status=eq.pending&select=email_received_at&order=email_received_at.asc.nullslast&limit=1${clientFilterParam}`
-      );
-      if (pendingRows.length && pendingRows[0].email_received_at) {
-        oldest_pending_at = pendingRows[0].email_received_at;
-      }
+  .empty-state {
+    padding: 60px 20px; text-align: center; color: var(--muted);
+    font-size: 13px;
+  }
+  .loading-state {
+    padding: 40px 20px; text-align: center; color: var(--muted);
+    font-size: 13px; font-family: 'DM Mono';
+  }
+  .loading-state::after {
+    content: "···"; display: inline-block; width: 24px; text-align: left;
+    animation: dots 1.5s steps(4) infinite;
+  }
+  @keyframes dots { 0% { content: "·  "; } 33% { content: "·· "; } 66% { content: "···"; } }
 
-      let oldest_pending_hours = null;
-      if (oldest_pending_at) {
-        oldest_pending_hours = Math.round((now.getTime() - new Date(oldest_pending_at).getTime()) / 3600000);
-      }
+  /* ─── DETAIL DRAWER ──────────────────────────── */
+  .detail-backdrop {
+    position: fixed; inset: 0; background: rgba(10, 37, 64, 0.4);
+    opacity: 0; pointer-events: none; transition: opacity .2s ease;
+    z-index: 90;
+    backdrop-filter: blur(2px);
+  }
+  .detail-backdrop.open { opacity: 1; pointer-events: all; }
+  .detail {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: 480px; max-width: 100%;
+    background: var(--card); border-left: 1px solid var(--border);
+    transform: translateX(100%);
+    transition: transform .25s cubic-bezier(.4,0,.2,1);
+    z-index: 91; overflow-y: auto;
+    box-shadow: -16px 0 50px rgba(10, 37, 64, .12);
+  }
+  .detail.open { transform: translateX(0); }
+  .detail-head {
+    padding: 18px 22px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    position: sticky; top: 0; background: var(--card); z-index: 2;
+  }
+  .detail-close {
+    border: 0; background: transparent; font-size: 22px;
+    cursor: pointer; color: var(--muted);
+    padding: 4px 10px; border-radius: 6px;
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  .detail-close:hover { background: #f1f5f9; color: var(--fr-navy); }
+  .detail-body { padding: 22px; display: flex; flex-direction: column; gap: 18px; }
+  .detail-row { display: flex; flex-direction: column; gap: 4px; }
+  .detail-row .k {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); font-weight: 700;
+  }
+  .detail-row .v { font-size: 14px; color: var(--text); }
+  .detail-row .v.mono { font-family: 'DM Mono'; font-size: 13px; color: var(--fr-navy); }
+  .detail-row .v em { font-style: italic; color: #a0aec0; }
 
-      return jRes({
-        ...counts,
-        shipped_today,
-        shipped_this_month,
-        received_today,
-        orphans_aging,
-        oldest_pending_at,
-        oldest_pending_hours,
-        as_of: now.toISOString()
-      });
+  .pdf-box {
+    padding: 14px;
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    background: #f8fafc;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .pdf-box.no-label {
+    background: #fef9c3; border-color: #fde68a;
+  }
+  .pdf-icon {
+    width: 42px; height: 42px; border-radius: 8px;
+    background: #e53e3e; color: #fff;
+    display: grid; place-items: center;
+    font-weight: 800; font-size: 11px;
+    flex-shrink: 0;
+    font-family: 'DM Sans';
+  }
+  .pdf-info { flex: 1; min-width: 0; }
+
+  /* ─── ACTION BAR (inside detail drawer) ─── */
+  .action-bar {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    padding-top: 14px; border-top: 1px solid var(--border);
+  }
+
+  /* ─── TIMELINE ───────────────────────── */
+  .timeline { position: relative; padding-left: 22px; }
+  .timeline::before {
+    content: ''; position: absolute; left: 6px; top: 4px; bottom: 4px;
+    width: 2px; background: var(--border);
+  }
+  .tl-item {
+    position: relative; padding-bottom: 14px;
+  }
+  .tl-item::before {
+    content: ''; position: absolute; left: -19px; top: 4px;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #cbd5e1; border: 2px solid #fff;
+    box-shadow: 0 0 0 1px #cbd5e1;
+  }
+  .tl-item.done::before { background: #16a34a; box-shadow: 0 0 0 1px #16a34a; }
+  .tl-item.active::before {
+    background: var(--fr-teal); box-shadow: 0 0 0 1px var(--fr-teal), 0 0 0 5px rgba(0,180,166,0.18);
+  }
+  .tl-time { font-size: 11px; color: var(--muted); font-family: 'DM Mono'; }
+  .tl-step { font-size: 13px; font-weight: 600; color: var(--fr-navy); margin-top: 2px; }
+
+  /* ─── MODALS ─────────────────────────────── */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(10, 37, 64, 0.5);
+    display: none; align-items: center; justify-content: center;
+    z-index: 100; padding: 20px;
+    backdrop-filter: blur(2px);
+  }
+  .modal-backdrop.show, .modal-backdrop.open { display: flex; }
+  .modal-box {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    width: 100%; max-width: 480px;
+    box-shadow: 0 20px 50px rgba(10, 37, 64, 0.25);
+    animation: modalIn 0.2s ease-out;
+  }
+  @keyframes modalIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .modal-box h3 {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px; font-weight: 700; color: var(--fr-navy);
+    margin-bottom: 8px;
+  }
+  .modal-box p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .modal-box input, .modal-box select, .modal-box textarea {
+    width: 100%; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 8px;
+    font-family: inherit; font-size: 13px;
+    margin-top: 6px;
+    transition: border-color 0.15s;
+  }
+  .modal-box input:focus, .modal-box select:focus, .modal-box textarea:focus {
+    outline: none; border-color: var(--fr-teal);
+    box-shadow: 0 0 0 3px rgba(0,180,166,0.12);
+  }
+  .modal-actions {
+    display: flex; gap: 10px; justify-content: flex-end;
+    margin-top: 18px;
+  }
+
+  .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .form-field { display: flex; flex-direction: column; gap: 4px; }
+  .form-field label {
+    font-size: 11px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+
+  /* ─── BATCH BAR (floating bottom action bar) ─── */
+  .batch-bar {
+    position: fixed; bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(120%);
+    background: var(--fr-navy); color: #fff;
+    padding: 12px 18px; border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(10,37,64,0.35);
+    display: flex; align-items: center; gap: 12px;
+    z-index: 70;
+    transition: transform 0.25s cubic-bezier(.4,0,.2,1);
+    font-size: 13px; font-weight: 600;
+  }
+  .batch-bar.show { transform: translateX(-50%) translateY(0); }
+  .batch-bar .btn {
+    background: rgba(255,255,255,0.1);
+    border-color: rgba(255,255,255,0.2);
+    color: #fff;
+  }
+  .batch-bar .btn:hover {
+    background: var(--fr-teal);
+    border-color: var(--fr-teal);
+    color: #fff;
+  }
+  .batch-bar .btn-ghost {
+    background: transparent; border-color: transparent; color: #cbd5e1;
+  }
+  .batch-bar .btn-ghost:hover { background: rgba(255,255,255,0.08); color: #fff; }
+  .batch-count {
+    background: var(--fr-teal); color: #fff;
+    width: 28px; height: 28px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-weight: 800; font-family: 'Syne'; font-size: 14px;
+  }
+
+  /* ─── TOAST ───────────────────────────── */
+  .toast {
+    position: fixed; top: 80px; right: 20px;
+    background: #16a34a; color: #fff;
+    padding: 12px 20px; border-radius: 8px;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+    font-size: 13px; font-weight: 600;
+    display: none; align-items: center; gap: 10px;
+    z-index: 200;
+    animation: toastIn 0.3s ease-out;
+    max-width: 380px;
+  }
+  .toast.show { display: flex; }
+  .toast.error { background: var(--danger); }
+  @keyframes toastIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+  /* ─── DROP ZONE (process orphan) ────────── */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px; padding: 24px;
+    text-align: center; cursor: pointer;
+    transition: all 0.15s;
+    background: #f8fafc;
+  }
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--fr-teal);
+    background: rgba(0,180,166,0.04);
+  }
+  .drop-zone.has-file {
+    border-style: solid; border-color: var(--fr-teal);
+    background: rgba(0,180,166,0.05);
+  }
+  .drop-zone-icon { font-size: 32px; color: #cbd5e1; margin-bottom: 8px; }
+  .drop-zone-text { font-size: 13px; color: var(--text); font-weight: 600; }
+  .file-info { font-size: 12px; color: var(--muted); margin-top: 6px; font-family: 'DM Mono'; }
+
+  /* ─── RESPONSIVE ───────────────────────── */
+  @media (max-width: 1024px) {
+    .sidebar { width: 180px; }
+    .main-area { padding: 20px 16px; }
+  }
+  @media (max-width: 900px) {
+    .topnav { padding: 0 14px; }
+    .page-wrap { padding: 16px; }
+
+    /* Sidebar collapses to horizontal scroll strip on top */
+    .layout { flex-direction: column; }
+    .sidebar {
+      width: 100%;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+      padding: 8px 0;
+      display: flex;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      align-self: auto;
     }
-
-    // ── GET: clients (for selector dropdown) ──────────────────────────────
-    if (req.method === "GET" && action === "clients") {
-      const configs = await sbSelect("dropship_client_configs",
-        "?active=eq.true&select=client_id,client_code,display_name,rate_per_package,outbound_carrier,outbound_platform&order=display_name.asc"
-      );
-      return jRes({ clients: configs });
+    .side-section { margin: 0; display: flex; flex-shrink: 0; }
+    .side-label { display: none; }
+    .side-link {
+      width: auto;
+      padding: 8px 14px;
+      border-left: none;
+      border-bottom: 3px solid transparent;
+      white-space: nowrap;
+      font-size: 12px;
     }
-
-    // ── GET: single record ────────────────────────────────────────────────
-    if (req.method === "GET" && action === "get") {
-      const id = url.searchParams.get("id");
-      if (!id) return jRes({ error: "id required" }, 400);
-      const [rows, configMap] = await Promise.all([
-        sbSelect("dropshipments", `?id=eq.${id}&select=${SELECT_WITH_CLIENT}&limit=1`),
-        loadConfigMap()
-      ]);
-      if (!rows.length) return jRes({ error: "not found" }, 404);
-      attachConfigs(rows, configMap);
-      return jRes({ row: rows[0] });
+    .side-link.active {
+      border-left-color: transparent;
+      border-bottom-color: var(--fr-teal);
     }
+    .main-area { padding: 16px 14px; width: 100%; }
 
-    // ── GET: lookup by tracking number (for scan bar) ─────────────────────
-    if (req.method === "GET" && action === "lookup") {
-      const tracking = (url.searchParams.get("tracking") || "").trim();
-      if (!tracking) return jRes({ error: "tracking required" }, 400);
-      const enc = encodeURIComponent(tracking);
-      const configMap = await loadConfigMap();
-      const filter = `or=(tracking_number.eq.${enc},outbound_tracking.eq.${enc})`;
-      const rows = await sbSelect("dropshipments", `?${filter}&select=${SELECT_WITH_CLIENT}&limit=5`);
-      attachConfigs(rows, configMap);
-      const matches = rows.map(r => ({
-        ...r,
-        match_field: r.tracking_number === tracking ? "tracking_number"
-                    : r.outbound_tracking === tracking ? "outbound_tracking"
-                    : "unknown"
-      }));
-      return jRes({ rows: matches, count: matches.length, tracking });
+    .hdr { gap: 10px; }
+    .hdr-title { font-size: 20px; }
+    .hdr-actions { width: 100%; }
+
+    .filter-bar { padding: 10px 12px; gap: 8px; }
+    .filter-bar .search-input { min-width: 100%; }
+    .filter-group { width: 48%; }
+    .filter-bar .filter-input, .filter-bar .filter-select { flex: 1; }
+
+    .tbl-head { display: none; }
+    .tbl-row {
+      grid-template-columns: 30px 1fr auto;
+      grid-template-areas:
+        "check tr status"
+        "check carrier age"
+        "check content content";
+      gap: 6px 10px;
+      padding: 12px 14px;
     }
+    .tbl-row > :nth-child(1) { grid-area: check; align-self: start; }
+    .tbl-row > :nth-child(2) { grid-area: tr; }
+    .tbl-row > :nth-child(3) { grid-area: carrier; }
+    .tbl-row > :nth-child(4) { display: none; }
+    .tbl-row > :nth-child(5) { grid-area: content; }
+    .tbl-row > :nth-child(6) { grid-area: status; justify-self: end; }
+    .tbl-row > :nth-child(7) { grid-area: age; justify-self: end; }
+    .kpis { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; margin-left: 0; padding-bottom: 4px; }
+    .kpi { flex-shrink: 0; }
+    .detail { width: 100%; }
+    .form-grid-2 { grid-template-columns: 1fr; }
 
-    // ── GET: signed URL for label PDF ─────────────────────────────────────
-    if (req.method === "GET" && action === "label") {
-      const id = url.searchParams.get("id");
-      if (!id) return jRes({ error: "id required" }, 400);
-      const rows = await sbSelect("dropshipments", `?id=eq.${id}&select=label_url&limit=1`);
-      if (!rows.length) return jRes({ error: "not found" }, 404);
-      const labelPath = rows[0].label_url;
-      if (!labelPath) return jRes({ error: "no label for this record" }, 404);
-      const pathInBucket = labelPath.startsWith(`${SB_BUCKET}/`) ? labelPath.slice(SB_BUCKET.length + 1) : labelPath;
-      const signedUrl = await sbSignedUrl(pathInBucket, 300);
-      return jRes({ url: signedUrl, expires_in: 300 });
+    input, select, textarea { font-size: 16px; }
+  }
+  /* ─── LAYOUT WITH SIDEBAR ──────────────────── */
+  .layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    min-height: calc(100vh - 60px);
+  }
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: #fff;
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    align-self: stretch;
+  }
+  .side-section { margin-bottom: 24px; }
+  .side-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+    color: var(--muted); padding: 0 20px 8px; text-transform: uppercase;
+  }
+  .side-link {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 20px; color: var(--text);
+    text-decoration: none; font-size: 13px;
+    border-left: 3px solid transparent;
+    transition: all 0.15s;
+    cursor: pointer;
+    font-family: inherit;
+    background: transparent;
+    border-top: 0; border-right: 0; border-bottom: 0;
+    width: 100%;
+    text-align: left;
+  }
+  .side-link:hover { background: #f8fafc; color: var(--fr-navy); }
+  .side-link.active {
+    background: rgba(0,180,166,0.06);
+    color: var(--fr-navy);
+    border-left-color: var(--fr-teal);
+    font-weight: 600;
+  }
+  .side-link .icon { font-size: 16px; opacity: 0.7; flex-shrink: 0; }
+  .main-area {
+    flex: 1;
+    padding: 24px 32px;
+    min-width: 0;
+  }
+
+  /* ─── FILTER BAR (Master Cases-style: Search + Status + From + To) ── */
+  .filter-bar {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 18px;
+    display: flex; align-items: center; gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow);
+  }
+  .filter-bar .search-input {
+    flex: 1; min-width: 240px;
+    padding: 9px 12px 9px 36px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") no-repeat 12px center;
+    transition: border-color 0.15s;
+    font-family: inherit;
+    color: var(--text);
+  }
+  .filter-bar .search-input:focus {
+    outline: none;
+    border-color: var(--fr-teal);
+    box-shadow: 0 0 0 3px rgba(0,180,166,0.12);
+  }
+  .filter-group {
+    display: flex; align-items: center; gap: 7px;
+  }
+  .filter-group label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .filter-bar .filter-input,
+  .filter-bar .filter-select {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    font-size: 13px;
+    background: #fff;
+    font-family: inherit;
+    color: var(--text);
+    transition: border-color 0.15s;
+  }
+  .filter-bar .filter-input:focus,
+  .filter-bar .filter-select:focus {
+    outline: none;
+    border-color: var(--fr-teal);
+    box-shadow: 0 0 0 3px rgba(0,180,166,0.12);
+  }
+
+</style>
+</head>
+<body>
+
+
+<!-- ============ TOP NAV (FR-Logistics brand) ============ -->
+<nav class="topnav">
+  <div class="topnav-logo">
+    <div class="topnav-logo-mark">FR</div>
+    <div>
+      FR-LOGISTICS
+      <small>MIAMI 3PL</small>
+    </div>
+  </div>
+  <a href="portal.html" class="topnav-back">← Back to portal</a>
+</nav>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="side-section">
+      <div class="side-label">Dropshipments</div>
+      <a href="#" class="side-link active" data-side-tab="all"><span class="icon">📦</span> All Packages</a>
+      <a href="#" class="side-link" data-side-tab="pending"><span class="icon">⏱</span> Pending</a>
+      <a href="#" class="side-link" data-side-tab="received"><span class="icon">📥</span> Received</a>
+      <a href="#" class="side-link" data-side-tab="labeled"><span class="icon">🏷</span> Labeled</a>
+      <a href="#" class="side-link" data-side-tab="shipped"><span class="icon">✓</span> Shipped</a>
+      <a href="#" class="side-link" data-side-tab="orphan"><span class="icon">⚠</span> Orphans</a>
+      <a href="#" class="side-link" data-side-tab="exception"><span class="icon">⛔</span> Exceptions</a>
+    </div>
+    <div class="side-section">
+      <div class="side-label">Tools</div>
+      <a href="manifests.html" class="side-link"><span class="icon">📋</span> Manifests</a>
+      <a href="dashboard.html" class="side-link"><span class="icon">📊</span> Analytics</a>
+    </div>
+  </aside>
+
+  <main class="main-area">
+
+<div class="hdr">
+  <div>
+    <div class="hdr-title">
+      Dropshipments
+      <span class="badge-beta">Live</span>
+    </div>
+    <div class="hdr-sub">Automated email-to-label pipeline · multi-client</div>
+  </div>
+  <div class="hdr-actions">
+    <button class="btn btn-ghost" id="operatorBtn" title="Change operator">
+      <span class="op-avatar" id="operatorAvatar">—</span>
+      <span id="operatorLabel">Set operator</span>
+    </button>
+    <button class="btn" id="syncBtn" title="Run Gmail sync now">
+      <span class="dot"></span>
+      <span id="syncLabel">Sync now</span>
+    </button>
+  </div>
+</div>
+
+<section class="filter-bar">
+  <input type="text" id="extraSearch" class="search-input" placeholder="Search by tracking, order #, or content...">
+  <div class="filter-group">
+    <label for="extraStatus">Status:</label>
+    <select id="extraStatus" class="filter-select">
+      <option value="">All</option>
+      <option value="pending">Pending</option>
+      <option value="received">Received</option>
+      <option value="labeled">Labeled</option>
+      <option value="shipped">Shipped</option>
+      <option value="orphan">Orphan</option>
+      <option value="exception">Exception</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <label for="extraFrom">From:</label>
+    <input type="date" id="extraFrom" class="filter-input">
+  </div>
+  <div class="filter-group">
+    <label for="extraTo">To:</label>
+    <input type="date" id="extraTo" class="filter-input">
+  </div>
+  <button type="button" id="extraClear" class="btn btn-sm">Clear filters</button>
+</section>
+
+<section class="controls">
+  <span class="label-inline">Client</span>
+  <select class="client-select" id="clientSelect">
+    <option value="">All clients</option>
+  </select>
+  <div class="kpis" id="kpis">
+    <div class="kpi pending"><span class="kpi-label">Pending</span><span class="kpi-val" data-k="pending">—</span></div>
+    <div class="kpi received"><span class="kpi-label">Received</span><span class="kpi-val" data-k="received">—</span></div>
+    <div class="kpi labeled"><span class="kpi-label">Labeled</span><span class="kpi-val" data-k="labeled">—</span></div>
+    <div class="kpi shipped"><span class="kpi-label">Shipped</span><span class="kpi-val" data-k="shipped">—</span></div>
+    <div class="kpi orphan"><span class="kpi-label">Orphans</span><span class="kpi-val" data-k="orphan">—</span></div>
+    <div class="kpi exception"><span class="kpi-label">Exceptions</span><span class="kpi-val" data-k="exception">—</span></div>
+  </div>
+</section>
+
+<section class="scan-wrap">
+  <div class="scan-icon">⎌</div>
+  <input id="scan" type="text" autofocus placeholder="Scan tracking → confirm receive, or register orphan…">
+  <div class="scan-hint">
+    <span class="kbd">⏎</span><span>find</span>
+    <span style="margin: 0 4px; opacity: .4;">·</span>
+    <span class="kbd">⌘K</span><span>focus</span>
+  </div>
+</section>
+
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-tab="all">All <span class="tab-count" data-c="all">0</span></button>
+  <button class="tab" data-tab="pending">Pending <span class="tab-count" data-c="pending">0</span></button>
+  <button class="tab" data-tab="received">Received <span class="tab-count" data-c="received">0</span></button>
+  <button class="tab" data-tab="labeled">Labeled <span class="tab-count" data-c="labeled">0</span></button>
+  <button class="tab" data-tab="shipped">Shipped <span class="tab-count" data-c="shipped">0</span></button>
+  <button class="tab" data-tab="orphan">Orphans <span class="tab-count" data-c="orphan">0</span></button>
+  <button class="tab" data-tab="exception">Exceptions <span class="tab-count" data-c="exception">0</span></button>
+</nav>
+
+<section class="tbl-wrap">
+  <div class="tbl-head">
+    <div class="check-cell" title="Select all eligible rows in this view"><input type="checkbox" class="row-check" id="selectAll"></div>
+    <div>Tracking · Order</div>
+    <div>Carrier</div>
+    <div>Outbound</div>
+    <div>Content</div>
+    <div>Status</div>
+    <div>Age</div>
+  </div>
+  <div id="rows"><div class="loading-state">Loading</div></div>
+</section>
+
+<!-- Floating batch action bar -->
+<div class="batch-bar" id="batchBar">
+  <span class="batch-count" id="batchCount">0</span>
+  <span id="batchLabel">selected</span>
+  <span id="batchHint" style="display:none; font-size:11px; opacity:0.85; padding:0 6px;">Filter by status to enable batch actions</span>
+  <button class="btn" id="batchActionBtn" style="display:none;">Action</button>
+  <button class="btn btn-ghost" id="batchClearBtn">Clear</button>
+</div>
+
+<!-- Modal: batch ship confirmation -->
+<div class="modal-backdrop" id="batchShipModal">
+  <div class="modal-box">
+    <h3>📤 Mark as shipped?</h3>
+    <p style="margin:6px 0 14px 0; color:var(--muted); font-size:13px;">
+      You are about to mark <strong id="batchShipCount">0</strong> packages as shipped.
+      This action cannot be batch-undone — each row would need an individual "Undo ship".
+    </p>
+    <div style="background:#f0fdf4; border:1px solid #86efac; padding:12px 14px; border-radius:10px; margin-bottom:14px; max-height:200px; overflow-y:auto;">
+      <div id="batchShipList" style="font-family:'DM Mono',monospace; font-size:12px; line-height:1.7;"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeBatchShipModal()">Cancel</button>
+      <button class="btn btn-primary" id="batchShipConfirmBtn" style="min-width:170px;">✓ Mark all shipped</button>
+    </div>
+  </div>
+</div>
+
+<div class="detail-backdrop" id="backdrop"></div>
+<aside class="detail" id="detail">
+  <div class="detail-head">
+    <div>
+      <div style="font-size: 10px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700;">Package</div>
+      <div id="dTracking" class="mono" style="font-size: 15px; font-weight: 600; margin-top: 3px;"></div>
+    </div>
+    <button class="detail-close" onclick="closeDetail()">✕</button>
+  </div>
+  <div class="detail-body" id="dBody"></div>
+</aside>
+
+<!-- Modal: scan-to-receive confirmation -->
+<div class="modal-backdrop" id="scanConfirmModal">
+  <div class="modal-box">
+    <h3>📦 Mark as received?</h3>
+    <div id="scanConfirmViaOutbound" style="display:none; background:#dbeafe; color:#1e40af; padding:7px 12px; border-radius:8px; font-size:12px; font-weight:500; margin-bottom:10px;">
+      🏷 Matched via outbound shipping label
+    </div>
+    <div style="background:#f8fafc; padding:14px; border-radius:10px; margin:14px 0; font-family:'DM Mono',monospace;">
+      <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">Inbound Tracking</div>
+      <div id="scanConfirmTracking" style="font-weight:600; font-size:15px; margin-bottom:10px;"></div>
+      <div id="scanConfirmOutboundWrap" style="display:none; margin-bottom:10px;">
+        <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">Outbound Tracking</div>
+        <div id="scanConfirmOutbound" style="font-weight:500; font-size:13px;"></div>
+      </div>
+      <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">Content</div>
+      <div id="scanConfirmContent" style="font-family:'DM Sans',sans-serif; font-size:13px;"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeScanConfirmModal()">Cancel</button>
+      <button class="btn btn-primary" id="scanConfirmBtn" style="min-width:150px;">✓ Mark received</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: consolidated box — several outbound orders under one inbound tracking -->
+<div class="modal-backdrop" id="groupScanModal">
+  <div class="modal-box" style="max-width: 620px;">
+    <h3>📦 Esta caja trae varias órdenes</h3>
+    <div style="background:#f8fafc; padding:12px 14px; border-radius:10px; margin:12px 0;">
+      <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; margin-bottom:5px;">Tracking de entrada</div>
+      <div id="grpTracking" style="font-family:'DM Mono',monospace; font-weight:600; font-size:15px;"></div>
+    </div>
+    <div id="grpNote" class="grp-note" style="display:none;"></div>
+    <p style="color:var(--muted); font-size:13px; margin:4px 0 0 0;">
+      Un solo bulto, <strong id="grpCount"></strong> salidas distintas. Cada una lleva su propia etiqueta y su propio destino.
+    </p>
+    <div class="grp-list" id="grpList"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeGroupScanModal()">Cerrar</button>
+      <button class="btn btn-primary" id="grpReceiveBtn" style="min-width:190px;"></button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: shipping one order out of a consolidated box -->
+<div class="modal-backdrop" id="shipGroupModal">
+  <div class="modal-box" style="max-width: 620px;">
+    <h3>🚚 Faltan órdenes de esta misma caja</h3>
+    <div id="shipGrpNote" class="grp-note"></div>
+    <p style="color:var(--muted); font-size:13px; margin:4px 0 0 0;">Todavía sin despachar:</p>
+    <div class="grp-list" id="shipGrpList"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeShipGroupModal()">Cancelar</button>
+      <button class="btn btn-primary" id="shipGrpConfirmBtn" style="min-width:200px;">✓ Despachar solo esta</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: link outbound trackings (post-print) -->
+<div class="modal-backdrop" id="linkOutboundModal">
+  <div class="modal-box" style="max-width: 560px;">
+    <h3>🔗 Link printed labels to packages</h3>
+    <p style="color:var(--muted); font-size:13px; margin:6px 0 14px 0;">
+      Scan the <strong>outbound barcode</strong> on each printed label.
+      The system auto-assigns to the next pending package — verify visually before pegging the label.
+    </p>
+
+    <!-- Progress -->
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+      <div style="font-size:13px; font-weight:600;">
+        Progress: <span id="linkProgress">0 / 0</span> linked
+      </div>
+      <div style="flex:1; height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
+        <div id="linkProgressBar" style="height:100%; background:var(--green, #00A878); width:0%; transition:width 0.3s;"></div>
+      </div>
+    </div>
+
+    <!-- Scan input -->
+    <div style="margin-bottom:14px;">
+      <input id="linkOutboundInput"
+             placeholder="Scan or type outbound barcode here…"
+             autocomplete="off"
+             style="width:100%; font-family:'DM Mono',monospace; font-size:15px; padding:12px 14px; border:2px solid var(--green,#00A878); border-radius:10px; outline:none;">
+    </div>
+
+    <!-- Last linked confirmation (Modelo 3 visual feedback) -->
+    <div id="linkLastBox" style="display:none; background:#dcfce7; border:1px solid #86efac; padding:14px; border-radius:10px; margin-bottom:14px;">
+      <div style="font-size:10px; color:#15803d; text-transform:uppercase; letter-spacing:0.07em; font-weight:700; margin-bottom:6px;">✅ Just linked</div>
+      <div id="linkLastOutbound" style="font-family:'DM Mono',monospace; font-size:13px; font-weight:600; margin-bottom:4px;"></div>
+      <div style="font-size:11px; color:#475569; margin-bottom:6px;">→ <span id="linkLastInbound" style="font-family:'DM Mono',monospace;"></span></div>
+      <div id="linkLastContent" style="font-size:14px; font-weight:500; color:#1f2937; margin-bottom:8px; line-height:1.4;"></div>
+      <button class="btn" onclick="openFixMatchModal()" style="font-size:12px; padding:5px 12px; background:#fef3c7; color:#92400e; border:1px solid #fde68a;">
+        🔧 Wrong match? Click to fix
+      </button>
+    </div>
+
+    <!-- Pending list (compact) -->
+    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 12px; margin-bottom:14px; max-height:180px; overflow-y:auto;">
+      <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:700; margin-bottom:8px;">
+        Pending to link (<span id="linkPendingCount">0</span>)
+      </div>
+      <div id="linkPendingList" style="font-family:'DM Mono',monospace; font-size:11px; line-height:1.7;"></div>
+    </div>
+
+    <!-- Status / error area -->
+    <div id="linkStatusMsg" style="display:none; padding:8px 12px; border-radius:8px; font-size:12px; margin-bottom:10px;"></div>
+
+    <div class="modal-actions">
+      <button class="btn" onclick="skipLinkOutbound()">Skip & mark labeled anyway</button>
+      <button class="btn btn-primary" onclick="handleLinkDoneClick()" id="linkDoneBtn">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: fix wrong outbound match -->
+<div class="modal-backdrop" id="fixMatchModal">
+  <div class="modal-box" style="max-width:480px;">
+    <h3>🔧 Fix the link</h3>
+    <p style="color:var(--muted); font-size:13px;">
+      Currently this outbound is linked to the wrong package. Pick the correct one from the list.
+    </p>
+    <div style="background:#fef3c7; padding:10px 12px; border-radius:8px; margin:14px 0; font-family:'DM Mono',monospace; font-size:13px;">
+      <div style="font-size:10px; color:#92400e; text-transform:uppercase; margin-bottom:4px;">Outbound to re-link</div>
+      <div id="fixMatchOutbound" style="font-weight:600;"></div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; display:block; margin-bottom:6px;">Correct package</label>
+      <select id="fixMatchSelect" class="client-select" style="width:100%; min-width:0;"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeFixMatchModal()">Cancel</button>
+      <button class="btn btn-primary" id="fixMatchConfirmBtn" style="min-width:150px;">Re-link</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: create orphan -->
+<div class="modal-backdrop" id="orphanModal">
+  <div class="modal-box">
+    <h3>🎯 Unknown tracking</h3>
+    <p>This tracking isn't registered yet. Create an orphan record — the system will auto-match when the client email arrives.</p>
+    <div style="background:#fce7f3; padding:12px 14px; border-radius:10px; margin:14px 0; font-family:'DM Mono',monospace; font-size:14px; color:var(--s-orphan-text);">
+      <span id="orphanTracking" style="font-weight:600;"></span>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; display:block; margin-bottom:6px;">Client</label>
+      <select id="orphanClientSelect" class="client-select" style="width:100%; min-width:0;"></select>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; display:block; margin-bottom:6px;">Notes (optional)</label>
+      <input id="orphanNotes" placeholder="e.g. Box looked damaged on arrival…" maxlength="500">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeOrphanModal()">Cancel</button>
+      <button class="btn btn-primary" id="orphanConfirmBtn" style="min-width:150px;">Create orphan</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: process orphan (manual link with PDF) -->
+<div class="modal-backdrop" id="processOrphanModal">
+  <div class="modal-box" style="max-width: 580px;">
+    <h3>🔗 Process orphan package</h3>
+    <p style="color:var(--muted); font-size:13px; margin:6px 0 14px 0;">
+      Use this when the client sent the label outside the structured email format
+      (for example, as a reply with the PDF attached). Drop the PDF below, fill in
+      the missing fields, and the package will move to <strong>Received</strong>.
+    </p>
+
+    <div style="background:#fce7f3; padding:10px 14px; border-radius:10px; margin-bottom:14px;">
+      <div style="font-size:10px; color:var(--s-orphan-text); text-transform:uppercase; letter-spacing:0.08em; font-weight:700; margin-bottom:4px;">Inbound tracking</div>
+      <div id="processOrphanInbound" style="font-family:'DM Mono'; font-size:14px; font-weight:600; color:var(--text);"></div>
+    </div>
+
+    <!-- PDF drop zone -->
+    <div class="form-field" style="margin-bottom:14px;">
+      <label>Outbound label PDF</label>
+      <div class="drop-zone" id="processOrphanDrop">
+        <div class="drop-zone-icon">📄</div>
+        <div class="drop-zone-text">
+          <strong>Drop PDF here or click to browse</strong>
+          The outbound tracking will be auto-extracted from the filename
+        </div>
+      </div>
+      <input type="file" id="processOrphanFile" accept="application/pdf,.pdf" style="display:none;">
+    </div>
+
+    <div class="form-grid-2" style="margin-bottom:12px;">
+      <div class="form-field">
+        <label>Outbound tracking *</label>
+        <input id="processOrphanOutbound" class="mono" placeholder="e.g. 46886078645" autocomplete="off">
+      </div>
+      <div class="form-field">
+        <label>Outbound carrier *</label>
+        <select id="processOrphanCarrier">
+          <option value="">— pick one —</option>
+          <option value="MailAmericas">MailAmericas</option>
+          <option value="Correo Argentino">Correo Argentino</option>
+          <option value="DHL">DHL</option>
+          <option value="FedEx">FedEx</option>
+          <option value="UPS">UPS</option>
+          <option value="USPS">USPS</option>
+          <option value="Estafeta">Estafeta</option>
+          <option value="Servientrega">Servientrega</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-grid-2" style="margin-bottom:12px;">
+      <div class="form-field">
+        <label>Order ID</label>
+        <input id="processOrphanOrderId" class="mono" placeholder="e.g. 113-5092355-3401804">
+      </div>
+      <div class="form-field">
+        <label>Qty boxes</label>
+        <input id="processOrphanQty" type="number" min="1" max="50" value="1" class="mono">
+      </div>
+    </div>
+
+    <div class="form-field" style="margin-bottom:12px;">
+      <label>Content</label>
+      <textarea id="processOrphanContent" placeholder="e.g. 2 units — pendant necklace + earrings" maxlength="500" style="min-height:60px;"></textarea>
+    </div>
+
+    <div class="form-field" style="margin-bottom:14px;">
+      <label>Notes (optional)</label>
+      <input id="processOrphanNotes" placeholder="e.g. Email reply from Fernando 4/28, label attached in thread" maxlength="500">
+    </div>
+
+    <div id="processOrphanStatusMsg" style="display:none; padding:8px 12px; border-radius:8px; font-size:12px; margin-bottom:10px;"></div>
+
+    <div class="modal-actions">
+      <button class="btn" onclick="closeProcessOrphanModal()">Cancel</button>
+      <button class="btn btn-primary" id="processOrphanConfirmBtn" style="min-width:200px;">✓ Process & Mark Received</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: exception reason -->
+<div class="modal-backdrop" id="reasonModal">
+  <div class="modal-box">
+    <h3>Mark as exception</h3>
+    <p>What happened with this package? (short note — visible in the timeline)</p>
+    <textarea id="reasonInput" placeholder="e.g. Package arrived damaged, missing docs, wrong item…"></textarea>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeReasonModal()">Cancel</button>
+      <button class="btn btn-primary" id="reasonConfirm">Flag exception</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: operator name -->
+<div class="modal-backdrop" id="operatorModal">
+  <div class="modal-box">
+    <h3>Who's using this terminal?</h3>
+    <p>We'll use this name to track who received and shipped each package. Saved locally.</p>
+    <input id="operatorInput" placeholder="Your name (e.g. Jose, Maria…)" maxlength="60">
+    <div class="modal-actions">
+      <button class="btn" onclick="closeOperatorModal()">Cancel</button>
+      <button class="btn btn-primary" id="operatorConfirm">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">
+  <span id="toastMsg"></span>
+</div>
+
+<script>
+  const API = "/.netlify/functions/dropshipments";
+  const SYNC_API = "/.netlify/functions/dropship-sync-run";
+
+  const state = { rows: [], clients: [], activeTab: "all", activeClient: "", syncing: false, operator: "", batchSelection: new Set() };
+
+  // ─── Operator (localStorage, prompted on first use) ──────────────────
+  function loadOperator() {
+    try { state.operator = localStorage.getItem("fr_drop_operator") || ""; }
+    catch (e) { state.operator = ""; }
+    renderOperatorPill();
+  }
+  function saveOperator(name) {
+    const clean = String(name || "").trim().slice(0, 60);
+    state.operator = clean;
+    try { localStorage.setItem("fr_drop_operator", clean); } catch (e) {}
+    renderOperatorPill();
+  }
+  function renderOperatorPill() {
+    const av = $("#operatorAvatar");
+    const lbl = $("#operatorLabel");
+    if (state.operator) {
+      av.textContent = state.operator.charAt(0).toUpperCase();
+      av.classList.remove("empty");
+      lbl.textContent = state.operator;
+    } else {
+      av.textContent = "—";
+      av.classList.add("empty");
+      lbl.textContent = "Set operator";
     }
+  }
+  function requireOperator() {
+    if (state.operator) return true;
+    openOperatorModal();
+    toast("Set your operator name first", { error: true });
+    return false;
+  }
 
-    // ── GET: list (default) ───────────────────────────────────────────────
-    if (req.method === "GET") {
-      const status    = url.searchParams.get("status");
-      const clientId  = url.searchParams.get("client_id");
-      const limit     = parseInt(url.searchParams.get("limit") || "200", 10);
-      const order     = url.searchParams.get("order") || "email_received_at.desc.nullslast";
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const escapeHtml = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 
-      let q = `?select=${SELECT_WITH_CLIENT}&order=${order}&limit=${limit}`;
-      if (status) q += `&status=eq.${status}`;
-      if (clientId) q += `&client_id=eq.${clientId}`;
+  function fmtAge(iso) {
+    if (!iso) return "—";
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 60) return Math.round(diff) + "s";
+    if (diff < 3600) return Math.round(diff/60) + "m";
+    if (diff < 86400) return Math.round(diff/3600) + "h";
+    return Math.round(diff/86400) + "d";
+  }
+  function fmtDateTime(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    return d.toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+  }
+  function carrierClass(c) {
+    const k = String(c || "").toLowerCase();
+    if (k.includes("amazon")) return "carrier-amazon";
+    if (k.includes("ups")) return "carrier-ups";
+    if (k.includes("fedex")) return "carrier-fedex";
+    if (k.includes("usps")) return "carrier-usps";
+    if (k.includes("walmart")) return "carrier-walmart";
+    if (k.includes("target")) return "carrier-target";
+    return "";
+  }
 
-      const [rows, configMap] = await Promise.all([
-        sbSelect("dropshipments", q),
-        loadConfigMap()
-      ]);
-      attachConfigs(rows, configMap);
-      return jRes({ rows, count: rows.length });
+  let toastTimer;
+  function toast(msg, { error = false } = {}) {
+    const t = $("#toast");
+    $("#toastMsg").textContent = msg;
+    t.classList.toggle("toast-error", error);
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 3000);
+  }
+
+  async function apiGet(params) {
+    const u = new URL(API, window.location.origin);
+    Object.entries(params).forEach(([k, v]) => v != null && u.searchParams.set(k, v));
+    const r = await fetch(u);
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "Request failed");
+    return j;
+  }
+  async function apiPost(body) {
+    const r = await fetch(API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if (!r.ok) {
+      // Day 6: keep the whole server payload on the error. Guards like
+      // GROUP_INCOMPLETE return structured data (which sibling orders are
+      // still pending) that the UI needs to show — throwing only the message
+      // string would drop it.
+      const err = new Error(j.error || "Request failed");
+      err.payload = j;
+      err.httpStatus = r.status;
+      throw err;
     }
+    return j;
+  }
 
-    // ── POST: status transitions + orphan registration ───────────────────
-    if (req.method === "POST") {
-      const body = await req.json().catch(() => ({}));
-      const act = body.action;
-      const operator = (body.operator || "").trim().slice(0, 60) || "warehouse";
+  // ─── State machine actions ──────────────────────────────────────────
+  // For every action: ensure operator is set, POST the action, update
+  // the local row in state, re-render, and show a toast.
+  async function doAction(id, action, extra = {}) {
+    if (!requireOperator()) return;
+    const row = state.rows.find(r => r.id === id);
+    if (!row) { toast("Row not found in local state", { error: true }); return; }
 
-      if (!act) return jRes({ error: "action required" }, 400);
+    const btns = $$(".action-bar .btn");
+    btns.forEach(b => b.disabled = true);
 
-      // ── create_orphan: INSERT a new row for an un-emailed tracking ──────
-      if (act === "create_orphan") {
-        const tracking = (body.tracking_number || "").trim();
-        const clientId = (body.client_id || "").trim();
-        const notes    = (body.notes || "").trim().slice(0, 500) || null;
-        if (!tracking) return jRes({ error: "tracking_number required" }, 400);
-        if (!clientId) return jRes({ error: "client_id required" }, 400);
-
-        const cfg = await sbSelect("dropship_client_configs", `?client_id=eq.${clientId}&select=client_id,client_code,display_name&limit=1`);
-        if (!cfg.length) return jRes({ error: "client_id not configured for dropshipments" }, 400);
-
-        const existing = await sbSelect("dropshipments", `?client_id=eq.${clientId}&tracking_number=eq.${encodeURIComponent(tracking)}&select=id,status&limit=1`);
-        if (existing.length) {
-          return jRes({ error: "tracking already exists for this client", existing: existing[0] }, 409);
-        }
-
-        const now = new Date().toISOString();
-        const inserted = await sbInsert("dropshipments", [{
-          client_id:            clientId,
-          tracking_number:      tracking,
-          status:               "orphan",
-          qty_boxes:            1,
-          notes:                notes,
-          physical_received_at: now,
-          received_by:          operator
-        }]);
-        return jRes({ ok: true, action: "create_orphan", row: inserted[0] });
+    try {
+      const j = await apiPost({ action, id, operator: state.operator, ...extra });
+      if (j.row) {
+        // Replace the row in state with the updated one.
+        const idx = state.rows.findIndex(r => r.id === id);
+        // Keep the embedded client/config we already had.
+        const prev = state.rows[idx];
+        state.rows[idx] = { ...prev, ...j.row };
       }
-
-      // ── delete_orphan: hard-delete an orphan row ──────────────────────
-      if (act === "delete_orphan") {
-        const id = body.id;
-        if (!id) return jRes({ error: "id required" }, 400);
-
-        const cur = await sbSelect("dropshipments",
-          `?id=eq.${id}&select=id,status,tracking_number,client_id&limit=1`
-        );
-        if (!cur.length) return jRes({ error: "not found" }, 404);
-        if (cur[0].status !== "orphan") {
-          return jRes({
-            error: `delete_orphan only valid for status='orphan' (current: '${cur[0].status}')`,
-            hint: "non-orphan rows must be reverted or exception-flagged — never deleted"
-          }, 409);
-        }
-
-        const r = await fetch(`${SUPABASE_URL}/rest/v1/dropshipments?id=eq.${id}`, {
-          method: "DELETE",
-          headers: SB()
-        });
-        if (!r.ok) {
-          const detail = await r.text();
-          return jRes({ error: "delete failed", detail }, 500);
-        }
-
-        console.log(`[dropshipments.delete_orphan] ${operator} deleted orphan ${cur[0].tracking_number} (id=${id})`);
-        return jRes({ ok: true, action: "delete_orphan", deleted: cur[0] });
+      renderRows();
+      renderCounts();
+      // Refresh the drawer if still open on the same row.
+      if ($("#detail").classList.contains("open") && $("#dTracking").textContent === row.tracking_number) {
+        renderDetail(state.rows.find(r => r.id === id));
       }
-
-      // ── process_orphan: complete an orphan record manually ──────────────
-      if (act === "process_orphan") {
-        const id              = body.id;
-        const outbound        = (body.outbound_tracking || "").trim();
-        const outboundCarrier = (body.outbound_carrier || "").trim();
-        const outboundPlatform= (body.outbound_platform || "").trim() || null;
-        const orderId         = (body.order_id || "").trim() || null;
-        const content         = (body.content || "").trim() || null;
-        const qtyBoxes        = parseInt(body.qty_boxes || "1", 10) || 1;
-        const labelFilename   = (body.label_filename || "").trim() || null;
-        const pdfBase64       = body.pdf_base64 || null;
-        const notes           = (body.notes || "").trim().slice(0, 500) || null;
-
-        if (!id) return jRes({ error: "id required" }, 400);
-        if (!outbound) return jRes({ error: "outbound_tracking required" }, 400);
-        if (outbound.length < 6 || outbound.length > 64) {
-          return jRes({ error: "outbound_tracking must be 6-64 characters" }, 400);
-        }
-        if (!/^[A-Za-z0-9-]+$/.test(outbound)) {
-          return jRes({ error: "outbound_tracking must contain only letters, digits, and hyphens" }, 400);
-        }
-        if (!outboundCarrier) return jRes({ error: "outbound_carrier required" }, 400);
-        if (!pdfBase64) return jRes({ error: "pdf_base64 required" }, 400);
-
-        const cur = await sbSelect("dropshipments",
-          `?id=eq.${id}&select=id,status,client_id,tracking_number,outbound_tracking,physical_received_at,received_by&limit=1`
-        );
-        if (!cur.length) return jRes({ error: "not found" }, 404);
-        const current = cur[0];
-
-        if (current.status !== "orphan") {
-          return jRes({
-            error: `process_orphan only valid for status='orphan' (current: '${current.status}')`,
-            hint: "use link_outbound for received/labeled rows instead"
-          }, 409);
-        }
-
-        if (outbound === current.tracking_number) {
-          return jRes({
-            error: "outbound_tracking cannot be the same as the inbound tracking_number",
-            hint: "the outbound is the tracking shown on the carrier label sent by the client (e.g. MailAmericas number)"
-          }, 400);
-        }
-
-        const dupes = await sbSelect("dropshipments",
-          `?outbound_tracking=eq.${encodeURIComponent(outbound)}&select=id,tracking_number,status&limit=2`
-        );
-        const conflicting = dupes.find(d => d.id !== id);
-        if (conflicting) {
-          return jRes({
-            error: "outbound_tracking is already linked to another package",
-            conflict: { id: conflicting.id, tracking_number: conflicting.tracking_number, status: conflicting.status }
-          }, 409);
-        }
-
-        const cfgRows = await sbSelect("dropship_client_configs",
-          `?client_id=eq.${current.client_id}&select=client_code,client_name_billing,outbound_carrier&limit=1`
-        );
-        if (!cfgRows.length) return jRes({ error: "client config not found" }, 400);
-        const clientCode = (cfgRows[0].client_code || "MISC").trim();
-
-        let pdfBytes;
-        try {
-          const cleanB64 = pdfBase64.includes(",") ? pdfBase64.split(",")[1] : pdfBase64;
-          const binStr = atob(cleanB64);
-          pdfBytes = new Uint8Array(binStr.length);
-          for (let i = 0; i < binStr.length; i++) pdfBytes[i] = binStr.charCodeAt(i);
-        } catch (e) {
-          return jRes({ error: "invalid pdf_base64 encoding", detail: e.message }, 400);
-        }
-
-        const storagePath = `${clientCode}/${outbound}.pdf`;
-        try {
-          await sbStorageUpload(storagePath, pdfBytes, "application/pdf");
-        } catch (e) {
-          return jRes({ error: "PDF upload failed", detail: e.message }, 500);
-        }
-
-        const now = new Date().toISOString();
-        const patch = {
-          status:                "received",
-          outbound_tracking:     outbound,
-          outbound_carrier:      outboundCarrier,
-          outbound_platform:     outboundPlatform,
-          order_id:              orderId,
-          content:               content,
-          qty_boxes:             qtyBoxes,
-          label_url:             storagePath,
-          label_filename:        labelFilename || `${outbound}.pdf`,
-          received_by:           operator,
-          physical_received_at:  current.physical_received_at || now,
-          orphan_alerted_at:     null
-        };
-        if (notes) patch.notes = notes;
-
-        let updated;
-        try {
-          updated = await sbPatch("dropshipments", `id=eq.${id}`, patch);
-        } catch (e) {
-          if (String(e.message).includes("orphan_alerted_at")) {
-            delete patch.orphan_alerted_at;
-            updated = await sbPatch("dropshipments", `id=eq.${id}`, patch);
-          } else {
-            throw e;
-          }
-        }
-        const updatedRow = updated[0];
-
-        // ── Sync to shipments_general so Billing Generator counts the inbound ──
-        try {
-          const cfg = cfgRows[0];
-          if (cfg?.client_name_billing) {
-         const sgRow = {
-            tracking:  current.tracking_number,
-            direction: "Inbound",
-            type:      "Inbound (Drop-Shipment)",
-            carrier:   "Other",
-            client:    cfg.client_name_billing,
-            client_id: current.client_id,
-            notes:     `Order: ${orderId || "—"}${content ? ` · ${content}` : ""} · processed from orphan`
-          };
-            try {
-              await sbInsert("shipments_general", sgRow);
-              console.log(`[dropshipments.process_orphan] synced to shipments_general: Inbound ${sgRow.tracking}`);
-            } catch (e) {
-              if (String(e.message).includes("23505") || String(e.message).toLowerCase().includes("duplicate")) {
-                console.log(`[dropshipments.process_orphan] already in shipments_general: ${sgRow.tracking}`);
-              } else {
-                throw e;
-              }
-            }
-          } else {
-            console.warn(`[dropshipments.process_orphan] no client_name_billing — skipping sync`);
-          }
-        } catch (e) {
-          console.error(`[dropshipments.process_orphan] shipments_general sync failed:`, e.message);
-        }
-
-        return jRes({
-          ok: true,
-          action: "process_orphan",
-          row: updatedRow,
-          label_path: storagePath,
-          transitioned: "orphan → received"
-        });
-      }
-
-      // ── link_outbound: assign an outbound_tracking + transition to labeled ──
-      if (act === "link_outbound") {
-        const id          = body.id;
-        const outbound    = (body.outbound_tracking || "").trim();
-        const force       = body.force === true;
-        if (!id) return jRes({ error: "id required" }, 400);
-        if (!outbound) return jRes({ error: "outbound_tracking required" }, 400);
-
-        if (outbound.length < 6 || outbound.length > 64) {
-          return jRes({ error: "outbound_tracking must be 6-64 characters" }, 400);
-        }
-        if (!/^[A-Za-z0-9]+$/.test(outbound)) {
-          return jRes({
-            error: "outbound_tracking must contain only letters and digits (no spaces or symbols)"
-          }, 400);
-        }
-
-        const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,outbound_tracking,tracking_number&limit=1`);
-        if (!cur.length) return jRes({ error: "not found" }, 404);
-        const current = cur[0];
-
-        if (outbound === current.tracking_number) {
-          return jRes({
-            error: "outbound_tracking cannot be the same as the inbound tracking_number",
-            hint: "looks like you scanned the inbound barcode — scan the OUTBOUND label (carrier barcode) instead"
-          }, 400);
-        }
-
-        if (current.status !== "received" && current.status !== "labeled") {
-          return jRes({
-            error: `cannot link outbound from status '${current.status}'`,
-            allowed_from: ["received", "labeled"]
-          }, 409);
-        }
-
-        if (current.outbound_tracking && current.outbound_tracking !== outbound && !force) {
-          return jRes({
-            error: "this package already has a different outbound_tracking",
-            current_outbound: current.outbound_tracking,
-            hint: "send force:true in body to overwrite"
-          }, 409);
-        }
-
-        const dupes = await sbSelect("dropshipments",
-          `?outbound_tracking=eq.${encodeURIComponent(outbound)}&select=id,tracking_number,status&limit=2`
-        );
-        const conflicting = dupes.find(d => d.id !== id);
-        if (conflicting) {
-          return jRes({
-            error: "outbound_tracking is already linked to another package",
-            conflict: { id: conflicting.id, tracking_number: conflicting.tracking_number, status: conflicting.status }
-          }, 409);
-        }
-
-        const now = new Date().toISOString();
-        const patch = {
-          outbound_tracking: outbound
-        };
-        if (current.status === "received") {
-          patch.status = "labeled";
-          patch.labeled_at = now;
-        }
-
-        try {
-          const updated = await sbPatch("dropshipments", `id=eq.${id}`, patch);
-          return jRes({
-            ok: true,
-            action: "link_outbound",
-            row: updated[0],
-            transitioned: current.status === "received"
-          });
-        } catch (e) {
-          if (String(e.message).includes("23505") || String(e.message).includes("duplicate")) {
-            return jRes({ error: "outbound_tracking conflict (race condition)", detail: e.message }, 409);
-          }
-          throw e;
-        }
-      }
-
-      // ── unlink_outbound: clear outbound_tracking (reset for re-scan) ────
-      if (act === "unlink_outbound") {
-        const id = body.id;
-        if (!id) return jRes({ error: "id required" }, 400);
-        const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,outbound_tracking&limit=1`);
-        if (!cur.length) return jRes({ error: "not found" }, 404);
-        const updated = await sbPatch("dropshipments", `id=eq.${id}`, { outbound_tracking: null });
-        return jRes({ ok: true, action: "unlink_outbound", row: updated[0], previous_outbound: cur[0].outbound_tracking });
-      }
-
-      // ── State machine transitions (receive/label/ship/revert/exception/resolve) ──
-      const id = body.id;
-      if (!id) return jRes({ error: "id required" }, 400);
-
-      // Load the current row to validate the transition.
-      // manifest_id added (Day 5) so revert can decide whether to clear it.
-      // email_message_id + label_url added (Day 6) for the receive guard.
-      const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,label_url,email_message_id,tracking_number,outbound_tracking,client_id,carrier,order_id,content,outbound_carrier,manifest_id&limit=1`);
-      if (!cur.length) return jRes({ error: "not found" }, 404);
-      const current = cur[0];
-
-      // Allowed transitions: (from, to) pairs
-      const LEGAL = {
-        receive:    { from: ["pending", "exception", "orphan"], to: "received",  ts: "physical_received_at", by: "received_by" },
-        label:      { from: ["received"],                        to: "labeled",   ts: "labeled_at",           by: null },
-        ship:       { from: ["labeled"],                         to: "shipped",   ts: "shipped_at",           by: "shipped_by" },
-        revert:     { from: ["received", "labeled", "shipped"],  to: null,        ts: null,                   by: null },
-        exception:  { from: ["pending", "received", "labeled"],  to: "exception", ts: null,                   by: null },
-        resolve:    { from: ["exception"],                       to: "pending",   ts: null,                   by: null }
-      };
-
-      const rule = LEGAL[act];
-      if (!rule) return jRes({ error: `unknown action '${act}'`, allowed: [...Object.keys(LEGAL), "create_orphan", "link_outbound", "unlink_outbound", "process_orphan", "delete_orphan"] }, 400);
-      if (!rule.from.includes(current.status)) {
-        return jRes({ error: `cannot ${act} from status '${current.status}'`, allowed_from: rule.from }, 409);
-      }
-
-      // ── Day 6: Receive guard (Option 2) ───────────────────────────────────
-      // An orphan can only be promoted to `received` once it actually carries
-      // its documents (the matched email and/or the printable label). Without
-      // them, `received` would be a lie — the package can't be printed or
-      // dispatched. We block the transition and keep it in `orphan` until the
-      // Gmail sync attaches the email, or the operator runs Process Orphan
-      // (which uploads the PDF). This makes `received` a hard guarantee:
-      // every received package has a label.
-      //
-      // Note: this is scoped to orphan→received only. pending→received and
-      // exception→received are unaffected (those rows came from a parsed email
-      // and already have email_message_id + label_url set by the sync).
-      if (act === "receive" && current.status === "orphan") {
-        const hasEmail = !!current.email_message_id;
-        const hasLabel = !!current.label_url;
-        if (!hasEmail && !hasLabel) {
-          return jRes({
-            error: "orphan has no email/label yet",
-            code: "ORPHAN_NO_DOCS",
-            hint: "Recibido físico, pero sin email ni label todavía. Queda en Orphans hasta que el sync de Gmail lo empareje, o usa 'Process orphan' para subir el PDF manualmente.",
-            tracking_number: current.tracking_number
-          }, 409);
-        }
-      }
-
-      // ── Revert from shipped: pre-flight check that the manifest is still open ──
-      // Decision (chat 2026-05-08): if a package is in a SEALED manifest, we
-      // hard-reject the revert. The manifest is legal evidence (signed by the
-      // carrier driver). To "undo" a shipped package post-seal, the operator
-      // must coordinate manually with the carrier and create a new exception
-      // record — this isn't something the UI should let happen with a click.
-      if (act === "revert" && current.status === "shipped" && current.manifest_id) {
-        const mRows = await sbSelect("dropship_manifests",
-          `?manifest_id=eq.${encodeURIComponent(current.manifest_id)}&select=manifest_id,status,sealed_at&limit=1`
-        );
-        if (mRows.length && mRows[0].status !== "open") {
-          return jRes({
-            error: "cannot revert a shipped package that's in a sealed manifest",
-            manifest_id: mRows[0].manifest_id,
-            manifest_status: mRows[0].status,
-            sealed_at: mRows[0].sealed_at,
-            hint: "the manifest has been sealed (carrier handoff). To dispute, mark this package as 'exception' instead."
-          }, 409);
-        }
-      }
-
-      // Build the patch payload.
-      const patch = {};
-
-      if (act === "revert") {
-        const REVERT_TO = { received: "pending", labeled: "received", shipped: "labeled" };
-        const CLEAR_TS  = { received: "physical_received_at", labeled: "labeled_at", shipped: "shipped_at" };
-        const CLEAR_BY  = { received: "received_by", labeled: null, shipped: "shipped_by" };
-        patch.status = REVERT_TO[current.status];
-        patch[CLEAR_TS[current.status]] = null;
-        if (CLEAR_BY[current.status]) patch[CLEAR_BY[current.status]] = null;
-        // If reverting from shipped, also clear manifest_id (handled below in
-        // the post-update block since we need the OLD manifest_id reference).
-      } else if (act === "exception") {
-        patch.status = rule.to;
-        patch.exception_reason = (body.reason || "").trim().slice(0, 500) || null;
-      } else if (act === "resolve") {
-        patch.status = rule.to;
-        patch.exception_reason = null;
+      toast(actionMessage(action, row.tracking_number));
+    } catch (e) {
+      // Guard Opción 2 (backend): orphan sin email/label no puede pasar a received.
+      if (e.message && (e.message.includes("ORPHAN_NO_DOCS") || e.message.includes("no email/label"))) {
+        toast("Recibido físico, pero sin email/label → queda en Orphans hasta el match.", { error: true });
+      } else if (e.payload && e.payload.code === "GROUP_INCOMPLETE") {
+        // Day 6: not a failure — the box holds sibling orders that haven't
+        // shipped. Show them, and let the operator ship this one knowingly.
+        openShipGroupModal(id, e.payload);
       } else {
-        // receive, label, ship
-        patch.status = rule.to;
-        if (rule.ts) patch[rule.ts] = new Date().toISOString();
-        if (rule.by) patch[rule.by] = operator;
-        if (act === "receive" && current.status === "orphan") {
-          patch.orphan_alerted_at = null;
-        }
+        toast("Failed: " + e.message, { error: true });
+      }
+    } finally {
+      btns.forEach(b => b.disabled = false);
+    }
+  }
+
+  function actionMessage(action, tracking) {
+    const t = tracking.length > 14 ? tracking.slice(0, 10) + "…" : tracking;
+    switch (action) {
+      case "receive":   return `Received · ${t}`;
+      case "label":     return `Labeled · ${t}`;
+      case "ship":      return `Shipped · ${t}`;
+      case "revert":    return `Reverted · ${t}`;
+      case "exception": return `Flagged · ${t}`;
+      case "resolve":   return `Resolved · ${t}`;
+      default:          return `Updated · ${t}`;
+    }
+  }
+
+  // ─── Print label: opens PDF in new tab + marks labeled (1-step flow) ───
+  async function printAndLabel(id) {
+    if (!requireOperator()) return;
+    const row = state.rows.find(r => r.id === id);
+    if (!row) return;
+
+    try {
+      // Open the PDF first (user-triggered, so popup blocker is OK).
+      const j = await apiGet({ action: "label", id });
+      if (!j.url) throw new Error("No label URL");
+      window.open(j.url, "_blank");
+
+      // If already labeled or later, we don't transition back.
+      if (row.status === "received") {
+        await doAction(id, "label");
       }
 
-      const updated = await sbPatch("dropshipments", `id=eq.${id}`, patch);
+      // After printing a single label, offer to link the outbound (Q2 = A).
+      // Refresh the row from state to get the updated status.
+      setTimeout(() => {
+        const cur = state.rows.find(r => r.id === id) || row;
+        offerLinkOutbound([cur]);
+      }, 1500);
+    } catch (e) {
+      toast("Print failed: " + e.message, { error: true });
+    }
+  }
+  window.printAndLabel = printAndLabel;
 
-      // ── Sync to shipments_general (Day 4: Billing Generator compatibility) ──
-      if (act === "receive" || act === "ship") {
-        try {
-          const cfgRows = await sbSelect("dropship_client_configs",
-            `?client_id=eq.${current.client_id}&select=client_name_billing,outbound_carrier&limit=1`
-          );
-          const cfg = cfgRows[0];
+  // ─── Batch print (multiple labels → 1 merged PDF) ────────────────────
+  // Selection lives in state.batchSelection (Set of row ids).
+  // When rows are re-rendered (filter/tab change), any selected ids that are
+  // no longer visible are kept in state so switching tabs doesn't lose them.
 
-          if (!cfg?.client_name_billing) {
-            console.warn(`[dropshipments.${act}] no client_name_billing configured for client_id=${current.client_id} — skipping shipments_general sync`);
-          } else {
-            const sgRow = act === "receive"
-              ? {
-                  tracking:  current.tracking_number,
-                  direction: "Inbound",
-                  type:      "Inbound (Drop-Shipment)",
-                  carrier:   current.carrier || "Other",
-                  client:    cfg.client_name_billing,
-                  client_id: current.client_id,
-                  notes:     `Order: ${current.order_id || "—"}${current.content ? ` · ${current.content}` : ""}`
-                }
-              : {
-                  tracking:  current.outbound_tracking,
-                  direction: "Outbound",
-                  type:      "Outbound (Drop-Shipment)",
-                  carrier:   current.outbound_carrier || cfg.outbound_carrier || "MailAmericas",
-                  client:    cfg.client_name_billing,
-                  client_id: current.client_id,
-                  notes:     `Order: ${current.order_id || "—"}`
-                };
-            if (!sgRow.tracking) {
-              console.warn(`[dropshipments.${act}] no tracking to sync (id=${id}) — skipping shipments_general sync`);
-            } else {
-              try {
-                await sbInsert("shipments_general", sgRow);
-                console.log(`[dropshipments.${act}] synced to shipments_general: ${sgRow.direction} ${sgRow.tracking}`);
-              } catch (e) {
-                if (String(e.message).includes("23505") || String(e.message).toLowerCase().includes("duplicate")) {
-                  console.log(`[dropshipments.${act}] already in shipments_general: ${sgRow.tracking}`);
-                } else {
-                  throw e;
-                }
-              }
-            }
-          }
-        } catch (e) {
-          console.error(`[dropshipments.${act}] shipments_general sync failed (non-fatal):`, e.message);
-        }
-      }
+  function updateBatchBar() {
+    const bar = $("#batchBar");
+    const n = state.batchSelection.size;
+    if (n === 0) {
+      bar.classList.remove("show");
+      return;
+    }
+    bar.classList.add("show");
+    $("#batchCount").textContent = n;
 
-      // ── Day 5: Manifest sync (auto-assign on ship, cleanup on revert) ──
-      // Non-fatal: the primary status update already succeeded.
-      if (act === "ship") {
-        try {
-          // Resolve the carrier — same fallback chain used by the shipments_general sync.
-          const cfgRows = await sbSelect("dropship_client_configs",
-            `?client_id=eq.${current.client_id}&select=outbound_carrier&limit=1`
-          );
-          const carrier = current.outbound_carrier || cfgRows[0]?.outbound_carrier || "MailAmericas";
+    const sel = inspectBatchSelection();
+    const labelEl  = $("#batchLabel");
+    const hintEl   = $("#batchHint");
+    const actionBtn = $("#batchActionBtn");
 
-          const result = await assignToOpenManifest({
-            packageId:       current.id,
-            outboundCarrier: carrier,
-            operator,
-          });
-          console.log(`[dropshipments.ship] manifest assigned: ${result.manifest_id} (was_created=${result.was_created || false}, already_assigned=${result.already_assigned || false})`);
-        } catch (e) {
-          console.error(`[dropshipments.ship] manifest auto-assign failed (non-fatal):`, e.message);
-        }
-      }
+    // Reset visibility before reconfiguring
+    actionBtn.style.display = "none";
+    hintEl.style.display = "none";
+    actionBtn.classList.remove("btn-ship", "btn-receive");
+    actionBtn.onclick = null;
 
-      // Revert from shipped: clear manifest_id and decrement count.
-      // The pre-flight check above already rejected if manifest was sealed.
-      if (act === "revert" && current.status === "shipped" && current.manifest_id) {
-        try {
-          const result = await unassignFromManifest({
-            packageId:  current.id,
-            manifestId: current.manifest_id,
-          });
-          console.log(`[dropshipments.revert] manifest unassign:`, result);
-        } catch (e) {
-          console.error(`[dropshipments.revert] manifest unassign failed (non-fatal):`, e.message);
-        }
-      }
-
-      return jRes({ ok: true, action: act, row: updated[0] });
+    if (sel.kind === "mixed") {
+      labelEl.textContent = "selected";
+      hintEl.style.display = "";
+      hintEl.textContent = `Mixed statuses (${sel.statuses.join(", ")}) — filter by tab to enable an action`;
+      return;
     }
 
-    return jRes({ error: "Method not allowed" }, 405);
-  } catch (e) {
-    console.error("[dropshipments]", e);
-    return jRes({ error: e.message }, 500);
+    if (sel.kind === "print_labels") {
+      // All rows are 'received' — print labels (then auto-mark labeled).
+      // Only enable if all selected rows actually have a label_url.
+      const printable = sel.rows.filter(r => !!r.label_url);
+      labelEl.textContent = n === 1 ? "label selected" : "labels selected";
+      actionBtn.style.display = "";
+      actionBtn.textContent = "🖨 Print labels";
+      actionBtn.onclick = batchPrint;
+      if (printable.length < sel.rows.length) {
+        hintEl.style.display = "";
+        hintEl.textContent = `${sel.rows.length - printable.length} of ${sel.rows.length} have no PDF — they'll be skipped`;
+      }
+      return;
+    }
+
+    if (sel.kind === "mark_shipped") {
+      labelEl.textContent = n === 1 ? "package selected" : "packages selected";
+      actionBtn.style.display = "";
+      actionBtn.textContent = "📤 Mark shipped";
+      actionBtn.onclick = openBatchShipModal;
+      return;
+    }
+
+    if (sel.kind === "mark_received") {
+      labelEl.textContent = n === 1 ? "package selected" : "packages selected";
+      actionBtn.style.display = "";
+      actionBtn.textContent = "📦 Mark received";
+      actionBtn.onclick = batchMarkReceived;
+      return;
+    }
   }
-}
+
+  function updateSelectAllState() {
+    // Set the select-all checkbox based on whether every eligible visible row is selected.
+    const cbAll = $("#selectAll");
+    if (!cbAll) return;
+    const visibleEligible = getVisibleEligibleRows();
+    if (visibleEligible.length === 0) {
+      cbAll.checked = false;
+      cbAll.indeterminate = false;
+      cbAll.disabled = true;
+      return;
+    }
+    cbAll.disabled = false;
+    const allSelected = visibleEligible.every(r => state.batchSelection.has(r.id));
+    const someSelected = visibleEligible.some(r => state.batchSelection.has(r.id));
+    cbAll.checked = allSelected;
+    cbAll.indeterminate = !allSelected && someSelected;
+  }
+
+  function getVisibleEligibleRows() {
+    const filtered = state.activeTab === "all"
+      ? state.rows
+      : state.rows.filter(r => r.status === state.activeTab);
+    return filtered.filter(isBatchEligible);
+  }
+
+  function clearBatchSelection() {
+    state.batchSelection.clear();
+    $$(".row-check[data-row-id]").forEach(cb => { cb.checked = false; });
+    $$(".tbl-row.selected").forEach(el => el.classList.remove("selected"));
+    updateBatchBar();
+    updateSelectAllState();
+  }
+
+  // Select-all toggles all visible eligible rows
+  $("#selectAll").addEventListener("change", (e) => {
+    const eligible = getVisibleEligibleRows();
+    if (e.target.checked) {
+      for (const r of eligible) state.batchSelection.add(r.id);
+    } else {
+      for (const r of eligible) state.batchSelection.delete(r.id);
+    }
+    // Reflect in the DOM
+    $$(".row-check[data-row-id]").forEach(cb => {
+      const id = cb.dataset.rowId;
+      const shouldBe = state.batchSelection.has(id);
+      cb.checked = shouldBe;
+      const rowEl = cb.closest(".tbl-row");
+      if (rowEl) rowEl.classList.toggle("selected", shouldBe);
+    });
+    updateBatchBar();
+    updateSelectAllState();
+  });
+
+  $("#batchClearBtn").addEventListener("click", clearBatchSelection);
+
+  // Main batch print flow: fetch signed URLs in parallel → download PDFs → merge with pdf-lib → open
+  async function batchPrint() {
+    if (!requireOperator()) return;
+    if (state.batchSelection.size === 0) return;
+
+    const ids = Array.from(state.batchSelection);
+    const rows = ids.map(id => state.rows.find(r => r.id === id)).filter(Boolean);
+    if (rows.length === 0) return;
+
+    // Defensive: drop any rows that aren't currently printable.
+    const toPrint = rows.filter(isBatchPrintable);
+    if (toPrint.length === 0) {
+      toast("Selected rows are no longer printable", { error: true });
+      return;
+    }
+    if (toPrint.length !== rows.length) {
+      toast(`${rows.length - toPrint.length} rows skipped (not printable)`);
+    }
+
+    const bar = $("#batchBar");
+    const btn = $("#batchActionBtn");
+    bar.classList.add("busy");
+    const origLabel = btn.textContent;
+    btn.textContent = `🖨 Preparing ${toPrint.length}…`;
+
+    try {
+      if (!window.PDFLib) throw new Error("pdf-lib not loaded — check network");
+      const { PDFDocument } = window.PDFLib;
+
+      // 1. Fetch signed URLs (in parallel)
+      btn.textContent = "🔐 Signing URLs…";
+      const urlResults = await Promise.all(toPrint.map(r =>
+        apiGet({ action: "label", id: r.id }).then(j => ({ row: r, url: j.url })).catch(e => ({ row: r, err: e.message }))
+      ));
+      const urlErrors = urlResults.filter(u => u.err);
+      if (urlErrors.length) {
+        console.warn("Sign errors:", urlErrors);
+      }
+      const goodUrls = urlResults.filter(u => u.url);
+      if (goodUrls.length === 0) throw new Error("No labels could be signed");
+
+      // 2. Download all PDFs in parallel
+      btn.textContent = `📥 Downloading ${goodUrls.length}…`;
+      const pdfBlobs = await Promise.all(goodUrls.map(u =>
+        fetch(u.url).then(r => {
+          if (!r.ok) throw new Error(`Download failed for ${u.row.tracking_number}`);
+          return r.arrayBuffer();
+        }).then(buf => ({ row: u.row, buf })).catch(e => ({ row: u.row, err: e.message }))
+      ));
+      const dlErrors = pdfBlobs.filter(p => p.err);
+      if (dlErrors.length) console.warn("Download errors:", dlErrors);
+      const goodPdfs = pdfBlobs.filter(p => p.buf);
+      if (goodPdfs.length === 0) throw new Error("No PDFs could be downloaded");
+
+      // 3. Merge with pdf-lib
+      btn.textContent = `🔗 Merging ${goodPdfs.length}…`;
+      const merged = await PDFDocument.create();
+      for (const { row, buf } of goodPdfs) {
+        try {
+          const src = await PDFDocument.load(buf, { ignoreEncryption: true });
+          const pages = await merged.copyPages(src, src.getPageIndices());
+          for (const p of pages) merged.addPage(p);
+        } catch (e) {
+          console.error(`Merge failed for ${row.tracking_number}:`, e);
+        }
+      }
+      if (merged.getPageCount() === 0) throw new Error("Merged PDF has no pages");
+      const mergedBytes = await merged.save();
+
+      // 4. Open the merged PDF in a new tab (blob URL)
+      btn.textContent = "🖨 Opening PDF…";
+      const blob = new Blob([mergedBytes], { type: "application/pdf" });
+      const blobUrl = URL.createObjectURL(blob);
+      const w = window.open(blobUrl, "_blank");
+      if (!w) {
+        // Popup blocker — offer download instead
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = `dropship-labels-${new Date().toISOString().slice(0,10)}.pdf`;
+        a.click();
+        toast("Popup blocked — PDF downloaded instead");
+      }
+      // Revoke blob URL after 60s (give browser time to open and render)
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+
+      // 5. Mark each 'received' row as 'labeled' (Option A: auto-transition)
+      btn.textContent = `✓ Marking ${goodPdfs.length} labeled…`;
+      const toLabel = goodPdfs.map(p => p.row).filter(r => r.status === "received");
+      const labelResults = await Promise.all(toLabel.map(r =>
+        apiPost({ action: "label", id: r.id, operator: state.operator })
+          .then(j => ({ row: r, ok: true, updated: j.row }))
+          .catch(e => ({ row: r, ok: false, err: e.message }))
+      ));
+      // Update local state with the labeled rows
+      for (const lr of labelResults) {
+        if (lr.ok && lr.updated) {
+          const idx = state.rows.findIndex(x => x.id === lr.row.id);
+          if (idx >= 0) state.rows[idx] = { ...state.rows[idx], ...lr.updated };
+        }
+      }
+      const labelFailures = labelResults.filter(l => !l.ok).length;
+
+      clearBatchSelection();
+      renderRows();
+      renderCounts();
+
+      if (labelFailures > 0) {
+        toast(`Printed ${goodPdfs.length} · ${labelFailures} failed to label`, { error: true });
+      } else {
+        const skipped = rows.length - goodPdfs.length;
+        let msg = `Printed ${goodPdfs.length} labels`;
+        if (toLabel.length < goodPdfs.length) msg += ` · ${goodPdfs.length - toLabel.length} already labeled`;
+        if (skipped > 0) msg += ` · ${skipped} skipped`;
+        toast(msg);
+      }
+
+      // After print + auto-label, offer to link outbound trackings (Opción B = optional).
+      // Toast button will appear if there are eligible rows still missing outbound_tracking.
+      // Brief delay so the print toast doesn't get overwritten instantly.
+      setTimeout(() => {
+        const printedRows = goodPdfs.map(p => p.row);
+        offerLinkOutbound(printedRows);
+      }, 1500);
+    } catch (e) {
+      console.error("Batch print error", e);
+      toast("Batch print failed: " + e.message, { error: true });
+    } finally {
+      bar.classList.remove("busy");
+      btn.textContent = origLabel;
+    }
+  }
+
+  // Note: batchActionBtn.onclick is wired dynamically inside updateBatchBar()
+  // depending on what's selected (print / ship / receive).
+  window.batchPrint = batchPrint;
+
+  // ─── Batch mark shipped (with confirmation modal — Decision 2 = B) ──────
+  function openBatchShipModal() {
+    if (!requireOperator()) return;
+    const sel = inspectBatchSelection();
+    if (sel.kind !== "mark_shipped") {
+      toast("Selection is no longer all 'labeled' — refresh the batch", { error: true });
+      return;
+    }
+    const rows = sel.rows;
+    $("#batchShipCount").textContent = rows.length;
+    // Show a compact preview list of trackings (caps at ~15 to keep modal tidy).
+    const preview = rows.slice(0, 15).map(r =>
+      `→ ${escapeHtml(r.tracking_number)}${r.outbound_tracking ? ` <span style="color:#64748b;">· ${escapeHtml(r.outbound_tracking)}</span>` : ""}`
+    ).join("<br>");
+    const more = rows.length > 15 ? `<div style="color:#64748b; margin-top:6px; font-style:italic;">…and ${rows.length - 15} more</div>` : "";
+    $("#batchShipList").innerHTML = preview + more;
+    $("#batchShipModal").classList.add("open");
+    setTimeout(() => $("#batchShipConfirmBtn").focus(), 60);
+  }
+  function closeBatchShipModal() {
+    $("#batchShipModal").classList.remove("open");
+    setTimeout(() => $("#scan").focus(), 40);
+  }
+  window.closeBatchShipModal = closeBatchShipModal;
+
+  $("#batchShipConfirmBtn").addEventListener("click", async () => {
+    closeBatchShipModal();
+    await batchMarkShipped();
+  });
+
+  async function batchMarkShipped() {
+    if (!requireOperator()) return;
+    const sel = inspectBatchSelection();
+    if (sel.kind !== "mark_shipped") {
+      toast("Selection is no longer all 'labeled' — refresh the batch", { error: true });
+      return;
+    }
+    const rows = sel.rows;
+    const bar = $("#batchBar");
+    const btn = $("#batchActionBtn");
+    const origLabel = btn.textContent;
+    bar.classList.add("busy");
+    btn.textContent = `📤 Shipping ${rows.length}…`;
+
+    // Parallel POST action=ship for each row. If any fail we report counts.
+    const results = await Promise.all(rows.map(r =>
+      apiPost({ action: "ship", id: r.id, operator: state.operator })
+        .then(j => ({ row: r, ok: true, updated: j.row }))
+        .catch(e => ({ row: r, ok: false, err: e.message }))
+    ));
+
+    // Apply server updates back to local state to avoid a full reload.
+    for (const res of results) {
+      if (res.ok && res.updated) {
+        const idx = state.rows.findIndex(x => x.id === res.row.id);
+        if (idx >= 0) state.rows[idx] = { ...state.rows[idx], ...res.updated };
+      }
+    }
+    const failures = results.filter(r => !r.ok);
+    clearBatchSelection();
+    renderRows();
+    renderCounts();
+    bar.classList.remove("busy");
+    btn.textContent = origLabel;
+
+    if (failures.length === 0) {
+      toast(`✓ Marked ${rows.length} as shipped`);
+    } else if (failures.length < rows.length) {
+      toast(`Shipped ${rows.length - failures.length} · ${failures.length} failed`, { error: true });
+      console.error("batch ship failures:", failures);
+    } else {
+      toast(`All ${rows.length} ship attempts failed`, { error: true });
+      console.error("batch ship failures:", failures);
+    }
+  }
+  window.batchMarkShipped = batchMarkShipped;
+
+  // ─── Batch mark received (rare bonus path — pending → received) ─────────
+  // No confirmation modal here because reverting a single received row is
+  // trivial via the drawer's Undo. Mirrors the single-row receive flow.
+  async function batchMarkReceived() {
+    if (!requireOperator()) return;
+    const sel = inspectBatchSelection();
+    if (sel.kind !== "mark_received") {
+      toast("Selection must be all 'pending' or 'exception'", { error: true });
+      return;
+    }
+    const rows = sel.rows;
+    const bar = $("#batchBar");
+    const btn = $("#batchActionBtn");
+    const origLabel = btn.textContent;
+    bar.classList.add("busy");
+    btn.textContent = `📦 Receiving ${rows.length}…`;
+
+    const results = await Promise.all(rows.map(r =>
+      apiPost({ action: "receive", id: r.id, operator: state.operator })
+        .then(j => ({ row: r, ok: true, updated: j.row }))
+        .catch(e => ({ row: r, ok: false, err: e.message }))
+    ));
+    for (const res of results) {
+      if (res.ok && res.updated) {
+        const idx = state.rows.findIndex(x => x.id === res.row.id);
+        if (idx >= 0) state.rows[idx] = { ...state.rows[idx], ...res.updated };
+      }
+    }
+    const failures = results.filter(r => !r.ok);
+    clearBatchSelection();
+    renderRows();
+    renderCounts();
+    bar.classList.remove("busy");
+    btn.textContent = origLabel;
+
+    if (failures.length === 0) toast(`✓ Marked ${rows.length} as received`);
+    else toast(`Received ${rows.length - failures.length} · ${failures.length} failed`, { error: true });
+  }
+  window.batchMarkReceived = batchMarkReceived;
+
+  // ─── Link Outbound flow (Modelo 3 — 1 scan + visual verification) ────
+  // State for the link modal:
+  //   _linkState = {
+  //     pending:   [row, row, ...]       // rows still awaiting a scan
+  //     linked:    [{row, outbound}, ..] // rows already scanned (audit trail in modal)
+  //     last:      {row, outbound}|null  // most recent for "Wrong match" undo
+  //     allRows:   [row, ...]            // initial set for "skip & mark labeled"
+  //   }
+  let _linkState = null;
+
+  // Triggered after a successful batch print or single print.
+  // shows toast with "🔗 Link outbound trackings now" button (Opción B = optional flow).
+  function offerLinkOutbound(rows) {
+    if (!rows || rows.length === 0) return;
+    // Filter to only rows that ended up in 'received' or 'labeled' state and
+    // don't already have an outbound_tracking — those are the ones that need linking.
+    const eligible = rows.filter(r => {
+      const cur = state.rows.find(x => x.id === r.id) || r;
+      return (cur.status === "received" || cur.status === "labeled") && !cur.outbound_tracking;
+    });
+    if (eligible.length === 0) return; // nothing to link
+
+    // Show a toast with an action button (custom — toast() doesn't support actions
+    // by default, so we render directly into the toast element).
+    const t = $("#toast");
+    if (!t) return;
+    t.innerHTML = `
+      🔗 ${eligible.length} label${eligible.length === 1 ? "" : "s"} ready to link to outbound trackings.
+      <button onclick="openLinkOutboundFromToast()" style="margin-left:10px; padding:4px 12px; background:#fff; color:#1f2937; border:0; border-radius:6px; font-weight:600; cursor:pointer; font-family:inherit;">
+        Link now →
+      </button>
+    `;
+    t.classList.add("show");
+    // Stash for the button onclick
+    window._toastLinkRows = eligible;
+    // Auto-hide after 12s (longer than default toast — gives time to click)
+    clearTimeout(window._toastTimer);
+    window._toastTimer = setTimeout(() => { t.classList.remove("show"); }, 12000);
+  }
+  window.openLinkOutboundFromToast = function () {
+    const rows = window._toastLinkRows || [];
+    $("#toast").classList.remove("show");
+    if (rows.length) openLinkOutboundModal(rows);
+  };
+
+  function openLinkOutboundModal(rows) {
+    if (!requireOperator()) return;
+    if (!rows || rows.length === 0) return;
+
+    _linkState = {
+      pending: rows.slice(),
+      linked: [],
+      last: null,
+      allRows: rows.slice()
+    };
+    renderLinkPending();
+    $("#linkLastBox").style.display = "none";
+    $("#linkStatusMsg").style.display = "none";
+    $("#linkOutboundInput").value = "";
+    $("#linkOutboundModal").classList.add("open");
+    setTimeout(() => $("#linkOutboundInput").focus(), 80);
+    updateLinkDoneBtnLabel();
+  }
+  window.openLinkOutboundModal = openLinkOutboundModal;
+
+  // Wrapper for the drawer's "Scan to link" button (inline onclick).
+  window.linkOutboundForRow = function (id) {
+    const row = state.rows.find(x => x.id === id);
+    if (!row) {
+      toast("Row not found in state", { error: true });
+      return;
+    }
+    if (row.outbound_tracking) {
+      toast("This package already has an outbound tracking", { error: true });
+      return;
+    }
+    openLinkOutboundModal([row]);
+  };
+
+  function closeLinkOutboundModal() {
+    $("#linkOutboundModal").classList.remove("open");
+    _linkState = null;
+    setTimeout(() => $("#scan").focus(), 40);
+  }
+  window.closeLinkOutboundModal = closeLinkOutboundModal;
+
+  // ── Day 4 fix: defense-in-depth for the "Done" button ─────────────────────
+  // Bug observed: user types/scans an outbound code into the input but doesn't
+  // press Enter, then clicks "Done". The modal used to close silently, leaving
+  // the package in `labeled` status with outbound_tracking = NULL. The auto-
+  // extraction from filename (added in dropship-gmail-sync.js) eliminates this
+  // for 95%+ of cases, but we keep the manual modal as a fallback — and it
+  // shouldn't have a silent failure mode.
+  //
+  // Three layers:
+  //   1. If input has unsubmitted text → submit it first (simulate Enter)
+  //   2. If pending packages remain AND some are already linked → confirm
+  //   3. The button label adapts to context so the next click is unambiguous
+  async function handleLinkDoneClick() {
+    const input = $("#linkOutboundInput");
+    const val = (input.value || "").trim();
+
+    // Layer 1: unsubmitted text in the input → submit it before doing anything
+    if (val) {
+      // Dispatch a synthetic Enter keydown — reuses the existing submit handler
+      // so the link logic stays in one place and behavior is identical to a
+      // physical Enter press.
+      const enterEvt = new KeyboardEvent("keydown", { key: "Enter", bubbles: true });
+      input.dispatchEvent(enterEvt);
+      // The submit handler runs async (POST link_outbound). After it resolves,
+      // it will either auto-close (if all linked) or update _linkState. Don't
+      // close here — let the user see the "Just linked" feedback. They can
+      // click Done again if they want to leave.
+      return;
+    }
+
+    // Layer 2: warn if user is leaving with unfinished work
+    if (_linkState && _linkState.pending.length > 0 && _linkState.linked.length > 0) {
+      const n = _linkState.pending.length;
+      const ok = confirm(
+        `${n} package${n === 1 ? "" : "s"} still without outbound tracking.\n\n` +
+        `Close anyway? You can link them individually later from each package drawer.`
+      );
+      if (!ok) return;
+    }
+
+    // Layer 3: clean close (either nothing pending, or user explicitly cancelled)
+    closeLinkOutboundModal();
+  }
+  window.handleLinkDoneClick = handleLinkDoneClick;
+
+  // Update the Done button label so the next click is unambiguous.
+  // Called from renderLinkPending() and from input 'input' event below.
+  function updateLinkDoneBtnLabel() {
+    const btn = $("#linkDoneBtn");
+    if (!btn || !_linkState) return;
+    const inputVal = ($("#linkOutboundInput").value || "").trim();
+    const pending = _linkState.pending.length;
+    const linked = _linkState.linked.length;
+
+    if (inputVal) {
+      btn.textContent = "Link & Done";
+    } else if (pending === 0) {
+      btn.textContent = "Done";
+    } else if (linked === 0) {
+      btn.textContent = "Cancel";
+    } else {
+      btn.textContent = `Done (${pending} unlinked)`;
+    }
+  }
+
+  function renderLinkPending() {
+    if (!_linkState) return;
+    const { pending, linked, allRows } = _linkState;
+    const total = allRows.length;
+    const done = linked.length;
+    $("#linkProgress").textContent = `${done} / ${total}`;
+    $("#linkProgressBar").style.width = `${total > 0 ? Math.round(done * 100 / total) : 0}%`;
+    $("#linkPendingCount").textContent = pending.length;
+    if (pending.length === 0) {
+      $("#linkPendingList").innerHTML = '<div style="color:#15803d; font-style:italic;">All linked! ✅</div>';
+    } else {
+      $("#linkPendingList").innerHTML = pending.map(r =>
+        `→ <strong>${escapeHtml(r.tracking_number)}</strong> · ${escapeHtml(r.content || "—").slice(0, 60)}`
+      ).join("<br>");
+    }
+    updateLinkDoneBtnLabel();
+  }
+
+  function setLinkStatus(msg, kind) {
+    const el = $("#linkStatusMsg");
+    if (!msg) { el.style.display = "none"; return; }
+    const styles = {
+      error: "background:#fee2e2; color:#dc2626; border:1px solid #fecaca;",
+      warn:  "background:#fef3c7; color:#92400e; border:1px solid #fde68a;",
+      info:  "background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe;"
+    };
+    el.style.cssText = "display:block; padding:8px 12px; border-radius:8px; font-size:12px; margin-bottom:10px; " + (styles[kind] || styles.info);
+    el.textContent = msg;
+  }
+
+  // Live-update the Done button label as user types/scans (Day 4 fix).
+  // Critical for the bug case: as soon as the input has text, the button reads
+  // "Link & Done" instead of "Done", removing the silent-failure ambiguity.
+  $("#linkOutboundInput").addEventListener("input", () => {
+    if (_linkState) updateLinkDoneBtnLabel();
+  });
+
+  // Scan handler inside the link modal
+  $("#linkOutboundInput").addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter") return;
+    const val = $("#linkOutboundInput").value.trim();
+    if (!val) return;
+    $("#linkOutboundInput").value = "";
+    if (!_linkState) return;
+
+    // Detect inbound by accident (TBA pattern is Amazon-specific; reject)
+    if (/^TBA\d{10,}$/i.test(val)) {
+      setLinkStatus(`That looks like an inbound tracking (TBA…). Scan the OUTBOUND barcode printed on the carrier label.`, "warn");
+      return;
+    }
+
+    // Already linked in this session?
+    const alreadyHere = _linkState.linked.find(x => x.outbound === val);
+    if (alreadyHere) {
+      setLinkStatus(`Already linked to ${alreadyHere.row.tracking_number} in this session. Skipping.`, "info");
+      return;
+    }
+
+    // Take the next pending package
+    if (_linkState.pending.length === 0) {
+      setLinkStatus(`All packages already linked. Click "Done" to finish.`, "info");
+      return;
+    }
+    const target = _linkState.pending[0];
+
+    // POST link_outbound
+    try {
+      const res = await apiPost({
+        action: "link_outbound",
+        id: target.id,
+        outbound_tracking: val,
+        operator: state.operator
+      });
+      // Apply update to local state (for the main grid)
+      const idx = state.rows.findIndex(x => x.id === target.id);
+      if (idx >= 0 && res.row) state.rows[idx] = { ...state.rows[idx], ...res.row };
+
+      // Move to linked
+      _linkState.pending.shift();
+      _linkState.linked.push({ row: target, outbound: val });
+      _linkState.last = { row: target, outbound: val };
+
+      // Update "last linked" UI
+      $("#linkLastOutbound").textContent = val;
+      $("#linkLastInbound").textContent = target.tracking_number;
+      $("#linkLastContent").textContent = target.content || "(no content)";
+      $("#linkLastBox").style.display = "";
+      setLinkStatus(null);
+
+      renderLinkPending();
+      renderRows();    // reflects the new labeled status in the main grid
+      renderCounts();
+
+      // Auto-close when all done
+      if (_linkState.pending.length === 0) {
+        toast(`✓ ${_linkState.linked.length} package${_linkState.linked.length === 1 ? "" : "s"} linked and marked as labeled`);
+        setTimeout(closeLinkOutboundModal, 800);
+      }
+    } catch (err) {
+      const msg = String(err.message || err);
+      // Common conflict: outbound already used by another package (different session)
+      if (msg.includes("already linked") || msg.includes("conflict")) {
+        setLinkStatus(`That outbound tracking is already linked to a different package. Check the barcode and try again.`, "error");
+      } else {
+        setLinkStatus(`Link failed: ${msg}`, "error");
+      }
+    }
+  });
+
+  // Skip & mark all remaining as labeled (Q3 = B behavior)
+  async function skipLinkOutbound() {
+    if (!_linkState) return;
+    const remaining = _linkState.pending.filter(r => {
+      // Only those still in 'received' status (some may have been moved by other actions)
+      const cur = state.rows.find(x => x.id === r.id) || r;
+      return cur.status === "received";
+    });
+    if (remaining.length === 0) {
+      closeLinkOutboundModal();
+      return;
+    }
+    if (!confirm(`Mark ${remaining.length} remaining package${remaining.length === 1 ? "" : "s"} as labeled WITHOUT outbound tracking? You can link them individually later.`)) return;
+
+    // Promote each to labeled via the existing 'label' action.
+    const results = await Promise.all(remaining.map(r =>
+      apiPost({ action: "label", id: r.id, operator: state.operator })
+        .then(j => ({ ok: true, row: r, updated: j.row }))
+        .catch(e => ({ ok: false, row: r, err: e.message }))
+    ));
+    for (const res of results) {
+      if (res.ok && res.updated) {
+        const idx = state.rows.findIndex(x => x.id === res.row.id);
+        if (idx >= 0) state.rows[idx] = { ...state.rows[idx], ...res.updated };
+      }
+    }
+    const failed = results.filter(r => !r.ok).length;
+    closeLinkOutboundModal();
+    renderRows();
+    renderCounts();
+    if (failed === 0) toast(`✓ ${remaining.length} marked as labeled (no outbound)`);
+    else toast(`Marked ${remaining.length - failed} · ${failed} failed`, { error: true });
+  }
+  window.skipLinkOutbound = skipLinkOutbound;
+
+  // ── Fix wrong match submodal ──
+  function openFixMatchModal() {
+    if (!_linkState || !_linkState.last) return;
+    const last = _linkState.last;
+    $("#fixMatchOutbound").textContent = last.outbound;
+    // Build dropdown of pending + the last (so it can be re-confirmed)
+    const candidates = [last.row, ..._linkState.pending];
+    const sel = $("#fixMatchSelect");
+    sel.innerHTML = candidates.map(r =>
+      `<option value="${r.id}">${escapeHtml(r.tracking_number)} · ${escapeHtml((r.content || "—").slice(0, 50))}</option>`
+    ).join("");
+    sel.value = last.row.id;
+    $("#fixMatchModal").classList.add("open");
+    setTimeout(() => sel.focus(), 60);
+  }
+  window.openFixMatchModal = openFixMatchModal;
+
+  function closeFixMatchModal() {
+    $("#fixMatchModal").classList.remove("open");
+    setTimeout(() => $("#linkOutboundInput").focus(), 40);
+  }
+  window.closeFixMatchModal = closeFixMatchModal;
+
+  $("#fixMatchConfirmBtn").addEventListener("click", async () => {
+    if (!_linkState || !_linkState.last) return;
+    const newId = $("#fixMatchSelect").value;
+    if (!newId) return;
+    const last = _linkState.last;
+    if (newId === last.row.id) {
+      // No change — just close
+      closeFixMatchModal();
+      return;
+    }
+
+    const newTarget = state.rows.find(x => x.id === newId)
+                   || _linkState.pending.find(x => x.id === newId)
+                   || _linkState.linked.map(l => l.row).find(x => x.id === newId);
+    if (!newTarget) {
+      setLinkStatus("Could not find the selected row in state. Refresh and try again.", "error");
+      closeFixMatchModal();
+      return;
+    }
+
+    try {
+      // 1. unlink the wrong row (clears outbound, status stays labeled)
+      await apiPost({ action: "unlink_outbound", id: last.row.id, operator: state.operator });
+      // 2. revert the wrong row from labeled back to received (since the link triggered the transition)
+      await apiPost({ action: "revert", id: last.row.id, operator: state.operator })
+            .catch(() => null);  // best-effort; ignore if state was different
+      // 3. link the correct row
+      const res = await apiPost({
+        action: "link_outbound",
+        id: newTarget.id,
+        outbound_tracking: last.outbound,
+        operator: state.operator,
+        force: true
+      });
+
+      // Update local state
+      // Wrong row: revert to received status
+      const wrongIdx = state.rows.findIndex(x => x.id === last.row.id);
+      if (wrongIdx >= 0) {
+        state.rows[wrongIdx] = { ...state.rows[wrongIdx], outbound_tracking: null, status: "received", labeled_at: null };
+      }
+      // New row: apply the response
+      const newIdx = state.rows.findIndex(x => x.id === newTarget.id);
+      if (newIdx >= 0 && res.row) {
+        state.rows[newIdx] = { ...state.rows[newIdx], ...res.row };
+      }
+
+      // Update linkState: remove last from linked, add new to linked, push wrong row back to pending
+      _linkState.linked = _linkState.linked.filter(l => l.outbound !== last.outbound);
+      _linkState.linked.push({ row: newTarget, outbound: last.outbound });
+      // Remove newTarget from pending if it was there
+      _linkState.pending = _linkState.pending.filter(r => r.id !== newTarget.id);
+      // Add wrong row back to pending if it isn't already linked elsewhere
+      const wrongStillLinked = _linkState.linked.find(l => l.row.id === last.row.id);
+      if (!wrongStillLinked) {
+        _linkState.pending.push(last.row);
+      }
+      _linkState.last = { row: newTarget, outbound: last.outbound };
+
+      // Refresh UI
+      $("#linkLastInbound").textContent = newTarget.tracking_number;
+      $("#linkLastContent").textContent = newTarget.content || "(no content)";
+      renderLinkPending();
+      renderRows();
+      renderCounts();
+      setLinkStatus(`✓ Re-linked to ${newTarget.tracking_number}`, "info");
+      closeFixMatchModal();
+    } catch (err) {
+      setLinkStatus(`Re-link failed: ${err.message}`, "error");
+      closeFixMatchModal();
+    }
+  });
+
+  // ─── Process Orphan flow (manual link with PDF upload) ───────────────
+  // For the case where the client emailed back a label as a reply or
+  // outside the structured email format. Operator drops the PDF, fills
+  // the missing fields, and the orphan transitions to received with the
+  // label uploaded to the bucket.
+  let _processOrphanState = null;
+
+  function openProcessOrphanModal(id) {
+    if (!requireOperator()) return;
+    const row = state.rows.find(r => r.id === id);
+    if (!row) { toast("Row not found", { error: true }); return; }
+    if (row.status !== "orphan") {
+      toast("Process Orphan only works on rows with status='orphan'", { error: true });
+      return;
+    }
+
+    _processOrphanState = { id, row, file: null, base64: null };
+    $("#processOrphanInbound").textContent = row.tracking_number;
+    $("#processOrphanOutbound").value = "";
+    $("#processOrphanCarrier").value = "";
+    $("#processOrphanOrderId").value = "";
+    $("#processOrphanContent").value = "";
+    $("#processOrphanQty").value = "1";
+    $("#processOrphanNotes").value = row.notes || "";
+    $("#processOrphanFile").value = "";
+    setProcessOrphanStatus(null);
+
+    // Reset drop zone visuals
+    const drop = $("#processOrphanDrop");
+    drop.classList.remove("has-file");
+    drop.innerHTML = `
+      <div class="drop-zone-icon">📄</div>
+      <div class="drop-zone-text">
+        <strong>Drop PDF here or click to browse</strong>
+        The outbound tracking will be auto-extracted from the filename
+      </div>
+    `;
+
+    $("#processOrphanModal").classList.add("open");
+    setTimeout(() => $("#processOrphanFile").focus(), 80);
+  }
+  window.openProcessOrphanModal = openProcessOrphanModal;
+
+  function closeProcessOrphanModal() {
+    $("#processOrphanModal").classList.remove("open");
+    _processOrphanState = null;
+    setTimeout(() => $("#scan").focus(), 40);
+  }
+  window.closeProcessOrphanModal = closeProcessOrphanModal;
+
+  function setProcessOrphanStatus(msg, kind = "error") {
+    const el = $("#processOrphanStatusMsg");
+    if (!msg) { el.style.display = "none"; return; }
+    const styles = {
+      error: "background:#fee2e2; color:#dc2626; border:1px solid #fecaca;",
+      warn:  "background:#fef3c7; color:#92400e; border:1px solid #fde68a;",
+      info:  "background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe;"
+    };
+    el.style.cssText = "display:block; padding:8px 12px; border-radius:8px; font-size:12px; margin-bottom:10px; " + (styles[kind] || styles.error);
+    el.textContent = msg;
+  }
+
+  // Read a File as base64 (without the data: prefix)
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        const b64 = String(result).split(",")[1] || "";
+        resolve(b64);
+      };
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Auto-extract outbound tracking from filename (e.g. "46886078645.pdf" → "46886078645")
+  function extractOutboundFromFilename(filename) {
+    if (!filename) return null;
+    const base = filename.replace(/\.pdf$/i, "").trim();
+    // Common patterns: pure digits, alphanumeric tracking, dashes ok
+    if (/^[A-Za-z0-9-]{6,64}$/.test(base)) return base;
+    // Fall back: look for the longest alphanumeric run in the name
+    const matches = base.match(/[A-Za-z0-9]{6,64}/g);
+    if (matches && matches.length) {
+      // Pick the longest match (most likely the tracking number)
+      matches.sort((a, b) => b.length - a.length);
+      return matches[0];
+    }
+    return null;
+  }
+
+  async function handleProcessOrphanFile(file) {
+    if (!file) return;
+    if (!file.type.includes("pdf") && !file.name.toLowerCase().endsWith(".pdf")) {
+      setProcessOrphanStatus("Only PDF files are accepted", "error");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setProcessOrphanStatus("File too large (max 5MB)", "error");
+      return;
+    }
+    if (!_processOrphanState) return;
+
+    try {
+      const b64 = await fileToBase64(file);
+      _processOrphanState.file = file;
+      _processOrphanState.base64 = b64;
+
+      // Update drop zone to show file info
+      const drop = $("#processOrphanDrop");
+      drop.classList.add("has-file");
+      const sizeKb = Math.round(file.size / 1024);
+      drop.innerHTML = `
+        <div class="drop-zone-icon">📄</div>
+        <div class="drop-zone-text">
+          <strong>${escapeHtml(file.name)}</strong>
+          <span class="file-info">${sizeKb} KB · click to change</span>
+        </div>
+      `;
+
+      // Auto-fill outbound tracking if empty
+      const outboundField = $("#processOrphanOutbound");
+      if (!outboundField.value.trim()) {
+        const extracted = extractOutboundFromFilename(file.name);
+        if (extracted) {
+          outboundField.value = extracted;
+          setProcessOrphanStatus(`Auto-filled outbound tracking from filename: ${extracted}`, "info");
+        }
+      }
+    } catch (e) {
+      setProcessOrphanStatus("Failed to read file: " + e.message, "error");
+    }
+  }
+
+  // Wire up the drop zone (lazy — runs only after DOM exists)
+  function wireProcessOrphanDropZone() {
+    const drop = $("#processOrphanDrop");
+    const fileInput = $("#processOrphanFile");
+
+    drop.addEventListener("click", () => fileInput.click());
+
+    drop.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      drop.classList.add("dragover");
+    });
+    drop.addEventListener("dragleave", () => drop.classList.remove("dragover"));
+    drop.addEventListener("drop", (e) => {
+      e.preventDefault();
+      drop.classList.remove("dragover");
+      const file = e.dataTransfer?.files?.[0];
+      if (file) handleProcessOrphanFile(file);
+    });
+
+    fileInput.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      if (file) handleProcessOrphanFile(file);
+    });
+  }
+
+  // Submit handler
+  $("#processOrphanConfirmBtn").addEventListener("click", async () => {
+    if (!_processOrphanState) return;
+    if (!requireOperator()) return;
+
+    const outbound = $("#processOrphanOutbound").value.trim();
+    const carrier = $("#processOrphanCarrier").value.trim();
+    const orderId = $("#processOrphanOrderId").value.trim();
+    const content = $("#processOrphanContent").value.trim();
+    const qty = parseInt($("#processOrphanQty").value || "1", 10) || 1;
+    const notes = $("#processOrphanNotes").value.trim();
+
+    // Validation
+    if (!_processOrphanState.base64) {
+      setProcessOrphanStatus("Drop the PDF label first", "error");
+      return;
+    }
+    if (!outbound) {
+      setProcessOrphanStatus("Outbound tracking is required", "error");
+      return;
+    }
+    if (outbound === _processOrphanState.row.tracking_number) {
+      setProcessOrphanStatus("Outbound tracking cannot be the same as the inbound", "error");
+      return;
+    }
+    if (!carrier) {
+      setProcessOrphanStatus("Pick an outbound carrier", "error");
+      return;
+    }
+
+    const btn = $("#processOrphanConfirmBtn");
+    const origLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Uploading…";
+
+    try {
+      const res = await apiPost({
+        action: "process_orphan",
+        id: _processOrphanState.id,
+        outbound_tracking: outbound,
+        outbound_carrier: carrier,
+        order_id: orderId || null,
+        content: content || null,
+        qty_boxes: qty,
+        label_filename: _processOrphanState.file?.name || `${outbound}.pdf`,
+        pdf_base64: _processOrphanState.base64,
+        notes: notes || null,
+        operator: state.operator
+      });
+
+      // Update local state with the new row
+      if (res.row) {
+        const idx = state.rows.findIndex(r => r.id === _processOrphanState.id);
+        if (idx >= 0) state.rows[idx] = { ...state.rows[idx], ...res.row };
+      }
+
+      const trackingNumber = _processOrphanState.row.tracking_number;
+      closeProcessOrphanModal();
+      renderRows();
+      renderCounts();
+
+      // Refresh drawer if still open on this row
+      if ($("#detail").classList.contains("open") && $("#dTracking").textContent === trackingNumber) {
+        const updated = state.rows.find(r => r.tracking_number === trackingNumber);
+        if (updated) renderDetail(updated);
+      }
+
+      toast(`✓ Orphan processed · ${shortTracking(trackingNumber)} → received`);
+    } catch (e) {
+      const msg = String(e.message || e);
+      if (msg.includes("already linked")) {
+        setProcessOrphanStatus("That outbound tracking is already used by another package", "error");
+      } else {
+        setProcessOrphanStatus("Failed: " + msg, "error");
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = origLabel;
+    }
+  });
+
+  async function loadClients() {
+    const j = await apiGet({ action: "clients" });
+    state.clients = j.clients || [];
+    const sel = $("#clientSelect");
+    sel.innerHTML = '<option value="">All clients</option>' +
+      state.clients.map(c => `<option value="${c.client_id}">${escapeHtml(c.display_name)}</option>`).join("");
+  }
+  async function loadRows() {
+    $("#rows").innerHTML = '<div class="loading-state">Loading</div>';
+    const params = { action: "list", limit: 500 };
+    if (state.activeClient) params.client_id = state.activeClient;
+    try {
+      const j = await apiGet(params);
+      state.rows = j.rows || [];
+      renderRows();
+      renderCounts();
+    } catch (e) {
+      $("#rows").innerHTML = `<div class="empty-state">Failed to load: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  function renderRows() {
+    const tbody = $("#rows");
+    const filtered = state.activeTab === "all"
+      ? state.rows
+      : state.rows.filter(r => r.status === state.activeTab);
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = '<div class="empty-state">No packages in this view.</div>';
+      updateBatchBar();
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(r => {
+      const platform = r.outbound_platform ? ` <span style="opacity:.55; font-family:'DM Mono'; font-size: 11px;">· ${escapeHtml(r.outbound_platform)}</span>` : "";
+      const selectable = isBatchEligible(r);
+      const selected = state.batchSelection.has(r.id);
+      const inGroup = (r.group_total || 0) > 1;
+      const rowClass = (selected ? "tbl-row selected" : "tbl-row") + (inGroup ? " in-group" : "");
+      const grpChip = inGroup
+        ? `<span class="grp-chip" title="Esta caja trae ${r.group_total} órdenes de salida">${r.group_seq || "?"} de ${r.group_total}</span>`
+        : "";
+      const checkTitle = selectable
+        ? `Select for batch action (status: ${r.status})`
+        : `Cannot batch from status '${r.status}'`;
+      return `
+        <div class="${rowClass}" data-id="${r.id}" data-created="${r.email_received_at || r.physical_received_at || r.created_at || ''}">
+          <label class="check-cell" title="${checkTitle}" onclick="event.stopPropagation()">
+            <input type="checkbox" class="row-check" data-row-id="${r.id}" ${selected ? "checked" : ""} ${selectable ? "" : "disabled"}>
+          </label>
+          <div>
+            <div class="tracking">${escapeHtml(r.tracking_number)}${!r.order_id ? grpChip : ""}</div>
+            ${r.order_id ? `<div class="tracking-small">${escapeHtml(r.order_id)}${grpChip}</div>` : ""}
+          </div>
+          <div><span class="carrier-pill ${carrierClass(r.carrier)}">${escapeHtml(r.carrier || "—")}</span></div>
+          <div style="font-size: 12px; color: var(--muted);">${escapeHtml(r.outbound_carrier || "—")}${platform}</div>
+          <div class="content-cell">
+            ${r.qty_boxes > 1 ? `<span class="content-qty">×${r.qty_boxes}</span>` : ""}
+            ${r.content ? escapeHtml(r.content) : '<em style="color: #a0aec0;">no content parsed</em>'}
+          </div>
+          <div><span class="status-badge sb-${r.status}">${r.status}</span></div>
+          <div class="age">${fmtAge(r.email_received_at || r.physical_received_at)}</div>
+        </div>
+      `;
+    }).join("");
+
+    // Wire up row clicks (open drawer), but not when clicking the checkbox
+    $$(".tbl-row").forEach(el => {
+      el.addEventListener("click", (e) => {
+        if (e.target.closest(".check-cell")) return;
+        openDetail(el.dataset.id);
+      });
+    });
+
+    // Wire up the checkbox changes
+    $$(".row-check[data-row-id]").forEach(cb => {
+      cb.addEventListener("change", (e) => {
+        const id = cb.dataset.rowId;
+        if (cb.checked) state.batchSelection.add(id);
+        else state.batchSelection.delete(id);
+        const rowEl = cb.closest(".tbl-row");
+        if (rowEl) rowEl.classList.toggle("selected", cb.checked);
+        updateBatchBar();
+        updateSelectAllState();
+      });
+    });
+
+    updateBatchBar();
+    updateSelectAllState();
+  }
+
+  // A row is batch-eligible (selectable via checkbox) if it's in a status
+  // where SOME batch operation could apply. Excludes terminal/odd states.
+  function isBatchEligible(r) {
+    return r.status === "received" || r.status === "labeled";
+  }
+  // Kept for back-compat with existing batch-print code paths.
+  function isBatchPrintable(r) {
+    return !!r.label_url && (r.status === "received" || r.status === "labeled");
+  }
+
+  // Inspect the current selection and return what action(s) make sense.
+  // Returns one of:
+  //   { kind: "print_labels", rows: [...] }   → all rows ∈ {received, labeled} with label_url
+  //   { kind: "mark_shipped", rows: [...] }   → all rows are 'labeled'
+  //   { kind: "mark_received", rows: [...] }  → all rows are 'pending'/'exception'  (rare batch case)
+  //   { kind: "mixed" }                        → rows have multiple statuses, force filter
+  //   { kind: "empty" }                        → no selection
+  function inspectBatchSelection() {
+    const ids = Array.from(state.batchSelection);
+    if (ids.length === 0) return { kind: "empty" };
+    const rows = ids.map(id => state.rows.find(r => r.id === id)).filter(Boolean);
+    const statuses = new Set(rows.map(r => r.status));
+    if (statuses.size > 1) return { kind: "mixed", rows, statuses: [...statuses] };
+    const only = [...statuses][0];
+    if (only === "labeled")  return { kind: "mark_shipped",  rows };
+    if (only === "received") return { kind: "print_labels",  rows };
+    if (only === "pending" || only === "exception") return { kind: "mark_received", rows };
+    return { kind: "mixed", rows, statuses: [only] };
+  }
+
+  function renderCounts() {
+    const keys = ["pending", "received", "labeled", "shipped", "orphan", "exception"];
+    const counts = { all: state.rows.length };
+    for (const k of keys) counts[k] = state.rows.filter(r => r.status === k).length;
+    $$(".kpi-val").forEach(el => {
+      const k = el.dataset.k;
+      el.textContent = String(counts[k] || 0).padStart(2, "0");
+    });
+    $$(".tab-count").forEach(el => {
+      const k = el.dataset.c;
+      el.textContent = counts[k] || 0;
+    });
+  }
+
+  $("#tabs").addEventListener("click", (e) => {
+    const btn = e.target.closest(".tab");
+    if (!btn) return;
+    $$(".tab").forEach(t => t.classList.remove("active"));
+    btn.classList.add("active");
+    state.activeTab = btn.dataset.tab;
+    renderRows();
+  });
+
+  // ─── Sidebar state filters ───────────────────────────────────────────
+  // The left sidebar links mirror the top tab bar. Both drive the same
+  // state.activeTab + renderRows(). Clicking either keeps the two in sync.
+  function syncActiveTab(tab) {
+    state.activeTab = tab;
+    $$(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
+    $$(".side-link[data-side-tab]").forEach(s =>
+      s.classList.toggle("active", s.dataset.sideTab === tab));
+    renderRows();
+  }
+  $$(".side-link[data-side-tab]").forEach(link => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      syncActiveTab(link.dataset.sideTab);
+    });
+  });
+  // keep sidebar in sync when a top tab is clicked too
+  $("#tabs").addEventListener("click", (e) => {
+    const btn = e.target.closest(".tab");
+    if (!btn) return;
+    $$(".side-link[data-side-tab]").forEach(s =>
+      s.classList.toggle("active", s.dataset.sideTab === btn.dataset.tab));
+  });
+
+  $("#clientSelect").addEventListener("change", (e) => {
+    state.activeClient = e.target.value;
+    loadRows();
+  });
+
+  async function openDetail(id) {
+    const row = state.rows.find(r => r.id === id);
+    if (!row) return;
+    $("#dTracking").textContent = row.tracking_number;
+    $("#dBody").innerHTML = '<div class="loading-state">Loading details</div>';
+    $("#detail").classList.add("open");
+    $("#backdrop").classList.add("open");
+
+    try {
+      const j = await apiGet({ action: "get", id });
+      const r = j.row || row;
+      renderDetail(r);
+    } catch (e) {
+      $("#dBody").innerHTML = `<div class="empty-state">Failed: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  function closeDetail() {
+    $("#detail").classList.remove("open");
+    $("#backdrop").classList.remove("open");
+  }
+  $("#backdrop").addEventListener("click", closeDetail);
+
+  function renderDetail(r) {
+    const clientName = r.client?.company || r.client?.name || r.config?.display_name || "—";
+    const steps = [
+      { label: "Email received",   time: r.email_received_at,    by: null },
+      { label: "Package received", time: r.physical_received_at, by: r.received_by },
+      { label: "Label printed",    time: r.labeled_at,           by: null },
+      { label: "Shipped",          time: r.shipped_at,           by: r.shipped_by }
+    ];
+    const currentIdx = steps.findIndex(s => !s.time);
+    const timelineHtml = steps.map((s, i) => {
+      const cls = s.time ? "done" : (i === currentIdx ? "current" : "");
+      const byLbl = s.by ? ` <span style="color:var(--muted);">· by ${escapeHtml(s.by)}</span>` : "";
+      return `<div class="tl-item ${cls}">
+        <div class="tl-step">${s.label}</div>
+        <div class="tl-time">${fmtDateTime(s.time)}${byLbl}</div>
+      </div>`;
+    }).join("");
+
+    const pdfBox = r.label_url
+      ? `<div class="pdf-box">
+           <div class="pdf-icon">PDF</div>
+           <div class="pdf-info">
+             <strong>${escapeHtml(r.label_filename || r.label_url.split("/").pop())}</strong>
+             <small>${escapeHtml(r.outbound_carrier || "")} ${r.outbound_platform ? "· " + escapeHtml(r.outbound_platform) : ""}</small>
+           </div>
+           <button class="btn btn-sm" onclick="openLabelOnly('${r.id}')" title="Just open, don't mark labeled">Preview</button>
+         </div>`
+      : `<div class="pdf-box no-label">
+           <div class="pdf-icon">!</div>
+           <div class="pdf-info">
+             <strong style="color: var(--s-orphan-text);">No label yet</strong>
+             <small>Awaiting email match</small>
+           </div>
+         </div>`;
+
+    const exceptionBox = r.status === "exception" && r.exception_reason
+      ? `<div class="detail-row"><span class="k">Exception reason</span>
+           <div class="pdf-box" style="background:#fef2f2; border-color:#fca5a5;">
+             <div style="font-size:13px; color:#991b1b;">${escapeHtml(r.exception_reason)}</div>
+           </div>
+         </div>` : "";
+
+    $("#dBody").innerHTML = `
+      <div class="detail-row"><span class="k">Client</span><span class="v">${escapeHtml(clientName)}</span></div>
+      <div class="detail-row"><span class="k">Status</span><span class="v"><span class="status-badge sb-${r.status}">${r.status}</span></span></div>
+      <div class="detail-row"><span class="k">Order ID</span><span class="v mono">${escapeHtml(r.order_id || "—")}</span></div>
+      <div class="detail-row"><span class="k">Inbound carrier</span><span class="v">${escapeHtml(r.carrier || "—")}</span></div>
+      <div class="detail-row"><span class="k">Content</span><span class="v">${r.content ? escapeHtml(r.content) : '<em>no content parsed</em>'}</span></div>
+      <div class="detail-row"><span class="k">Qty boxes</span><span class="v mono">${r.qty_boxes || 1}</span></div>
+      ${r.notes ? `<div class="detail-row"><span class="k">Notes</span><span class="v"><em>${escapeHtml(r.notes)}</em></span></div>` : ""}
+      <div class="detail-row"><span class="k">Outbound</span><span class="v">${escapeHtml(r.outbound_carrier || "—")}${r.outbound_platform ? " · " + escapeHtml(r.outbound_platform) : ""}</span></div>
+      ${r.outbound_tracking
+        ? `<div class="detail-row"><span class="k">Outbound tracking</span><span class="v mono">${escapeHtml(r.outbound_tracking)}</span></div>`
+        : ((r.status === "received" || r.status === "labeled")
+          ? `<div class="detail-row"><span class="k">Outbound tracking</span><span class="v"><button class="btn" onclick="linkOutboundForRow('${r.id}')" style="font-size:12px; padding:5px 12px; background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe;">🔗 Scan to link</button></span></div>`
+          : "")}
+      ${exceptionBox}
+
+      <div class="detail-row"><span class="k" style="margin-bottom: 8px;">Outbound label</span>${pdfBox}</div>
+
+      <div class="detail-row">
+        <span class="k" style="margin-bottom: 12px;">Timeline</span>
+        <div class="timeline">${timelineHtml}</div>
+      </div>
+
+      <div style="font-size: 10px; color: var(--muted); font-family: 'DM Mono'; padding-top: 8px; border-top: 1px dashed var(--border); line-height: 1.6;">
+        row id: ${r.id}<br>
+        email msg id: ${escapeHtml(r.email_message_id || "—")}
+      </div>
+
+      ${renderActionBar(r)}
+    `;
+  }
+
+  // Returns HTML for the action bar at the bottom of the drawer.
+  function renderActionBar(r) {
+    const id = r.id;
+    const hasLabel = !!r.label_url;
+
+    // Each branch only shows the buttons relevant to the current status.
+    switch (r.status) {
+      case "pending":
+        return `<div class="action-bar">
+          <button class="btn btn-primary btn-lg" onclick="doAction('${id}','receive')">📦 Mark received</button>
+          <button class="btn btn-danger" onclick="openReasonModal('${id}')">Flag exception</button>
+        </div>`;
+
+      case "received":
+        return `<div class="action-bar">
+          <button class="btn btn-primary btn-lg" onclick="printAndLabel('${id}')" ${hasLabel ? "" : "disabled title='No label available'"}>🖨 Print label</button>
+          <button class="btn" onclick="doAction('${id}','revert')" title="Back to pending">↶ Revert</button>
+          <button class="btn btn-danger" onclick="openReasonModal('${id}')">Flag</button>
+        </div>`;
+
+      case "labeled":
+        return `<div class="action-bar">
+          <button class="btn btn-primary btn-lg" onclick="doAction('${id}','ship')">🚚 Mark shipped</button>
+          <button class="btn" onclick="printAndLabel('${id}')" title="Reprint label">🖨 Reprint</button>
+          <button class="btn" onclick="doAction('${id}','revert')" title="Back to received">↶ Revert</button>
+        </div>`;
+
+      case "shipped":
+        return `<div class="action-bar">
+          <span style="flex:1; text-align:center; padding:11px; font-size:12px; color:var(--muted);">Shipped · no further actions</span>
+          <button class="btn" onclick="doAction('${id}','revert')" title="Back to labeled">↶ Undo ship</button>
+        </div>`;
+
+      case "orphan":
+        return `<div class="action-bar">
+          <button class="btn btn-primary btn-lg" onclick="openProcessOrphanModal('${id}')">🔗 Process orphan (manual link)</button>
+          <button class="btn" onclick="doAction('${id}','receive')" title="Mark received without a label (rare — only if you'll re-label later)">📦 Receive without label</button>
+          <button class="btn btn-danger" onclick="deleteOrphan('${id}')" title="Permanently delete this orphan (mistaken scan)">🗑 Delete</button>
+        </div>`;
+
+      case "exception":
+        return `<div class="action-bar">
+          <button class="btn btn-primary" onclick="doAction('${id}','resolve')">✓ Resolve → pending</button>
+          <button class="btn btn-primary" onclick="doAction('${id}','receive')">📦 Receive directly</button>
+        </div>`;
+
+      default:
+        return "";
+    }
+  }
+
+  // Open the PDF without changing status (preview mode).
+  async function openLabelOnly(id) {
+    try {
+      const j = await apiGet({ action: "label", id });
+      if (j.url) window.open(j.url, "_blank");
+    } catch (e) {
+      toast("Failed to open label: " + e.message, { error: true });
+    }
+  }
+  window.openLabelOnly = openLabelOnly;
+  window.doAction = doAction;
+
+  // ═══ Day 6: consolidated packages ══════════════════════════════════════
+  // Amazon merges several purchases into one box. Each purchase still needs
+  // its own outbound label and goes to a different customer. Everything below
+  // exists for one reason: the operator must never look at one row and
+  // believe the box is finished.
+
+  let _grpRows = [];
+
+  function grpItemHtml(r, done) {
+    return `
+      <div class="grp-item ${done ? "done" : ""}">
+        <div class="grp-seq">${r.group_seq || "?"}</div>
+        <div>
+          <div class="grp-cnt">${escapeHtml(r.content || "sin contenido")}</div>
+          <div class="grp-ord">${escapeHtml(r.order_id || "sin orden")}</div>
+        </div>
+        <div><span class="status-badge sb-${r.status}">${r.status}</span></div>
+      </div>`;
+  }
+
+  // Called from the scanner when one inbound tracking resolves to several rows.
+  function openGroupScanModal(rows, group) {
+    _grpRows = rows.slice().sort((a, b) => (a.group_seq || 99) - (b.group_seq || 99));
+    const declared = (group && group.declared) || _grpRows[0]?.group_total || _grpRows.length;
+
+    $("#grpTracking").textContent = _grpRows[0]?.tracking_number || "";
+    $("#grpCount").textContent = `${declared} órdenes`;
+    $("#grpList").innerHTML = _grpRows
+      .map(r => grpItemHtml(r, r.status !== "pending" && r.status !== "exception"))
+      .join("");
+
+    // Amber note: informative, not alarming. The client declared N orders but
+    // only M emails have arrived. The box is here — receive what's here.
+    const note = $("#grpNote");
+    const missing = group && group.missing ? group.missing : Math.max(0, declared - _grpRows.length);
+    if (missing > 0) {
+      note.style.display = "";
+      note.innerHTML = `<strong>Caja de ${declared} órdenes — ${_grpRows.length} registrada${_grpRows.length === 1 ? "" : "s"} hasta ahora.</strong><br>
+        Puedes recibir ${_grpRows.length === 1 ? "la que está" : `las ${_grpRows.length} que están`} aquí.
+        ${missing === 1 ? "La que falta aparecerá" : `Las ${missing} que faltan aparecerán`} cuando llegue su correo — no hay que hacer nada más.`;
+    } else {
+      note.style.display = "none";
+    }
+
+    const receivable = _grpRows.filter(r => r.status === "pending" || r.status === "exception");
+    const btn = $("#grpReceiveBtn");
+    if (receivable.length) {
+      btn.style.display = "";
+      btn.textContent = receivable.length === 1
+        ? "✓ Recibir esta orden"
+        : `✓ Recibir las ${receivable.length}`;
+      btn.onclick = () => receiveGroup(receivable.map(r => r.id));
+    } else {
+      btn.style.display = "none";
+    }
+
+    $("#groupScanModal").classList.add("open");
+    setTimeout(() => btn.focus(), 60);
+  }
+  function closeGroupScanModal() { $("#groupScanModal").classList.remove("open"); }
+  window.closeGroupScanModal = closeGroupScanModal;
+
+  // One physical box → receiving is a single operator gesture, even though it
+  // writes several rows.
+  async function receiveGroup(ids) {
+    if (!requireOperator()) return;
+    const btn = $("#grpReceiveBtn");
+    btn.disabled = true;
+    let ok = 0, failed = 0;
+    for (const id of ids) {
+      try {
+        const j = await apiPost({ action: "receive", id, operator: state.operator });
+        if (j.row) {
+          const idx = state.rows.findIndex(r => r.id === id);
+          if (idx >= 0) state.rows[idx] = { ...state.rows[idx], ...j.row };
+        }
+        ok++;
+      } catch (e) {
+        console.error("receiveGroup failed for", id, e);
+        failed++;
+      }
+    }
+    btn.disabled = false;
+    closeGroupScanModal();
+    renderRows();
+    renderCounts();
+    if (failed) toast(`${ok} recibida(s), ${failed} con error`, { error: true });
+    else toast(`${ok} órden${ok === 1 ? "" : "es"} recibida${ok === 1 ? "" : "s"} · 1 caja`);
+  }
+
+  // Shown when shipping one order while siblings from the same box are still
+  // pending. This is a confirmation, never a dead end.
+  function openShipGroupModal(id, payload) {
+    const pending = payload.pending || [];
+    const total = payload.group_total || (pending.length + 1);
+    $("#shipGrpNote").innerHTML =
+      `<strong>Esta caja trae ${total} órdenes.</strong><br>
+       Al despachar esta quedan <strong>${pending.length}</strong> sin despachar. No cierres la caja todavía.`;
+    $("#shipGrpList").innerHTML = pending.map(r => grpItemHtml(r, false)).join("");
+    const btn = $("#shipGrpConfirmBtn");
+    btn.onclick = () => {
+      closeShipGroupModal();
+      doAction(id, "ship", { confirm_group: true });
+    };
+    $("#shipGroupModal").classList.add("open");
+    setTimeout(() => btn.focus(), 60);
+  }
+  function closeShipGroupModal() { $("#shipGroupModal").classList.remove("open"); }
+  window.closeShipGroupModal = closeShipGroupModal;
+
+
+  // ─── Delete orphan (cleanup for bad scans) ───────────────────────────
+  // Hard-deletes a row in status='orphan'. Used when the operator scanned
+  // something that isn't actually a tracking number. Never works on rows
+  // that have moved past orphan — those need to be reverted/exception-flagged.
+  async function deleteOrphan(id) {
+    if (!requireOperator()) return;
+    const row = state.rows.find(r => r.id === id);
+    if (!row) { toast("Row not found", { error: true }); return; }
+    if (row.status !== "orphan") {
+      toast("Only orphan rows can be deleted", { error: true });
+      return;
+    }
+    const clientName = row.client?.company || row.client?.name || row.config?.display_name || "—";
+    const confirmMsg =
+      `Permanently delete this orphan?\n\n` +
+      `Tracking: ${row.tracking_number}\n` +
+      `Client:   ${clientName}\n\n` +
+      `This cannot be undone. Use this only for mistaken scans.`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      await apiPost({ action: "delete_orphan", id, operator: state.operator });
+      // Remove from local state
+      state.rows = state.rows.filter(r => r.id !== id);
+      // Also remove from any current batch selection
+      state.batchSelection.delete(id);
+      closeDetail();
+      renderRows();
+      renderCounts();
+      toast(`✓ Deleted orphan · ${shortTracking(row.tracking_number)}`);
+    } catch (e) {
+      toast("Delete failed: " + e.message, { error: true });
+    }
+  }
+  window.deleteOrphan = deleteOrphan;
+
+  // ─── Smart scan handler — 3 paths based on what's scanned ───────────────
+  // 1. Exists + status='pending'/'exception': confirm → mark received
+  // 2. Exists + status != 'pending': just highlight + open drawer
+  // 3. Does NOT exist in DB: prompt to create orphan
+  //
+  // Matches by EITHER tracking_number (inbound, e.g. TBA…) OR outbound_tracking
+  // (the carrier label printed by us). When matched via outbound, we tell the
+  // operator so they know how the system found it.
+  const scanInput = $("#scan");
+  scanInput.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter") return;
+    const val = scanInput.value.trim();
+    if (!val) return;
+    scanInput.value = "";
+    if (!requireOperator()) return;
+
+    const valLower = val.toLowerCase();
+
+    // Day 6: a consolidated box has SEVERAL rows under one inbound tracking.
+    // Collect them all — taking .find() would silently pick one and hide the
+    // rest, which is exactly how orders get left on the bench.
+    const localGroup = state.rows.filter(r =>
+      (r.tracking_number || "").toLowerCase() === valLower
+    );
+
+    let match = state.rows.find(r =>
+      (r.tracking_number    || "").toLowerCase() === valLower ||
+      (r.outbound_tracking  || "").toLowerCase() === valLower
+    );
+    let matchField = match
+      ? (((match.outbound_tracking || "").toLowerCase() === valLower) ? "outbound_tracking" : "tracking_number")
+      : null;
+
+    // Scanning the INBOUND tracking of a consolidated box → show the whole box.
+    // Scanning an OUTBOUND label still resolves to its single order, which is
+    // correct: that barcode identifies one parcel, not the box.
+    if (localGroup.length > 1 && matchField === "tracking_number") {
+      openGroupScanModal(localGroup, null);
+      return;
+    }
+    if (localGroup.length === 1 && (localGroup[0].group_total || 0) > 1 && matchField === "tracking_number") {
+      // Only one row in view but the client declared more — ask the server for
+      // the full picture so the amber note can be accurate.
+      try {
+        const j = await apiGet({ action: "lookup", tracking: val });
+        const inbound = (j.rows || []).filter(r => r.match_field === "tracking_number");
+        inbound.forEach(r => { if (!state.rows.find(x => x.id === r.id)) state.rows.unshift(r); });
+        openGroupScanModal(inbound.length ? inbound : localGroup, j.group);
+        return;
+      } catch (err) {
+        console.error("group lookup failed", err);
+        openGroupScanModal(localGroup, null);
+        return;
+      }
+    }
+
+    // Fall back to server lookup (covers rows not currently in view / filters applied).
+    if (!match) {
+      try {
+        const j = await apiGet({ action: "lookup", tracking: val });
+        const inbound = (j.rows || []).filter(r => r.match_field === "tracking_number");
+
+        // Consolidated box found on the server side.
+        if (inbound.length > 1 || (j.group && j.group.declared > 1)) {
+          inbound.forEach(r => { if (!state.rows.find(x => x.id === r.id)) state.rows.unshift(r); });
+          openGroupScanModal(inbound, j.group);
+          return;
+        }
+
+        if (j.rows && j.rows.length === 1) {
+          match = j.rows[0];
+          matchField = match.match_field || "tracking_number";
+          // Merge into state if missing, so subsequent actions work on it.
+          if (!state.rows.find(r => r.id === match.id)) state.rows.unshift(match);
+        } else if (j.rows && j.rows.length > 1) {
+          toast(`${j.rows.length} matches found — narrow your search`, { error: true });
+          return;
+        }
+      } catch (err) {
+        console.error("scan lookup failed", err);
+      }
+    }
+
+    if (match) {
+      const viaOutbound = matchField === "outbound_tracking";
+      const viaLabel = viaOutbound ? " · via outbound label" : "";
+
+      // Path 1: pending/exception → prompt confirm receive
+      if (match.status === "pending" || match.status === "exception") {
+        openScanConfirmModal(match, { viaOutbound });
+        return;
+      }
+      // Path 2: already received/labeled/shipped/orphan → just highlight + open drawer
+      highlightAndOpen(match);
+      toast(`Already ${match.status}${viaLabel} · ${shortTracking(match.tracking_number)}`);
+      return;
+    }
+
+    // Path 3: no match → validate the scan before prompting to create an orphan.
+    // This prevents accidentally creating orphan records from non-tracking
+    // barcodes (item codes, inner-pack barcodes, etc).
+    const validation = validateScanForOrphan(val);
+    if (!validation.ok) {
+      toast(`Not a valid tracking · ${validation.reason}`, { error: true });
+      return;
+    }
+    openOrphanModal(val);
+  });
+
+  function shortTracking(t) {
+    if (!t) return "";
+    return t.length > 14 ? t.slice(0, 10) + "…" : t;
+  }
+
+  // Validate a scan before treating it as a tracking number for orphan creation.
+  // Real carrier tracking numbers are alphanumeric (with optional hyphens) and
+  // typically 8-40 chars. Anything else is almost certainly a non-tracking
+  // barcode (item barcode, inner-pack code, manufacturer ID, etc).
+  //
+  // Returns { ok: true } if valid, or { ok: false, reason: "..." } if not.
+  function validateScanForOrphan(val) {
+    if (val.length < 8) {
+      return { ok: false, reason: `too short (${val.length} chars, minimum 8)` };
+    }
+    if (val.length > 40) {
+      return { ok: false, reason: `too long (${val.length} chars, maximum 40)` };
+    }
+    // Real tracking numbers don't have underscores, dots, spaces, or slashes.
+    // Allow alphanumeric and hyphens only.
+    if (!/^[A-Za-z0-9-]+$/.test(val)) {
+      const badChars = Array.from(new Set(val.replace(/[A-Za-z0-9-]/g, "").split("")))
+        .map(c => c === " " ? "space" : `'${c}'`).join(", ");
+      return { ok: false, reason: `contains invalid character(s): ${badChars}` };
+    }
+    return { ok: true };
+  }
+
+  function highlightAndOpen(match) {
+    state.activeTab = "all";
+    $$(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === "all"));
+    renderRows();
+    setTimeout(() => {
+      const el = document.querySelector(`.tbl-row[data-id="${match.id}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("highlight");
+        setTimeout(() => el.classList.remove("highlight"), 1500);
+      }
+      openDetail(match.id);
+    }, 80);
+  }
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      e.preventDefault();
+      scanInput.focus();
+      scanInput.select();
+    }
+  });
+
+  $("#syncBtn").addEventListener("click", async () => {
+    if (state.syncing) return;
+    state.syncing = true;
+    $("#syncBtn").classList.add("syncing");
+    $("#syncLabel").textContent = "Syncing…";
+    try {
+      const r = await fetch(SYNC_API, { method: "POST" });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.error || "Sync failed");
+      const totalProcessed = (j.summary?.clients || []).reduce((acc, c) => acc + (c.processed?.length || 0), 0);
+      const totalErrors    = (j.summary?.clients || []).reduce((acc, c) => acc + (c.errors?.length    || 0), 0);
+      toast(`Sync done · ${totalProcessed} processed` + (totalErrors ? ` · ${totalErrors} errors` : ""));
+      await loadRows();
+    } catch (e) {
+      toast("Sync failed: " + e.message, { error: true });
+    } finally {
+      state.syncing = false;
+      $("#syncBtn").classList.remove("syncing");
+      $("#syncLabel").textContent = "Sync now";
+    }
+  });
+
+  // ─── Scan confirm modal (pending → received shortcut) ─────────────────
+  let _pendingScanMatch = null;
+  function openScanConfirmModal(match, opts = {}) {
+    _pendingScanMatch = match;
+    $("#scanConfirmTracking").textContent = match.tracking_number;
+    $("#scanConfirmContent").textContent = match.content || "—";
+
+    // Show outbound tracking row if available (helpful context)
+    const outWrap = $("#scanConfirmOutboundWrap");
+    if (match.outbound_tracking) {
+      outWrap.style.display = "";
+      $("#scanConfirmOutbound").textContent = match.outbound_tracking;
+    } else {
+      outWrap.style.display = "none";
+    }
+
+    // Show "matched via outbound" badge when applicable
+    const viaBadge = $("#scanConfirmViaOutbound");
+    viaBadge.style.display = opts.viaOutbound ? "" : "none";
+
+    // Button label depends on current status
+    $("#scanConfirmBtn").textContent = match.status === "exception" ? "✓ Receive (resolve exception)" : "✓ Mark received";
+    $("#scanConfirmModal").classList.add("open");
+    // Focus the confirm button so Enter = confirm
+    setTimeout(() => $("#scanConfirmBtn").focus(), 60);
+  }
+  function closeScanConfirmModal() {
+    $("#scanConfirmModal").classList.remove("open");
+    _pendingScanMatch = null;
+    // Return focus to scan input for rapid multi-scan
+    setTimeout(() => $("#scan").focus(), 40);
+  }
+  window.closeScanConfirmModal = closeScanConfirmModal;
+  $("#scanConfirmBtn").addEventListener("click", async () => {
+    if (!_pendingScanMatch) return;
+    const id = _pendingScanMatch.id;
+    closeScanConfirmModal();
+    await doAction(id, "receive");
+  });
+
+  // ─── Orphan modal (unknown tracking) ──────────────────────────────────
+  let _pendingOrphanTracking = null;
+  function openOrphanModal(tracking) {
+    _pendingOrphanTracking = tracking;
+    $("#orphanTracking").textContent = tracking;
+    $("#orphanNotes").value = "";
+    // Populate client select from state.clients
+    const sel = $("#orphanClientSelect");
+    sel.innerHTML = state.clients.map(c =>
+      `<option value="${c.client_id}">${escapeHtml(c.display_name)}</option>`
+    ).join("");
+    // Default to active client if one is selected
+    if (state.activeClient) sel.value = state.activeClient;
+    $("#orphanModal").classList.add("open");
+    setTimeout(() => $("#orphanConfirmBtn").focus(), 60);
+  }
+  function closeOrphanModal() {
+    $("#orphanModal").classList.remove("open");
+    _pendingOrphanTracking = null;
+    setTimeout(() => $("#scan").focus(), 40);
+  }
+  window.closeOrphanModal = closeOrphanModal;
+  $("#orphanConfirmBtn").addEventListener("click", async () => {
+    if (!_pendingOrphanTracking) return;
+    if (!requireOperator()) return;
+    const tracking = _pendingOrphanTracking;
+    const clientId = $("#orphanClientSelect").value;
+    const notes = $("#orphanNotes").value.trim();
+    if (!clientId) { toast("Pick a client", { error: true }); return; }
+
+    $("#orphanConfirmBtn").disabled = true;
+    try {
+      const j = await apiPost({
+        action: "create_orphan",
+        tracking_number: tracking,
+        client_id: clientId,
+        operator: state.operator,
+        notes
+      });
+      closeOrphanModal();
+      if (j.row) {
+        state.rows.unshift(j.row);
+        renderRows();
+        renderCounts();
+        setTimeout(() => highlightAndOpen(j.row), 60);
+      }
+      toast(`Orphan created · ${shortTracking(tracking)}`);
+    } catch (e) {
+      if (e.message && e.message.includes("already exists")) {
+        toast("Tracking already registered for this client", { error: true });
+      } else {
+        toast("Failed: " + e.message, { error: true });
+      }
+    } finally {
+      $("#orphanConfirmBtn").disabled = false;
+    }
+  });
+
+  // Escape key closes all modals or clears batch selection
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if ($("#processOrphanModal").classList.contains("open")) closeProcessOrphanModal();
+    else if ($("#fixMatchModal").classList.contains("open")) closeFixMatchModal();
+    else if ($("#linkOutboundModal").classList.contains("open")) closeLinkOutboundModal();
+    else if ($("#scanConfirmModal").classList.contains("open")) closeScanConfirmModal();
+    else if ($("#orphanModal").classList.contains("open")) closeOrphanModal();
+    else if ($("#batchShipModal").classList.contains("open")) closeBatchShipModal();
+    else if ($("#operatorModal").classList.contains("open")) closeOperatorModal();
+    else if ($("#reasonModal").classList.contains("open")) closeReasonModal();
+    else if (state.batchSelection.size > 0) clearBatchSelection();
+  });
+
+  // ─── Operator modal ─────────────────────────────────────────────────
+  function openOperatorModal() {
+    $("#operatorInput").value = state.operator || "";
+    $("#operatorModal").classList.add("open");
+    setTimeout(() => $("#operatorInput").focus(), 60);
+  }
+  function closeOperatorModal() { $("#operatorModal").classList.remove("open"); }
+  window.closeOperatorModal = closeOperatorModal;
+  $("#operatorBtn").addEventListener("click", openOperatorModal);
+  $("#operatorConfirm").addEventListener("click", () => {
+    const name = $("#operatorInput").value.trim();
+    if (!name) { toast("Name cannot be empty", { error: true }); return; }
+    saveOperator(name);
+    closeOperatorModal();
+    toast(`Hello, ${name}`);
+  });
+  $("#operatorInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("#operatorConfirm").click();
+    if (e.key === "Escape") closeOperatorModal();
+  });
+
+  // ─── Exception reason modal ────────────────────────────────────────
+  let _pendingReasonId = null;
+  function openReasonModal(id) {
+    _pendingReasonId = id;
+    $("#reasonInput").value = "";
+    $("#reasonModal").classList.add("open");
+    setTimeout(() => $("#reasonInput").focus(), 60);
+  }
+  function closeReasonModal() {
+    $("#reasonModal").classList.remove("open");
+    _pendingReasonId = null;
+  }
+  window.openReasonModal = openReasonModal;
+  window.closeReasonModal = closeReasonModal;
+  $("#reasonConfirm").addEventListener("click", () => {
+    if (!_pendingReasonId) return;
+    const reason = $("#reasonInput").value.trim();
+    const id = _pendingReasonId;
+    closeReasonModal();
+    doAction(id, "exception", { reason });
+  });
+  $("#reasonInput").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeReasonModal();
+  });
+
+  (async function init() {
+    try {
+      loadOperator();
+      wireProcessOrphanDropZone();
+      await loadClients();
+      await loadRows();
+      // First-time user — prompt for operator name
+      if (!state.operator) {
+        setTimeout(openOperatorModal, 400);
+      }
+    } catch (e) {
+      toast("Init failed: " + e.message, { error: true });
+    }
+  })();
+</script>
+
+</main>
+</div> <!-- /.layout -->
+
+<script>
+/* ──────────────────────────────────────────────────────────────────
+   Filter bar hook (additive, isolated)
+   - Runs OUTSIDE the main app script. Does not modify state or rerender.
+   - Reads the rendered .tbl-row nodes and toggles display:none on them.
+   - Reapplies on every DOM mutation of #rows so it survives renderRows().
+   - Inputs: #extraSearch, #extraStatus, #extraFrom, #extraTo, #extraClear
+─────────────────────────────────────────────────────────────────── */
+(function () {
+  "use strict";
+
+  const $$ = (s) => document.querySelectorAll(s);
+  const $  = (s) => document.querySelector(s);
+
+  function getDateFromAge(ageStr) {
+    return null;
+  }
+
+  function rowMatches(row, q, st, fromIso, toIso) {
+    if (st) {
+      const badge = row.querySelector(".status-badge");
+      if (!badge || !badge.classList.contains("sb-" + st)) return false;
+    }
+    if (q) {
+      const text = row.textContent.toLowerCase();
+      if (!text.includes(q)) return false;
+    }
+    if (fromIso || toIso) {
+      // Each row now carries its creation date in data-created (ISO). Compare
+      // the date portion (YYYY-MM-DD) so From/To are inclusive whole-day bounds.
+      const created = (row.getAttribute("data-created") || "").slice(0, 10);
+      if (!created) return false;            // no date on row → exclude when filtering by date
+      if (fromIso && created < fromIso) return false;
+      if (toIso   && created > toIso)   return false;
+    }
+    return true;
+  }
+
+  function applyFilters() {
+    const q       = ($("#extraSearch") && $("#extraSearch").value || "").trim().toLowerCase();
+    const st      = ($("#extraStatus") && $("#extraStatus").value || "").trim();
+    const fromIso = ($("#extraFrom")   && $("#extraFrom").value   || "").trim();
+    const toIso   = ($("#extraTo")     && $("#extraTo").value     || "").trim();
+
+    if (!q && !st && !fromIso && !toIso) {
+      $$(".tbl-row").forEach(r => { r.style.display = ""; });
+      return;
+    }
+    $$(".tbl-row").forEach(r => {
+      r.style.display = rowMatches(r, q, st, fromIso, toIso) ? "" : "none";
+    });
+  }
+
+  function clearAll() {
+    if ($("#extraSearch")) $("#extraSearch").value = "";
+    if ($("#extraStatus")) $("#extraStatus").value = "";
+    if ($("#extraFrom"))   $("#extraFrom").value   = "";
+    if ($("#extraTo"))     $("#extraTo").value     = "";
+    applyFilters();
+  }
+
+  function wire() {
+    const inputs = ["#extraSearch", "#extraStatus", "#extraFrom", "#extraTo"];
+    inputs.forEach(sel => {
+      const el = $(sel);
+      if (!el) return;
+      el.addEventListener("input",  applyFilters);
+      el.addEventListener("change", applyFilters);
+    });
+    const clearBtn = $("#extraClear");
+    if (clearBtn) clearBtn.addEventListener("click", clearAll);
+
+    // Re-apply filters whenever the rows container is re-rendered by the app
+    const rowsHost = $("#rows");
+    if (rowsHost) {
+      const obs = new MutationObserver(() => { applyFilters(); });
+      obs.observe(rowsHost, { childList: true, subtree: false });
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", wire);
+  } else {
+    wire();
+  }
+})();
+</script>
+
+</body>
+</html>
