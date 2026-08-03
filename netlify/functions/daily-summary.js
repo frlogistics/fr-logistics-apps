@@ -59,13 +59,93 @@ async function getClients() {
   return res.json();
 }
 
-function matchClient(movementClientName, clients) {
+// ── Client matching ───────────────────────────────────────────────
+//
+// `shipments_general.client` is written from dropship_client_configs
+// .client_name_billing, which does NOT always equal the fr_clients fields
+// character for character. Real case found 2026-08-03: LN Store had
+// "LN Store, LLC" (with comma) in shipments_general while fr_clients holds
+// company "LN Store LLC" (no comma) and store_name "LN -Store". Exact
+// comparison never matched, so that client silently never received a single
+// daily report despite 91 inbound and 94 outbound movements on record.
+//
+// Fix: try exact first (unchanged behaviour, zero risk), then fall back to a
+// punctuation-insensitive comparison.
+//
+// SAFETY: a loose match must never send one client's numbers to another
+// client. If a normalized key resolves to more than one distinct fr_clients
+// row, we refuse to guess — no message is sent and the ambiguity is logged.
+function norm(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")   // punctuation, &, hyphens → space
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function waDigits(c) {
+  return String(c.wa_number || "").replace(/[^0-9]/g, "").length;
+}
+
+// Build { normalizedKey → [client, ...] } across name / company / store_name.
+function buildClientIndex(clients) {
+  const idx = new Map();
+  for (const c of clients) {
+    for (const field of ["name", "company", "store_name"]) {
+      const key = norm(c[field]);
+      if (!key) continue;
+      if (!idx.has(key)) idx.set(key, []);
+      const bucket = idx.get(key);
+      if (!bucket.some(x => x.id === c.id)) bucket.push(c);
+    }
+  }
+  return idx;
+}
+
+// Resolve a set of candidates down to one, or to nobody.
+// Duplicates are real in fr_clients: "FR-Logistics" exists twice (Jose and
+// Joe) and "Pacific Horizon Investments LLC" twice (Jose V. and Shamy). The
+// original code used .find(), which silently returned whichever row happened
+// to come first — including rows with notifications off. Tie-break on who is
+// actually reachable; if that still leaves more than one, send nothing.
+function pickOne(candidates, label, how) {
+  if (candidates.length === 1) return candidates[0];
+
+  const reachable = candidates.filter(c => c.wa_notifications && waDigits(c) >= 10);
+  if (reachable.length === 1) {
+    console.log(`[daily-summary] "${label}" matched ${candidates.length} rows (${how}) → picked ${reachable[0].name} (only one with notifications on)`);
+    return reachable[0];
+  }
+
+  console.warn(
+    `[daily-summary] AMBIGUOUS "${label}" (${how}) → ` +
+    candidates.map(c => `${c.name} / ${c.company} (${c.id})`).join(" | ") +
+    " — refusing to guess, nothing sent"
+  );
+  return null;
+}
+
+function matchClient(movementClientName, clients, index) {
   const q = movementClientName.toLowerCase().trim();
-  return clients.find(c =>
+
+  // 1. Exact match — original behaviour, but collecting ALL hits instead of
+  //    taking the first blindly.
+  const exact = clients.filter(c =>
     (c.name        && c.name.toLowerCase().trim()       === q) ||
     (c.company     && c.company.toLowerCase().trim()    === q) ||
     (c.store_name  && c.store_name.toLowerCase().trim() === q)
   );
+  if (exact.length) return pickOne(exact, movementClientName, "exact");
+
+  // 2. Punctuation-insensitive fallback. Real case: shipments_general holds
+  //    "LN Store, LLC" (with comma) while fr_clients has company
+  //    "LN Store LLC" (no comma) and store_name "LN -Store", so exact
+  //    comparison never matched and that client never got a single report.
+  const bucket = index.get(norm(movementClientName));
+  if (!bucket || bucket.length === 0) return null;
+  const hit = pickOne(bucket, movementClientName, "normalized");
+  if (hit) console.log(`[daily-summary] normalized match: "${movementClientName}" → ${hit.company || hit.name}`);
+  return hit;
 }
 
 async function sendWA(to, clientName, dateLabel, inbound, outbound) {
@@ -127,6 +207,7 @@ export default async function handler(req) {
 
     // 3. Load client registry from fr_clients
     const clients = await getClients();
+    const clientIndex = buildClientIndex(clients);
 
     // 4. Date label for template
     const dateLabel = new Date().toLocaleDateString("en-US", {
@@ -142,7 +223,7 @@ export default async function handler(req) {
     const allOutbound = movements.filter(m => m.direction === "Outbound").length;
 
     for (const [clientName, counts] of Object.entries(byClient)) {
-      const reg = matchClient(clientName, clients);
+      const reg = matchClient(clientName, clients, clientIndex);
 
       if (!reg) {
         console.log(`[daily-summary] No match in fr_clients for: "${clientName}" — skipped`);
