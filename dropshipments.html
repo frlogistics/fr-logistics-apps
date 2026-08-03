@@ -35,6 +35,10 @@
     --s-shipped-bg: #dcfce7;      --s-shipped-text: #16a34a;
     --s-orphan-bg: #fce7f3;       --s-orphan-text: #be185d;
     --s-exception-bg: #fee2e2;    --s-exception-text: #dc2626;
+
+    /* ── Day 6: consolidated packages (N outbound orders, 1 inbound box) ── */
+    --grp-bg: #ede9fe;   --grp-text: #5b21b6;   --grp-line: #8b5cf6;
+    --note-bg: #fffbeb;  --note-text: #92400e;  --note-line: #f59e0b;
   }
   body {
     font-family: 'DM Sans', sans-serif;
@@ -224,6 +228,39 @@
   .kpi.exception .kpi-label { color: var(--s-exception-text); }
 
   /* ─── SCAN BAR ───────────────────────────────── */
+  /* ── Day 6: consolidated packages ─────────────────────────────────── */
+  /* One inbound box, several outbound orders. The chip and the left rule
+     exist so an operator can never look at a row and think it's the whole
+     box when it isn't. */
+  .grp-chip {
+    display:inline-block; margin-left:6px; padding:1px 7px; border-radius:999px;
+    background:var(--grp-bg); color:var(--grp-text);
+    font-family:'DM Mono',monospace; font-size:10px; font-weight:700;
+    letter-spacing:.03em; vertical-align:middle;
+  }
+  .tbl-row.in-group { box-shadow: inset 3px 0 0 var(--grp-line); }
+  .grp-note {
+    background:var(--note-bg); color:var(--note-text);
+    border-left:3px solid var(--note-line);
+    padding:10px 13px; border-radius:8px; font-size:12.5px; line-height:1.5;
+    margin:12px 0;
+  }
+  .grp-note strong { font-weight:700; }
+  .grp-list { margin:14px 0; border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  .grp-item {
+    display:grid; grid-template-columns:44px 1fr auto; gap:10px; align-items:center;
+    padding:11px 13px; border-bottom:1px solid var(--border); background:#fff;
+  }
+  .grp-item:last-child { border-bottom:none; }
+  .grp-item.done { background:#f8fafc; opacity:.68; }
+  .grp-seq {
+    font-family:'DM Mono',monospace; font-size:11px; font-weight:700;
+    color:var(--grp-text); background:var(--grp-bg);
+    border-radius:6px; padding:4px 0; text-align:center;
+  }
+  .grp-ord { font-family:'DM Mono',monospace; font-size:11.5px; color:var(--muted); }
+  .grp-cnt { font-size:13px; color:var(--text); line-height:1.35; }
+
   .scan-wrap {
     background: var(--card);
     border: 1.5px solid var(--border);
@@ -963,6 +1000,40 @@
   </div>
 </div>
 
+<!-- Modal: consolidated box — several outbound orders under one inbound tracking -->
+<div class="modal-backdrop" id="groupScanModal">
+  <div class="modal-box" style="max-width: 620px;">
+    <h3>📦 Esta caja trae varias órdenes</h3>
+    <div style="background:#f8fafc; padding:12px 14px; border-radius:10px; margin:12px 0;">
+      <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; margin-bottom:5px;">Tracking de entrada</div>
+      <div id="grpTracking" style="font-family:'DM Mono',monospace; font-weight:600; font-size:15px;"></div>
+    </div>
+    <div id="grpNote" class="grp-note" style="display:none;"></div>
+    <p style="color:var(--muted); font-size:13px; margin:4px 0 0 0;">
+      Un solo bulto, <strong id="grpCount"></strong> salidas distintas. Cada una lleva su propia etiqueta y su propio destino.
+    </p>
+    <div class="grp-list" id="grpList"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeGroupScanModal()">Cerrar</button>
+      <button class="btn btn-primary" id="grpReceiveBtn" style="min-width:190px;"></button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: shipping one order out of a consolidated box -->
+<div class="modal-backdrop" id="shipGroupModal">
+  <div class="modal-box" style="max-width: 620px;">
+    <h3>🚚 Faltan órdenes de esta misma caja</h3>
+    <div id="shipGrpNote" class="grp-note"></div>
+    <p style="color:var(--muted); font-size:13px; margin:4px 0 0 0;">Todavía sin despachar:</p>
+    <div class="grp-list" id="shipGrpList"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeShipGroupModal()">Cancelar</button>
+      <button class="btn btn-primary" id="shipGrpConfirmBtn" style="min-width:200px;">✓ Despachar solo esta</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: link outbound trackings (post-print) -->
 <div class="modal-backdrop" id="linkOutboundModal">
   <div class="modal-box" style="max-width: 560px;">
@@ -1265,7 +1336,16 @@
       body: JSON.stringify(body)
     });
     const j = await r.json();
-    if (!r.ok) throw new Error(j.error || "Request failed");
+    if (!r.ok) {
+      // Day 6: keep the whole server payload on the error. Guards like
+      // GROUP_INCOMPLETE return structured data (which sibling orders are
+      // still pending) that the UI needs to show — throwing only the message
+      // string would drop it.
+      const err = new Error(j.error || "Request failed");
+      err.payload = j;
+      err.httpStatus = r.status;
+      throw err;
+    }
     return j;
   }
 
@@ -1300,6 +1380,10 @@
       // Guard Opción 2 (backend): orphan sin email/label no puede pasar a received.
       if (e.message && (e.message.includes("ORPHAN_NO_DOCS") || e.message.includes("no email/label"))) {
         toast("Recibido físico, pero sin email/label → queda en Orphans hasta el match.", { error: true });
+      } else if (e.payload && e.payload.code === "GROUP_INCOMPLETE") {
+        // Day 6: not a failure — the box holds sibling orders that haven't
+        // shipped. Show them, and let the operator ship this one knowingly.
+        openShipGroupModal(id, e.payload);
       } else {
         toast("Failed: " + e.message, { error: true });
       }
@@ -2392,7 +2476,11 @@
       const platform = r.outbound_platform ? ` <span style="opacity:.55; font-family:'DM Mono'; font-size: 11px;">· ${escapeHtml(r.outbound_platform)}</span>` : "";
       const selectable = isBatchEligible(r);
       const selected = state.batchSelection.has(r.id);
-      const rowClass = selected ? "tbl-row selected" : "tbl-row";
+      const inGroup = (r.group_total || 0) > 1;
+      const rowClass = (selected ? "tbl-row selected" : "tbl-row") + (inGroup ? " in-group" : "");
+      const grpChip = inGroup
+        ? `<span class="grp-chip" title="Esta caja trae ${r.group_total} órdenes de salida">${r.group_seq || "?"} de ${r.group_total}</span>`
+        : "";
       const checkTitle = selectable
         ? `Select for batch action (status: ${r.status})`
         : `Cannot batch from status '${r.status}'`;
@@ -2402,8 +2490,8 @@
             <input type="checkbox" class="row-check" data-row-id="${r.id}" ${selected ? "checked" : ""} ${selectable ? "" : "disabled"}>
           </label>
           <div>
-            <div class="tracking">${escapeHtml(r.tracking_number)}</div>
-            ${r.order_id ? `<div class="tracking-small">${escapeHtml(r.order_id)}</div>` : ""}
+            <div class="tracking">${escapeHtml(r.tracking_number)}${!r.order_id ? grpChip : ""}</div>
+            ${r.order_id ? `<div class="tracking-small">${escapeHtml(r.order_id)}${grpChip}</div>` : ""}
           </div>
           <div><span class="carrier-pill ${carrierClass(r.carrier)}">${escapeHtml(r.carrier || "—")}</span></div>
           <div style="font-size: 12px; color: var(--muted);">${escapeHtml(r.outbound_carrier || "—")}${platform}</div>
@@ -2684,6 +2772,117 @@
   window.openLabelOnly = openLabelOnly;
   window.doAction = doAction;
 
+  // ═══ Day 6: consolidated packages ══════════════════════════════════════
+  // Amazon merges several purchases into one box. Each purchase still needs
+  // its own outbound label and goes to a different customer. Everything below
+  // exists for one reason: the operator must never look at one row and
+  // believe the box is finished.
+
+  let _grpRows = [];
+
+  function grpItemHtml(r, done) {
+    return `
+      <div class="grp-item ${done ? "done" : ""}">
+        <div class="grp-seq">${r.group_seq || "?"}</div>
+        <div>
+          <div class="grp-cnt">${escapeHtml(r.content || "sin contenido")}</div>
+          <div class="grp-ord">${escapeHtml(r.order_id || "sin orden")}</div>
+        </div>
+        <div><span class="status-badge sb-${r.status}">${r.status}</span></div>
+      </div>`;
+  }
+
+  // Called from the scanner when one inbound tracking resolves to several rows.
+  function openGroupScanModal(rows, group) {
+    _grpRows = rows.slice().sort((a, b) => (a.group_seq || 99) - (b.group_seq || 99));
+    const declared = (group && group.declared) || _grpRows[0]?.group_total || _grpRows.length;
+
+    $("#grpTracking").textContent = _grpRows[0]?.tracking_number || "";
+    $("#grpCount").textContent = `${declared} órdenes`;
+    $("#grpList").innerHTML = _grpRows
+      .map(r => grpItemHtml(r, r.status !== "pending" && r.status !== "exception"))
+      .join("");
+
+    // Amber note: informative, not alarming. The client declared N orders but
+    // only M emails have arrived. The box is here — receive what's here.
+    const note = $("#grpNote");
+    const missing = group && group.missing ? group.missing : Math.max(0, declared - _grpRows.length);
+    if (missing > 0) {
+      note.style.display = "";
+      note.innerHTML = `<strong>Caja de ${declared} órdenes — ${_grpRows.length} registrada${_grpRows.length === 1 ? "" : "s"} hasta ahora.</strong><br>
+        Puedes recibir ${_grpRows.length === 1 ? "la que está" : `las ${_grpRows.length} que están`} aquí.
+        ${missing === 1 ? "La que falta aparecerá" : `Las ${missing} que faltan aparecerán`} cuando llegue su correo — no hay que hacer nada más.`;
+    } else {
+      note.style.display = "none";
+    }
+
+    const receivable = _grpRows.filter(r => r.status === "pending" || r.status === "exception");
+    const btn = $("#grpReceiveBtn");
+    if (receivable.length) {
+      btn.style.display = "";
+      btn.textContent = receivable.length === 1
+        ? "✓ Recibir esta orden"
+        : `✓ Recibir las ${receivable.length}`;
+      btn.onclick = () => receiveGroup(receivable.map(r => r.id));
+    } else {
+      btn.style.display = "none";
+    }
+
+    $("#groupScanModal").classList.add("open");
+    setTimeout(() => btn.focus(), 60);
+  }
+  function closeGroupScanModal() { $("#groupScanModal").classList.remove("open"); }
+  window.closeGroupScanModal = closeGroupScanModal;
+
+  // One physical box → receiving is a single operator gesture, even though it
+  // writes several rows.
+  async function receiveGroup(ids) {
+    if (!requireOperator()) return;
+    const btn = $("#grpReceiveBtn");
+    btn.disabled = true;
+    let ok = 0, failed = 0;
+    for (const id of ids) {
+      try {
+        const j = await apiPost({ action: "receive", id, operator: state.operator });
+        if (j.row) {
+          const idx = state.rows.findIndex(r => r.id === id);
+          if (idx >= 0) state.rows[idx] = { ...state.rows[idx], ...j.row };
+        }
+        ok++;
+      } catch (e) {
+        console.error("receiveGroup failed for", id, e);
+        failed++;
+      }
+    }
+    btn.disabled = false;
+    closeGroupScanModal();
+    renderRows();
+    renderCounts();
+    if (failed) toast(`${ok} recibida(s), ${failed} con error`, { error: true });
+    else toast(`${ok} órden${ok === 1 ? "" : "es"} recibida${ok === 1 ? "" : "s"} · 1 caja`);
+  }
+
+  // Shown when shipping one order while siblings from the same box are still
+  // pending. This is a confirmation, never a dead end.
+  function openShipGroupModal(id, payload) {
+    const pending = payload.pending || [];
+    const total = payload.group_total || (pending.length + 1);
+    $("#shipGrpNote").innerHTML =
+      `<strong>Esta caja trae ${total} órdenes.</strong><br>
+       Al despachar esta quedan <strong>${pending.length}</strong> sin despachar. No cierres la caja todavía.`;
+    $("#shipGrpList").innerHTML = pending.map(r => grpItemHtml(r, false)).join("");
+    const btn = $("#shipGrpConfirmBtn");
+    btn.onclick = () => {
+      closeShipGroupModal();
+      doAction(id, "ship", { confirm_group: true });
+    };
+    $("#shipGroupModal").classList.add("open");
+    setTimeout(() => btn.focus(), 60);
+  }
+  function closeShipGroupModal() { $("#shipGroupModal").classList.remove("open"); }
+  window.closeShipGroupModal = closeShipGroupModal;
+
+
   // ─── Delete orphan (cleanup for bad scans) ───────────────────────────
   // Hard-deletes a row in status='orphan'. Used when the operator scanned
   // something that isn't actually a tracking number. Never works on rows
@@ -2738,7 +2937,13 @@
 
     const valLower = val.toLowerCase();
 
-    // Try local first (fast, zero network). Match by inbound OR outbound tracking.
+    // Day 6: a consolidated box has SEVERAL rows under one inbound tracking.
+    // Collect them all — taking .find() would silently pick one and hide the
+    // rest, which is exactly how orders get left on the bench.
+    const localGroup = state.rows.filter(r =>
+      (r.tracking_number || "").toLowerCase() === valLower
+    );
+
     let match = state.rows.find(r =>
       (r.tracking_number    || "").toLowerCase() === valLower ||
       (r.outbound_tracking  || "").toLowerCase() === valLower
@@ -2747,10 +2952,42 @@
       ? (((match.outbound_tracking || "").toLowerCase() === valLower) ? "outbound_tracking" : "tracking_number")
       : null;
 
+    // Scanning the INBOUND tracking of a consolidated box → show the whole box.
+    // Scanning an OUTBOUND label still resolves to its single order, which is
+    // correct: that barcode identifies one parcel, not the box.
+    if (localGroup.length > 1 && matchField === "tracking_number") {
+      openGroupScanModal(localGroup, null);
+      return;
+    }
+    if (localGroup.length === 1 && (localGroup[0].group_total || 0) > 1 && matchField === "tracking_number") {
+      // Only one row in view but the client declared more — ask the server for
+      // the full picture so the amber note can be accurate.
+      try {
+        const j = await apiGet({ action: "lookup", tracking: val });
+        const inbound = (j.rows || []).filter(r => r.match_field === "tracking_number");
+        inbound.forEach(r => { if (!state.rows.find(x => x.id === r.id)) state.rows.unshift(r); });
+        openGroupScanModal(inbound.length ? inbound : localGroup, j.group);
+        return;
+      } catch (err) {
+        console.error("group lookup failed", err);
+        openGroupScanModal(localGroup, null);
+        return;
+      }
+    }
+
     // Fall back to server lookup (covers rows not currently in view / filters applied).
     if (!match) {
       try {
         const j = await apiGet({ action: "lookup", tracking: val });
+        const inbound = (j.rows || []).filter(r => r.match_field === "tracking_number");
+
+        // Consolidated box found on the server side.
+        if (inbound.length > 1 || (j.group && j.group.declared > 1)) {
+          inbound.forEach(r => { if (!state.rows.find(x => x.id === r.id)) state.rows.unshift(r); });
+          openGroupScanModal(inbound, j.group);
+          return;
+        }
+
         if (j.rows && j.rows.length === 1) {
           match = j.rows[0];
           matchField = match.match_field || "tracking_number";
