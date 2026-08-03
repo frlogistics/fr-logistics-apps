@@ -21,8 +21,32 @@
 //        from the filename's numeric ID. PDF-extracted value takes precedence;
 //        filename is kept as fallback for when PDF parsing returns nothing.
 //
-// Model: 1 Gmail message = 1 package = 1 DB row.
-// Idempotent: uses (client_id, tracking_number) unique index to prevent duplicates.
+// Day 6 (2026-08-03): CONSOLIDATED PACKAGES. Amazon (and other suppliers) merge
+//        several purchases into ONE box with ONE inbound tracking, while each
+//        purchase still fulfills a DIFFERENT outbound order. The client sends
+//        one email per outbound Order ID, all repeating the same inbound
+//        Tracking Number. Four things had to change for that to work:
+//          1. Row identity is now (client_id, tracking_number, order_id).
+//          2. Label storage path includes order_id — otherwise the 2nd and 3rd
+//             PDFs overwrote the 1st (same path + x-upsert:true).
+//          3. Orphan adoption is a separate lookup: an orphan row created by
+//             scanning the physical box has NO order_id, so the exact match
+//             can't find it. First email adopts the orphan; the rest insert.
+//          4. group_total is read from the email body ("Ordenes en este
+//             paquete: 3") so the warehouse knows the box isn't done yet.
+//        group_seq is assigned as (rows already ingested for this tracking + 1).
+//
+// Day 6: outbound_tracking extraction is now PER CLIENT via
+//        dropship_client_configs.outbound_filename_pattern / outbound_pdf_pattern.
+//        NULL on both = historical defaults, so LN Store is unaffected.
+//        When nothing matches, the sync returns pdf_hint with the numeric
+//        candidates found in the label so the pattern can be configured
+//        without guessing.
+//
+// Model: 1 Gmail message = 1 OUTBOUND ORDER = 1 DB row.
+//        (N rows may share one inbound tracking_number.)
+// Idempotent: uses (client_id, tracking_number, COALESCE(order_id,'')) unique
+//        index to prevent duplicates.
 
 // Note: import from /lib/pdf-parse.js (not the package root) to skip the
 // debug auto-test that runs on `require('pdf-parse')` and breaks in serverless
@@ -150,13 +174,27 @@ function findPdfAttachment(payload, pattern) {
 // a different filename convention), the field stays NULL and the modal serves
 // as the fallback path.
 //
-// FUTURE: if additional clients onboard with different filename formats,
-// move this regex into dropship_client_configs.outbound_filename_pattern
-// (per-client, like parsing_rules and attachment_pattern).
-function extractOutboundFromFilename(filename) {
+// Day 6: this is now per-client. cfg.outbound_filename_pattern holds a regex
+// with ONE capture group; NULL falls back to the historical LN Store format,
+// so existing clients keep working with no config change.
+//
+// Note for Shop World (SW): their PDFs are named after the SALE order
+// (e.g. "MLA-82502-2026.pdf"), not the outbound tracking, so their
+// outbound_filename_pattern stays NULL on purpose — their number has to come
+// from the PDF content instead. See extractBarcodeFromPDF.
+const DEFAULT_OUTBOUND_FILENAME_RE = "shipping_label_(\\d+)\\.pdf";
+
+function extractOutboundFromFilename(filename, pattern) {
   if (!filename) return null;
-  const m = filename.match(/shipping_label_(\d+)\.pdf/i);
-  return m ? m[1] : null;
+  let re;
+  try {
+    re = new RegExp(pattern || DEFAULT_OUTBOUND_FILENAME_RE, "i");
+  } catch (err) {
+    console.warn(`[outbound-filename] bad pattern "${pattern}": ${err.message}`);
+    re = new RegExp(DEFAULT_OUTBOUND_FILENAME_RE, "i");
+  }
+  const m = filename.match(re);
+  return m && m[1] ? m[1] : null;
 }
 
 // ─── Extract real barcode from PDF content (Day 5) ───────────────────────────
@@ -177,7 +215,13 @@ function extractOutboundFromFilename(filename) {
 //
 // Returns: { barcode, source } on success, null otherwise.
 // Non-fatal: any error returns null so the sync continues with filename fallback.
-async function extractBarcodeFromPDF(pdfBuffer, filenameId) {
+// Day 6: cfgPattern (dropship_client_configs.outbound_pdf_pattern) is tried
+// FIRST when present, so a client whose label format we already know is
+// resolved without touching this file. When nothing matches, the function
+// returns a `hint` with the numeric candidates found in the label, which the
+// sync surfaces in its summary so the pattern can be configured from evidence
+// instead of guessed.
+async function extractBarcodeFromPDF(pdfBuffer, filenameId, cfgPattern = null) {
   if (!pdfBuffer) return null;
 
   let text;
@@ -193,6 +237,16 @@ async function extractBarcodeFromPDF(pdfBuffer, filenameId) {
   // (e.g. "MA IL1 033 299 91 TX" → "MAIL103329991TX")
   const cleaned = text.replace(/\s+/g, "");
 
+  // Pattern 0 — per-client pattern from config. Highest priority.
+  if (cfgPattern) {
+    try {
+      const m = cleaned.match(new RegExp(cfgPattern, "i"));
+      if (m && m[1]) return { barcode: m[1].toUpperCase(), source: "pdf_client_pattern" };
+    } catch (err) {
+      console.warn(`[pdf-extract] bad outbound_pdf_pattern "${cfgPattern}": ${err.message}`);
+    }
+  }
+
   // Pattern 1 — MailAmericas / Total Express (Brazil, Remessa Conforme)
   // Specific format, highest priority when present.
   const brazilMatch = cleaned.match(/MAIL\d{9,10}TX/i);
@@ -206,8 +260,10 @@ async function extractBarcodeFromPDF(pdfBuffer, filenameId) {
     return { barcode: filenameId, source: "pdf_filename_confirmed" };
   }
 
-  // No recognized pattern matched; caller falls back to filename heuristic.
-  return null;
+  // No recognized pattern matched. Return the numeric candidates so whoever
+  // configures outbound_pdf_pattern can see what the label actually contains.
+  const candidates = [...new Set((text.match(/[A-Z0-9]{8,}/gi) || []))].slice(0, 12);
+  return { barcode: null, source: "no_match", hint: candidates };
 }
 
 // ─── Detect carrier from tracking number format ──────────────────────────────
@@ -245,13 +301,26 @@ function detectCarrierFromTracking(tracking) {
 }
 
 // ─── Parser: apply per-client regex rules to email body ──────────────────────
+// META_KEYS are entries inside parsing_rules that are NOT body fields:
+// they configure other parts of the pipeline. Running them as field regexes
+// would put junk in the parsed object.
+const META_KEYS = new Set(["block_separator", "label_file"]);
+const INT_FIELDS = new Set(["qty_boxes", "group_total"]);
+
 function applyParsingRules(body, rules) {
   const out = {};
-  for (const [field, pattern] of Object.entries(rules)) {
-    const re = new RegExp(pattern, "im");
+  for (const [field, pattern] of Object.entries(rules || {})) {
+    if (META_KEYS.has(field)) continue;
+    let re;
+    try {
+      re = new RegExp(pattern, "im");
+    } catch (err) {
+      console.warn(`[parse] bad rule "${field}": ${err.message}`);
+      continue;
+    }
     const m = body.match(re);
     if (m && m[1] !== undefined) {
-      out[field] = field === "qty_boxes" ? parseInt(m[1], 10) : m[1].trim();
+      out[field] = INT_FIELDS.has(field) ? parseInt(m[1], 10) : m[1].trim();
     }
   }
   return out;
@@ -302,26 +371,60 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
     parsed.carrier = detectedCarrier;
   }
 
-  // Idempotency: check if tracking already ingested for this client.
-  const existing = await sbSelect("dropshipments", `?client_id=eq.${cfg.client_id}&tracking_number=eq.${encodeURIComponent(parsed.tracking_number)}&select=id,status`);
-  const existingRow = existing[0];
+  // ── Day 6: row identity is (client, inbound tracking, outbound order) ──────
+  // Pull every row already ingested for this inbound tracking. With a
+  // consolidated package there can be several — one per outbound order.
+  const trackingQ = encodeURIComponent(parsed.tracking_number);
+  const siblings = await sbSelect(
+    "dropshipments",
+    `?client_id=eq.${cfg.client_id}&tracking_number=eq.${trackingQ}&select=id,status,order_id`
+  );
+
+  // 1. Exact match on this outbound order → already ingested.
+  let existingRow = parsed.order_id
+    ? siblings.find(r => r.order_id === parsed.order_id)
+    : siblings.find(r => !r.order_id);
+
+  // 2. Orphan adoption. When the operator scans the physical box before the
+  //    email arrives, the row has this tracking and NO order_id yet, so the
+  //    exact match above can't find it. The FIRST email for the box adopts
+  //    that orphan; the remaining orders insert their own rows.
+  if (!existingRow) {
+    existingRow = siblings.find(r => r.status === "orphan" && !r.order_id) || null;
+  }
+
+  // Group bookkeeping. group_total comes from the email body
+  // ("Ordenes en este paquete: 3"); a value of 1 or absent means a plain
+  // single-order package and both columns stay NULL.
+  const groupTotal = Number.isInteger(parsed.group_total) && parsed.group_total > 1
+    ? parsed.group_total
+    : null;
+  const groupSeq = groupTotal
+    ? siblings.filter(r => r.id !== existingRow?.id).length + 1
+    : null;
 
   // Upload PDF attachment (if present).
   let labelPath = null;
   let labelFilename = null;
   let outboundTracking = null;
+  let pdfHint = null;
   const att = findPdfAttachment(msg.payload, cfg.attachment_pattern || ".*\\.pdf$");
   if (att) {
     const bytes = await gmailGetAttachment(msg.id, att.attachmentId);
     const safeTracking = parsed.tracking_number.replace(/[^A-Za-z0-9._-]/g, "_");
-    labelPath = `${cfg.client_code}/${safeTracking}.pdf`;
+    // Day 6: the order_id MUST be part of the path. Without it, the 2nd and 3rd
+    // labels of a consolidated package write to the same object with
+    // x-upsert:true and silently overwrite the 1st — leaving all three rows
+    // pointing at the same PDF.
+    const safeOrder = (parsed.order_id || "no-order").replace(/[^A-Za-z0-9._-]/g, "_");
+    labelPath = `${cfg.client_code}/${safeTracking}__${safeOrder}.pdf`;
     labelFilename = att.filename;
 
     // Day 5: Try PDF content first for the authoritative barcode (e.g. Brazil
     // routes where the barcode differs from the filename ID). Fall back to
     // filename-based extraction if the PDF parser returns nothing.
-    const filenameId = extractOutboundFromFilename(labelFilename);
-    const pdfResult  = await extractBarcodeFromPDF(bytes, filenameId);
+    const filenameId = extractOutboundFromFilename(labelFilename, cfg.outbound_filename_pattern);
+    const pdfResult  = await extractBarcodeFromPDF(bytes, filenameId, cfg.outbound_pdf_pattern);
 
     if (pdfResult?.barcode) {
       outboundTracking = pdfResult.barcode;
@@ -330,7 +433,8 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
       outboundTracking = filenameId;
       console.log(`[${cfg.client_code}] ${parsed.tracking_number}: outbound=${outboundTracking} (source: filename_fallback)`);
     } else {
-      console.log(`[${cfg.client_code}] ${parsed.tracking_number}: no outbound_tracking extracted (will need Link Outbound modal)`);
+      pdfHint = pdfResult?.hint || null;
+      console.log(`[${cfg.client_code}] ${parsed.tracking_number}: no outbound_tracking extracted (will need Link Outbound modal). PDF candidates: ${(pdfHint || []).join(", ") || "none"}`);
     }
 
     await sbStorageUpload(labelPath, bytes, att.mimeType || "application/pdf");
@@ -352,19 +456,27 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
       outbound_carrier:  cfg.outbound_carrier,
       outbound_platform: cfg.outbound_platform,
       outbound_tracking: outboundTracking,
+      group_seq:         groupSeq,
+      group_total:       groupTotal,
       email_message_id:  msg.id,
       email_received_at: emailReceivedAt,
       orphan_alerted_at: null,
       status:            "received"
     });
     await gmailAddLabel(msg.id, labelIdProcessed);
-    return { status: "orphan_matched", id: existingRow.id };
+    return {
+      status: "orphan_matched",
+      id: existingRow.id,
+      order_id: parsed.order_id || null,
+      group: groupTotal ? `${groupSeq}/${groupTotal}` : null,
+      ...(pdfHint ? { pdf_hint: pdfHint } : {})
+    };
   }
 
   if (existingRow) {
     // Already ingested (not orphan) → just label the email and move on.
     await gmailAddLabel(msg.id, labelIdProcessed);
-    return { status: "already_ingested", id: existingRow.id };
+    return { status: "already_ingested", id: existingRow.id, order_id: existingRow.order_id || null };
   }
 
   // Fresh insert.
@@ -381,13 +493,23 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
     outbound_carrier:  cfg.outbound_carrier,
     outbound_platform: cfg.outbound_platform,
     outbound_tracking: outboundTracking,
+    group_seq:         groupSeq,
+    group_total:       groupTotal,
     email_message_id:  msg.id,
     email_received_at: emailReceivedAt,
     status:            "pending"
   });
 
   await gmailAddLabel(msg.id, labelIdProcessed);
-  return { status: "inserted", id: inserted.id, tracking: parsed.tracking_number };
+  return {
+    status: "inserted",
+    id: inserted.id,
+    tracking: parsed.tracking_number,
+    order_id: parsed.order_id || null,
+    group: groupTotal ? `${groupSeq}/${groupTotal}` : null,
+    outbound_tracking: outboundTracking,
+    ...(pdfHint ? { pdf_hint: pdfHint } : {})
+  };
 }
 
 // ─── Core: sync all active clients ───────────────────────────────────────────
@@ -473,6 +595,8 @@ export default async function handler(req) {
       gmail_user: GMAIL_USER,
       bucket: SB_BUCKET,
       mode: "manual + scheduled (every 2h)",
+      model: "1 Gmail message = 1 outbound order = 1 row; N rows may share one inbound tracking (consolidated packages)",
+      row_identity: "(client_id, tracking_number, COALESCE(order_id,''))",
       usage: {
         run:               "POST /.netlify/functions/dropship-gmail-sync",
         dry_run:           "POST /.netlify/functions/dropship-gmail-sync?dry_run=1",
