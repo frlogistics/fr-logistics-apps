@@ -1734,11 +1734,33 @@
     bar.classList.add("busy");
     btn.textContent = `📤 Shipping ${rows.length}…`;
 
+    // ── Day 6 fix: consolidated packages in a BATCH ────────────────────────
+    // The ship guard asks for confirmation when a row belongs to a box whose
+    // sibling orders haven't shipped. In a batch that fired for every row at
+    // once: the three requests go out in parallel, so each one still sees the
+    // other two as un-shipped and ALL of them get rejected.
+    //
+    // But a batch where the whole group is selected is precisely the case
+    // where the operator HAS seen everything — the confirmation modal lists
+    // every tracking being shipped. So: if the selection (plus anything
+    // already shipped) accounts for the entire group, send confirm_group.
+    // If the batch only covers part of a group, the guard still fires for
+    // those rows, which is what we want.
+    const selIds = new Set(rows.map(r => r.id));
+    const groupCovered = (r) => {
+      if (!((r.group_total || 0) > 1)) return true;
+      const sibs = state.rows.filter(x =>
+        x.tracking_number === r.tracking_number && x.client_id === r.client_id
+      );
+      const accounted = sibs.filter(x => selIds.has(x.id) || x.status === "shipped").length;
+      return accounted >= r.group_total;
+    };
+
     // Parallel POST action=ship for each row. If any fail we report counts.
     const results = await Promise.all(rows.map(r =>
-      apiPost({ action: "ship", id: r.id, operator: state.operator })
+      apiPost({ action: "ship", id: r.id, operator: state.operator, confirm_group: groupCovered(r) })
         .then(j => ({ row: r, ok: true, updated: j.row }))
-        .catch(e => ({ row: r, ok: false, err: e.message }))
+        .catch(e => ({ row: r, ok: false, err: e.message, payload: e.payload }))
     ));
 
     // Apply server updates back to local state to avoid a full reload.
@@ -1757,11 +1779,18 @@
 
     if (failures.length === 0) {
       toast(`✓ Marked ${rows.length} as shipped`);
-    } else if (failures.length < rows.length) {
-      toast(`Shipped ${rows.length - failures.length} · ${failures.length} failed`, { error: true });
-      console.error("batch ship failures:", failures);
     } else {
-      toast(`All ${rows.length} ship attempts failed`, { error: true });
+      const grouped = failures.filter(f => f.payload && f.payload.code === "GROUP_INCOMPLETE");
+      if (grouped.length === failures.length) {
+        // Every failure is a partially-selected consolidated box. Say so
+        // plainly instead of a generic "failed" — the operator needs to know
+        // WHY, and that nothing is broken.
+        toast(`${failures.length} pertenecen a una caja con más órdenes sin despachar. Selecciónalas todas, o despáchalas una por una para confirmar.`, { error: true });
+      } else if (failures.length < rows.length) {
+        toast(`Shipped ${rows.length - failures.length} · ${failures.length} failed`, { error: true });
+      } else {
+        toast(`All ${rows.length} ship attempts failed`, { error: true });
+      }
       console.error("batch ship failures:", failures);
     }
   }
