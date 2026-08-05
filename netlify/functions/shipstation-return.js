@@ -31,6 +31,39 @@
 //   A backend guard ignores schedule_pickup for any non-UPS carrier,
 //   so a stale frontend can never book a USPS pickup by mistake.
 // ════════════════════════════════════════════════════════════════════
+//
+// ════════════════════════════════════════════════════════════════════
+// FIXES — 2026-08
+//
+// (A) MULTI-RECIPIENT EMAIL
+//     The UI's Email field accepts several addresses separated by commas
+//     or semicolons. That raw string used to be pushed into Resend's
+//     `to` array as ONE element, so Resend answered 422 validation_error
+//     ("Invalid `to` field") and NOTHING was sent — not even the
+//     warehouse copy. Recipients are now split, trimmed, validated and
+//     de-duplicated before the call.
+//
+// (B) PICKUP WINDOW TIME ZONE
+//     pickup_window arrived from the UI as a naive local timestamp
+//     ("2026-08-07T08:00:00", no offset). ISO 8601 without an offset is
+//     ambiguous and ShipStation resolves it as UTC, so the window was
+//     shifted 4-7 h earlier in the pickup address's local clock. UPS then
+//     rejected it with "Closing time must be later than or equal to the
+//     earliest allowable close time".
+//
+//     Evidence from return_labels (all 6 rows that carried a window):
+//       Belton TX 76513      sent 09:00-19:00 -> close 14:00 local  OK
+//       Green Bay WI 54303   sent 09:00-17:00 -> close 12:00 local  OK
+//       Belton TX 76513      sent 09:00-17:00 -> close 12:00 local  OK
+//       Gainesville VA 20155 sent 09:00-17:00 -> close 13:00 local  OK
+//       Sacramento CA 95824  sent 09:00-17:00 -> close 10:00 local  FAIL
+//       Los Angeles CA 90048 sent 08:00-18:00 -> close 11:00 local  FAIL
+//
+//     The window is now stamped with the real UTC offset of the pickup
+//     ZIP (DST-aware), e.g. "2026-08-07T08:00:00-07:00". Local wall time
+//     is preserved, so the operator's intent, the stored row and the
+//     customer email all keep reading 8:00 AM - 6:00 PM.
+// ════════════════════════════════════════════════════════════════════
 
 import { getStore } from "@netlify/blobs";
 
@@ -40,6 +73,123 @@ const SS_BASE      = "https://api.shipstation.com/v2";
 const SS_API_KEY   = Netlify.env.get("SS_V2_API_KEY");
 const SUPABASE_URL = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY = Netlify.env.get("SUPABASE_SERVICE_KEY");
+
+// ─── Pickup-window time zone resolution ───────────────────────────────
+// ShipStation expects ISO 8601. A timestamp with no offset is read as UTC,
+// which silently moves the window in the pickup address's local clock.
+// We resolve the address's IANA zone and stamp the real offset for that
+// date, so DST is handled automatically.
+
+const STATE_TZ = {
+  AL:"America/Chicago",    AK:"America/Anchorage",  AZ:"America/Phoenix",
+  AR:"America/Chicago",    CA:"America/Los_Angeles",CO:"America/Denver",
+  CT:"America/New_York",   DE:"America/New_York",   DC:"America/New_York",
+  FL:"America/New_York",   GA:"America/New_York",   HI:"Pacific/Honolulu",
+  ID:"America/Denver",     IL:"America/Chicago",    IN:"America/New_York",
+  IA:"America/Chicago",    KS:"America/Chicago",    KY:"America/New_York",
+  LA:"America/Chicago",    ME:"America/New_York",   MD:"America/New_York",
+  MA:"America/New_York",   MI:"America/New_York",   MN:"America/Chicago",
+  MS:"America/Chicago",    MO:"America/Chicago",    MT:"America/Denver",
+  NE:"America/Chicago",    NV:"America/Los_Angeles",NH:"America/New_York",
+  NJ:"America/New_York",   NM:"America/Denver",     NY:"America/New_York",
+  NC:"America/New_York",   ND:"America/Chicago",    OH:"America/New_York",
+  OK:"America/Chicago",    OR:"America/Los_Angeles",PA:"America/New_York",
+  RI:"America/New_York",   SC:"America/New_York",   SD:"America/Chicago",
+  TN:"America/Chicago",    TX:"America/Chicago",    UT:"America/Denver",
+  VT:"America/New_York",   VA:"America/New_York",   WA:"America/Los_Angeles",
+  WV:"America/New_York",   WI:"America/Chicago",    WY:"America/Denver",
+  PR:"America/Puerto_Rico",VI:"America/Puerto_Rico",
+};
+
+// ZIP3 overrides for states that straddle a time-zone line. Only the
+// high-confidence, high-volume ones are encoded — a wrong override is
+// worse than the state default, which is already correct for the bulk of
+// each state.
+// KNOWN GAPS (add here if a return ever comes from one): ND 586 (Dickinson),
+// MI Upper Peninsula 498/499, far-west KS 677/679, NV 898 (West Wendover),
+// far-west OR 977.
+const ZIP3_TZ = {
+  "324":"America/Chicago",     "325":"America/Chicago",      // FL panhandle
+  "798":"America/Denver",      "799":"America/Denver",       // El Paso TX
+  "885":"America/Denver",                                    // Hudspeth TX
+  "463":"America/Chicago",     "464":"America/Chicago",      // NW Indiana
+  "476":"America/Chicago",     "477":"America/Chicago",      // SW Indiana
+  "420":"America/Chicago",     "421":"America/Chicago",      // western KY
+  "422":"America/Chicago",     "423":"America/Chicago",
+  "424":"America/Chicago",     "425":"America/Chicago",
+  "426":"America/Chicago",     "427":"America/Chicago",
+  "577":"America/Denver",                                    // western SD
+  "691":"America/Denver",      "693":"America/Denver",       // western NE
+  "838":"America/Los_Angeles",                               // northern ID
+  "979":"America/Denver",                                    // eastern OR
+  "865":"America/Denver",                                    // Navajo Nation AZ
+};
+
+const DEFAULT_TZ = "America/New_York";   // warehouse zone; prior behaviour
+
+function resolveTimeZone(zip, state) {
+  const z3 = String(zip || "").replace(/\D/g, "").slice(0, 3);
+  if (ZIP3_TZ[z3]) return { tz: ZIP3_TZ[z3], source: "zip3" };
+  const st = String(state || "").trim().toUpperCase().slice(0, 2);
+  if (STATE_TZ[st]) return { tz: STATE_TZ[st], source: "state" };
+  return { tz: DEFAULT_TZ, source: "default" };
+}
+
+// Minutes to add to UTC to get local time in `tz` at instant `dateUtc`.
+function tzOffsetMinutes(tz, dateUtc) {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const p = {};
+  for (const part of dtf.formatToParts(dateUtc)) p[part.type] = part.value;
+  const asIfUtc = Date.UTC(
+    +p.year, +p.month - 1, +p.day, (+p.hour) % 24, +p.minute, +p.second
+  );
+  return Math.round((asIfUtc - dateUtc.getTime()) / 60000);
+}
+
+function formatOffset(min) {
+  const sign = min < 0 ? "-" : "+";
+  const abs  = Math.abs(min);
+  return `${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
+}
+
+const HAS_OFFSET = /(Z|[+-]\d{2}:?\d{2})$/;
+
+// "2026-08-07T08:00:00" + tz  ->  "2026-08-07T08:00:00-07:00"
+// Local wall time is preserved; only the offset is added.
+function stampOffset(naive, tz) {
+  if (!naive) return naive;
+  const s = String(naive).trim();
+  if (HAS_OFFSET.test(s)) return s;                    // already explicit
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return s;                                    // unparseable, leave as-is
+  const [, y, mo, d, hh, mi, ss = "00"] = m;
+  const wall = `${y}-${mo}-${d}T${hh}:${mi}:${ss}`;
+  // Treat the wall time as UTC to get a first guess, then refine once so
+  // the offset used is the one actually in effect at that local moment.
+  const guess = Date.UTC(+y, +mo - 1, +d, +hh, +mi, +ss);
+  let off = tzOffsetMinutes(tz, new Date(guess));
+  off = tzOffsetMinutes(tz, new Date(guess - off * 60000));
+  return `${wall}${formatOffset(off)}`;
+}
+
+// Returns { window, tz, tzSource, closeHourLocal }
+function normalizePickupWindow(pickup_window, ship_from) {
+  if (!pickup_window) return { window: null, tz: null, tzSource: null, closeHourLocal: null };
+  const { tz, source } = resolveTimeZone(ship_from?.zip, ship_from?.state);
+  const start_at = stampOffset(pickup_window.start_at, tz);
+  const end_at   = stampOffset(pickup_window.end_at,   tz);
+  const closeMatch = String(end_at || "").match(/[T ](\d{2}):/);
+  return {
+    window: { ...pickup_window, start_at, end_at },
+    tz,
+    tzSource: source,
+    closeHourLocal: closeMatch ? +closeMatch[1] : null,
+  };
+}
 
 // ─── Carrier registry ─────────────────────────────────────────────────
 // Single source of truth for which carrier_id/service/pickup a return uses.
@@ -194,11 +344,36 @@ function returnEmailHtml({ carrierLabel, contactName, tracking, pickupConfirm, p
   </div></body></html>`;
 }
 
+// The UI's Email field is free text and operators legitimately type more
+// than one address ("a@x.com, b@x.com"). Resend's `to` takes an ARRAY of
+// addresses — one raw comma-joined string is a 422 that kills the whole
+// send, warehouse copy included. Split, trim, validate, de-duplicate.
+const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+
+function parseRecipients(raw) {
+  const seen = new Set();
+  const valid = [];
+  const invalid = [];
+  for (const piece of String(raw || "").split(/[,;\n]/)) {
+    const addr = piece.trim().replace(/^["'<]+|[">']+$/g, "");
+    if (!addr) continue;
+    if (!EMAIL_RE.test(addr)) { invalid.push(addr); continue; }
+    const key = addr.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    valid.push(addr);
+  }
+  return { valid, invalid };
+}
+
 async function sendReturnEmail({ toEmail, carrierLabel, contactName, tracking, pickupConfirm, pickupWindow, service, pdfBase64 }) {
   if (!RESEND_KEY) return { sent: false, reason: "RESEND_API_KEY missing" };
-  const recipients = [];
-  if (toEmail) recipients.push(toEmail);
-  recipients.push(WAREHOUSE_CC);  // always copy warehouse
+
+  const { valid, invalid } = parseRecipients(toEmail);
+  const recipients = [...valid];
+  if (!recipients.some((a) => a.toLowerCase() === WAREHOUSE_CC.toLowerCase())) {
+    recipients.push(WAREHOUSE_CC);          // always copy warehouse
+  }
 
   const payload = {
     from: FROM_EMAIL,
@@ -215,10 +390,12 @@ async function sendReturnEmail({ toEmail, carrierLabel, contactName, tracking, p
       headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (!r.ok) return { sent: false, reason: `resend ${r.status}: ${await r.text()}` };
-    return { sent: true };
+    if (!r.ok) {
+      return { sent: false, reason: `resend ${r.status}: ${await r.text()}`, recipients, invalid };
+    }
+    return { sent: true, recipients, invalid };
   } catch (e) {
-    return { sent: false, reason: e.message };
+    return { sent: false, reason: e.message, recipients, invalid };
   }
 }
 
@@ -256,6 +433,13 @@ async function actionCreateReturn(body) {
   // resolved service: explicit service_code wins, else carrier default
   const resolvedService = service_code || carrierCfg.default_service;
 
+  // --- normalize the pickup window to the PICKUP ADDRESS's time zone ----
+  // Without an explicit offset ShipStation reads the timestamp as UTC and
+  // the window lands hours earlier in the customer's local clock, which is
+  // what UPS rejects as "closing time ... earliest allowable close time".
+  const pw = normalizePickupWindow(wantsPickup ? pickup_window : null, ship_from);
+  const pickupWindowTz = pw.window;
+
   // --- 1) seed pending row so nothing is lost on partial failure --------
   const seed = await sbInsert("return_labels", {
     client,
@@ -266,7 +450,7 @@ async function actionCreateReturn(body) {
     dims_json:     dims || null,
     carrier:       carrierCfg.label,     // 'UPS' | 'USPS'
     service:       resolvedService,
-    pickup_window: wantsPickup ? (pickup_window || null) : null,
+    pickup_window: pickupWindowTz,     // stamped with the pickup ZIP's offset
     notes:         notes || null,
   });
 
@@ -319,11 +503,12 @@ async function actionCreateReturn(body) {
   // --- 3) schedule pickup (label-based) — UPS only ----------------------
   let pickup = null;
   let pickupError = null;
-  if (wantsPickup && pickup_window) {
+  let pickupHint = null;
+  if (wantsPickup && pickupWindowTz) {
     try {
       pickup = await ss("/pickups", "POST", {
         label_ids: [label.label_id],
-        pickup_window,
+        pickup_window: pickupWindowTz,
         contact_details: {
           name:  ship_from.name,
           email: ship_from.email || "warehouse@fr-logistics.net",
@@ -352,6 +537,13 @@ async function actionCreateReturn(body) {
         const m = e.message.match(/"message":"([^"]+)"/);
         if (m) pickupError = m[1];
       } catch(_) {}
+      // UPS enforces an earliest allowable close time that varies by pickup
+      // centre; a close time before noon local is almost always refused.
+      if (/clos(?:e|ing)\s*time/i.test(pickupError || "")) {
+        pickupHint = pw.closeHourLocal !== null && pw.closeHourLocal < 12
+          ? `The window closes at ${String(pw.closeHourLocal).padStart(2,"0")}:00 local time at the pickup address (${pw.tz}). UPS rarely accepts a close time before 12:00 PM — try ending the window at 5:00 PM or later.`
+          : `UPS refused the close time for this pickup centre (${pw.tz}). Try a later close time, or schedule the pickup directly on UPS.com with tracking ${label.tracking_number}.`;
+      }
       await sbPatch("return_labels", `id=eq.${seed.id}`, {
         notes: `${notes || ""} | pickup_failed: ${e.message}`,
       });
@@ -369,7 +561,7 @@ async function actionCreateReturn(body) {
       contactName:  ship_from.name || ship_from.company,
       tracking:     label.tracking_number,
       pickupConfirm,
-      pickupWindow: pickup_window,
+      pickupWindow: pickupWindowTz,
       service:      resolvedService,
       pdfBase64,
     });
@@ -386,8 +578,13 @@ async function actionCreateReturn(body) {
     label_url,
     pickup_confirm: pickup?.confirmation_number || pickup?.pickup_id || null,
     pickup_error:   pickupError,   // null if no pickup requested or it succeeded
+    pickup_hint:    pickupHint,    // actionable next step when UPS refuses
+    pickup_tz:      pw.tz,         // zone used to stamp the window
+    pickup_window:  pickupWindowTz,
     email_sent:     emailResult.sent,
     email_error:    emailResult.sent ? null : emailResult.reason,
+    email_to:       emailResult.recipients || [],
+    email_invalid:  emailResult.invalid || [],   // addresses skipped as malformed
   });
 }
 
