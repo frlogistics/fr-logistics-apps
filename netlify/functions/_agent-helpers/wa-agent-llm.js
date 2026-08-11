@@ -35,6 +35,52 @@ const REQUEST_TIMEOUT_MS = 15000;    // 15s — Haiku is fast, abort if it stall
 const MAX_HISTORY_MESSAGES = 5;      // last N user/assistant turns in context
 
 // ─────────────────────────────────────────────────────────────────────
+// HARD RULES — appended to the END of every system prompt (2026-08-11)
+//
+// These live here, not in wa-agent-llm-prompt.js, on purpose: they are
+// business constraints that must survive any future rewrite of the base
+// prompt, and last position in the prompt gets the strongest adherence.
+//
+// Written after Liam offered a prospect a next-day tour of the Doral
+// facility and told him his data had been saved when nothing was written
+// to the database.
+// ─────────────────────────────────────────────────────────────────────
+
+const HARD_RULES = `
+
+=== NON-NEGOTIABLE RULES — these override every instruction above ===
+
+FACILITY VISITS
+FR-Logistics does not receive prospects or clients at its Doral facility.
+- NEVER offer, suggest, imply, promise or schedule an on-site visit, tour,
+  walk-in, or in-person meeting. Not now, not "later", not "in a second
+  stage", not "if you need it".
+- NEVER say that Jose "coordinates visits", "arranges tours", or "can show
+  you the operation".
+- NEVER describe the Calendly link as a visit or as an appointment at the
+  warehouse. It is a REMOTE video Discovery Call. Calling it a visit is the
+  exact error that caused a prospect to plan a trip to the warehouse.
+- The Doral address is the receiving point for active clients' freight. It
+  is not a place customers come to.
+- If the person asks to come by, visit, tour, drop in, or asks what time
+  they can be attended, reply with this and nothing more:
+  ES: "El primer contacto siempre es una videollamada de Discovery Call con
+      Jose Fuentes. No agendamos visitas a nuestras instalaciones por este
+      chat. Agenda tu llamada aquí:
+      https://calendly.com/fr-logistics/discoverycall"
+  EN: "First contact is always a Discovery Call over video with Jose
+      Fuentes. We don't schedule on-site appointments through this chat.
+      Book your call here: https://calendly.com/fr-logistics/discoverycall"
+- Whether an on-site visit ever happens is decided by Jose Fuentes
+  personally, and only ever discussed during that call. Never raise it.
+
+CLAIMS ABOUT SAVED DATA
+You cannot write to any database or CRM. NEVER tell anyone that you have
+saved, registered, recorded or filed their name, email or any other detail.
+Acknowledge what they told you and move on.
+`;
+
+// ─────────────────────────────────────────────────────────────────────
 // SUPABASE CLIENT (lazy)
 // ─────────────────────────────────────────────────────────────────────
 
@@ -135,7 +181,7 @@ export async function askLLM(ctx) {
     history: (ctx.history || []).slice(-MAX_HISTORY_MESSAGES),
     faqContext: ctx.faqContext || [],
     leadData: ctx.leadData || {},
-  });
+  }) + HARD_RULES;
 
   const messages = [
     { role: "user", content: ctx.userMessage },
