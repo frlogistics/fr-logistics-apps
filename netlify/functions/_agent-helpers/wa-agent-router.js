@@ -159,6 +159,36 @@ export async function routeIncomingMessage(msg) {
       return;
     }
 
+    // ─── STEP 3.7: VISIT GUARD ────────────────────────────────────
+    // Added 2026-08-11 after Liam offered a prospect a next-day tour of
+    // the Doral facility and handed him the Discovery Call link labelled
+    // as "your visit". FR-Logistics does NOT receive prospects on site —
+    // first contact is always the remote Discovery Call, and any on-site
+    // visit is Jose's call, made personally, never promised in chat.
+    // This runs BEFORE the FAQ matcher and before the LLM on purpose:
+    // it is deterministic, so it cannot be talked around by a model that
+    // is trying to be helpful.
+    if (existingConv && isVisitRequest(text)) {
+      const lang = (existingConv.language || detectLanguage(text, fromE164).language || "en").toUpperCase();
+      console.log(`[agent-router] visit request detected — policy reply, no LLM (conv=${existingConv.id})`);
+
+      const reply = existingClient
+        ? visitReplyClient(lang)
+        : visitPolicyText(lang);
+
+      await sendOnce({ to: from, text: reply, clientName: "Liam" });
+      await updateConversationOnUserMessage(existingConv.id);
+      await resetRetry(existingConv.id);
+
+      // Someone asking to come see the warehouse is a live lead. Flag it
+      // so it surfaces in the inbox — but do NOT pause: Liam can still
+      // answer the rest of their questions.
+      if (!existingConv.handoff_required) {
+        await markHandoff(existingConv.id, "visit_request", existingConv.state);
+      }
+      return;
+    }
+
     // Branch B: active conversation in pending_language state
     //   → user is replying to bilingual greeting with EN/ES choice
     if (existingConv?.state === "pending_language") {
@@ -595,8 +625,16 @@ async function handleMenuReply(conv, msg) {
   });
 
   if (llmResult.text) {
+    // Backstop for the visit policy. STEP 3.7 catches the question; this
+    // catches the answer — an LLM can drift into offering a tour while
+    // replying to something else entirely (it did exactly that on
+    // 2026-08-11: "Jose is the one who coordinates visits to our Doral
+    // facility"). If the draft offers a visit, the whole reply is
+    // replaced by the policy text rather than edited.
+    const llmText = stripVisitOffer(llmResult.text, language);
+
     // LLM produced a reply — send it, then re-offer menu (Sprint 3 pattern)
-    const sendLlm = await sendAndRecord({ to: from, text: llmResult.text, clientName: "Liam" });
+    const sendLlm = await sendAndRecord({ to: from, text: llmText, clientName: "Liam" });
     if (!sendLlm.ok) {
       console.error("[router] LLM reply send failed");
       return;
@@ -1067,6 +1105,118 @@ async function saveQualifyField(conversationId, field, rawField, normalizedValue
 // Final step of the capture flow: send confirmation + email info@
 // ─────────────────────────────────────────────────────────────────────
 // ESCALATION (added 2026-07-31)
+// ─────────────────────────────────────────────────────────────────────
+// VISIT POLICY (added 2026-08-11)
+//
+// Business rule, from Jose: FR-Logistics does not receive any client or
+// prospect on site on first contact — and never next-day. First contact
+// is ALWAYS the remote Discovery Call. An on-site visit is not a
+// decision made up front; it can come up during that call, and only
+// Jose Fuentes handles it, personally. Liam never offers one.
+// ─────────────────────────────────────────────────────────────────────
+
+const CALENDLY_DISCOVERY = "https://calendly.com/fr-logistics/discoverycall";
+
+// Unambiguous: the person is asking about coming here in person.
+const VISIT_STRONG = [
+  /\bvisit(a|as|ar|arlos|arlas|arte|arnos|amos|aremos|ando|[aá]ndolos)\b/i,
+  /\bvisit(s|ed|ing)?\b/i,
+  /\bwalk[-\s]?ins?\b/i,
+  /\bsin\s+cita\b/i,
+  /\bcita\s+presencial\b/i,
+  /\bpresencial(mente)?\b/i,
+  /\ben\s+persona\b/i,
+  /\bin\s+person\b/i,
+  /\brecorrido\b/i,
+  /\btours?\b/i,
+  /\bwithout\s+an?\s+appointment\b/i,
+  /\b(conocer|ver|visitar)\s+(la|el|su|sus|tu|tus)?\s*(bodega|almac[eé]n|warehouse|instalaciones|operaci[oó]n|oficina|planta)\b/i,
+  /\b(ir|pasar|llegar|acercar(me|nos)|venir)\s+(por|a|hasta|al)\s+(la|el|su|sus|tu)?\s*(bodega|almac[eé]n|warehouse|oficina|instalaciones|local|planta)\b/i,
+  /\bpuedo\s+(ir|pasar|llegar|venir|visitar|acercarme)\b/i,
+  /\bpodemos\s+(ir|pasar|llegar|venir|visitar|acercarnos)\b/i,
+  /\b(see|check\s+out)\s+(the|your)\s+(warehouse|facility|operation|place)\b/i,
+  /\b(stop|drop|come|swing)\s+by\b/i,
+];
+
+// Suggestive but not conclusive — "can you see me tomorrow?" is usually a
+// walk-in question here, but it is also how someone asks for service. These
+// only fire when the message is NOT about moving freight.
+const VISIT_WEAK = [
+  /\b(me|nos)\s+(pueden|puede|podr[ií]an|podr[ií]a)\s+atender\b/i,
+  /\b(atenderme|atendernos|atendernos)\b/i,
+  /\bon[-\s]?site\b/i,
+  /\bconocer(los|las|te|nos)\b/i,
+  /\bcome\s+(over|in)\b/i,
+  /\bmeet\s+in\s+person\b/i,
+];
+
+// An active client asking where to send a pallet is not asking for a tour.
+const FREIGHT_CONTEXT =
+  /\b(env[ií]\w*|enviar|mandar|manda|despach\w*|remit\w*|carga|mercanc[ií]a|shipment|inbound|contenedor|pallet|paquete|caja|tracking|etiqueta|label|fnsku)\b/i;
+
+// Phrases that mean Liam is OFFERING a visit — used to filter LLM drafts.
+const VISIT_OFFER = [
+  /\bvisita\s+(a\s+)?(nuestras?|las?|tus?|sus?)\s*(instalaciones|oficinas|bodega)\b/i,
+  /\bvisita\s+presencial\b/i,
+  /\b(coordinar|agendar|programar)\s+(una|la|tu)\s+visita\b/i,
+  /\bcoordina\s+las\s+visitas\b/i,
+  /\bmostrarte\s+la\s+operaci[oó]n\b/i,
+  /\bte\s+esperamos\s+en\s+(la\s+)?(bodega|doral|nuestras)\b/i,
+  /\b(schedule|arrange|book|coordinate)\s+(a|your|the)\s+(visit|tour|walkthrough)\b/i,
+  /\bin[-\s]person\s+(visit|meeting|tour)\b/i,
+  /\bfacility\s+tour\b/i,
+  /\bshow\s+you\s+(the|our)\s+(warehouse|facility|operation)\b/i,
+];
+
+/**
+ * True when the inbound message is asking to come to the facility.
+ * Fail-safe by design: a false positive costs one canned (and correct)
+ * policy answer; a false negative is what put a prospect on our doorstep.
+ */
+function isVisitRequest(text) {
+  if (!text || typeof text !== "string") return false;
+  const t = text.trim();
+  if (!t || t.length > 600) return false;
+
+  if (VISIT_STRONG.some((re) => re.test(t))) return true;
+  if (FREIGHT_CONTEXT.test(t)) return false;   // freight question, not a tour
+  return VISIT_WEAK.some((re) => re.test(t));
+}
+
+// The one answer Liam gives about visits. No "maybe later", no "Jose
+// coordinates visits" — those are the exact phrasings that created the
+// misunderstanding.
+function visitPolicyText(language) {
+  return (language || "EN").toUpperCase() === "ES"
+    ? "El primer contacto siempre es una videollamada de Discovery Call con Jose Fuentes 📹\n\n" +
+        "No agendamos visitas a nuestras instalaciones por este chat. Nuestra dirección en Doral es el punto de recepción de mercancía de clientes activos, no atendemos walk-ins.\n\n" +
+        `Agenda tu llamada aquí: ${CALENDLY_DISCOVERY}\n\n` +
+        "En esa llamada revisamos tu operación, volúmenes, servicios y costos."
+    : "First contact is always a Discovery Call over video with Jose Fuentes 📹\n\n" +
+        "We don't schedule on-site appointments through this chat. Our Doral address is the receiving point for active clients' freight — we don't take walk-ins.\n\n" +
+        `Book your call here: ${CALENDLY_DISCOVERY}\n\n` +
+        "On that call we go over your operation, volumes, services and pricing.";
+}
+
+// Same rule for an existing client, minus the sales link: it goes to Jose.
+function visitReplyClient(language) {
+  return (language || "EN").toUpperCase() === "ES"
+    ? "Eso lo coordina Jose Fuentes directamente 🤝 Le paso tu mensaje ahora y él te confirma por aquí."
+    : "That's coordinated by Jose Fuentes directly 🤝 I'm passing your message along now and he'll confirm here.";
+}
+
+/**
+ * Backstop on generated text. If a draft offers a visit, the entire reply
+ * is swapped for the policy text — editing a sentence out of an LLM reply
+ * tends to leave the promise implied somewhere else.
+ */
+function stripVisitOffer(text, language) {
+  if (!text) return text;
+  if (!VISIT_OFFER.some((re) => re.test(text))) return text;
+  console.warn("[agent-router] LLM draft offered a facility visit — replaced with policy text");
+  return visitPolicyText(language);
+}
+
 // Called when a capture slot has been re-asked MAX_RETRIES times without
 // a usable answer. Instead of asking forever, Liam explains himself,
 // emails what he has to info@, and goes silent so a human can take over.
