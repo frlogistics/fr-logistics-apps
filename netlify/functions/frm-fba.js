@@ -112,21 +112,35 @@ function summarize(lines) {
   };
 }
 
-// Resolves a scanned code to a merchant SKU, in three tries:
+// Resolves a scanned code to a merchant SKU, in four tries:
 //   1. wh_fnsku_map — the normal path (FNSKU / GTIN / alias → SKU).
 //   2. the code IS a merchant SKU already — common when the box carries the
 //      client's own label instead of an Amazon one.
-//   3. nothing — return near matches so the screen can offer them instead of
+//   3. MEMORY — a line from an earlier count for THIS SAME CLIENT already has
+//      this code confirmed. This is what carries clients who have no products
+//      in SkuVault: the operator types each SKU once, ever, and every later
+//      scan of that code resolves on its own, in this count and in future ones.
+//   4. nothing — return near matches so the screen can offer them instead of
 //      making the operator type an SKU from memory.
+//
 // Note wh_fnsku_map is WIPED AND REBUILT by frm-alias-sync from SkuVault, so
 // writing a manual mapping back into it would vanish on the next run. That is
-// why a manual confirmation lives on the line (msku_source) and not in the map.
-async function resolveCode(sb, code) {
+// why confirmations live on the line (msku_source) and get read back from there.
+//
+// Memory carries a human's typo forward, so it never returns the SKU bare: it
+// also says who confirmed it and when, and the screen shows that. A wrong one
+// stays visible and correctable instead of quietly spreading.
+async function resolveCode(sb, code, clientId) {
   const hit = await sb(`wh_fnsku_map?code=eq.${encodeURIComponent(code)}&select=sku&limit=1`);
   if (hit && hit[0] && hit[0].sku) return { msku: hit[0].sku, source: 'map' };
 
   const asSku = await sb(`wh_fnsku_map?sku=eq.${encodeURIComponent(code)}&select=sku&limit=1`);
   if (asSku && asSku[0] && asSku[0].sku) return { msku: asSku[0].sku, source: 'scanned_sku' };
+
+  if (clientId) {
+    const remembered = await recallCode(sb, code, clientId);
+    if (remembered) return remembered;
+  }
 
   let suggestions = [];
   try {
@@ -137,6 +151,41 @@ async function resolveCode(sb, code) {
   } catch { /* suggestions are a nicety, never a reason to fail the scan */ }
 
   return { msku: null, source: null, suggestions };
+}
+
+// Looks back through this client's own counts for a code someone already
+// resolved. Deliberately two plain queries instead of one embedded join: this
+// runs on the floor with a scanner in someone's hand, and a query shape that
+// works everywhere beats a clever one that might not.
+async function recallCode(sb, code, clientId) {
+  try {
+    const shipments = await sb(
+      `fba_shipments?client_id=eq.${encodeURIComponent(clientId)}&select=id&order=created_at.desc&limit=50`
+    );
+    if (!shipments || !shipments.length) return null;
+    const ids = shipments.map((s) => s.id).join(',');
+    const lines = await sb(
+      `fba_shipment_lines?fnsku=eq.${encodeURIComponent(code)}&shipment_id=in.(${ids})` +
+      '&select=msku,counted_by,counted_at&order=counted_at.desc&limit=1'
+    );
+    if (lines && lines[0] && lines[0].msku) {
+      return {
+        msku: lines[0].msku,
+        source: 'memory',
+        confirmed_by: lines[0].counted_by || null,
+        confirmed_at: lines[0].counted_at || null,
+      };
+    }
+  } catch { /* memory is an accelerator; if it fails, fall through to asking */ }
+  return null;
+}
+
+async function clientOfShipment(sb, shipmentId) {
+  if (!shipmentId) return null;
+  try {
+    const rows = await sb(`fba_shipments?id=eq.${encodeURIComponent(shipmentId)}&select=client_id&limit=1`);
+    return rows && rows[0] ? rows[0].client_id : null;
+  } catch { return null; }
 }
 
 // ── handler ──────────────────────────────────────────────────────────────────
@@ -202,13 +251,16 @@ exports.handler = async (event) => {
     if (action === 'resolve_code') {
       const code = (qs.code || '').trim();
       if (!code) return res(400, { error: 'code is required' });
-      const r = await resolveCode(sb, code);
+      const clientId = qs.client_id || await clientOfShipment(sb, qs.shipment_id);
+      const r = await resolveCode(sb, code, clientId);
       return res(200, {
         ok: true,
         code,
         msku: r.msku,
         source: r.source,
         mapped: !!r.msku,
+        confirmed_by: r.confirmed_by || null,
+        confirmed_at: r.confirmed_at || null,
         suggestions: r.suggestions || [],
       });
     }
@@ -266,7 +318,7 @@ exports.handler = async (event) => {
         if (confirmed) msku_source = 'manual';
         fnsku = fnsku || code;
       } else if (!msku && code) {
-        const r = await resolveCode(sb, code);
+        const r = await resolveCode(sb, code, await clientOfShipment(sb, shipment_id));
         if (r.msku) {
           msku = r.msku;
           msku_source = r.source;
