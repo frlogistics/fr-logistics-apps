@@ -247,6 +247,10 @@
           <span class="ic">🏷️</span>
           <span><span class="nm">FBA Count</span><br><span class="sub">Count boxes and loose units</span></span>
         </button>
+        <button class="mod" data-go="count">
+          <span class="ic">🔢</span>
+          <span><span class="nm">Stock Count</span><br><span class="sub">Blind count by location</span></span>
+        </button>
       </div>
     </section>
 
@@ -537,6 +541,117 @@
         <div class="empty" id="fbaLineEmpty">No lines yet. Scan the first product.</div>
       </div>
     </section>
+
+    <!-- STOCK COUNT (blind physical / cycle count; compares against a frozen snapshot) -->
+    <section class="view" id="v-count">
+
+      <!-- no active count: start one or resume -->
+      <div id="cntNoCount">
+        <div class="lcard">
+          <div class="lc-code" style="font-size:16px;margin-bottom:12px">Start a count</div>
+          <div class="field">
+            <label for="cntClient">Client</label>
+            <select id="cntClient"><option value="">— Select client —</option></select>
+          </div>
+          <div id="cntPre" class="warnbox" hidden></div>
+          <div class="field">
+            <label for="cntRef">Reference</label>
+            <input id="cntRef" type="text" placeholder="e.g. MBL-AGO-2026" autocomplete="off">
+          </div>
+          <button class="btn" id="cntCreateBtn" style="width:100%;margin-top:6px">+ New count</button>
+        </div>
+        <div class="lcard">
+          <div class="lc-code" style="font-size:15px;margin-bottom:10px">Counts in progress</div>
+          <ul class="lc-list" id="cntOpenList"></ul>
+          <div class="lc-empty" id="cntOpenEmpty">No counts in progress.</div>
+        </div>
+      </div>
+
+      <!-- active count -->
+      <div id="cntActive" hidden>
+        <div class="lcard" style="background:var(--navy);color:#fff">
+          <div class="lc-head" style="margin:0">
+            <div style="flex:1;min-width:0">
+              <div class="lc-code" style="color:#fff;font-size:15px" id="cntRefLbl">—</div>
+              <div class="lc-sub" style="color:#bcd" id="cntMeta">—</div>
+            </div>
+            <span class="lc-zone" id="cntProg">0/0</span>
+          </div>
+        </div>
+
+        <!-- walking: pick or scan a location -->
+        <div id="cntWalk">
+          <div class="scanpad" id="cScanpad" tabindex="-1">
+            <div class="icon" id="cIcon">▣</div>
+            <div class="big" id="cBig">Scan a location</div>
+            <div class="lastcode" id="cCode"></div>
+            <div class="hint" id="cHint">Pull the trigger on the shelf label (RA0101) to open it.</div>
+          </div>
+          <div class="lcard">
+            <div class="lc-head" style="margin-bottom:10px">
+              <div class="lc-code" style="font-size:15px">Locations</div>
+              <span class="lc-zone" id="cntWalkCnt">—</span>
+            </div>
+            <ul class="lc-list" id="cntLocList"></ul>
+            <div class="lc-empty" id="cntLocEmpty">Loading…</div>
+          </div>
+        </div>
+
+        <!-- inside a location -->
+        <div id="cntInLoc" hidden>
+          <div class="lcard">
+            <div class="lc-head" style="margin-bottom:6px">
+              <div style="flex:1;min-width:0">
+                <div class="lc-code" id="cntLocCode">—</div>
+                <div class="lc-sub" id="cntLocSub">—</div>
+              </div>
+              <span class="lc-total" id="cntLocTotal">0</span>
+            </div>
+          </div>
+
+          <div class="scanpad" id="cScanpad2" tabindex="-1">
+            <div class="icon" id="c2Icon">▣</div>
+            <div class="big" id="c2Big">Scan a product</div>
+            <div class="lastcode" id="c2Code"></div>
+            <div class="hint" id="c2Hint">Scan every product in this location. Scan the next shelf label when done.</div>
+          </div>
+
+          <!-- quantity panel: appears after a scan resolves -->
+          <div class="lcard" id="cntDeclare" hidden>
+            <div class="lc-head" style="margin-bottom:10px">
+              <div style="flex:1;min-width:0">
+                <div class="fba-msku" id="cntSku">—</div>
+                <div class="lc-sub" id="cntScanned">—</div>
+              </div>
+              <span class="fba-src map" id="cntSrc">MAP</span>
+            </div>
+
+            <div id="cntUnmapped" hidden>
+              <div class="warnbox" id="cntUnmappedMsg">Not in the FNSKU map. Pick the SKU or type it.</div>
+              <div class="field">
+                <label for="cntManualSku">Merchant SKU</label>
+                <input id="cntManualSku" type="text" placeholder="Type the SKU" autocomplete="off">
+              </div>
+              <div class="sugg" id="cntSugg"></div>
+            </div>
+
+            <div class="field">
+              <label for="cntQty">How many units?</label>
+              <input id="cntQty" type="text" inputmode="numeric" autocomplete="off" placeholder="Count them, then type">
+            </div>
+            <div class="sugg" id="cntQuick"></div>
+
+            <div style="display:flex;gap:10px;margin-top:4px">
+              <button class="btn ghost" id="cntCancelBtn" style="flex:0 0 38%">Cancel</button>
+              <button class="btn" id="cntAddBtn">Add</button>
+            </div>
+          </div>
+
+          <ul class="lc-list" id="cntLineList"></ul>
+          <div class="lc-empty" id="cntLineEmpty">Nothing counted here yet.</div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer class="acts" id="foot" hidden>
@@ -552,6 +667,14 @@
   <footer class="acts" id="fbaFoot" hidden>
     <button class="btn ghost" id="fbaBackBtn">Leave open</button>
     <button class="btn stop" id="fbaCloseBtn">Close count</button>
+  </footer>
+  <footer class="acts" id="cntFoot" hidden>
+    <button class="btn ghost" id="cntLeaveBtn">Leave open</button>
+    <button class="btn stop" id="cntFinishBtn">Finish count</button>
+  </footer>
+  <footer class="acts" id="cntLocFoot" hidden>
+    <button class="btn ghost" id="cntBackLocBtn">Back to list</button>
+    <button class="btn" id="cntCloseLocBtn">Location done ✓</button>
   </footer>
 </div>
 
@@ -626,6 +749,7 @@ function go(view){
   const bar=$('topbar');
   // Reset both footers every time; each view turns on only the one it needs.
   $('foot').hidden=true; $('palFoot').hidden=true; $('fbaFoot').hidden=true;
+  $('cntFoot').hidden=true; $('cntLocFoot').hidden=true;
   if(view==='home'){bar.classList.remove('has-back');$('title').textContent='FR Mobile';detachCapture();}
   else{bar.classList.add('has-back');}
   if(view==='receiving'){$('title').textContent='Receiving';$('foot').hidden=false;attachCapture();refreshList();}
@@ -634,6 +758,7 @@ function go(view){
   if(view==='inventory'){$('title').textContent='Inventory';attachCapture();initInventory();}
   if(view==='pallets'){$('title').textContent='Pallets';attachCapture();initPallets();}
   if(view==='fba'){$('title').textContent='FBA Count';attachCapture();initFba();}
+  if(view==='count'){$('title').textContent='Stock Count';attachCapture();initCount();}
   $('main').scrollTop=0;
 }
 
@@ -651,6 +776,8 @@ function attachCapture(){
   const ip=$('iScanpad'); if(ip) ip.addEventListener('click',onPadTap);
   const pp=$('pScanpad'); if(pp) pp.addEventListener('click',onPadTap);
   const fp=$('fScanpad'); if(fp) fp.addEventListener('click',onPadTap);
+  const cp=$('cScanpad'); if(cp) cp.addEventListener('click',onPadTap);
+  const cp2=$('cScanpad2'); if(cp2) cp2.addEventListener('click',onPadTap);
   document.addEventListener('keydown',onKey,true);
 }
 function detachCapture(){
@@ -662,6 +789,8 @@ function detachCapture(){
   const ip=$('iScanpad'); if(ip) ip.removeEventListener('click',onPadTap);
   const pp=$('pScanpad'); if(pp) pp.removeEventListener('click',onPadTap);
   const fp=$('fScanpad'); if(fp) fp.removeEventListener('click',onPadTap);
+  const cp=$('cScanpad'); if(cp) cp.removeEventListener('click',onPadTap);
+  const cp2=$('cScanpad2'); if(cp2) cp2.removeEventListener('click',onPadTap);
 }
 function focusCap(){ if(!capAttached)return; const c=$('capture'); if(document.activeElement!==c) c.focus({preventScroll:true}); }
 function isFormField(el){ return el && (el.tagName==='SELECT' || (el.tagName==='INPUT' && el.id!=='capture')); }
@@ -671,7 +800,7 @@ function onKey(e){
   if(isFormField(document.activeElement)) return;
   if(e.key==='Enter'){
     const code=capBuf.trim();
-    if(code){ if(S.view==='locations') lookupScan(code); else if(S.view==='inventory') inventoryScan(code); else if(S.view==='pallets') palletScan(code); else if(S.view==='fba') fbaScan(code); else commitScan(code); }
+    if(code){ if(S.view==='locations') lookupScan(code); else if(S.view==='inventory') inventoryScan(code); else if(S.view==='pallets') palletScan(code); else if(S.view==='fba') fbaScan(code); else if(S.view==='count') countScan(code); else commitScan(code); }
     capBuf=''; e.preventDefault(); return;
   }
   if(e.key.length===1){ capBuf+=e.key; clearTimeout(capTimer); capTimer=setTimeout(()=>{capBuf='';},120); }
@@ -1610,6 +1739,417 @@ async function closeFbaCount(){
   }
 }
 
+
+/* ============================================================
+   STOCK COUNT — blind physical / cycle count
+   Writes through /frm-count (service key, RLS-safe).
+
+   The count is BLIND on purpose: the expected quantity never comes down to
+   this screen while the count is open, and the server refuses to send it.
+   Someone who sees "48" before counting will count 48. That is not a UI
+   nicety — it is the whole reason the count is worth anything.
+
+   SkuVault is never written to from here. This module produces the variance;
+   a human applies the adjustment in SkuVault afterwards, so the WMS keeps
+   owning inventory and the adjustment carries a real user and timestamp.
+   ============================================================ */
+const CNT={ current:null, loc:null, lines:[], locs:[], pending:null, busy:false };
+
+async function cntApi(method, action, payload){
+  const url = method==='GET'
+    ? `${API_BASE}/frm-count?action=${action}&${new URLSearchParams(payload||{})}`
+    : `${API_BASE}/frm-count`;
+  const res = await fetch(url, method==='GET' ? {} : {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action, ...(payload||{})})
+  });
+  const j = await res.json().catch(()=>({}));
+  if(!res.ok){ const e=new Error(j.message||j.error||('HTTP '+res.status)); e.status=res.status; e.payload=j; e.code=j.error; throw e; }
+  return j;
+}
+
+function initCount(){
+  const sel=$('cntClient');
+  if(sel && S.clients.length && sel.options.length<=1){
+    sel.innerHTML='<option value="">— Select client —</option>'+
+      S.clients.map(c=>`<option value="${c.label.replace(/"/g,'&quot;')}" data-id="${c.id}">${c.label}</option>`).join('');
+  }
+  if(CNT.current) showCountActive(); else showCountHome();
+}
+
+function showCountHome(){
+  $('cntNoCount').hidden=false; $('cntActive').hidden=true;
+  $('cntFoot').hidden=true; $('cntLocFoot').hidden=true;
+  CNT.loc=null; CNT.lines=[]; hideCntDeclare();
+  refreshOpenCounts();
+}
+function showCountActive(){
+  $('cntNoCount').hidden=true; $('cntActive').hidden=false;
+  if(CNT.loc){ $('cntWalk').hidden=true; $('cntInLoc').hidden=false; $('cntFoot').hidden=true; $('cntLocFoot').hidden=false; }
+  else { $('cntWalk').hidden=false; $('cntInLoc').hidden=true; $('cntFoot').hidden=false; $('cntLocFoot').hidden=true; }
+  renderCountHeader();
+}
+
+/* ---------- start / resume ---------- */
+
+async function cntPreflight(){
+  const sel=$('cntClient'), box=$('cntPre');
+  const id=sel.selectedOptions[0] && sel.selectedOptions[0].dataset.id;
+  if(!id){ box.hidden=true; return; }
+  box.hidden=false; box.textContent='Checking stock on file…';
+  try{
+    const j=await cntApi('GET','preflight',{client_id:id});
+    if(j.live_count){
+      box.textContent=`${j.live_count.reference} is still ${j.live_count.status}. Open it below instead of starting a new one.`;
+      return;
+    }
+    // Deliberately shows ROWS and LOCATIONS, never units: unit totals are the
+    // number the counter must not see.
+    let t=`${j.rows} SKU-location rows across ${j.locations} locations.`;
+    if(j.stale) t+=` ⚠ The SkuVault mirror is ${j.snapshot_age_min} min old — refresh it in Locations first.`;
+    else if(j.snapshot_age_min!=null) t+=` Synced ${j.snapshot_age_min} min ago.`;
+    box.textContent=t;
+    if(!$('cntRef').value.trim()){
+      const d=new Date();
+      const initials=(sel.value||'').split(/\s+/).map(w=>w[0]||'').join('').slice(0,3).toUpperCase();
+      $('cntRef').value=`${initials}-${['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][d.getMonth()]}-${d.getFullYear()}`;
+    }
+  }catch(e){ box.textContent='Could not read the stock on file.'; }
+}
+
+async function refreshOpenCounts(){
+  const ul=$('cntOpenList'), empty=$('cntOpenEmpty');
+  ul.innerHTML=''; empty.style.display='block'; empty.textContent='Loading…';
+  try{
+    const j=await cntApi('GET','counts',{status:'live'});
+    const rows=j.counts||[];
+    if(!rows.length){ empty.textContent='No counts in progress.'; return; }
+    empty.style.display='none';
+    rows.forEach(r=>{
+      const li=document.createElement('li');
+      const prog=`${r.locations_counted||0}/${r.locations_total||0} locations`;
+      li.innerHTML=`<div style="flex:1"><div class="sku">${r.reference}</div><div class="cli">${r.client} · ${r.status} · ${prog}</div></div><span class="qty">›</span>`;
+      li.style.cursor='pointer';
+      li.onclick=()=>loadCount(r.count_id);
+      ul.appendChild(li);
+    });
+  }catch(e){ empty.textContent='Could not load counts.'; }
+}
+
+async function createCount(confirmStale){
+  const sel=$('cntClient');
+  const client_id=sel.selectedOptions[0] && sel.selectedOptions[0].dataset.id;
+  const reference=$('cntRef').value.trim();
+  if(!client_id){ toast('Pick a client first'); return; }
+  if(!reference){ toast('Give the count a reference'); return; }
+  try{
+    const j=await cntApi('POST','create_count',{client_id, reference, started_by:S.operator||'', confirm_stale:!!confirmStale});
+    $('cntRef').value=''; $('cntPre').hidden=true;
+    toast(`Snapshot frozen · ${j.locations} locations`);
+    await loadCount(j.count.id);
+  }catch(e){
+    if(e.code==='STALE_SNAPSHOT'){
+      if(confirm(`${e.message}\n\nCount against this picture anyway?`)) return createCount(true);
+      return;
+    }
+    if(e.code==='COUNT_ALREADY_LIVE' && e.payload && e.payload.count){
+      toast(e.message); return loadCount(e.payload.count.id);
+    }
+    toast(e.message||'Could not start the count');
+  }
+}
+
+async function loadCount(countId){
+  try{
+    const j=await cntApi('GET','count',{count_id:countId});
+    CNT.current=j.count; CNT.locs=j.locations||[]; CNT.loc=null; CNT.lines=[];
+    showCountActive(); renderLocList(); setTimeout(focusCap,60);
+  }catch(e){ toast('Could not open that count'); }
+}
+
+function renderCountHeader(){
+  if(!CNT.current) return;
+  $('cntRefLbl').textContent=CNT.current.reference;
+  $('cntMeta').textContent=`${CNT.current.client} · blind count`;
+  const done=CNT.locs.filter(l=>l.status==='counted'||l.status==='recount').length;
+  $('cntProg').textContent=`${done}/${CNT.locs.length}`;
+  $('cntWalkCnt').textContent=`${CNT.locs.length-done} left`;
+}
+
+function renderLocList(){
+  const ul=$('cntLocList'), empty=$('cntLocEmpty');
+  ul.innerHTML='';
+  if(!CNT.locs.length){ empty.style.display='block'; empty.textContent='No locations in this count.'; return; }
+  empty.style.display='none';
+  const rank={counting:0,pending:1,recount:2,counted:3};
+  [...CNT.locs].sort((a,b)=>(rank[a.status]-rank[b.status])||a.location_code.localeCompare(b.location_code))
+    .forEach(l=>{
+      const done=l.status==='counted'||l.status==='recount';
+      const mark=done?'✓':(l.status==='counting'?'…':'○');
+      const extra=l.in_scope===false?' · extra':'';
+      const sub=done?`${l.counted_lines||0} SKUs · ${l.counted_units||0} units${extra}`
+                    :(l.status==='counting'?`in progress · ${l.counted_units||0} units`:'not counted yet'+extra);
+      const li=document.createElement('li');
+      li.innerHTML=`<div style="flex:1"><div class="sku">${mark} ${l.location_code}</div><div class="cli">${sub}</div></div><span class="qty">›</span>`;
+      li.style.cursor='pointer';
+      li.style.opacity=done?'.55':'1';
+      li.onclick=()=>openLocation(l.location_code);
+      ul.appendChild(li);
+    });
+  renderCountHeader();
+}
+
+/* ---------- walking a location ---------- */
+
+async function openLocation(code, silent){
+  if(!CNT.current) return;
+  const known=CNT.locs.find(l=>l.location_code===code);
+  if(known && (known.status==='counted'||known.status==='recount')){
+    if(!confirm(`${code} is already closed with ${known.counted_units||0} units.\n\nReopen it as a RECOUNT? The first pass stays on record.`)) return;
+    try{ await cntApi('POST','recount_location',{count_id:CNT.current.id, location_code:code, operator:S.operator||''}); }
+    catch(e){ toast(e.message||'Could not reopen'); return; }
+  } else {
+    try{
+      const j=await cntApi('POST','start_location',{count_id:CNT.current.id, location_code:code, operator:S.operator||''});
+      if(j.added){
+        CNT.locs.push({...j.location, counted_lines:0, counted_units:0});
+        toast(j.known_location ? `${code} added — not in the snapshot` : `${code} is not a known location — added anyway`);
+      }
+    }catch(e){ toast(e.message||'Could not open that location'); feedback('err'); return; }
+  }
+  CNT.loc=CNT.locs.find(l=>l.location_code===code)||{location_code:code,status:'counting',pass:1};
+  CNT.loc.status='counting';
+  await reloadLocLines();
+  showCountActive();
+  setCPad2('','Scan a product','',''); hideCntDeclare();
+  if(!silent) feedback('ok');
+  setTimeout(focusCap,60);
+}
+
+async function reloadLocLines(){
+  if(!CNT.current||!CNT.loc){ CNT.lines=[]; return; }
+  try{
+    const j=await cntApi('GET','lines',{count_id:CNT.current.id, location_code:CNT.loc.location_code});
+    CNT.lines=j.lines||[];
+  }catch(e){ CNT.lines=[]; }
+  renderLocLines();
+}
+
+function renderLocLines(){
+  const ul=$('cntLineList'), empty=$('cntLineEmpty');
+  ul.innerHTML='';
+  const units=CNT.lines.reduce((n,l)=>n+(Number(l.qty)||0),0);
+  const skus=new Set(CNT.lines.map(l=>l.sku)).size;
+  $('cntLocCode').textContent=CNT.loc?CNT.loc.location_code:'—';
+  $('cntLocSub').textContent=`${skus} SKU${skus===1?'':'s'}${CNT.loc&&CNT.loc.pass>1?` · recount (pass ${CNT.loc.pass})`:''}`;
+  $('cntLocTotal').textContent=units;
+  if(!CNT.lines.length){ empty.style.display='block'; return; }
+  empty.style.display='none';
+  CNT.lines.forEach(l=>{
+    const li=document.createElement('li');
+    const src=l.sku_source==='manual'?' · typed':'';
+    li.innerHTML=`<div style="flex:1"><div class="sku">${l.sku}</div><div class="cli">${l.code_scanned||'—'}${src}</div></div><span class="qty">${l.qty}</span>`;
+    li.style.cursor='pointer';
+    li.onclick=()=>voidLine(l);
+    ul.appendChild(li);
+  });
+}
+
+async function voidLine(l){
+  if(!confirm(`Remove ${l.qty} × ${l.sku} from ${l.location_code}?`)) return;
+  try{
+    await cntApi('POST','void_line',{line_id:l.id, voided_by:S.operator||''});
+    await reloadLocLines(); await refreshLocSummary();
+    toast('Line removed');
+  }catch(e){ toast(e.message||'Could not remove'); }
+}
+
+async function closeLocation(){
+  if(!CNT.current||!CNT.loc) return;
+  const units=CNT.lines.reduce((n,l)=>n+(Number(l.qty)||0),0);
+  if(!CNT.lines.length && !confirm(`${CNT.loc.location_code} is EMPTY — nothing counted.\n\nClose it as empty? It will report as missing if the system expected stock here.`)) return;
+  try{
+    await cntApi('POST','close_location',{count_id:CNT.current.id, location_code:CNT.loc.location_code, operator:S.operator||''});
+    toast(`${CNT.loc.location_code} done · ${units} units`);
+    CNT.loc=null; CNT.lines=[];
+    await refreshLocSummary(); showCountActive(); renderLocList();
+    setCPad('','Scan a location','',''); setTimeout(focusCap,60);
+  }catch(e){ toast(e.message||'Could not close the location'); }
+}
+
+async function refreshLocSummary(){
+  if(!CNT.current) return;
+  try{
+    const j=await cntApi('GET','count',{count_id:CNT.current.id});
+    CNT.current=j.count; CNT.locs=j.locations||[];
+    if(CNT.loc){ const f=CNT.locs.find(l=>l.location_code===CNT.loc.location_code); if(f) CNT.loc={...f,status:'counting'}; }
+    renderCountHeader();
+  }catch(e){ /* progress refresh is cosmetic */ }
+}
+
+/* ---------- scanning ---------- */
+
+async function countScan(code){
+  if(!CNT.current){ toast('Open a count first'); feedback('err'); return; }
+
+  if(classify(code)==='location'){
+    const target=code.toUpperCase();
+    if(CNT.loc && CNT.loc.location_code===target){ toast('Already in '+target); return; }
+    if(CNT.loc){
+      const units=CNT.lines.reduce((n,l)=>n+(Number(l.qty)||0),0);
+      if(CNT.lines.length){
+        if(!confirm(`Close ${CNT.loc.location_code} with ${units} units and move to ${target}?`)) return;
+        await closeLocationSilently();
+      } else {
+        CNT.loc=null;   // nothing counted here, nothing to lose
+      }
+    }
+    return openLocation(target);
+  }
+
+  if(!CNT.loc){
+    setCPad('err','Scan a location first','Open the shelf before scanning products',code);
+    feedback('err'); return;
+  }
+
+  setCPad2('','Looking up…','',code);
+  try{
+    const j=await cntApi('GET','resolve_code',{code, count_id:CNT.current.id});
+    openCntDeclare(code, j);
+    feedback(j.mapped?'ok':'dup');
+    setCPad2(j.mapped?'ok':'dup', j.mapped?'Found':'Not in the map', j.mapped?'How many?':'Confirm the SKU', code);
+  }catch(e){ setCPad2('err','Lookup failed','Try again',code); feedback('err'); }
+}
+
+async function closeLocationSilently(){
+  try{ await cntApi('POST','close_location',{count_id:CNT.current.id, location_code:CNT.loc.location_code, operator:S.operator||''}); }
+  catch(e){ /* the move is still valid; the location stays open for later */ }
+  CNT.loc=null; CNT.lines=[];
+  await refreshLocSummary();
+}
+
+function openCntDeclare(code, resolved){
+  CNT.pending={ code, sku:resolved.sku||'', source:resolved.source||null,
+                mapped:!!resolved.mapped, suggestions:resolved.suggestions||[] };
+  $('cntDeclare').hidden=false;
+  $('cntSku').textContent=resolved.sku||'—';
+  $('cntScanned').textContent='Scanned '+code;
+  const src=$('cntSrc');
+  src.className='fba-src '+(resolved.source||'manual');
+  src.textContent = resolved.source==='map' ? 'MAP'
+                  : resolved.source==='scanned_sku' ? 'SKU'
+                  : resolved.source==='memory' ? 'REMEMBERED' : 'MANUAL';
+  if(resolved.source==='memory'){
+    const who=resolved.confirmed_by||'someone';
+    const when=resolved.confirmed_at
+      ? new Date(resolved.confirmed_at).toLocaleDateString(undefined,{month:'short',day:'numeric'})
+      : 'earlier';
+    $('cntScanned').textContent=`Scanned ${code} · confirmed by ${who} on ${when}`;
+  }
+
+  const un=$('cntUnmapped');
+  un.hidden=!!resolved.mapped;
+  if(!resolved.mapped){
+    $('cntManualSku').value='';
+    const box=$('cntSugg'); box.innerHTML='';
+    (resolved.suggestions||[]).forEach(s=>{
+      const b=document.createElement('button');
+      b.textContent=s;
+      b.onclick=()=>{ $('cntManualSku').value=s; $('cntSku').textContent=s; setTimeout(focusCap,60); };
+      box.appendChild(b);
+    });
+    $('cntUnmappedMsg').textContent=(resolved.suggestions||[]).length
+      ? 'Not in the FNSKU map. Pick one below or type the SKU.'
+      : 'Not in the FNSKU map. Type the SKU to count it anyway.';
+  }
+
+  $('cntQty').value='';
+  const q=$('cntQuick'); q.innerHTML='';
+  [1,2,5,10,12,24].forEach(n=>{
+    const b=document.createElement('button');
+    b.textContent=n;
+    b.onclick=()=>{ $('cntQty').value=String(n); };
+    q.appendChild(b);
+  });
+  $('cntDeclare').scrollIntoView({behavior:'smooth', block:'nearest'});
+  setTimeout(()=>{ const el=$('cntQty'); if(el) el.focus(); },80);
+}
+
+function hideCntDeclare(){ CNT.pending=null; const d=$('cntDeclare'); if(d) d.hidden=true; }
+
+async function cntAddLine(){
+  if(!CNT.pending || CNT.busy) return;
+  const p=CNT.pending;
+  let sku=p.sku, source=p.source;
+  if(!p.mapped){
+    sku=$('cntManualSku').value.trim();
+    if(!sku){ toast('Enter the SKU'); return; }
+    source='manual';
+  }
+  const qty=parseInt($('cntQty').value,10);
+  if(!(qty>0)){ toast('How many units?'); return; }
+
+  CNT.busy=true; $('cntAddBtn').disabled=true;
+  try{
+    // line_uid makes the write idempotent: a retry on flaky warehouse wifi
+    // lands once, not twice. Double-counting is the failure nobody notices.
+    const uid=`${CNT.loc.location_code}-${p.code}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
+    const j=await cntApi('POST','add_line',{
+      count_id:CNT.current.id, location_code:CNT.loc.location_code,
+      code:p.code, sku, qty, sku_source:source, counted_by:S.operator||'', line_uid:uid
+    });
+    hideCntDeclare();
+    await reloadLocLines();
+    setCPad2('ok','Counted',`${qty} × ${sku}`,p.code);
+    feedback(j.duplicate?'dup':'ok');
+    if(j.duplicate) toast('That scan was already recorded');
+    setTimeout(focusCap,60);
+  }catch(e){
+    if(e.code==='LOCATION_CLOSED'){ toast(e.message); CNT.loc=null; showCountActive(); renderLocList(); }
+    else toast(e.message||'Could not add the line');
+    feedback('err');
+  }finally{ CNT.busy=false; $('cntAddBtn').disabled=false; }
+}
+
+/* ---------- finishing ---------- */
+
+async function finishCount(confirmPartial){
+  if(!CNT.current) return;
+  if(CNT.loc){ toast('Close the open location first'); return; }
+  if(!confirmPartial && !confirm(`Finish ${CNT.current.reference}?\n\nCapture closes and the variance opens in the portal. You can still reopen a location for a recount.`)) return;
+  try{
+    await cntApi('POST','finish_count',{count_id:CNT.current.id, by:S.operator||'', confirm_partial:!!confirmPartial});
+    toast('Count finished — review it in the portal');
+    CNT.current=null; CNT.locs=[]; CNT.lines=[];
+    showCountHome();
+  }catch(e){
+    if(e.code==='LOCATIONS_PENDING'){
+      const list=(e.payload&&e.payload.pending)||[];
+      const shown=list.slice(0,8).join(', ')+(list.length>8?`, +${list.length-8} more`:'');
+      if(confirm(`${e.message}\n\n${shown}\n\nThose will be reported as NOT COUNTED, not as missing stock. Finish anyway?`))
+        return finishCount(true);
+      return;
+    }
+    toast(e.message||'Could not finish the count');
+  }
+}
+
+/* ---------- scanpad helpers (mirror setPad/setFPad) ---------- */
+function setCPad(state,big,hint,code){
+  const p=$('cScanpad'); if(!p) return;
+  p.className='scanpad'+(state?' '+state:'');
+  $('cIcon').textContent = state==='ok'?'✓':state==='err'?'✕':state==='dup'?'!':'▣';
+  $('cBig').textContent=big; $('cCode').textContent=code||'';
+  $('cHint').textContent=hint||'Pull the trigger on the shelf label (RA0101) to open it.';
+}
+function setCPad2(state,big,hint,code){
+  const p=$('cScanpad2'); if(!p) return;
+  p.className='scanpad'+(state?' '+state:'');
+  $('c2Icon').textContent = state==='ok'?'✓':state==='err'?'✕':state==='dup'?'!':'▣';
+  $('c2Big').textContent=big; $('c2Code').textContent=code||'';
+  $('c2Hint').textContent=hint||'Scan every product in this location. Scan the next shelf label when done.';
+}
+
 /* ---------- clients (via Netlify function, same as other apps) ---------- */
 async function loadClients(){
   try{
@@ -1629,6 +2169,7 @@ async function loadClients(){
       S.clients.map(c=>`<option value="${c.label.replace(/"/g,'&quot;')}" data-id="${c.id}">${c.label}</option>`).join('');
     const rc=$('rClient'); if(rc) rc.innerHTML=opts;
     const oc=$('oClient'); if(oc) oc.innerHTML=opts;
+    const cc=$('cntClient'); if(cc) cc.innerHTML=opts;
   }catch(err){
     const rc=$('rClient'); if(rc) rc.innerHTML='<option value="">Error loading clients</option>';
     const oc=$('oClient'); if(oc) oc.innerHTML='<option value="">Error loading clients</option>';
@@ -1677,10 +2218,19 @@ $('fbaTypeLoose').onclick=()=>{ setLineType('loose'); setTimeout(focusCap,60); }
 $('fbaAddBtn').onclick=fbaAddLine;
 $('fbaCancelBtn').onclick=()=>{ hideDeclare(); setFPad('','Scan a product','',''); setTimeout(focusCap,60); };
 ['fbaUpb','fbaBoxes'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input',updateCaseTotal); });
+$('cntCreateBtn').onclick=()=>createCount(false);
+$('cntClient').onchange=()=>{ cntPreflight(); setTimeout(focusCap,60); };
+$('cntFinishBtn').onclick=()=>finishCount(false);
+$('cntLeaveBtn').onclick=()=>{ CNT.current=null; CNT.locs=[]; CNT.lines=[]; CNT.loc=null; showCountHome(); };
+$('cntCloseLocBtn').onclick=closeLocation;
+$('cntBackLocBtn').onclick=()=>{ CNT.loc=null; CNT.lines=[]; hideCntDeclare(); showCountActive(); renderLocList(); setTimeout(focusCap,60); };
+$('cntAddBtn').onclick=cntAddLine;
+$('cntCancelBtn').onclick=()=>{ hideCntDeclare(); setCPad2('','Scan a product','',''); setTimeout(focusCap,60); };
+$('cntQty').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); cntAddLine(); } });
 $('loginBtn').onclick=doLogin;
 $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 // keep capture focused when tapping anywhere neutral in a scanning view
-document.addEventListener('click',e=>{ if((S.view==='receiving'||S.view==='outbound'||S.view==='locations'||S.view==='inventory'||S.view==='pallets'||S.view==='fba') && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
+document.addEventListener('click',e=>{ if((S.view==='receiving'||S.view==='outbound'||S.view==='locations'||S.view==='inventory'||S.view==='pallets'||S.view==='fba'||S.view==='count') && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
 // refocus capture after using a select
 ['rClient','rType','rCarrier','oClient','oType','oCarrier'].forEach(id=>{ document.addEventListener('change',e=>{ if(e.target.id===id) setTimeout(focusCap,60); }); });
 
