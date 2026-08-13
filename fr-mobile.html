@@ -187,6 +187,7 @@
   .fba-src.map{color:var(--green-d);background:#e7f6ef}
   .fba-src.scanned_sku{color:var(--teal-d);background:#e4f5f5}
   .fba-src.manual{color:#a9760a;background:#fff6e5}
+  .fba-src.memory{color:var(--navy);background:#e8eef3}
   ul.scans li.fba{align-items:flex-start}
   ul.scans li .lineinfo{flex:1;min-width:0}
   ul.scans li .lineinfo .l1{font-family:ui-monospace,Menlo,monospace;font-size:14px;font-weight:600;word-break:break-all}
@@ -1431,7 +1432,7 @@ async function fbaScan(code){
   if(classify(code)==='location'){ setFPad('err','That is a location','Scan the product barcode',code); feedback('err'); return; }
   setFPad('','Looking up…','',code);
   try{
-    const j=await fbaApi('GET','resolve_code',{code});
+    const j=await fbaApi('GET','resolve_code',{code, shipment_id:FBA.current.id});
     openDeclare(code, j);
     feedback(j.mapped?'ok':'dup');
     setFPad(j.mapped?'ok':'dup', j.mapped?'Found':'Not in the map', j.mapped?'':'Confirm the merchant SKU', code);
@@ -1449,7 +1450,17 @@ function openDeclare(code, resolved){
   const src=$('fbaSrc');
   src.className='fba-src '+(resolved.source||'manual');
   src.textContent = resolved.source==='map' ? 'MAP'
-                  : resolved.source==='scanned_sku' ? 'SKU' : 'MANUAL';
+                  : resolved.source==='scanned_sku' ? 'SKU'
+                  : resolved.source==='memory' ? 'REMEMBERED' : 'MANUAL';
+  // A remembered SKU came from a person, not from SkuVault. Show who and when,
+  // so a wrong one gets caught here instead of riding along every future scan.
+  if(resolved.source==='memory'){
+    const who=resolved.confirmed_by||'someone';
+    const when=resolved.confirmed_at
+      ? new Date(resolved.confirmed_at).toLocaleDateString(undefined,{month:'short',day:'numeric'})
+      : 'earlier';
+    $('fbaScanned').textContent=`Scanned ${code} · confirmed by ${who} on ${when}`;
+  }
 
   const un=$('fbaUnmapped');
   un.hidden = !!resolved.mapped;
@@ -1567,7 +1578,8 @@ function renderFbaLines(){
     const detail = l.line_type==='case'
       ? `${l.units_per_box} × ${l.boxes} box${l.boxes>1?'es':''} = ${l.quantity}${dims}`
       : `loose · ${l.quantity} units`;
-    const flag = l.msku_source==='manual' ? ' <span class="fba-src manual">manual</span>' : '';
+    const flag = l.msku_source==='manual' ? ' <span class="fba-src manual">manual</span>'
+               : l.msku_source==='memory' ? ' <span class="fba-src memory">remembered</span>' : '';
     li.innerHTML=`<div class="lineinfo"><div class="l1">${l.msku}${flag}</div><div class="l2">${detail}</div></div>`;
     const b=document.createElement('button'); b.className='undo'; b.textContent='↺'; b.title='Remove';
     b.onclick=()=>deleteFbaLine(l.id); li.appendChild(b);
