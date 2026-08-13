@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FR-Logistics · Stock Count</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',-apple-system,sans-serif;background:#F4F6FB;color:#1A2238;padding:1.4rem;min-height:100vh}
+  .wrap{max-width:1460px;margin:0 auto}
+
+  /* header */
+  .hdr{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1.4rem}
+  .brand{display:flex;align-items:center;gap:.95rem}
+  .brand .logo{height:62px;width:auto;flex-shrink:0}
+  .brand .divider{width:1px;height:42px;background:#E4E9F2;flex-shrink:0}
+  .hdr .eb{font-size:.66rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#00B4AA;margin-bottom:.3rem}
+  .hdr h1{font-size:1.55rem;font-weight:800;letter-spacing:-.02em;color:#0F1D35}
+  .hdr .sub{font-size:.85rem;color:#7B8AA0;margin-top:.15rem}
+  .wordmark{font-size:1.5rem;font-weight:900;letter-spacing:-.03em;color:#0F1D35}
+  .wordmark span{color:#00B4AA}
+
+  .layout{display:grid;grid-template-columns:300px 1fr;gap:1.1rem;align-items:start}
+  @media(max-width:960px){.layout{grid-template-columns:1fr}}
+
+  .card{background:#fff;border:1px solid #E4E9F2;border-radius:12px;box-shadow:0 2px 8px rgba(20,30,60,.04)}
+  .card .ch{padding:.85rem 1.1rem;border-bottom:1px solid #EEF2F7;display:flex;justify-content:space-between;align-items:center;gap:.6rem}
+  .card .ch h2{font-size:.82rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#475569}
+  .card .cb{padding:1.1rem}
+
+  /* count list */
+  .clist{max-height:70vh;overflow:auto}
+  .citem{padding:.8rem 1.1rem;border-bottom:1px solid #F1F5F9;cursor:pointer;transition:background .12s}
+  .citem:hover{background:#F8FAFC}
+  .citem.on{background:#EFFCFA;border-left:3px solid #00B4AA;padding-left:calc(1.1rem - 3px)}
+  .citem .r{font-size:.9rem;font-weight:700;color:#0F1D35}
+  .citem .c{font-size:.76rem;color:#7B8AA0;margin-top:.15rem}
+  .citem .p{font-size:.72rem;color:#94A3B8;margin-top:.3rem}
+
+  .pill{display:inline-block;font-size:.63rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:.2rem .5rem;border-radius:20px}
+  .pill.open{background:#FEF3C7;color:#92400E}
+  .pill.review{background:#DBEAFE;color:#1E40AF}
+  .pill.closed{background:#DCFCE7;color:#166534}
+  .pill.cancelled{background:#F1F5F9;color:#64748B}
+
+  /* kpis */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.75rem;margin-bottom:1.1rem}
+  .kpi{background:#fff;border:1px solid #E4E9F2;border-radius:12px;padding:.9rem 1rem}
+  .kpi .l{font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#94A3B8}
+  .kpi .v{font-size:1.5rem;font-weight:800;letter-spacing:-.02em;color:#0F1D35;margin-top:.2rem;line-height:1.1}
+  .kpi .s{font-size:.72rem;color:#7B8AA0;margin-top:.15rem}
+  .kpi.warn .v{color:#B45309}
+  .kpi.bad .v{color:#B91C1C}
+  .kpi.good .v{color:#15803D}
+
+  /* sealed */
+  .sealed{background:#fff;border:1px dashed #CBD5E1;border-radius:12px;padding:2.2rem 1.4rem;text-align:center}
+  .sealed .ic{font-size:2rem}
+  .sealed h3{font-size:1.05rem;font-weight:800;color:#0F1D35;margin:.6rem 0 .35rem}
+  .sealed p{font-size:.86rem;color:#64748B;max-width:56ch;margin:0 auto;line-height:1.55}
+  .bar{height:8px;background:#EEF2F7;border-radius:20px;overflow:hidden;margin:1.1rem auto 0;max-width:380px}
+  .bar i{display:block;height:100%;background:#00B4AA;border-radius:20px;transition:width .3s}
+
+  /* filters */
+  .chips{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
+  .chip{font-size:.74rem;font-weight:700;padding:.35rem .7rem;border-radius:20px;border:1px solid #E4E9F2;background:#fff;color:#64748B;cursor:pointer}
+  .chip.on{background:#0F1D35;border-color:#0F1D35;color:#fff}
+  .chip b{font-weight:800}
+  input.search{border:1px solid #E4E9F2;border-radius:8px;padding:.4rem .7rem;font:inherit;font-size:.8rem;width:190px}
+
+  /* table */
+  table{width:100%;border-collapse:collapse;font-size:.82rem}
+  th{text-align:left;font-size:.67rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#94A3B8;padding:.55rem .7rem;border-bottom:1px solid #EEF2F7;white-space:nowrap}
+  td{padding:.5rem .7rem;border-bottom:1px solid #F5F7FA;vertical-align:middle}
+  td.n{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+  tr:hover td{background:#FBFCFE}
+  .mono{font-family:ui-monospace,Consolas,monospace;font-size:.79rem}
+  .tag{display:inline-block;font-size:.62rem;font-weight:800;letter-spacing:.05em;padding:.18rem .45rem;border-radius:5px}
+  .tag.MISSING{background:#FEE2E2;color:#991B1B}
+  .tag.SHORT{background:#FEF3C7;color:#92400E}
+  .tag.OVER{background:#E0E7FF;color:#3730A3}
+  .tag.UNEXPECTED{background:#F3E8FF;color:#6B21A8}
+  .tag.NOT_COUNTED{background:#F1F5F9;color:#64748B}
+  .tag.OK{background:#DCFCE7;color:#166534}
+  .tag.CLEAN{background:#DCFCE7;color:#166534}
+  .tag.MISPLACED{background:#E0E7FF;color:#3730A3}
+  .tag.NET_SHORT{background:#FEE2E2;color:#991B1B}
+  .tag.NET_OVER{background:#FEF3C7;color:#92400E}
+  .neg{color:#B91C1C}.pos{color:#1D4ED8}
+
+  .btn{border:1px solid #E4E9F2;background:#fff;color:#334155;font:inherit;font-size:.78rem;font-weight:700;padding:.45rem .85rem;border-radius:8px;cursor:pointer}
+  .btn:hover{background:#F8FAFC}
+  .btn.pri{background:#0F1D35;border-color:#0F1D35;color:#fff}
+  .btn.pri:hover{background:#1A2238}
+  .btn.teal{background:#00B4AA;border-color:#00B4AA;color:#fff}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .acts{display:flex;gap:.5rem;flex-wrap:wrap}
+
+  .note{font-size:.78rem;color:#64748B;line-height:1.55;background:#F8FAFC;border:1px solid #EEF2F7;border-radius:9px;padding:.7rem .85rem;margin-top:.9rem}
+  .note b{color:#334155}
+  .empty{padding:2rem;text-align:center;color:#94A3B8;font-size:.85rem}
+  .err{background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;border-radius:9px;padding:.7rem .85rem;font-size:.82rem}
+  .tabs{display:flex;gap:.35rem}
+  .tab{font-size:.76rem;font-weight:700;padding:.4rem .8rem;border-radius:8px;border:1px solid transparent;color:#64748B;cursor:pointer}
+  .tab.on{background:#EFFCFA;color:#0F766E;border-color:#99E6DF}
+
+  /* the signed reconciliation sheet */
+  #sheet{display:none}
+  @media print{
+    body{background:#fff;padding:0}
+    .noprint{display:none !important}
+    #sheet{display:block}
+    .card{box-shadow:none;border:none}
+    table{font-size:.72rem}
+    th{border-bottom:1px solid #333}
+    .sig{margin-top:2.4rem;display:grid;grid-template-columns:1fr 1fr;gap:2.5rem}
+    .sig div{border-top:1px solid #333;padding-top:.4rem;font-size:.75rem}
+    @page{margin:14mm}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hdr noprint">
+    <div class="brand">
+      <img class="logo" src="__LOGO_B64__" alt="FR-Logistics"
+           onerror="this.style.display='none';this.nextElementSibling.style.display='none';document.getElementById('wm').style.display='block'">
+      <div class="divider"></div>
+      <div id="wm" class="wordmark" style="display:none">FR<span>-Logistics</span></div>
+      <div>
+        <div class="eb">Warehouse</div>
+        <h1>Stock Count</h1>
+        <div class="sub">Physical &amp; cycle counts · variance against the frozen snapshot</div>
+      </div>
+    </div>
+    <div class="acts">
+      <button class="btn" id="reloadBtn">↻ Refresh</button>
+      <button class="btn" onclick="location.href='/portal.html'">← Portal</button>
+    </div>
+  </div>
+
+  <div id="fatal" class="err noprint" hidden></div>
+
+  <div class="layout noprint">
+    <!-- LEFT: counts -->
+    <div class="card">
+      <div class="ch">
+        <h2>Counts</h2>
+        <div class="tabs">
+          <span class="tab on" data-scope="live">Live</span>
+          <span class="tab" data-scope="all">All</span>
+        </div>
+      </div>
+      <div class="clist" id="clist"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- RIGHT: detail -->
+    <div id="detail"><div class="card"><div class="empty">Pick a count on the left.</div></div></div>
+  </div>
+
+  <!-- printable reconciliation sheet -->
+  <div id="sheet"></div>
+</div>
+
+<script>
+/* ============================================================
+   FR-LOGISTICS · STOCK COUNT (portal side)
+   Reads /frm-count. The variance is SEALED while a count is open —
+   that is enforced by the function, not by this page, so opening the
+   browser console does not get you the expected quantities either.
+   ============================================================ */
+const API = '/.netlify/functions/frm-count';
+const S = { scope:'live', counts:[], sel:null, data:null, filter:'ALL', q:'', tab:'lines' };
+
+const $  = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num = n => (Number(n)||0).toLocaleString('en-US');
+
+async function api(method, action, payload){
+  const url = method==='GET' ? `${API}?action=${action}&${new URLSearchParams(payload||{})}` : API;
+  const res = await fetch(url, method==='GET' ? {} : {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action, ...(payload||{})})
+  });
+  // Read as text first: when a function dies it answers HTML or plain text,
+  // and res.json() would swallow the real error message.
+  const txt = await res.text();
+  let j = {}; try{ j = txt ? JSON.parse(txt) : {}; }catch{ j = { error:'Non-JSON response', message:txt.slice(0,300) }; }
+  if(!res.ok){ const e = new Error(j.message || j.error || ('HTTP '+res.status)); e.code = j.error; e.payload = j; throw e; }
+  return j;
+}
+
+/* ---------- counts list ---------- */
+async function loadCounts(){
+  const box = $('clist');
+  box.innerHTML = '<div class="empty">Loading…</div>';
+  try{
+    const j = await api('GET','counts',{ status: S.scope === 'live' ? 'live' : 'all' });
+    S.counts = j.counts || [];
+    if(!S.counts.length){ box.innerHTML = '<div class="empty">No counts yet.</div>'; return; }
+    box.innerHTML = S.counts.map(c => `
+      <div class="citem${S.sel===c.count_id?' on':''}" data-id="${c.count_id}">
+        <div class="r">${esc(c.reference)} <span class="pill ${c.status}">${c.status}</span></div>
+        <div class="c">${esc(c.client)}</div>
+        <div class="p">${c.locations_counted||0}/${c.locations_total||0} locations · ${esc((c.created_at||'').slice(0,10))}</div>
+      </div>`).join('');
+    box.querySelectorAll('.citem').forEach(el => el.onclick = () => selectCount(el.dataset.id));
+    if(!S.sel && S.counts.length) selectCount(S.counts[0].count_id);
+  }catch(e){ box.innerHTML = `<div class="empty">Could not load counts.<br><small>${esc(e.message)}</small></div>`; }
+}
+
+async function selectCount(id){
+  S.sel = id; S.filter = 'ALL'; S.q = ''; S.tab = 'lines';
+  document.querySelectorAll('.citem').forEach(el => el.classList.toggle('on', el.dataset.id === id));
+  $('detail').innerHTML = '<div class="card"><div class="empty">Loading…</div></div>';
+  try{
+    const head = await api('GET','count',{ count_id:id });
+    if(head.count.status === 'open'){ S.data = { sealed:true, ...head }; return renderSealed(); }
+    S.data = await api('GET','variance',{ count_id:id });
+    S.data.locations = head.locations;
+    renderDetail();
+  }catch(e){
+    if(e.code === 'COUNT_STILL_OPEN'){ S.data = { sealed:true }; return renderSealed(); }
+    $('detail').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }
+}
+
+/* ---------- sealed (count still open) ---------- */
+function renderSealed(){
+  const c = (S.data && S.data.count) || {};
+  const p = (S.data && S.data.progress) || { total:0, counted:0 };
+  const pct = p.total ? Math.round(p.counted / p.total * 100) : 0;
+  const pending = (S.data.locations || []).filter(l => !['counted','recount'].includes(l.status));
+  $('detail').innerHTML = `
+    <div class="sealed">
+      <div class="ic">🔒</div>
+      <h3>${esc(c.reference || 'Count')} is still being counted</h3>
+      <p>The variance stays sealed until capture is finished. Expected quantities are withheld by the
+         server, not just hidden here — so nobody on the floor can check their count against the target
+         mid-walk. Finish the count on the handheld to open the report.</p>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+      <p style="margin-top:.7rem"><b>${p.counted} of ${p.total}</b> locations counted (${pct}%)</p>
+    </div>
+    ${pending.length ? `<div class="card" style="margin-top:1.1rem"><div class="ch"><h2>Still to count · ${pending.length}</h2></div>
+      <div class="cb"><div class="mono" style="font-size:.8rem;color:#475569;line-height:1.9">
+      ${pending.map(l => esc(l.location_code)).join(' · ')}</div></div></div>` : ''}`;
+}
+
+/* ---------- the report ---------- */
+function renderDetail(){
+  const d = S.data, c = d.count, s = d.summary || {};
+  const off = Number(s.units_off) || 0;
+  const acc = s.lines_compared ? Math.round((s.lines_ok / s.lines_compared) * 100) : null;
+  const unitAcc = s.snapshot_units ? Math.max(0, Math.round((1 - off / s.snapshot_units) * 100)) : null;
+  const pend = (d.pending || []).length;
+
+  const counts = { ALL:d.variance.length };
+  ['MISSING','SHORT','OVER','UNEXPECTED','NOT_COUNTED','OK'].forEach(k =>
+    counts[k] = d.variance.filter(r => r.variance === k).length);
+
+  $('detail').innerHTML = `
+    <div class="kpis">
+      <div class="kpi"><div class="l">Locations</div><div class="v">${s.locations_counted||0}/${s.locations_total||0}</div>
+        <div class="s">${pend ? pend + ' lines not counted' : 'walk complete'}</div></div>
+      <div class="kpi"><div class="l">Units expected</div><div class="v">${num(s.snapshot_units)}</div>
+        <div class="s">frozen ${esc((c.snapshot_at||'').slice(0,16).replace('T',' '))}</div></div>
+      <div class="kpi"><div class="l">Units counted</div><div class="v">${num(s.units_counted)}</div>
+        <div class="s">${d.variance.filter(r=>r.qty_counted>0).length} SKU-locations found</div></div>
+      <div class="kpi ${off===0?'good':off>50?'bad':'warn'}"><div class="l">Units off</div><div class="v">${num(off)}</div>
+        <div class="s">${unitAcc!=null?unitAcc+'% unit accuracy':'—'}</div></div>
+      <div class="kpi ${counts.MISSING?'bad':acc===100?'good':'warn'}"><div class="l">Line accuracy</div>
+        <div class="v">${acc!=null?acc+'%':'—'}</div><div class="s">${s.lines_ok||0} of ${s.lines_compared||0} clean</div></div>
+    </div>
+
+    <div class="card">
+      <div class="ch">
+        <div class="tabs">
+          <span class="tab ${S.tab==='lines'?'on':''}" data-tab="lines">By location</span>
+          <span class="tab ${S.tab==='sku'?'on':''}" data-tab="sku">By SKU · lost vs moved</span>
+        </div>
+        <div class="acts">
+          <button class="btn" id="csvBtn">Export CSV</button>
+          <button class="btn" id="printBtn">Reconciliation sheet</button>
+          ${c.status==='review' ? '<button class="btn pri" id="closeBtn">Close count</button>' : ''}
+        </div>
+      </div>
+      <div class="cb" id="tabBody"></div>
+    </div>`;
+
+  document.querySelectorAll('[data-tab]').forEach(el => el.onclick = () => { S.tab = el.dataset.tab; renderDetail(); });
+  $('csvBtn').onclick = exportCsv;
+  $('printBtn').onclick = printSheet;
+  if($('closeBtn')) $('closeBtn').onclick = closeCount;
+
+  if(S.tab === 'lines') renderLines(counts); else renderSku();
+}
+
+function renderLines(counts){
+  const labels = { ALL:'All', MISSING:'Missing', SHORT:'Short', OVER:'Over', UNEXPECTED:'Unexpected', NOT_COUNTED:'Not counted', OK:'Match' };
+  const chips = Object.keys(labels).filter(k => k === 'ALL' || counts[k])
+    .map(k => `<span class="chip ${S.filter===k?'on':''}" data-f="${k}">${labels[k]} <b>${counts[k]}</b></span>`).join('');
+
+  const rows = S.data.variance
+    .filter(r => S.filter === 'ALL' || r.variance === S.filter)
+    .filter(r => !S.q || (r.sku + ' ' + r.location_code).toLowerCase().includes(S.q.toLowerCase()));
+
+  $('tabBody').innerHTML = `
+    <div style="display:flex;justify-content:space-between;gap:.8rem;flex-wrap:wrap;margin-bottom:.9rem">
+      <div class="chips">${chips}</div>
+      <input class="search" id="q" placeholder="Filter SKU or location" value="${esc(S.q)}">
+    </div>
+    ${rows.length ? `<div style="overflow:auto;max-height:60vh"><table>
+      <thead><tr><th>Location</th><th>SKU</th><th style="text-align:right">Expected</th>
+      <th style="text-align:right">Counted</th><th style="text-align:right">Diff</th><th>Result</th><th></th></tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td class="mono">${esc(r.location_code)}</td>
+        <td class="mono">${esc(r.sku)}</td>
+        <td class="n">${r.variance==='UNEXPECTED'?'—':num(r.qty_expected)}</td>
+        <td class="n">${r.variance==='NOT_COUNTED'?'—':num(r.qty_counted)}</td>
+        <td class="n ${r.diff<0?'neg':r.diff>0?'pos':''}">${r.variance==='NOT_COUNTED'?'—':(r.diff>0?'+':'')+r.diff}</td>
+        <td><span class="tag ${r.variance}">${r.variance.replace('_',' ')}</span></td>
+        <td>${['MISSING','SHORT','OVER'].includes(r.variance) && S.data.count.status==='review'
+              ? `<button class="btn" data-recount="${esc(r.location_code)}" style="padding:.25rem .55rem;font-size:.7rem">Recount</button>` : ''}</td>
+      </tr>`).join('')}</tbody></table></div>`
+    : '<div class="empty">Nothing in this filter.</div>'}
+
+    <div class="note">
+      <b>How to read this.</b> <b>Not counted</b> means the location was never visited — it is
+      <i>not</i> missing stock and must not be adjusted. <b>Missing</b> and <b>Short</b> are real gaps in a
+      location that <i>was</i> counted. Before adjusting anything, open the <b>By SKU</b> tab: if a SKU's
+      totals balance out, the stock was <b>moved</b>, not lost, and the fix is a put-away correction
+      rather than a write-off. Recount anything you are about to adjust — most first-pass variances are
+      counting errors, not inventory errors.
+    </div>`;
+
+  document.querySelectorAll('[data-f]').forEach(el => el.onclick = () => { S.filter = el.dataset.f; renderLines(counts); });
+  document.querySelectorAll('[data-recount]').forEach(el => el.onclick = () => recount(el.dataset.recount));
+  const q = $('q');
+  q.oninput = () => { S.q = q.value; const pos = q.selectionStart; renderLines(counts); const n = $('q'); n.focus(); n.setSelectionRange(pos,pos); };
+}
+
+function renderSku(){
+  const rows = (S.data.rollup || []).filter(r => r.verdict !== 'CLEAN' || !S.q)
+    .filter(r => !S.q || r.sku.toLowerCase().includes(S.q.toLowerCase()));
+  const misplaced = rows.filter(r => r.verdict === 'MISPLACED').length;
+  const short = rows.filter(r => r.verdict === 'NET_SHORT').length;
+
+  $('tabBody').innerHTML = `
+    <div style="display:flex;justify-content:space-between;gap:.8rem;flex-wrap:wrap;margin-bottom:.9rem">
+      <div class="chips">
+        <span class="chip on">${rows.length} SKUs</span>
+        ${misplaced ? `<span class="chip">Moved, not lost <b>${misplaced}</b></span>` : ''}
+        ${short ? `<span class="chip">Net short <b>${short}</b></span>` : ''}
+      </div>
+      <input class="search" id="q2" placeholder="Filter SKU" value="${esc(S.q)}">
+    </div>
+    ${rows.length ? `<div style="overflow:auto;max-height:60vh"><table>
+      <thead><tr><th>SKU</th><th>Client</th><th style="text-align:right">Expected</th>
+      <th style="text-align:right">Counted</th><th style="text-align:right">Net</th>
+      <th style="text-align:right">Bad lines</th><th>Verdict</th></tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td class="mono">${esc(r.sku)}</td>
+        <td style="color:#64748B">${esc(r.client||'—')}</td>
+        <td class="n">${num(r.expected_counted_locs)}</td>
+        <td class="n">${num(r.counted_total)}</td>
+        <td class="n ${r.net_diff<0?'neg':r.net_diff>0?'pos':''}">${(r.net_diff>0?'+':'')+(r.net_diff||0)}</td>
+        <td class="n">${r.variance_lines||0}</td>
+        <td><span class="tag ${r.verdict}">${r.verdict.replace('_',' ')}</span>${
+          r.has_pending_locations ? ' <span class="tag NOT_COUNTED" title="Some locations for this SKU were never counted">partial</span>' : ''}</td>
+      </tr>`).join('')}</tbody></table></div>`
+    : '<div class="empty">Every SKU balanced.</div>'}
+
+    <div class="note">
+      <b>MOVED</b> means the SKU's totals match but individual bins disagree — someone put it away in the
+      wrong location. Fix the locations in SkuVault; do not adjust quantities. <b>NET SHORT</b> and
+      <b>NET OVER</b> are the only rows that justify a quantity adjustment. A <b>partial</b> flag means
+      some of that SKU's locations were never counted, so its net figure is incomplete — finish those
+      locations before concluding anything about it.
+    </div>`;
+
+  const q = $('q2');
+  q.oninput = () => { S.q = q.value; const pos = q.selectionStart; renderSku(); const n = $('q2'); n.focus(); n.setSelectionRange(pos,pos); };
+}
+
+/* ---------- actions ---------- */
+async function recount(location){
+  if(!confirm(`Reopen ${location} for a recount?\n\nThe first pass stays on record; the handheld will capture a second one.`)) return;
+  try{
+    await api('POST','recount_location',{ count_id:S.sel, location_code:location });
+    alert(`${location} is open again. Recount it on the handheld, close the location, then refresh here.`);
+    selectCount(S.sel);
+  }catch(e){ alert(e.message); }
+}
+
+async function closeCount(){
+  const applied = confirm(
+    'Close this count.\n\nOK  = the adjustment has ALREADY been applied in SkuVault\n' +
+    'Cancel = close it without recording an adjustment');
+  const by = prompt('Who is closing it?', '') || '';
+  try{
+    await api('POST','close_count',{ count_id:S.sel, by, applied });
+    loadCounts(); selectCount(S.sel);
+  }catch(e){ alert(e.message); }
+}
+
+function exportCsv(){
+  const d = S.data;
+  const head = ['count','client','location','sku','expected','counted','diff','result','pass'];
+  const rows = d.variance.map(r => [
+    d.count.reference, r.client||'', r.location_code, r.sku,
+    r.variance==='UNEXPECTED' ? '' : r.qty_expected,
+    r.variance==='NOT_COUNTED' ? '' : r.qty_counted,
+    r.variance==='NOT_COUNTED' ? '' : r.diff,
+    r.variance, r.pass
+  ]);
+  const csv = [head, ...rows].map(r => r.map(v => {
+    const s = String(v==null?'':v);
+    return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  }).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff'+csv], { type:'text/csv;charset=utf-8' }));
+  a.download = `count_${d.count.reference.replace(/[^A-Za-z0-9_-]/g,'_')}.csv`;
+  a.click();
+}
+
+function printSheet(){
+  const d = S.data, c = d.count, s = d.summary || {};
+  const ex = d.exceptions || [];
+  const pend = (d.pending || []).length;
+  $('sheet').innerHTML = `
+    <h1 style="font-size:1.2rem;font-weight:800">FR-Logistics · Inventory Reconciliation</h1>
+    <div style="font-size:.8rem;color:#475569;margin:.35rem 0 1rem;line-height:1.7">
+      <b>Client:</b> ${esc(c.client)} &nbsp;·&nbsp; <b>Reference:</b> ${esc(c.reference)}<br>
+      <b>System snapshot frozen:</b> ${esc((c.snapshot_at||'').replace('T',' ').slice(0,16))} &nbsp;·&nbsp;
+      <b>Counted by:</b> ${esc(c.started_by||'—')} &nbsp;·&nbsp;
+      <b>Capture closed:</b> ${esc((c.closed_at||'').replace('T',' ').slice(0,16))}<br>
+      <b>Method:</b> blind count by location. Expected quantities were withheld from the counter until capture was closed.
+    </div>
+    <table style="margin-bottom:1rem">
+      <tbody>
+        <tr><td>Locations counted</td><td class="n">${s.locations_counted||0} of ${s.locations_total||0}</td>
+            <td>Units on system</td><td class="n">${num(s.snapshot_units)}</td></tr>
+        <tr><td>Units physically counted</td><td class="n">${num(s.units_counted)}</td>
+            <td>Total units off</td><td class="n">${num(s.units_off)}</td></tr>
+        <tr><td>Lines compared</td><td class="n">${s.lines_compared||0}</td>
+            <td>Lines matching exactly</td><td class="n">${s.lines_ok||0}</td></tr>
+      </tbody>
+    </table>
+    ${pend ? `<p style="font-size:.75rem;color:#92400E;margin-bottom:.8rem"><b>Note:</b> ${pend} SKU-location line${pend===1?'':'s'} could not be counted and are excluded from the figures above. They are not treated as missing stock.</p>` : ''}
+    <h2 style="font-size:.85rem;font-weight:800;margin:.9rem 0 .4rem">Discrepancies (${ex.length})</h2>
+    ${ex.length ? `<table><thead><tr><th>Location</th><th>SKU</th><th style="text-align:right">System</th>
+      <th style="text-align:right">Counted</th><th style="text-align:right">Diff</th><th>Result</th></tr></thead>
+      <tbody>${ex.map(r => `<tr><td class="mono">${esc(r.location_code)}</td><td class="mono">${esc(r.sku)}</td>
+        <td class="n">${r.variance==='UNEXPECTED'?'—':num(r.qty_expected)}</td><td class="n">${num(r.qty_counted)}</td>
+        <td class="n">${(r.diff>0?'+':'')+r.diff}</td><td>${r.variance.replace('_',' ')}</td></tr>`).join('')}
+      </tbody></table>` : '<p style="font-size:.8rem">No discrepancies. Every counted line matched the system.</p>'}
+    <div class="sig">
+      <div>FR-Logistics — prepared by</div>
+      <div>${esc(c.client)} — acknowledged by</div>
+    </div>`;
+  window.print();
+}
+
+/* ---------- boot ---------- */
+document.querySelectorAll('[data-scope]').forEach(el => el.onclick = () => {
+  S.scope = el.dataset.scope;
+  document.querySelectorAll('[data-scope]').forEach(x => x.classList.toggle('on', x === el));
+  loadCounts();
+});
+$('reloadBtn').onclick = () => { loadCounts(); if(S.sel) selectCount(S.sel); };
+loadCounts();
+</script>
+</body>
+</html>
