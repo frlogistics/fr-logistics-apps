@@ -168,6 +168,32 @@
   .lc-list .qty{font-size:16px;font-weight:750;color:var(--teal-d);font-variant-numeric:tabular-nums;white-space:nowrap}
   .lc-empty{color:var(--muted);text-align:center;padding:16px 0;font-size:14px}
   .lc-total{margin-top:12px;padding-top:12px;border-top:2px solid var(--line);display:flex;justify-content:space-between;font-weight:700;font-size:15px}
+
+  /* FBA count */
+  .seg{display:flex;gap:8px;margin:2px 0 12px}
+  .seg button{
+    flex:1;height:46px;border:1.5px solid var(--line);background:var(--white);color:var(--muted);
+    border-radius:12px;font-size:15px;font-weight:650;
+  }
+  .seg button.on{background:var(--navy);border-color:var(--navy);color:#fff}
+  .row4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:7px}
+  .row4 input{padding:0 8px;font-size:15px;text-align:center}
+  .row4 label{font-size:10px;text-align:center}
+  .fba-msku{
+    font-family:ui-monospace,Menlo,monospace;font-size:16px;font-weight:700;color:var(--navy);
+    word-break:break-all;
+  }
+  .fba-src{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;padding:3px 8px;border-radius:20px;white-space:nowrap}
+  .fba-src.map{color:var(--green-d);background:#e7f6ef}
+  .fba-src.scanned_sku{color:var(--teal-d);background:#e4f5f5}
+  .fba-src.manual{color:#a9760a;background:#fff6e5}
+  ul.scans li.fba{align-items:flex-start}
+  ul.scans li .lineinfo{flex:1;min-width:0}
+  ul.scans li .lineinfo .l1{font-family:ui-monospace,Menlo,monospace;font-size:14px;font-weight:600;word-break:break-all}
+  ul.scans li .lineinfo .l2{font-size:12px;color:var(--muted);margin-top:2px}
+  .warnbox{background:#fff6e5;border:1px solid var(--amber);border-radius:12px;padding:10px 12px;font-size:13px;color:#7a5600;margin-bottom:10px}
+  .sugg{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .sugg button{border:1.5px solid var(--line);background:var(--paper);color:var(--navy);border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;font-family:ui-monospace,Menlo,monospace}
 </style>
 </head>
 <body>
@@ -215,6 +241,10 @@
         <button class="mod" data-go="pallets">
           <span class="ic">🧱</span>
           <span><span class="nm">Pallets</span><br><span class="sub">Returns pallet builder</span></span>
+        </button>
+        <button class="mod" data-go="fba">
+          <span class="ic">🏷️</span>
+          <span><span class="nm">FBA Count</span><br><span class="sub">Count boxes and loose units</span></span>
         </button>
       </div>
     </section>
@@ -393,6 +423,119 @@
         <div class="empty" id="palPkgEmpty">No packages yet. Scan the first one.</div>
       </div>
     </section>
+
+    <!-- FBA COUNT (Send to Amazon manifest — writes to fba_shipments / fba_shipment_lines) -->
+    <section class="view" id="v-fba">
+      <!-- no active shipment: create or load -->
+      <div id="fbaNoShip">
+        <div class="lcard">
+          <div class="lc-code" style="font-size:16px;margin-bottom:12px">Start a count</div>
+          <div class="field">
+            <label for="fbaClient">Client</label>
+            <select id="fbaClient"><option value="">— Select client —</option></select>
+          </div>
+          <div class="field">
+            <label for="fbaRef">Reference</label>
+            <input id="fbaRef" type="text" placeholder="e.g. SDI-AGO-01" autocomplete="off">
+          </div>
+          <button class="btn go" id="fbaCreateBtn" style="width:100%;margin-top:6px">+ New count</button>
+        </div>
+        <div class="lcard">
+          <div class="lc-code" style="font-size:15px;margin-bottom:10px">Open counts</div>
+          <ul class="lc-list" id="fbaOpenList"></ul>
+          <div class="lc-empty" id="fbaOpenEmpty">No open counts.</div>
+        </div>
+      </div>
+
+      <!-- active shipment: scan and declare -->
+      <div id="fbaActive" hidden>
+        <div class="lcard" style="background:var(--navy);color:#fff">
+          <div class="lc-head" style="margin:0">
+            <div>
+              <div class="lc-code" style="color:#fff;font-size:15px" id="fbaRefLbl">—</div>
+              <div class="lc-sub" style="color:#bcd" id="fbaMeta">—</div>
+            </div>
+            <span class="lc-zone" id="fbaUnits">0</span>
+          </div>
+        </div>
+
+        <div id="fbaWarn" hidden></div>
+
+        <div class="scanpad" id="fScanpad" tabindex="-1">
+          <div class="icon" id="fIcon">▣</div>
+          <div class="big" id="fBig">Scan a product</div>
+          <div class="lastcode" id="fCode"></div>
+          <div class="hint" id="fHint">Pull the trigger on the FNSKU. Then declare box or loose.</div>
+        </div>
+
+        <!-- declaration panel: appears after a scan resolves -->
+        <div class="lcard" id="fbaDeclare" hidden>
+          <div class="lc-head" style="margin-bottom:10px">
+            <div style="flex:1;min-width:0">
+              <div class="fba-msku" id="fbaMsku">—</div>
+              <div class="lc-sub" id="fbaScanned">—</div>
+            </div>
+            <span class="fba-src map" id="fbaSrc">MAP</span>
+          </div>
+
+          <!-- shown only when the scanned code has no mapping -->
+          <div id="fbaUnmapped" hidden>
+            <div class="warnbox" id="fbaUnmappedMsg">Not in the FNSKU map. Pick the merchant SKU or type it.</div>
+            <div class="field">
+              <label for="fbaManualMsku">Merchant SKU</label>
+              <input id="fbaManualMsku" type="text" placeholder="Type the MSKU" autocomplete="off">
+            </div>
+            <div class="sugg" id="fbaSugg"></div>
+          </div>
+
+          <div class="seg">
+            <button id="fbaTypeCase" class="on">Box of one item</button>
+            <button id="fbaTypeLoose">Loose units</button>
+          </div>
+
+          <!-- case pack -->
+          <div id="fbaCaseFields">
+            <div class="row2">
+              <div class="field">
+                <label for="fbaUpb">Units per box</label>
+                <input id="fbaUpb" type="text" inputmode="numeric" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="fbaBoxes">How many boxes</label>
+                <input id="fbaBoxes" type="text" inputmode="numeric" autocomplete="off">
+              </div>
+            </div>
+            <div class="field">
+              <label>Measure ONE box — the rest are assumed identical</label>
+              <div class="row4">
+                <input id="fbaL" type="text" inputmode="decimal" placeholder="L in" autocomplete="off">
+                <input id="fbaW" type="text" inputmode="decimal" placeholder="W in" autocomplete="off">
+                <input id="fbaH" type="text" inputmode="decimal" placeholder="H in" autocomplete="off">
+                <input id="fbaWt" type="text" inputmode="decimal" placeholder="lb" autocomplete="off">
+              </div>
+            </div>
+            <div class="lc-sub" id="fbaCaseTotal" style="margin:-4px 0 10px">—</div>
+          </div>
+
+          <!-- loose -->
+          <div id="fbaLooseFields" hidden>
+            <div class="field">
+              <label for="fbaQty">Loose units</label>
+              <input id="fbaQty" type="text" inputmode="numeric" autocomplete="off">
+            </div>
+            <div class="lc-sub" style="margin:-6px 0 10px">Adds to this SKU's loose line. The shipping boxes get decided when packing.</div>
+          </div>
+
+          <div style="display:flex;gap:10px">
+            <button class="btn ghost" id="fbaCancelBtn" style="flex:0 0 38%">Cancel</button>
+            <button class="btn" id="fbaAddBtn">Add line</button>
+          </div>
+        </div>
+
+        <ul class="scans" id="fbaLineList"></ul>
+        <div class="empty" id="fbaLineEmpty">No lines yet. Scan the first product.</div>
+      </div>
+    </section>
   </main>
 
   <footer class="acts" id="foot" hidden>
@@ -404,6 +547,10 @@
     <button class="btn ghost" id="palFullBtn">Mark FULL</button>
     <button class="btn ghost" id="palWrapBtn">Wrapped ✓</button>
     <button class="btn stop" id="palCloseBtn">Close pallet</button>
+  </footer>
+  <footer class="acts" id="fbaFoot" hidden>
+    <button class="btn ghost" id="fbaBackBtn">Leave open</button>
+    <button class="btn stop" id="fbaCloseBtn">Close count</button>
   </footer>
 </div>
 
@@ -477,7 +624,7 @@ function go(view){
   $('v-'+view).classList.add('active');
   const bar=$('topbar');
   // Reset both footers every time; each view turns on only the one it needs.
-  $('foot').hidden=true; $('palFoot').hidden=true;
+  $('foot').hidden=true; $('palFoot').hidden=true; $('fbaFoot').hidden=true;
   if(view==='home'){bar.classList.remove('has-back');$('title').textContent='FR Mobile';detachCapture();}
   else{bar.classList.add('has-back');}
   if(view==='receiving'){$('title').textContent='Receiving';$('foot').hidden=false;attachCapture();refreshList();}
@@ -485,6 +632,7 @@ function go(view){
   if(view==='locations'){$('title').textContent='Locations';attachCapture();initLocations();}
   if(view==='inventory'){$('title').textContent='Inventory';attachCapture();initInventory();}
   if(view==='pallets'){$('title').textContent='Pallets';attachCapture();initPallets();}
+  if(view==='fba'){$('title').textContent='FBA Count';attachCapture();initFba();}
   $('main').scrollTop=0;
 }
 
@@ -501,6 +649,7 @@ function attachCapture(){
   const lp=$('lScanpad'); if(lp) lp.addEventListener('click',onPadTap);
   const ip=$('iScanpad'); if(ip) ip.addEventListener('click',onPadTap);
   const pp=$('pScanpad'); if(pp) pp.addEventListener('click',onPadTap);
+  const fp=$('fScanpad'); if(fp) fp.addEventListener('click',onPadTap);
   document.addEventListener('keydown',onKey,true);
 }
 function detachCapture(){
@@ -511,6 +660,7 @@ function detachCapture(){
   const lp=$('lScanpad'); if(lp) lp.removeEventListener('click',onPadTap);
   const ip=$('iScanpad'); if(ip) ip.removeEventListener('click',onPadTap);
   const pp=$('pScanpad'); if(pp) pp.removeEventListener('click',onPadTap);
+  const fp=$('fScanpad'); if(fp) fp.removeEventListener('click',onPadTap);
 }
 function focusCap(){ if(!capAttached)return; const c=$('capture'); if(document.activeElement!==c) c.focus({preventScroll:true}); }
 function isFormField(el){ return el && (el.tagName==='SELECT' || (el.tagName==='INPUT' && el.id!=='capture')); }
@@ -520,7 +670,7 @@ function onKey(e){
   if(isFormField(document.activeElement)) return;
   if(e.key==='Enter'){
     const code=capBuf.trim();
-    if(code){ if(S.view==='locations') lookupScan(code); else if(S.view==='inventory') inventoryScan(code); else if(S.view==='pallets') palletScan(code); else commitScan(code); }
+    if(code){ if(S.view==='locations') lookupScan(code); else if(S.view==='inventory') inventoryScan(code); else if(S.view==='pallets') palletScan(code); else if(S.view==='fba') fbaScan(code); else commitScan(code); }
     capBuf=''; e.preventDefault(); return;
   }
   if(e.key.length===1){ capBuf+=e.key; clearTimeout(capTimer); capTimer=setTimeout(()=>{capBuf='';},120); }
@@ -1175,6 +1325,279 @@ function closePallet(){
   showPalletHome();
 }
 
+/* ============================================================
+   FBA COUNT — Send to Amazon manifest, Client-Managed flow
+   Writes through /frm-fba (service key, RLS-safe).
+   What gets counted here is what goes in the client's manifest:
+     · Box of one item  -> case pack: units/box, how many boxes, one measured box
+     · Loose units      -> quantity only; shipping boxes are decided when packing
+   ============================================================ */
+const FBA={ current:null, lines:[], pending:null, lineType:'case', busy:false };
+
+async function fbaApi(method, action, payload){
+  const url = method==='GET'
+    ? `${API_BASE}/frm-fba?action=${action}&${new URLSearchParams(payload||{})}`
+    : `${API_BASE}/frm-fba`;
+  const res = await fetch(url, method==='GET' ? {} : {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action, ...(payload||{})})
+  });
+  const j = await res.json().catch(()=>({}));
+  if(!res.ok){ const e=new Error(j.message||j.error||('HTTP '+res.status)); e.status=res.status; e.payload=j; throw e; }
+  return j;
+}
+
+function initFba(){
+  const sel=$('fbaClient');
+  if(sel && S.clients.length && sel.options.length<=1){
+    sel.innerHTML='<option value="">— Select client —</option>'+
+      S.clients.map(c=>`<option value="${c.label.replace(/"/g,'&quot;')}" data-id="${c.id}">${c.label}</option>`).join('');
+  }
+  if(FBA.current) showFbaActive(); else showFbaHome();
+}
+
+function showFbaHome(){
+  $('fbaNoShip').hidden=false; $('fbaActive').hidden=true; $('fbaFoot').hidden=true;
+  hideDeclare();
+  refreshOpenCounts();
+}
+function showFbaActive(){
+  $('fbaNoShip').hidden=true; $('fbaActive').hidden=false; $('fbaFoot').hidden=false;
+  renderFbaLines();
+}
+
+async function refreshOpenCounts(){
+  const ul=$('fbaOpenList'), empty=$('fbaOpenEmpty');
+  ul.innerHTML=''; empty.style.display='block'; empty.textContent='Loading…';
+  try{
+    const j=await fbaApi('GET','shipments');
+    const rows=j.shipments||[];
+    if(!rows.length){ empty.textContent='No open counts.'; return; }
+    empty.style.display='none';
+    rows.forEach(r=>{
+      const li=document.createElement('li');
+      const cli=(r.client&&(r.client.company||r.client.name))||'—';
+      li.innerHTML=`<div style="flex:1"><div class="sku">${r.reference}</div><div class="cli">${cli} · ${r.status}</div></div><span class="qty">›</span>`;
+      li.style.cursor='pointer';
+      li.onclick=()=>loadFbaShipment(r);
+      ul.appendChild(li);
+    });
+  }catch(e){ empty.textContent='Could not load counts.'; }
+}
+
+async function createFbaCount(){
+  const sel=$('fbaClient');
+  const client=sel.value.trim();
+  const client_id=sel.selectedOptions[0] && sel.selectedOptions[0].dataset.id;
+  const reference=$('fbaRef').value.trim();
+  if(!client_id){ toast('Pick a client first'); return; }
+  if(!reference){ toast('Give the count a reference'); return; }
+  try{
+    const j=await fbaApi('POST','create_shipment',{client_id, reference, created_by:S.operator||''});
+    FBA.current={...j.shipment, clientLabel:client};
+    FBA.lines=[]; $('fbaRef').value='';
+    showFbaActive(); toast('Count started'); setTimeout(focusCap,60);
+  }catch(e){ toast('Could not start: '+e.message); }
+}
+
+async function loadFbaShipment(r){
+  FBA.current={...r, clientLabel:(r.client&&(r.client.company||r.client.name))||''};
+  showFbaActive();
+  await reloadFbaLines();
+  setTimeout(focusCap,60);
+}
+
+async function reloadFbaLines(){
+  try{
+    const j=await fbaApi('GET','lines',{shipment_id:FBA.current.id});
+    FBA.lines=j.lines||[];
+    FBA.summary=j.summary||null;
+    renderFbaLines();
+  }catch(e){ toast('Could not load lines'); }
+}
+
+function setFPad(state,big,hint,code){
+  const p=$('fScanpad'); if(!p) return;
+  p.className='scanpad'+(state?(' '+state):'');
+  $('fBig').textContent=big; $('fCode').textContent=code||'';
+  $('fHint').textContent=hint||'Pull the trigger on the FNSKU. Then declare box or loose.';
+  $('fIcon').textContent = state==='ok'?'✓' : state==='dup'?'!' : state==='err'?'✕' : '▣';
+  if(state==='ok'){ clearTimeout(p._t); p._t=setTimeout(()=>{ if($('fScanpad')) setFPad('','Scan a product','',''); },1400); }
+}
+
+/* ---------- scan -> resolve -> declare ---------- */
+async function fbaScan(code){
+  if(!FBA.current){ setFPad('err','No active count','Start or open a count first',code); feedback('err'); return; }
+  if(classify(code)==='location'){ setFPad('err','That is a location','Scan the product barcode',code); feedback('err'); return; }
+  setFPad('','Looking up…','',code);
+  try{
+    const j=await fbaApi('GET','resolve_code',{code});
+    openDeclare(code, j);
+    feedback(j.mapped?'ok':'dup');
+    setFPad(j.mapped?'ok':'dup', j.mapped?'Found':'Not in the map', j.mapped?'':'Confirm the merchant SKU', code);
+  }catch(e){
+    setFPad('err','Lookup failed','Try again',code); feedback('err');
+  }
+}
+
+function openDeclare(code, resolved){
+  FBA.pending={ code, msku:resolved.msku||'', source:resolved.source||null,
+                mapped:!!resolved.mapped, suggestions:resolved.suggestions||[] };
+  $('fbaDeclare').hidden=false;
+  $('fbaMsku').textContent=resolved.msku||'—';
+  $('fbaScanned').textContent='Scanned '+code;
+  const src=$('fbaSrc');
+  src.className='fba-src '+(resolved.source||'manual');
+  src.textContent = resolved.source==='map' ? 'MAP'
+                  : resolved.source==='scanned_sku' ? 'SKU' : 'MANUAL';
+
+  const un=$('fbaUnmapped');
+  un.hidden = !!resolved.mapped;
+  if(!resolved.mapped){
+    $('fbaManualMsku').value='';
+    const box=$('fbaSugg'); box.innerHTML='';
+    (resolved.suggestions||[]).forEach(s=>{
+      const b=document.createElement('button');
+      b.textContent=s;
+      b.onclick=()=>{ $('fbaManualMsku').value=s; $('fbaMsku').textContent=s; setTimeout(focusCap,60); };
+      box.appendChild(b);
+    });
+    $('fbaUnmappedMsg').textContent = (resolved.suggestions||[]).length
+      ? 'Not in the FNSKU map. Pick one below or type the merchant SKU.'
+      : 'Not in the FNSKU map. Type the merchant SKU to count it anyway.';
+  }
+
+  setLineType('case');
+  ['fbaUpb','fbaBoxes','fbaL','fbaW','fbaH','fbaWt','fbaQty'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
+  updateCaseTotal();
+  $('fbaDeclare').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function hideDeclare(){ FBA.pending=null; const d=$('fbaDeclare'); if(d) d.hidden=true; }
+
+function setLineType(t){
+  FBA.lineType=t;
+  $('fbaTypeCase').classList.toggle('on', t==='case');
+  $('fbaTypeLoose').classList.toggle('on', t==='loose');
+  $('fbaCaseFields').hidden = t!=='case';
+  $('fbaLooseFields').hidden = t!=='loose';
+}
+
+function updateCaseTotal(){
+  const upb=parseInt($('fbaUpb').value,10), boxes=parseInt($('fbaBoxes').value,10);
+  $('fbaCaseTotal').textContent = (upb>0 && boxes>0)
+    ? `${upb} × ${boxes} = ${upb*boxes} units`
+    : 'Units per box × boxes = what Amazon receives.';
+}
+
+async function fbaAddLine(){
+  if(!FBA.pending || FBA.busy) return;
+  const p=FBA.pending;
+  let msku=p.msku, confirm_unmapped=false;
+  if(!p.mapped){
+    msku=$('fbaManualMsku').value.trim();
+    if(!msku){ toast('Enter the merchant SKU'); return; }
+    confirm_unmapped=true;
+  }
+
+  const payload={ shipment_id:FBA.current.id, code:p.code, msku, confirm_unmapped,
+                  line_type:FBA.lineType, counted_by:S.operator||'' };
+
+  if(FBA.lineType==='case'){
+    const upb=parseInt($('fbaUpb').value,10), boxes=parseInt($('fbaBoxes').value,10);
+    if(!(upb>0)){ toast('Units per box?'); return; }
+    if(!(boxes>0)){ toast('How many boxes?'); return; }
+    payload.units_per_box=upb; payload.boxes=boxes;
+    const dims={length_in:$('fbaL').value, width_in:$('fbaW').value,
+                height_in:$('fbaH').value, weight_lb:$('fbaWt').value};
+    for(const k in dims){ const v=parseFloat(dims[k]); if(v>0) payload[k]=v; }
+  }else{
+    const qty=parseInt($('fbaQty').value,10);
+    if(!(qty>0)){ toast('How many loose units?'); return; }
+    payload.quantity=qty;
+  }
+
+  FBA.busy=true; $('fbaAddBtn').disabled=true;
+  try{
+    const j=await fbaApi('POST','add_line',payload);
+    hideDeclare();
+    if(j.merged) toast(`+${j.added} loose · ${msku} now ${j.line.quantity}`);
+    else toast('Line added');
+    if(j.warning){ toast(j.warning); }
+    await reloadFbaLines();
+    setFPad('ok','Line added','',p.code);
+    feedback('ok');
+  }catch(e){
+    toast('Not added: '+e.message);
+    feedback('err');
+  }finally{
+    FBA.busy=false; $('fbaAddBtn').disabled=false; setTimeout(focusCap,80);
+  }
+}
+
+async function deleteFbaLine(id){
+  const prev=FBA.lines.slice();
+  FBA.lines=FBA.lines.filter(l=>l.id!==id); renderFbaLines();
+  try{ await fbaApi('POST','delete_line',{line_id:id}); toast('Line removed'); await reloadFbaLines(); }
+  catch(e){ FBA.lines=prev; renderFbaLines(); toast('Could not remove'); }
+}
+
+function renderFbaLines(){
+  const c=FBA.current; if(!c) return;
+  $('fbaRefLbl').textContent=c.reference||'—';
+  $('fbaMeta').textContent=`${c.clientLabel||'—'} · ${c.status||'counting'}`;
+
+  const lines=FBA.lines||[];
+  const units=lines.reduce((a,l)=>a+(l.quantity||0),0);
+  const boxes=lines.reduce((a,l)=>a+(l.boxes||0),0);
+  $('fbaUnits').textContent=units;
+
+  const warn=$('fbaWarn');
+  const warnings=(FBA.summary&&FBA.summary.warnings)||[];
+  warn.hidden=!warnings.length;
+  warn.innerHTML=warnings.map(w=>`<div class="warnbox">⚠ ${w}</div>`).join('');
+
+  const ul=$('fbaLineList'), empty=$('fbaLineEmpty');
+  empty.style.display=lines.length?'none':'block';
+  ul.innerHTML='';
+  lines.forEach(l=>{
+    const li=document.createElement('li'); li.className='fba';
+    const dims=(l.length_in&&l.width_in&&l.height_in)
+      ? ` · ${l.length_in}×${l.width_in}×${l.height_in} in${l.weight_lb?' · '+l.weight_lb+' lb':''}` : '';
+    const detail = l.line_type==='case'
+      ? `${l.units_per_box} × ${l.boxes} box${l.boxes>1?'es':''} = ${l.quantity}${dims}`
+      : `loose · ${l.quantity} units`;
+    const flag = l.msku_source==='manual' ? ' <span class="fba-src manual">manual</span>' : '';
+    li.innerHTML=`<div class="lineinfo"><div class="l1">${l.msku}${flag}</div><div class="l2">${detail}</div></div>`;
+    const b=document.createElement('button'); b.className='undo'; b.textContent='↺'; b.title='Remove';
+    b.onclick=()=>deleteFbaLine(l.id); li.appendChild(b);
+    ul.appendChild(li);
+  });
+
+  if(lines.length){
+    const t=document.createElement('li');
+    t.style.cssText='background:transparent;border:0;justify-content:space-between;font-weight:700';
+    t.innerHTML=`<span>${lines.length} line${lines.length>1?'s':''} · ${boxes} box${boxes===1?'':'es'}</span><span>${units} units</span>`;
+    ul.appendChild(t);
+  }
+}
+
+async function closeFbaCount(){
+  if(!FBA.current) return;
+  if(!confirm('Close this count? The manifest gets built in the portal.')) return;
+  try{
+    await fbaApi('POST','close_counting',{shipment_id:FBA.current.id});
+    toast('Count closed — build the manifest in the portal');
+    FBA.current=null; FBA.lines=[]; FBA.summary=null;
+    showFbaHome();
+  }catch(e){
+    if(e.status===409){
+      await reloadFbaLines();
+      toast(e.payload&&e.payload.message ? e.payload.message : 'Fix the flagged SKUs first');
+    } else toast('Could not close: '+e.message);
+  }
+}
+
 /* ---------- clients (via Netlify function, same as other apps) ---------- */
 async function loadClients(){
   try{
@@ -1234,10 +1657,18 @@ $('palCloseBtn').onclick=closePallet;
 $('palFullBtn').onclick=()=>palMarkStatus('FULL');
 $('palWrapBtn').onclick=()=>palMarkStatus('WRAPPED / READY FOR PICKUP');
 ['palClient','palSize'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('change',()=>setTimeout(focusCap,60)); });
+$('fbaCreateBtn').onclick=createFbaCount;
+$('fbaCloseBtn').onclick=closeFbaCount;
+$('fbaBackBtn').onclick=()=>{ FBA.current=null; FBA.lines=[]; FBA.summary=null; showFbaHome(); };
+$('fbaTypeCase').onclick=()=>{ setLineType('case'); setTimeout(focusCap,60); };
+$('fbaTypeLoose').onclick=()=>{ setLineType('loose'); setTimeout(focusCap,60); };
+$('fbaAddBtn').onclick=fbaAddLine;
+$('fbaCancelBtn').onclick=()=>{ hideDeclare(); setFPad('','Scan a product','',''); setTimeout(focusCap,60); };
+['fbaUpb','fbaBoxes'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input',updateCaseTotal); });
 $('loginBtn').onclick=doLogin;
 $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 // keep capture focused when tapping anywhere neutral in a scanning view
-document.addEventListener('click',e=>{ if((S.view==='receiving'||S.view==='outbound'||S.view==='locations'||S.view==='inventory'||S.view==='pallets') && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
+document.addEventListener('click',e=>{ if((S.view==='receiving'||S.view==='outbound'||S.view==='locations'||S.view==='inventory'||S.view==='pallets'||S.view==='fba') && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
 // refocus capture after using a select
 ['rClient','rType','rCarrier','oClient','oType','oCarrier'].forEach(id=>{ document.addEventListener('change',e=>{ if(e.target.id===id) setTimeout(focusCap,60); }); });
 
