@@ -69,6 +69,49 @@ async function sbSelect(t, q = "") { const r = await fetch(`${SUPABASE_URL}/rest
 async function sbInsert(t, d) { const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}`, { method: "POST", headers: { ...SB(), "Prefer": "return=representation" }, body: JSON.stringify(d) }); if (!r.ok) throw new Error(`sbInsert ${t}: ${await r.text()}`); return r.json(); }
 async function sbPatch(t, f, d) { const r = await fetch(`${SUPABASE_URL}/rest/v1/${t}?${f}`, { method: "PATCH", headers: { ...SB(), "Prefer": "return=representation" }, body: JSON.stringify(d) }); if (!r.ok) throw new Error(`sbPatch ${t}: ${await r.text()}`); return r.json(); }
 
+// ─── Outbound-label conflict (Day 7, 2026-08-13) ─────────────────────────────
+// dropshipments has a UNIQUE index on outbound_tracking
+// (idx_dropshipments_outbound_unique ... WHERE outbound_tracking IS NOT NULL).
+// It exists for a good reason: two packages must never carry the same outbound
+// label. But there is a legitimate business case that hits it — a REPLACEMENT.
+// When a package arrives empty/damaged and the client re-buys the item, the
+// SALE is still the same, so the client re-sends the SAME outbound label with a
+// NEW inbound tracking. Before this change, that insert/patch died with a 23505
+// the sync only recorded in its summary: the email never became a row, nobody
+// was alerted, and the box surfaced days later as an orphan.
+//
+// New behaviour: the row is created/updated anyway, WITHOUT outbound_tracking,
+// with status "exception" and a reason naming the row that already owns the
+// label. It shows up in the app's Exceptions tab, where a human decides which
+// of the two ships.
+function isOutboundConflict(err) {
+  const m = String(err?.message || "");
+  return m.includes("idx_dropshipments_outbound_unique") ||
+         (m.includes("23505") && m.includes("outbound_tracking"));
+}
+
+async function findOutboundOwner(outbound) {
+  if (!outbound) return null;
+  try {
+    const rows = await sbSelect(
+      "dropshipments",
+      `?outbound_tracking=eq.${encodeURIComponent(outbound)}&select=tracking_number,order_id,status,content&limit=1`
+    );
+    return rows[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+function outboundConflictReason(outbound, owner) {
+  const who = owner
+    ? `inbound ${owner.tracking_number}${owner.order_id ? ` / order ${owner.order_id}` : ""} (status: ${owner.status})`
+    : "another row";
+  return `Outbound label ${outbound} is already assigned to ${who}. ` +
+         `Likely a replacement shipment reusing the same sale label. ` +
+         `Decide which box ships, then use Link Outbound.`;
+}
+
 // ─── Supabase Storage upload ─────────────────────────────────────────────────
 async function sbStorageUpload(path, bytes, contentType = "application/pdf") {
   const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${SB_BUCKET}/${path}`, {
@@ -445,7 +488,7 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
   if (existingRow?.status === "orphan") {
     // Match orphan with its email → promote to received.
     // Clear orphan_alerted_at so if it re-enters orphan status later it's freshly alerted.
-    await sbPatch("dropshipments", `id=eq.${existingRow.id}`, {
+    const patch = {
       order_id:          parsed.order_id || null,
       carrier:           parsed.carrier || null,
       content:           parsed.content || null,
@@ -462,13 +505,33 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
       email_received_at: emailReceivedAt,
       orphan_alerted_at: null,
       status:            "received"
-    });
+    };
+
+    let conflict = null;
+    try {
+      await sbPatch("dropshipments", `id=eq.${existingRow.id}`, patch);
+    } catch (e) {
+      if (!isOutboundConflict(e)) throw e;
+      // Day 7: the outbound label belongs to another row. Land the data anyway
+      // as an exception instead of failing the message forever.
+      const owner = await findOutboundOwner(outboundTracking);
+      conflict = { outbound: outboundTracking, owner: owner?.tracking_number || null };
+      await sbPatch("dropshipments", `id=eq.${existingRow.id}`, {
+        ...patch,
+        outbound_tracking: null,
+        status:            "exception",
+        exception_reason:  outboundConflictReason(outboundTracking, owner)
+      });
+      console.warn(`[${cfg.client_code}] ${parsed.tracking_number}: outbound ${outboundTracking} already used → row saved as exception`);
+    }
+
     await gmailAddLabel(msg.id, labelIdProcessed);
     return {
-      status: "orphan_matched",
+      status: conflict ? "orphan_matched_outbound_conflict" : "orphan_matched",
       id: existingRow.id,
       order_id: parsed.order_id || null,
       group: groupTotal ? `${groupSeq}/${groupTotal}` : null,
+      ...(conflict ? { outbound_conflict: conflict } : {}),
       ...(pdfHint ? { pdf_hint: pdfHint } : {})
     };
   }
@@ -480,7 +543,7 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
   }
 
   // Fresh insert.
-  const [inserted] = await sbInsert("dropshipments", {
+  const newRow = {
     client_id:         cfg.client_id,
     tracking_number:   parsed.tracking_number,
     order_id:          parsed.order_id || null,
@@ -498,16 +561,37 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
     email_message_id:  msg.id,
     email_received_at: emailReceivedAt,
     status:            "pending"
-  });
+  };
+
+  let inserted;
+  let conflict = null;
+  try {
+    [inserted] = await sbInsert("dropshipments", newRow);
+  } catch (e) {
+    if (!isOutboundConflict(e)) throw e;
+    // Day 7: same outbound label as an existing row (typically a replacement
+    // for a package that arrived empty/damaged). Insert without the label and
+    // flag it so it appears in Exceptions instead of vanishing.
+    const owner = await findOutboundOwner(outboundTracking);
+    conflict = { outbound: outboundTracking, owner: owner?.tracking_number || null };
+    [inserted] = await sbInsert("dropshipments", {
+      ...newRow,
+      outbound_tracking: null,
+      status:            "exception",
+      exception_reason:  outboundConflictReason(outboundTracking, owner)
+    });
+    console.warn(`[${cfg.client_code}] ${parsed.tracking_number}: outbound ${outboundTracking} already used → row inserted as exception`);
+  }
 
   await gmailAddLabel(msg.id, labelIdProcessed);
   return {
-    status: "inserted",
+    status: conflict ? "inserted_outbound_conflict" : "inserted",
     id: inserted.id,
     tracking: parsed.tracking_number,
     order_id: parsed.order_id || null,
     group: groupTotal ? `${groupSeq}/${groupTotal}` : null,
-    outbound_tracking: outboundTracking,
+    outbound_tracking: conflict ? null : outboundTracking,
+    ...(conflict ? { outbound_conflict: conflict } : {}),
     ...(pdfHint ? { pdf_hint: pdfHint } : {})
   };
 }
