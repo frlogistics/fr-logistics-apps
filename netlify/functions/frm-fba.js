@@ -112,6 +112,33 @@ function summarize(lines) {
   };
 }
 
+// Resolves a scanned code to a merchant SKU, in three tries:
+//   1. wh_fnsku_map — the normal path (FNSKU / GTIN / alias → SKU).
+//   2. the code IS a merchant SKU already — common when the box carries the
+//      client's own label instead of an Amazon one.
+//   3. nothing — return near matches so the screen can offer them instead of
+//      making the operator type an SKU from memory.
+// Note wh_fnsku_map is WIPED AND REBUILT by frm-alias-sync from SkuVault, so
+// writing a manual mapping back into it would vanish on the next run. That is
+// why a manual confirmation lives on the line (msku_source) and not in the map.
+async function resolveCode(sb, code) {
+  const hit = await sb(`wh_fnsku_map?code=eq.${encodeURIComponent(code)}&select=sku&limit=1`);
+  if (hit && hit[0] && hit[0].sku) return { msku: hit[0].sku, source: 'map' };
+
+  const asSku = await sb(`wh_fnsku_map?sku=eq.${encodeURIComponent(code)}&select=sku&limit=1`);
+  if (asSku && asSku[0] && asSku[0].sku) return { msku: asSku[0].sku, source: 'scanned_sku' };
+
+  let suggestions = [];
+  try {
+    const like = await sb(
+      `wh_fnsku_map?sku=ilike.*${encodeURIComponent(code)}*&select=sku&limit=5`
+    );
+    suggestions = [...new Set((like || []).map((r) => r.sku))];
+  } catch { /* suggestions are a nicety, never a reason to fail the scan */ }
+
+  return { msku: null, source: null, suggestions };
+}
+
 // ── handler ──────────────────────────────────────────────────────────────────
 
 exports.handler = async (event) => {
@@ -172,6 +199,20 @@ exports.handler = async (event) => {
       return res(200, { ok: true, shipments: rows });
     }
 
+    if (action === 'resolve_code') {
+      const code = (qs.code || '').trim();
+      if (!code) return res(400, { error: 'code is required' });
+      const r = await resolveCode(sb, code);
+      return res(200, {
+        ok: true,
+        code,
+        msku: r.msku,
+        source: r.source,
+        mapped: !!r.msku,
+        suggestions: r.suggestions || [],
+      });
+    }
+
     if (action === 'lines') {
       const sid = qs.shipment_id;
       if (!sid) return res(400, { error: 'shipment_id is required' });
@@ -209,31 +250,41 @@ exports.handler = async (event) => {
       if (!shipment_id) return res(400, { error: 'shipment_id is required' });
 
       // Resolve a scanned barcode to the merchant SKU. The operator never types
-      // an MSKU — a typo here would travel all the way into the client's upload.
+      // an MSKU blind — a typo here would travel all the way into the client's
+      // upload — but an unmapped code must not stop the count either (see
+      // resolveCode: wh_fnsku_map is rebuilt from SkuVault daily, so a brand-new
+      // FNSKU is simply not there yet).
       let msku = body.msku ? String(body.msku).trim() : '';
       let fnsku = body.fnsku ? String(body.fnsku).trim() : null;
+      let msku_source = 'map';
       const code = body.code ? String(body.code).trim() : '';
-      if (!msku && code) {
-        const hit = await sb(
-          `wh_fnsku_map?code=eq.${encodeURIComponent(code)}&select=sku,code_type&limit=1`
-        );
-        if (hit && hit[0] && hit[0].sku) {
-          msku = hit[0].sku;
+      const confirmed = body.confirm_unmapped === true;
+
+      if (msku && code) {
+        // The screen already asked the operator to confirm. Record that it was
+        // a human call, not the map, so it can be audited later.
+        if (confirmed) msku_source = 'manual';
+        fnsku = fnsku || code;
+      } else if (!msku && code) {
+        const r = await resolveCode(sb, code);
+        if (r.msku) {
+          msku = r.msku;
+          msku_source = r.source;
           fnsku = fnsku || code;
         } else {
-          // No mapping: the scanned code may already BE the merchant SKU. Say so
-          // instead of guessing silently, so the screen can ask for confirmation.
+          // Don't guess. Hand the screen everything it needs to ask.
           return res(404, {
             error: 'unmapped_code',
             code,
-            message: 'That barcode is not in the FNSKU map. Confirm the merchant SKU before counting.',
+            suggestions: r.suggestions,
+            message: 'That barcode is not in the FNSKU map. Confirm the merchant SKU to count it anyway.',
           });
         }
       }
 
       const built = buildLine({ ...body, msku, fnsku });
       if (!built.ok) return res(400, { error: built.error });
-      const line = built.line;
+      const line = { ...built.line, msku_source };
 
       // Loose lines accumulate — see the note at the top of this file.
       if (line.line_type === 'loose') {
@@ -314,4 +365,4 @@ exports.handler = async (event) => {
   }
 };
 
-module.exports.__test = { buildLine, summarize, MAX_LINES_PER_MSKU };
+module.exports.__test = { buildLine, summarize, resolveCode, MAX_LINES_PER_MSKU };
