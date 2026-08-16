@@ -180,6 +180,17 @@ exports.handler = async (event) => {
 
   const enc = encodeURIComponent;
 
+  // A count in 'review' has finished capture — EXCEPT on a location somebody
+  // deliberately reopened for a second pass. Without this, recount_location
+  // would bump the pass and then every scan bounced with COUNT_NOT_OPEN,
+  // leaving the location reset to zero and impossible to refill.
+  const recountOpen = (count, locRow) =>
+    count && count.status === 'review' &&
+    locRow && locRow.status === 'counting' && (locRow.pass || 1) > 1;
+
+  const captureAllowed = (count, locRow) =>
+    (count && count.status === 'open') || recountOpen(count, locRow);
+
   const getCount = async (id) => {
     if (!id) return null;
     const rows = await sb(`wh_counts?id=eq.${enc(id)}&select=*&limit=1`);
@@ -478,16 +489,23 @@ exports.handler = async (event) => {
 
       const count = await getCount(countId);
       if (!count) return res(404, { error: 'Count not found' });
-      if (count.status !== 'open' && action !== 'recount_location') {
-        return res(409, { error: 'COUNT_NOT_OPEN', message: `This count is ${count.status}.` });
-      }
-      if (action === 'recount_location' && !['open', 'review'].includes(count.status)) {
-        return res(409, { error: 'COUNT_CLOSED', message: 'A closed count cannot be recounted. Start a new one.' });
+      if (!['open', 'review'].includes(count.status)) {
+        return res(409, { error: 'COUNT_CLOSED', message: `This count is ${count.status}.` });
       }
 
       const rows = await sb(
         `wh_count_locations?count_id=eq.${enc(countId)}&location_code=eq.${enc(loc)}&select=*&limit=1`
       );
+
+      // In review, only a location already reopened for a second pass may be
+      // touched. Everything else stays frozen so the variance cannot drift
+      // under the report Julieta is about to sign.
+      if (action !== 'recount_location' && !captureAllowed(count, rows && rows[0])) {
+        return res(409, {
+          error: 'COUNT_NOT_OPEN',
+          message: `This count is ${count.status}. Reopen ${loc} as a recount before counting it again.`,
+        });
+      }
       const now = new Date().toISOString();
       const who = body.operator ? String(body.operator).slice(0, 60) : null;
 
@@ -541,10 +559,10 @@ exports.handler = async (event) => {
 
       const count = await getCount(countId);
       if (!count) return res(404, { error: 'Count not found' });
-      if (count.status !== 'open') {
+      if (!['open', 'review'].includes(count.status)) {
         return res(409, {
-          error: 'COUNT_NOT_OPEN',
-          message: `This count is ${count.status} — capture is finished. Reopen a location to recount it.`,
+          error: 'COUNT_CLOSED',
+          message: `This count is ${count.status}. Start a new count.`,
         });
       }
 
@@ -558,6 +576,13 @@ exports.handler = async (event) => {
         });
       }
       const locRow = locRows[0];
+
+      if (!captureAllowed(count, locRow)) {
+        return res(409, {
+          error: 'COUNT_NOT_OPEN',
+          message: `This count is ${count.status} — capture is finished. Reopen ${loc} as a recount first.`,
+        });
+      }
       if (locRow.status === 'counted' || locRow.status === 'recount') {
         return res(409, {
           error: 'LOCATION_CLOSED',
@@ -616,11 +641,18 @@ exports.handler = async (event) => {
     if (action === 'void_line') {
       const lineId = body.line_id || '';
       if (!lineId) return res(400, { error: 'line_id is required' });
-      const rows = await sb(`wh_count_lines?id=eq.${enc(lineId)}&select=count_id&limit=1`);
+      const rows = await sb(`wh_count_lines?id=eq.${enc(lineId)}&select=count_id,location_code&limit=1`);
       if (!rows || !rows[0]) return res(404, { error: 'Line not found' });
       const count = await getCount(rows[0].count_id);
-      if (count && count.status !== 'open') {
-        return res(409, { error: 'COUNT_NOT_OPEN', message: `This count is ${count.status}.` });
+      const vLoc = await sb(
+        `wh_count_locations?count_id=eq.${enc(rows[0].count_id)}` +
+        `&location_code=eq.${enc(rows[0].location_code)}&select=*&limit=1`
+      );
+      if (!captureAllowed(count, vLoc && vLoc[0])) {
+        return res(409, {
+          error: 'COUNT_NOT_OPEN',
+          message: `This count is ${count ? count.status : 'unavailable'}.`,
+        });
       }
       const updated = await patch(`wh_count_lines?id=eq.${enc(lineId)}`, {
         voided: true,
@@ -634,7 +666,11 @@ exports.handler = async (event) => {
       const countId = body.count_id || '';
       const count = await getCount(countId);
       if (!count) return res(404, { error: 'Count not found' });
-      if (count.status !== 'open') return res(409, { error: 'COUNT_NOT_OPEN', message: `Already ${count.status}.` });
+      // After a recount the count is already in review; finishing again just
+      // re-seals it. Only a closed or cancelled count refuses.
+      if (!['open', 'review'].includes(count.status)) {
+        return res(409, { error: 'COUNT_CLOSED', message: `This count is ${count.status}.` });
+      }
 
       const locs = await sb(`wh_count_locations?count_id=eq.${enc(countId)}&select=location_code,status&limit=2000`);
       const pending = (locs || []).filter((l) => !['counted', 'recount'].includes(l.status));
@@ -705,4 +741,11 @@ exports.handler = async (event) => {
 };
 
 // Exported for tests.
-exports._helpers = { buildSnapshot, redactIfBlind, ageMinutes, sortVariance, validQty };
+const _recountOpen = (count, locRow) =>
+  count && count.status === 'review' &&
+  locRow && locRow.status === 'counting' && (locRow.pass || 1) > 1;
+const _captureAllowed = (count, locRow) =>
+  (count && count.status === 'open') || _recountOpen(count, locRow);
+
+exports._helpers = { buildSnapshot, redactIfBlind, ageMinutes, sortVariance, validQty,
+                     recountOpen: _recountOpen, captureAllowed: _captureAllowed };
