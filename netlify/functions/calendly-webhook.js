@@ -90,6 +90,77 @@ function matchesEventType(eventTypeUri, uuidSet, slugSet) {
   return uuidSet.has(lastSegment) || slugSet.has(lastSegment);
 }
 
+const crypto = require('crypto');
+
+// ─── SIGNATURE VERIFICATION ─────────────────────────────────────────
+// Calendly signs with the same scheme Stripe uses:
+//   Calendly-Webhook-Signature: t=<unix seconds>,v1=<hex hmac-sha256>
+// where the signed string is `${t}.${rawBody}` and the key is the signing
+// key handed out when the webhook subscription is created.
+//
+// MODE — read this before changing it.
+// 'observe'  verify, log the verdict, process the request either way.
+// 'enforce'  reject anything that fails verification with 401.
+//
+// It ships as 'observe' ON PURPOSE. This file used to do HMAC and somebody
+// replaced it with structural checks; the overwhelmingly likely reason is that
+// it began rejecting real bookings. Flipping straight to 'enforce' would risk
+// repeating that, and a lead pipeline that silently stops is a worse failure
+// than the one we are closing.
+//
+// TO GO LIVE: watch the function logs for a few real bookings. Every one
+// should print `[calendly-webhook] signature ok`. Once you have seen that
+// happen for genuine traffic, change this to 'enforce' and redeploy.
+const SIGNATURE_MODE = 'observe';
+
+const CALENDLY_SIGNING_KEY = process.env.CALENDLY_WEBHOOK_SECRET || '';
+
+// Replay window. A signature stays valid forever without this: an attacker who
+// captures one legitimate request can resend it indefinitely.
+const MAX_SIGNATURE_AGE_S = 300;
+
+function parseSignatureHeader(headers) {
+  // Header names arrive lowercased on Netlify, but not on every runtime.
+  const raw = headers['calendly-webhook-signature']
+           || headers['Calendly-Webhook-Signature']
+           || '';
+  if (!raw) return null;
+  const out = {};
+  for (const part of String(raw).split(',')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = part.slice(i + 1).trim();
+  }
+  return (out.t && out.v1) ? { t: out.t, v1: out.v1 } : null;
+}
+
+function verifyCalendlySignature(rawBody, headers) {
+  if (!CALENDLY_SIGNING_KEY) {
+    return { ok: false, reason: 'CALENDLY_WEBHOOK_SECRET not set' };
+  }
+  const parsed = parseSignatureHeader(headers || {});
+  if (!parsed) return { ok: false, reason: 'signature header missing or malformed' };
+
+  const age = Math.abs(Math.floor(Date.now() / 1000) - Number(parsed.t));
+  if (!Number.isFinite(age)) return { ok: false, reason: 'timestamp not a number' };
+  if (age > MAX_SIGNATURE_AGE_S) {
+    return { ok: false, reason: `timestamp ${age}s old (max ${MAX_SIGNATURE_AGE_S}s)` };
+  }
+
+  const expected = crypto
+    .createHmac('sha256', CALENDLY_SIGNING_KEY)
+    .update(`${parsed.t}.${rawBody}`, 'utf8')
+    .digest('hex');
+
+  // Constant-time compare. A plain === leaks, through response timing, how
+  // many leading characters of a guess were right.
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(parsed.v1, 'utf8');
+  if (a.length !== b.length) return { ok: false, reason: 'signature length mismatch' };
+  if (!crypto.timingSafeEqual(a, b)) return { ok: false, reason: 'signature mismatch' };
+
+  return { ok: true };
+}
+
 // ─── HELPER: JSON response ───────────────────────────────────────────
 function json(body, statusCode = 200) {
   return {
@@ -164,8 +235,25 @@ exports.handler = async function(event) {
     return json({ error: 'Server misconfigured' }, 500);
   }
 
-  // ─── Parse payload ─────────────────────────────────────────────────
+  // ─── Signature check ───────────────────────────────────────────────
+  // Runs on the RAW body, before JSON.parse. Parsing and re-serialising
+  // changes whitespace and key order, and the digest stops matching — that is
+  // the single most common reason signature checks "mysteriously" fail.
   const rawBody = event.body || '';
+  const sig = verifyCalendlySignature(rawBody, event.headers);
+
+  if (sig.ok) {
+    console.log('[calendly-webhook] signature ok');
+  } else if (SIGNATURE_MODE === 'enforce') {
+    console.error('[calendly-webhook] REJECTED — signature:', sig.reason);
+    return json({ error: 'Invalid signature' }, 401);
+  } else {
+    // Observe mode. Loud on purpose: this line is what tells you whether it is
+    // safe to switch to 'enforce'.
+    console.warn('[calendly-webhook] SIGNATURE FAILED (observe mode, request still processed):', sig.reason);
+  }
+
+  // ─── Parse payload ─────────────────────────────────────────────────
   let payload;
   try {
     payload = JSON.parse(rawBody);
