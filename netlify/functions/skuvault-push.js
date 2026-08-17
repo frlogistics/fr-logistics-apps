@@ -19,9 +19,10 @@
 //   · SKUs that are not real SKUs, and locations nobody walked, are dropped
 //     by the same rules the reconciliation workbook used.
 //
-// Env: SKUVAULT_TENANT_TOKEN, SKUVAULT_USER_TOKEN, SUPABASE_URL,
+// Env: SKUVAULT_TENANT_TOKEN (accepts "tenant|user" or tenant alone, in which
+//      case SKUVAULT_USER_TOKEN is read too), SUPABASE_URL,
 //      SUPABASE_SERVICE_KEY. Optional: SKUVAULT_WAREHOUSE_ID (resolved from
-//      /products/getWarehouses when absent).
+//      /inventory/getWarehouses when absent).
 //
 // Actions:
 //   GET  ?action=plan&reference=MBL-AUG-2026[&location_code=RA0201]
@@ -52,6 +53,20 @@ const NEVER_WALKED = new Set(['F0701']);
 const FORCE_EMPTY = new Set(['GENERAL']);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// FR convention: SKUVAULT_TENANT_TOKEN may hold BOTH tokens joined by a pipe
+// ("tenant|user"). inventory-locations-sync.mjs and frm-alias-sync.mjs have
+// always read it that way; reading the variable raw sends the whole joined
+// string as TenantToken and SkuVault rejects the call. Same helper, same
+// behaviour, so this function authenticates like every other one here.
+function svTokens() {
+  const t = process.env.SKUVAULT_TENANT_TOKEN || '';
+  if (t.includes('|')) {
+    const [TenantToken, UserToken] = t.split('|');
+    return { TenantToken, UserToken };
+  }
+  return { TenantToken: t, UserToken: process.env.SKUVAULT_USER_TOKEN || '' };
+}
 
 // Pure: turns variance rows into the exact payload. Exported for tests.
 function buildPlan(rows, { forceEmpty = FORCE_EMPTY, blocked = BLOCKED_SKUS, skip = NEVER_WALKED } = {}) {
@@ -117,7 +132,9 @@ exports.handler = async (event) => {
   const res = (code, obj) => ({ statusCode: code, headers, body: JSON.stringify(obj) });
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
 
-  const { SUPABASE_URL, SUPABASE_SERVICE_KEY, SKUVAULT_TENANT_TOKEN, SKUVAULT_USER_TOKEN } = process.env;
+  const { SUPABASE_URL, SUPABASE_SERVICE_KEY } = process.env;
+  const SV_TOKENS = svTokens();
+  const svReady = !!(SV_TOKENS.TenantToken && SV_TOKENS.UserToken);
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return res(500, { error: 'Supabase not configured' });
 
   const enc = encodeURIComponent;
@@ -141,8 +158,8 @@ exports.handler = async (event) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
-        TenantToken: SKUVAULT_TENANT_TOKEN,
-        UserToken: SKUVAULT_USER_TOKEN,
+        TenantToken: SV_TOKENS.TenantToken,
+        UserToken: SV_TOKENS.UserToken,
         ...payload,
       }),
     });
@@ -176,10 +193,15 @@ exports.handler = async (event) => {
     const reference = (qs.reference || body.reference || '').trim();
 
     if (action === 'warehouses') {
-      if (!SKUVAULT_TENANT_TOKEN || !SKUVAULT_USER_TOKEN) {
-        return res(500, { error: 'SKUVAULT_TENANT_TOKEN / SKUVAULT_USER_TOKEN not set in Netlify' });
+      if (!svReady) {
+        return res(500, {
+          error: 'SkuVault tokens missing',
+          message: 'Set SKUVAULT_TENANT_TOKEN as "tenant|user", or set SKUVAULT_USER_TOKEN separately.',
+          tenant_present: !!SV_TOKENS.TenantToken,
+          user_present: !!SV_TOKENS.UserToken,
+        });
       }
-      const r = await sv('/products/getWarehouses', {});
+      const r = await sv('/inventory/getWarehouses', {});
       return res(r.ok ? 200 : 502, { ok: r.ok, status: r.status, warehouses: r.body });
     }
 
@@ -236,8 +258,11 @@ exports.handler = async (event) => {
     if (action !== 'push') return res(400, { error: `Unknown action: ${action}` });
     if (event.httpMethod !== 'POST') return res(405, { error: 'push must be POST' });
 
-    if (!SKUVAULT_TENANT_TOKEN || !SKUVAULT_USER_TOKEN) {
-      return res(500, { error: 'SKUVAULT_TENANT_TOKEN / SKUVAULT_USER_TOKEN not set in Netlify' });
+    if (!svReady) {
+      return res(500, {
+        error: 'SkuVault tokens missing',
+        message: 'Set SKUVAULT_TENANT_TOKEN as "tenant|user", or set SKUVAULT_USER_TOKEN separately.',
+      });
     }
 
     // Typing the reference is the seatbelt. A stray click cannot satisfy it.
