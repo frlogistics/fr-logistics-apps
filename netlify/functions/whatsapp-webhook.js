@@ -22,7 +22,11 @@ import webpush from "web-push";
 // [NEW Sprint 1] Liam agent router
 import { routeIncomingMessage } from "./_agent-helpers/wa-agent-router.js";
 
-const VERIFY_TOKEN = process.env.WHATSAPP_WEBHOOK_SECRET || "frlogistics_wa_2026";
+// No fallback. This repo is public, so a hardcoded default is a published
+// password: anyone who reads the code could complete Meta's verification
+// handshake if the env var ever went missing. With the fallback gone, a
+// missing variable fails the handshake loudly instead of passing quietly.
+const VERIFY_TOKEN = process.env.WHATSAPP_WEBHOOK_SECRET || "";
 const RESEND_KEY   = process.env.RESEND_API_KEY;
 const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY;
 const VAPID_PRIV   = process.env.VAPID_PRIVATE_KEY;
@@ -58,9 +62,14 @@ export default async function handler(req) {
     const mode      = url.searchParams.get("hub.mode");
     const token     = url.searchParams.get("hub.verify_token");
     const challenge = url.searchParams.get("hub.challenge");
+    if (!VERIFY_TOKEN) {
+      console.error("[whatsapp-webhook] WHATSAPP_WEBHOOK_SECRET is not set — refusing to verify");
+      return new Response("Forbidden", { status: 403 });
+    }
     if (mode === "subscribe" && token === VERIFY_TOKEN) {
       return new Response(challenge, { status: 200 });
     }
+    console.warn("[whatsapp-webhook] verification refused (mode/token mismatch)");
     return new Response("Forbidden", { status: 403 });
   }
 
