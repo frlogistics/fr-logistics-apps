@@ -775,6 +775,7 @@
   </footer>
   <footer class="acts" id="bxSealedFoot" hidden>
     <button class="btn ghost" id="bxBackBtn">Back</button>
+    <button class="btn" id="bxLabelBtn">Print label</button>
     <button class="btn stop" id="bxReopenBtn">Open box</button>
   </footer>
   <footer class="acts" id="cntLocFoot" hidden>
@@ -2287,7 +2288,7 @@ function setCPad2(state,big,hint,code){
 
    SkuVault still owns quantity. Nothing here writes to it.
    ============================================================ */
-const BX={ current:null, lines:[], loc:null, locBoxes:[], pending:null, busy:false };
+const BX={ current:null, lines:[], loc:null, locBoxes:[], pending:null, busy:false, publicUrl:null };
 
 async function bxApi(method, action, payload){
   const url = method==='GET'
@@ -2379,7 +2380,7 @@ async function newBox(){
   if(!loc){ toast('Scan or type the shelf'); return; }
   try{
     const j=await bxApi('POST','create',{client_id, location_code:loc, actor:S.operator||''});
-    BX.current=j.container; BX.lines=[];
+    BX.current=j.container; BX.lines=[]; BX.publicUrl=j.public_url||null;
     toast(`${j.container.code} created`);
     showBoxOpen(); feedback('ok'); setTimeout(focusCap,60);
   }catch(e){ toast(e.message||'Could not create the box'); feedback('err'); }
@@ -2388,7 +2389,7 @@ async function newBox(){
 async function loadBox(code){
   try{
     const j=await bxApi('GET','container',{code});
-    BX.current=j.container; BX.lines=j.lines||[];
+    BX.current=j.container; BX.lines=j.lines||[]; BX.publicUrl=j.public_url||null;
     showBoxOpen(); setBPad2('','Scan a product','',''); hideBxDeclare();
     setTimeout(focusCap,60);
   }catch(e){ toast('Could not open that box'); feedback('err'); }
@@ -2398,7 +2399,7 @@ async function reloadBox(){
   if(!BX.current) return;
   try{
     const j=await bxApi('GET','container',{code:BX.current.code});
-    BX.current=j.container; BX.lines=j.lines||[];
+    BX.current=j.container; BX.lines=j.lines||[]; BX.publicUrl=j.public_url||BX.publicUrl;
   }catch(e){ /* keep what we have */ }
   renderBxHeader(); renderBxLines();
 }
@@ -2434,8 +2435,12 @@ async function sealBox(){
   try{
     const j=await bxApi('POST','seal',{code:BX.current.code, actor:S.operator||''});
     BX.current=j.container;
-    toast(`${BX.current.code} sealed · print its label`);
+    await reloadBox();
     showBoxOpen(); feedback('ok');
+    // Sealing is the moment the plate becomes meaningful: contents are locked,
+    // so a label printed now cannot be outrun by a change. Offer it right here
+    // instead of hoping somebody remembers to go and print it later.
+    if(confirm(`${BX.current.code} sealed.\n\nPrint its 4x6 label now?`)) openLabelPage();
   }catch(e){
     if(e.code==='EMPTY_BOX'){ toast(e.message); feedback('err'); return; }
     toast(e.message||'Could not seal'); feedback('err');
@@ -2590,6 +2595,14 @@ async function bxSetLine(){
   }finally{ BX.busy=false; $('bxAddBtn').disabled=false; }
 }
 
+// The label lives on the public page, which is also what the QR points at —
+// one place that renders it, so the printed label and the page a customer
+// scans can never drift apart.
+function openLabelPage(){
+  if(!BX.publicUrl){ toast('No label URL for this box'); return; }
+  window.open(BX.publicUrl, '_blank');
+}
+
 /* ---------- scanpad helpers ---------- */
 function setBPad(state,big,hint,code){
   const p=$('bScanpad'); if(!p) return;
@@ -2690,6 +2703,7 @@ $('bxSealBtn').onclick=sealBox;
 $('bxReopenBtn').onclick=reopenBox;
 $('bxLeaveBtn').onclick=showBoxHome;
 $('bxBackBtn').onclick=showBoxHome;
+$('bxLabelBtn').onclick=openLabelPage;
 $('bxAddBtn').onclick=bxSetLine;
 $('bxCancelBtn').onclick=()=>{ hideBxDeclare(); setBPad2('','Scan a product','',''); setTimeout(focusCap,60); };
 $('bxQty').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); bxSetLine(); } });
