@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FR-Logistics · Push to SkuVault</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',-apple-system,sans-serif;background:#F4F6FB;color:#1A2238;padding:1.4rem}
+  .wrap{max-width:1180px;margin:0 auto}
+  .hdr{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1.2rem}
+  .hdr .eb{font-size:.66rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#00B4AA}
+  .hdr h1{font-size:1.5rem;font-weight:800;letter-spacing:-.02em;color:#0F1D35}
+  .hdr .sub{font-size:.84rem;color:#7B8AA0;margin-top:.15rem}
+  .card{background:#fff;border:1px solid #E4E9F2;border-radius:12px;margin-bottom:1rem}
+  .ch{padding:.8rem 1.1rem;border-bottom:1px solid #EEF2F7;display:flex;justify-content:space-between;align-items:center;gap:.7rem;flex-wrap:wrap}
+  .ch h2{font-size:.8rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#475569}
+  .cb{padding:1.1rem}
+  .danger{background:#FEF2F2;border:1px solid #FCA5A5;border-radius:12px;padding:1rem 1.2rem;margin-bottom:1rem}
+  .danger h3{font-size:.95rem;font-weight:800;color:#991B1B;margin-bottom:.4rem}
+  .danger p{font-size:.84rem;color:#7F1D1D;line-height:1.6}
+  .danger p+p{margin-top:.5rem}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.7rem;margin-bottom:1rem}
+  .kpi{background:#fff;border:1px solid #E4E9F2;border-radius:11px;padding:.8rem .95rem}
+  .kpi .l{font-size:.66rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#94A3B8}
+  .kpi .v{font-size:1.45rem;font-weight:800;color:#0F1D35;margin-top:.15rem;line-height:1.1}
+  .kpi.red .v{color:#B91C1C}.kpi.amber .v{color:#B45309}.kpi.green .v{color:#15803D}
+  table{width:100%;border-collapse:collapse;font-size:.82rem}
+  th{text-align:left;font-size:.66rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#94A3B8;padding:.5rem .65rem;border-bottom:1px solid #EEF2F7;white-space:nowrap}
+  td{padding:.42rem .65rem;border-bottom:1px solid #F5F7FA}
+  td.n{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+  .mono{font-family:ui-monospace,Consolas,monospace;font-size:.79rem}
+  .zero{color:#B91C1C;font-weight:800}
+  .neg{color:#B91C1C}.pos{color:#1D4ED8}
+  .btn{border:1px solid #E4E9F2;background:#fff;color:#334155;font:inherit;font-size:.79rem;font-weight:700;padding:.45rem .9rem;border-radius:8px;cursor:pointer}
+  .btn:hover{background:#F8FAFC}
+  .btn.pri{background:#0F1D35;border-color:#0F1D35;color:#fff}
+  .btn.go{background:#B91C1C;border-color:#B91C1C;color:#fff}
+  .btn.go:hover{background:#991B1B}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  input,select{border:1px solid #E4E9F2;border-radius:8px;padding:.42rem .7rem;font:inherit;font-size:.82rem}
+  .row{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+  .pill{display:inline-block;font-size:.63rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:.18rem .5rem;border-radius:20px}
+  .pill.ok{background:#DCFCE7;color:#166534}
+  .pill.failed,.pill.partial{background:#FEE2E2;color:#991B1B}
+  .pill.sending{background:#FEF3C7;color:#92400E}
+  .pill.pend{background:#F1F5F9;color:#64748B}
+  .note{font-size:.79rem;color:#64748B;line-height:1.6;background:#F8FAFC;border:1px solid #EEF2F7;border-radius:9px;padding:.7rem .85rem;margin-top:.8rem}
+  .note b{color:#334155}
+  pre{background:#0F1D35;color:#CBD5E1;padding:.8rem;border-radius:8px;font-size:.72rem;overflow:auto;max-height:260px;line-height:1.5}
+  .empty{padding:1.6rem;text-align:center;color:#94A3B8;font-size:.85rem}
+  .err{background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;border-radius:9px;padding:.7rem .85rem;font-size:.82rem;margin-bottom:.8rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hdr">
+    <div>
+      <div class="eb">Warehouse</div>
+      <h1>Push count to SkuVault</h1>
+      <div class="sub">Writes the physical count into SkuVault via setItemQuantities</div>
+    </div>
+    <div class="row">
+      <input id="ref" value="MBL-AUG-2026" style="width:170px">
+      <button class="btn" id="loadBtn">Load plan</button>
+      <button class="btn" onclick="location.href='/count.html'">← Stock Count</button>
+    </div>
+  </div>
+
+  <div class="danger">
+    <h3>Lee esto antes de tocar nada</h3>
+    <p><b>setItemQuantities FIJA la cantidad, no suma ni resta.</b> Lo que mandes se convierte en la verdad
+       de SkuVault, y no hay deshacer. Un plan mal armado no da error: sobrescribe inventario real en silencio.</p>
+    <p><b>Empieza por UNA ubicación chiquita.</b> Empuja F0801 (1 SKU / 4 unidades), ábrela en SkuVault y
+       confirma que quedó como esperabas. Recién ahí sigue con el resto.</p>
+    <p><b>Las líneas en CERO son las que vacían GENERAL.</b> Verifica en el piloto que una línea en cero
+       efectivamente saca el SKU de la ubicación en tu cuenta, antes de mandar las 20 de GENERAL.</p>
+  </div>
+
+  <div id="msg"></div>
+  <div id="totals" class="grid" hidden></div>
+
+  <div class="card" id="planCard" hidden>
+    <div class="ch">
+      <h2>Plan por ubicación</h2>
+      <div class="row">
+        <label style="font-size:.78rem;color:#64748B">Ubicación</label>
+        <select id="locSel"></select>
+        <button class="btn" id="viewBtn">Ver líneas</button>
+      </div>
+    </div>
+    <div class="cb" id="planBody"><div class="empty">Carga el plan para empezar.</div></div>
+  </div>
+
+  <div class="card" id="pushCard" hidden>
+    <div class="ch"><h2>Ejecutar</h2></div>
+    <div class="cb">
+      <div class="row" style="margin-bottom:.7rem">
+        <span style="font-size:.82rem;color:#334155">Escribe la referencia para habilitar:</span>
+        <input id="confirm" placeholder="MBL-AUG-2026" style="width:180px">
+        <input id="who" placeholder="Tu nombre" style="width:150px">
+      </div>
+      <div class="row">
+        <button class="btn go" id="pushOneBtn" disabled>Empujar solo <span id="pushLocLbl">—</span></button>
+        <button class="btn" id="pushAllBtn" disabled>Empujar TODAS las ubicaciones</button>
+      </div>
+      <div class="note">
+        <b>Una ubicación a la vez.</b> El botón de todas existe, pero no lo uses hasta que el piloto
+        haya cuadrado en SkuVault. Cada lote queda registrado antes de mandarse, así que si algo se corta
+        a mitad de camino puedes ver exactamente qué llegó en la pestaña de abajo y seguir desde ahí.
+      </div>
+      <div id="pushOut"></div>
+    </div>
+  </div>
+
+  <div class="card" id="statusCard" hidden>
+    <div class="ch">
+      <h2>Bitácora</h2>
+      <button class="btn" id="statusBtn">↻ Actualizar</button>
+    </div>
+    <div class="cb" id="statusBody"></div>
+  </div>
+</div>
+
+<script>
+const API = '/.netlify/functions/skuvault-push';
+const S = { plan:null, loc:null };
+const $ = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num = n => (Number(n)||0).toLocaleString('en-US');
+
+async function api(method, action, payload){
+  const url = method==='GET' ? `${API}?action=${action}&${new URLSearchParams(payload||{})}` : API;
+  const r = await fetch(url, method==='GET' ? {} : {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action, ...(payload||{})})
+  });
+  const txt = await r.text();
+  let j={}; try{ j = txt?JSON.parse(txt):{}; }catch{ j={error:'Non-JSON', message:txt.slice(0,400)}; }
+  if(!r.ok){ const e=new Error(j.message||j.error||('HTTP '+r.status)); e.payload=j; throw e; }
+  return j;
+}
+const showErr = m => $('msg').innerHTML = `<div class="err">${esc(m)}</div>`;
+
+async function loadPlan(){
+  $('msg').innerHTML='';
+  try{
+    const j = await api('GET','plan',{ reference: $('ref').value.trim() });
+    S.plan = j;
+    const t = j.totals;
+    $('totals').hidden=false;
+    $('totals').innerHTML = `
+      <div class="kpi"><div class="l">Líneas a mandar</div><div class="v">${num(t.lines_to_send)}</div></div>
+      <div class="kpi"><div class="l">Ubicaciones</div><div class="v">${num(t.locations)}</div></div>
+      <div class="kpi red"><div class="l">Líneas a CERO</div><div class="v">${num(t.lines_zeroing)}</div></div>
+      <div class="kpi"><div class="l">Lotes de 100</div><div class="v">${num(t.batches)}</div></div>
+      <div class="kpi ${t.net_delta<0?'red':'green'}"><div class="l">Cambio neto</div><div class="v">${t.net_delta>0?'+':''}${num(t.net_delta)}</div></div>`;
+
+    const locs = Object.entries(j.by_location).sort((a,b)=>a[1].lines-b[1].lines);
+    $('locSel').innerHTML = locs.map(([l,v]) =>
+      `<option value="${esc(l)}">${esc(l)} — ${v.lines} línea${v.lines!==1?'s':''}${v.zeroing?` (${v.zeroing} a cero)`:''}</option>`).join('');
+    S.loc = locs.length ? locs[0][0] : null;
+    $('planCard').hidden=false; $('pushCard').hidden=false; $('statusCard').hidden=false;
+    renderPlan();
+    updateConfirm();
+    loadStatus();
+  }catch(e){ showErr(e.message); }
+}
+
+function renderPlan(){
+  const loc = $('locSel').value;
+  S.loc = loc;
+  $('pushLocLbl').textContent = loc || '—';
+  const items = S.plan.items.filter(i => i.LocationCode === loc);
+  $('planBody').innerHTML = `
+    <table><thead><tr><th>SKU</th><th style="text-align:right">Antes</th>
+    <th style="text-align:right">Queda en</th><th style="text-align:right">Cambio</th></tr></thead>
+    <tbody>${items.map(i=>`<tr>
+      <td class="mono">${esc(i.Sku)}</td>
+      <td class="n">${num(i._before)}</td>
+      <td class="n ${i.Quantity===0?'zero':''}">${i.Quantity}</td>
+      <td class="n ${i._delta<0?'neg':'pos'}">${i._delta>0?'+':''}${i._delta}</td></tr>`).join('')}
+    </tbody></table>
+    ${S.plan.dropped.length ? `<div class="note"><b>No se manda:</b> ${S.plan.dropped.length} línea(s) —
+      ${esc([...new Set(S.plan.dropped.map(d=>d.why))].join(' · '))}</div>` : ''}`;
+}
+
+function updateConfirm(){
+  const okc = $('confirm').value.trim() === $('ref').value.trim() && $('confirm').value.trim() !== '';
+  $('pushOneBtn').disabled = !okc;
+  $('pushAllBtn').disabled = !okc;
+}
+
+async function push(all){
+  const ref = $('ref').value.trim();
+  const loc = S.loc;
+  const scope = all ? 'TODAS las ubicaciones' : loc;
+  const items = all ? S.plan.items : S.plan.items.filter(i=>i.LocationCode===loc);
+  const zeros = items.filter(i=>i.Quantity===0).length;
+  if(!confirm(`Vas a FIJAR cantidades en SkuVault.\n\nAlcance: ${scope}\nLíneas: ${items.length}\nDe esas, a CERO: ${zeros}\n\nEsto no se puede deshacer. ¿Seguir?`)) return;
+
+  $('pushOneBtn').disabled = $('pushAllBtn').disabled = true;
+  $('pushOut').innerHTML = '<div class="note">Enviando…</div>';
+  try{
+    const j = await api('POST','push', {
+      reference: ref, confirm: ref, pushed_by: $('who').value.trim() || null,
+      ...(all ? { all_locations:true } : { location_code: loc })
+    });
+    $('pushOut').innerHTML = `<div class="note"><b>Listo.</b> ${j.pushed} línea(s) aplicadas en ${esc(j.scope)},
+      ${j.zeroed} a cero.<br>${esc(j.next||'')}</div><pre>${esc(JSON.stringify(j.batches,null,2))}</pre>`;
+  }catch(e){
+    $('pushOut').innerHTML = `<div class="err"><b>${esc(e.message)}</b></div>
+      <pre>${esc(JSON.stringify(e.payload,null,2))}</pre>`;
+  }finally{ updateConfirm(); loadStatus(); }
+}
+
+async function loadStatus(){
+  try{
+    const j = await api('GET','status',{ reference: $('ref').value.trim() });
+    const b = j.batches||[];
+    $('statusBody').innerHTML = b.length ? `
+      <table><thead><tr><th>Cuándo</th><th>Ubicación</th><th>Lote</th>
+      <th style="text-align:right">Líneas</th><th>Estado</th><th>Por</th></tr></thead>
+      <tbody>${b.map(x=>`<tr>
+        <td class="mono">${esc((x.at||'').replace('T',' ').slice(0,16))}</td>
+        <td class="mono">${esc(x.location||'todas')}</td>
+        <td class="n">${x.batch}</td><td class="n">${x.items}</td>
+        <td><span class="pill ${x.status}">${x.status}</span></td>
+        <td>${esc(x.by||'—')}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="empty">Todavía no se ha empujado nada.</div>';
+  }catch(e){ $('statusBody').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+
+$('loadBtn').onclick = loadPlan;
+$('viewBtn').onclick = renderPlan;
+$('locSel').onchange = renderPlan;
+$('confirm').oninput = updateConfirm;
+$('pushOneBtn').onclick = () => push(false);
+$('pushAllBtn').onclick = () => push(true);
+$('statusBtn').onclick = loadStatus;
+</script>
+</body>
+</html>
