@@ -2501,7 +2501,7 @@ async function boxScan(code){
 
   setBPad2('','Looking up…','',code);
   try{
-    const j=await bxApi('GET','resolve_code',{code, count_id:''});
+    const j=await bxApi('GET','resolve_sku',{code});
     openBxDeclare(code, j);
     feedback(j.mapped?'ok':'dup');
     setBPad2(j.mapped?'ok':'dup', j.mapped?'Found':'Not in the map',
@@ -2576,7 +2576,7 @@ async function bxSetLine(){
   BX.busy=true; $('bxAddBtn').disabled=true;
   try{
     await bxApi('POST','set_line',{
-      code:BX.current.code, sku, qty, actor:S.operator||''
+      code:BX.current.code, sku, qty, actor:S.operator||'', code_scanned:p.code
     });
     hideBxDeclare();
     await reloadBox();
