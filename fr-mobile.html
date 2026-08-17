@@ -251,6 +251,10 @@
           <span class="ic">🔢</span>
           <span><span class="nm">Stock Count</span><br><span class="sub">Blind count by location</span></span>
         </button>
+        <button class="mod" data-go="boxes">
+          <span class="ic">🗃️</span>
+          <span><span class="nm">Boxes</span><br><span class="sub">Build, seal and move cartons</span></span>
+        </button>
       </div>
     </section>
 
@@ -652,6 +656,99 @@
         </div>
       </div>
     </section>
+
+    <!-- BOXES · container / license-plate layer -->
+    <section class="view" id="v-boxes">
+
+      <!-- pick a location, or scan straight into a box -->
+      <div id="bxHome">
+        <div class="scanpad" id="bScanpad" tabindex="-1">
+          <div class="icon" id="bIcon">▣</div>
+          <div class="big" id="bBig">Scan a shelf or a box</div>
+          <div class="lastcode" id="bCode"></div>
+          <div class="hint" id="bHint">Shelf label (RA0301) to see its boxes, or a box QR to open it.</div>
+        </div>
+
+        <div class="lcard">
+          <div class="lc-code" style="font-size:15px;margin-bottom:10px">Start a new box</div>
+          <div class="field">
+            <label for="bxClient">Client</label>
+            <select id="bxClient"><option value="">— Select client —</option></select>
+          </div>
+          <div class="field">
+            <label for="bxLoc">Shelf</label>
+            <input id="bxLoc" type="text" placeholder="Scan or type RA0301" autocomplete="off">
+          </div>
+          <button class="btn" id="bxNewBtn" style="width:100%;margin-top:6px">+ New box</button>
+        </div>
+
+        <div class="lcard" id="bxLocCard" hidden>
+          <div class="lc-head" style="margin-bottom:10px">
+            <div class="lc-code" id="bxLocTitle">—</div>
+            <span class="lc-total" id="bxLocUnits">0</span>
+          </div>
+          <ul class="lc-list" id="bxLocList"></ul>
+          <div class="lc-empty" id="bxLocEmpty">No boxes on this shelf yet.</div>
+        </div>
+      </div>
+
+      <!-- inside a box -->
+      <div id="bxOpen" hidden>
+        <div class="lcard" style="background:var(--navy);color:#fff">
+          <div class="lc-head" style="margin:0">
+            <div style="flex:1;min-width:0">
+              <div class="lc-code" style="color:#fff;font-size:18px;letter-spacing:.5px" id="bxCode">—</div>
+              <div class="lc-sub" style="color:#bcd" id="bxMeta">—</div>
+            </div>
+            <span class="lc-total" id="bxUnits">0</span>
+          </div>
+        </div>
+
+        <div class="warnbox" id="bxSealedMsg" hidden></div>
+
+        <div class="scanpad" id="bScanpad2" tabindex="-1">
+          <div class="icon" id="b2Icon">▣</div>
+          <div class="big" id="b2Big">Scan a product</div>
+          <div class="lastcode" id="b2Code"></div>
+          <div class="hint" id="b2Hint">Scan every product going into this box.</div>
+        </div>
+
+        <!-- quantity panel -->
+        <div class="lcard" id="bxDeclare" hidden>
+          <div class="lc-head" style="margin-bottom:10px">
+            <div style="flex:1;min-width:0">
+              <div class="fba-msku" id="bxSku">—</div>
+              <div class="lc-sub" id="bxScanned">—</div>
+            </div>
+            <span class="fba-src map" id="bxSrc">MAP</span>
+          </div>
+
+          <div id="bxUnmapped" hidden>
+            <div class="warnbox" id="bxUnmappedMsg">Not in the FNSKU map. Pick the SKU or type it.</div>
+            <div class="field">
+              <label for="bxManualSku">Merchant SKU</label>
+              <input id="bxManualSku" type="text" placeholder="Type the SKU" autocomplete="off">
+            </div>
+            <div class="sugg" id="bxSugg"></div>
+          </div>
+
+          <div class="field">
+            <label for="bxQty">How many units in the box?</label>
+            <input id="bxQty" type="text" inputmode="numeric" autocomplete="off" placeholder="Total for this SKU">
+          </div>
+          <div class="sugg" id="bxQuick"></div>
+          <div class="warnbox" id="bxReplaceMsg" hidden></div>
+
+          <div style="display:flex;gap:10px;margin-top:4px">
+            <button class="btn ghost" id="bxCancelBtn" style="flex:0 0 38%">Cancel</button>
+            <button class="btn" id="bxAddBtn">Set</button>
+          </div>
+        </div>
+
+        <ul class="lc-list" id="bxLineList"></ul>
+        <div class="lc-empty" id="bxLineEmpty">Nothing in this box yet.</div>
+      </div>
+    </section>
   </main>
 
   <footer class="acts" id="foot" hidden>
@@ -671,6 +768,14 @@
   <footer class="acts" id="cntFoot" hidden>
     <button class="btn ghost" id="cntLeaveBtn">Leave open</button>
     <button class="btn stop" id="cntFinishBtn">Finish count</button>
+  </footer>
+  <footer class="acts" id="bxFoot" hidden>
+    <button class="btn ghost" id="bxLeaveBtn">Leave open</button>
+    <button class="btn" id="bxSealBtn">Seal box ✓</button>
+  </footer>
+  <footer class="acts" id="bxSealedFoot" hidden>
+    <button class="btn ghost" id="bxBackBtn">Back</button>
+    <button class="btn stop" id="bxReopenBtn">Open box</button>
   </footer>
   <footer class="acts" id="cntLocFoot" hidden>
     <button class="btn ghost" id="cntBackLocBtn">Back to list</button>
@@ -733,8 +838,20 @@ function feedback(kind){
 
 /* ---------- scan classifier ---------- */
 const RX_LOC=/^(R[A-Z]|F)\d{4}$/i;         // RA0101, RB0304, F0101
+// Container plate. Matches the bare code AND the full URL the QR carries,
+// which is why it has to be tested BEFORE the others: an unrecognised URL
+// would otherwise be classified as a tracking number.
+const RX_BOX=/FRC[-_]?(\d{1,9})/i;
 const RX_FNSKU=/^X00[A-Z0-9]{7}$/i;         // FNSKU
+// Canonical plate from anything scanned or typed: FRC-000847, frc-847,
+// FRC847, or https://apps.fr-logistics.net/c/FRC-000847-A3F9C2
+function boxCode(code){
+  const m=String(code||'').match(RX_BOX);
+  return m ? 'FRC-'+m[1].padStart(6,'0') : null;
+}
+
 function classify(code){
+  if(RX_BOX.test(code)) return 'container';
   if(RX_LOC.test(code)) return 'location';
   if(RX_FNSKU.test(code)) return 'fnsku';
   if(/^\d{12,14}$/.test(code)) return 'upc';
@@ -750,6 +867,7 @@ function go(view){
   // Reset both footers every time; each view turns on only the one it needs.
   $('foot').hidden=true; $('palFoot').hidden=true; $('fbaFoot').hidden=true;
   $('cntFoot').hidden=true; $('cntLocFoot').hidden=true;
+  $('bxFoot').hidden=true; $('bxSealedFoot').hidden=true;
   if(view==='home'){bar.classList.remove('has-back');$('title').textContent='FR Mobile';detachCapture();}
   else{bar.classList.add('has-back');}
   if(view==='receiving'){$('title').textContent='Receiving';$('foot').hidden=false;attachCapture();refreshList();}
@@ -759,6 +877,7 @@ function go(view){
   if(view==='pallets'){$('title').textContent='Pallets';attachCapture();initPallets();}
   if(view==='fba'){$('title').textContent='FBA Count';attachCapture();initFba();}
   if(view==='count'){$('title').textContent='Stock Count';attachCapture();initCount();}
+  if(view==='boxes'){$('title').textContent='Boxes';attachCapture();initBoxes();}
   $('main').scrollTop=0;
 }
 
@@ -778,6 +897,8 @@ function attachCapture(){
   const fp=$('fScanpad'); if(fp) fp.addEventListener('click',onPadTap);
   const cp=$('cScanpad'); if(cp) cp.addEventListener('click',onPadTap);
   const cp2=$('cScanpad2'); if(cp2) cp2.addEventListener('click',onPadTap);
+  const bp=$('bScanpad'); if(bp) bp.addEventListener('click',onPadTap);
+  const bp2=$('bScanpad2'); if(bp2) bp2.addEventListener('click',onPadTap);
   document.addEventListener('keydown',onKey,true);
 }
 function detachCapture(){
@@ -791,6 +912,8 @@ function detachCapture(){
   const fp=$('fScanpad'); if(fp) fp.removeEventListener('click',onPadTap);
   const cp=$('cScanpad'); if(cp) cp.removeEventListener('click',onPadTap);
   const cp2=$('cScanpad2'); if(cp2) cp2.removeEventListener('click',onPadTap);
+  const bp=$('bScanpad'); if(bp) bp.removeEventListener('click',onPadTap);
+  const bp2=$('bScanpad2'); if(bp2) bp2.removeEventListener('click',onPadTap);
 }
 function focusCap(){ if(!capAttached)return; const c=$('capture'); if(document.activeElement!==c) c.focus({preventScroll:true}); }
 function isFormField(el){ return el && (el.tagName==='SELECT' || (el.tagName==='INPUT' && el.id!=='capture')); }
@@ -800,7 +923,7 @@ function onKey(e){
   if(isFormField(document.activeElement)) return;
   if(e.key==='Enter'){
     const code=capBuf.trim();
-    if(code){ if(S.view==='locations') lookupScan(code); else if(S.view==='inventory') inventoryScan(code); else if(S.view==='pallets') palletScan(code); else if(S.view==='fba') fbaScan(code); else if(S.view==='count') countScan(code); else commitScan(code); }
+    if(code){ if(S.view==='locations') lookupScan(code); else if(S.view==='inventory') inventoryScan(code); else if(S.view==='pallets') palletScan(code); else if(S.view==='fba') fbaScan(code); else if(S.view==='count') countScan(code); else if(S.view==='boxes') boxScan(code); else commitScan(code); }
     capBuf=''; e.preventDefault(); return;
   }
   if(e.key.length===1){ capBuf+=e.key; clearTimeout(capTimer); capTimer=setTimeout(()=>{capBuf='';},120); }
@@ -2150,6 +2273,339 @@ function setCPad2(state,big,hint,code){
   $('c2Hint').textContent=hint||'Scan every product in this location. Scan the next shelf label when done.';
 }
 
+
+/* ============================================================
+   BOXES — container / license-plate layer
+   Writes through /frm-containers (service key, RLS-safe).
+
+   ONE RULE RUNS THIS SCREEN, and it is the opposite of Stock Count:
+   scanning a SKU here SETS its quantity in the box, it does not add to it.
+   Packing is not counting. In Stock Count a second scan of the same SKU is a
+   second handful of stock; here it is a correction of the first. If it added,
+   a double trigger-pull would silently inflate a box — and that error then
+   travels inside a printed label that people believe.
+
+   SkuVault still owns quantity. Nothing here writes to it.
+   ============================================================ */
+const BX={ current:null, lines:[], loc:null, locBoxes:[], pending:null, busy:false };
+
+async function bxApi(method, action, payload){
+  const url = method==='GET'
+    ? `${API_BASE}/frm-containers?action=${action}&${new URLSearchParams(payload||{})}`
+    : `${API_BASE}/frm-containers`;
+  const res = await fetch(url, method==='GET' ? {} : {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action, ...(payload||{})})
+  });
+  const j = await res.json().catch(()=>({}));
+  if(!res.ok){ const e=new Error(j.message||j.error||('HTTP '+res.status)); e.code=j.error; e.payload=j; throw e; }
+  return j;
+}
+
+function initBoxes(){
+  const sel=$('bxClient');
+  if(sel && S.clients.length && sel.options.length<=1){
+    sel.innerHTML='<option value="">— Select client —</option>'+
+      S.clients.map(c=>`<option value="${c.label.replace(/"/g,'&quot;')}" data-id="${c.id}">${c.label}</option>`).join('');
+  }
+  if(BX.current) showBoxOpen(); else showBoxHome();
+}
+
+function showBoxHome(){
+  $('bxHome').hidden=false; $('bxOpen').hidden=true;
+  $('bxFoot').hidden=true; $('bxSealedFoot').hidden=true;
+  BX.current=null; BX.lines=[]; hideBxDeclare();
+  setBPad('','Scan a shelf or a box','','');
+  setTimeout(focusCap,60);
+}
+
+function showBoxOpen(){
+  $('bxHome').hidden=true; $('bxOpen').hidden=false;
+  const sealed = BX.current && BX.current.status!=='building' && BX.current.status!=='open';
+  $('bxFoot').hidden=sealed; $('bxSealedFoot').hidden=!sealed;
+  $('bScanpad2').style.display=sealed?'none':'';
+  const msg=$('bxSealedMsg');
+  if(sealed){
+    msg.hidden=false;
+    msg.textContent = BX.current.status==='consumed'
+      ? 'This plate was consumed. Plates are never reused — build a new box.'
+      : 'Sealed. Contents are locked. Open the box to change what is inside.';
+  } else msg.hidden=true;
+  renderBxHeader(); renderBxLines();
+}
+
+function renderBxHeader(){
+  const c=BX.current; if(!c) return;
+  $('bxCode').textContent=c.code;
+  const bits=[c.client||'—', c.location_code||'no shelf', c.status];
+  $('bxMeta').textContent=bits.join(' · ');
+  $('bxUnits').textContent=BX.lines.reduce((n,l)=>n+(Number(l.qty)||0),0);
+}
+
+/* ---------- shelf view ---------- */
+
+async function openShelf(loc){
+  BX.loc=loc;
+  $('bxLoc').value=loc;
+  const card=$('bxLocCard'), ul=$('bxLocList'), empty=$('bxLocEmpty');
+  card.hidden=false; ul.innerHTML=''; empty.style.display='block'; empty.textContent='Loading…';
+  try{
+    const j=await bxApi('GET','at_location',{location_code:loc});
+    BX.locBoxes=j.containers||[];
+    $('bxLocTitle').textContent=loc;
+    $('bxLocUnits').textContent=j.units||0;
+    if(!BX.locBoxes.length){ empty.textContent='No boxes on this shelf yet.'; return; }
+    empty.style.display='none';
+    BX.locBoxes.forEach(b=>{
+      const li=document.createElement('li');
+      const mark=b.status==='sealed'?'✓':b.status==='open'?'◍':'…';
+      li.innerHTML=`<div style="flex:1"><div class="sku">${mark} ${b.code}</div>`+
+                   `<div class="cli">${b.skus} SKU${b.skus===1?'':'s'} · ${b.units} units · ${b.status}</div></div>`+
+                   `<span class="qty">›</span>`;
+      li.style.cursor='pointer';
+      li.onclick=()=>loadBox(b.code);
+      ul.appendChild(li);
+    });
+  }catch(e){ empty.textContent='Could not load this shelf.'; }
+}
+
+/* ---------- box lifecycle ---------- */
+
+async function newBox(){
+  const sel=$('bxClient');
+  const client_id=sel.selectedOptions[0] && sel.selectedOptions[0].dataset.id;
+  const loc=($('bxLoc').value||'').trim().toUpperCase();
+  if(!client_id){ toast('Pick a client first'); return; }
+  if(!loc){ toast('Scan or type the shelf'); return; }
+  try{
+    const j=await bxApi('POST','create',{client_id, location_code:loc, actor:S.operator||''});
+    BX.current=j.container; BX.lines=[];
+    toast(`${j.container.code} created`);
+    showBoxOpen(); feedback('ok'); setTimeout(focusCap,60);
+  }catch(e){ toast(e.message||'Could not create the box'); feedback('err'); }
+}
+
+async function loadBox(code){
+  try{
+    const j=await bxApi('GET','container',{code});
+    BX.current=j.container; BX.lines=j.lines||[];
+    showBoxOpen(); setBPad2('','Scan a product','',''); hideBxDeclare();
+    setTimeout(focusCap,60);
+  }catch(e){ toast('Could not open that box'); feedback('err'); }
+}
+
+async function reloadBox(){
+  if(!BX.current) return;
+  try{
+    const j=await bxApi('GET','container',{code:BX.current.code});
+    BX.current=j.container; BX.lines=j.lines||[];
+  }catch(e){ /* keep what we have */ }
+  renderBxHeader(); renderBxLines();
+}
+
+function renderBxLines(){
+  const ul=$('bxLineList'), empty=$('bxLineEmpty');
+  ul.innerHTML='';
+  const live=BX.lines.filter(l=>Number(l.qty)>0);
+  if(!live.length){ empty.style.display='block'; return; }
+  empty.style.display='none';
+  const editable = BX.current && (BX.current.status==='building'||BX.current.status==='open');
+  live.forEach(l=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<div style="flex:1"><div class="sku">${l.sku}</div></div><span class="qty">${l.qty}</span>`;
+    if(editable){ li.style.cursor='pointer'; li.onclick=()=>removeLine(l); }
+    ul.appendChild(li);
+  });
+}
+
+async function removeLine(l){
+  if(!confirm(`Remove ${l.sku} from ${BX.current.code}?`)) return;
+  try{
+    await bxApi('POST','remove_line',{code:BX.current.code, sku:l.sku, actor:S.operator||''});
+    await reloadBox(); toast('Removed');
+  }catch(e){ toast(e.message||'Could not remove'); }
+}
+
+async function sealBox(){
+  if(!BX.current) return;
+  const units=BX.lines.reduce((n,l)=>n+(Number(l.qty)||0),0);
+  const skus=BX.lines.filter(l=>Number(l.qty)>0).length;
+  if(!confirm(`Seal ${BX.current.code} with ${skus} SKU(s) / ${units} units?\n\nContents lock. You can still move it, and you can open it later if you need to pick from it.`)) return;
+  try{
+    const j=await bxApi('POST','seal',{code:BX.current.code, actor:S.operator||''});
+    BX.current=j.container;
+    toast(`${BX.current.code} sealed · print its label`);
+    showBoxOpen(); feedback('ok');
+  }catch(e){
+    if(e.code==='EMPTY_BOX'){ toast(e.message); feedback('err'); return; }
+    toast(e.message||'Could not seal'); feedback('err');
+  }
+}
+
+async function reopenBox(){
+  if(!BX.current) return;
+  if(!confirm(`Open ${BX.current.code}?\n\nThis records that its contents stopped being trustworthy from now on.`)) return;
+  try{
+    const j=await bxApi('POST','open',{code:BX.current.code, actor:S.operator||''});
+    BX.current=j.container; BX.lines=j.lines||[];
+    showBoxOpen(); toast('Box open — contents can be edited');
+  }catch(e){ toast(e.message||'Could not open'); }
+}
+
+async function moveBox(loc){
+  if(!BX.current) return;
+  try{
+    const j=await bxApi('POST','move',{code:BX.current.code, location_code:loc, actor:S.operator||''});
+    BX.current=j.container;
+    renderBxHeader();
+    toast(j.unchanged ? `Already on ${loc}` : `Moved to ${loc}`);
+    feedback('ok');
+  }catch(e){ toast(e.message||'Could not move'); feedback('err'); }
+}
+
+/* ---------- scanning ---------- */
+
+async function boxScan(code){
+  const plate=boxCode(code);
+
+  // A box plate always wins: scanning one jumps straight into that box, from
+  // anywhere in this screen.
+  if(plate){
+    if(BX.current && BX.current.code===plate){ toast('Already in '+plate); return; }
+    setBPad('','Opening…','',plate);
+    return loadBox(plate);
+  }
+
+  if(classify(code)==='location'){
+    const loc=code.toUpperCase();
+    // Inside an open box, a shelf scan MOVES the box. That is the whole point
+    // of a plate: you carry the carton, scan where you put it, done.
+    if(BX.current && ['building','open','sealed'].includes(BX.current.status)){
+      if(confirm(`Move ${BX.current.code} to ${loc}?`)) return moveBox(loc);
+      return;
+    }
+    setBPad('ok',loc,'Shelf opened',loc);
+    feedback('ok');
+    return openShelf(loc);
+  }
+
+  // Anything else is a product, and only makes sense inside an editable box.
+  if(!BX.current){
+    setBPad('err','Open a box first','Scan a shelf or a box QR',code);
+    feedback('err'); return;
+  }
+  if(!['building','open'].includes(BX.current.status)){
+    setBPad2('err','Box is sealed','Open it before changing contents',code);
+    feedback('err'); return;
+  }
+
+  setBPad2('','Looking up…','',code);
+  try{
+    const j=await bxApi('GET','resolve_code',{code, count_id:''});
+    openBxDeclare(code, j);
+    feedback(j.mapped?'ok':'dup');
+    setBPad2(j.mapped?'ok':'dup', j.mapped?'Found':'Not in the map',
+             j.mapped?'How many in this box?':'Confirm the SKU', code);
+  }catch(e){ setBPad2('err','Lookup failed','Try again',code); feedback('err'); }
+}
+
+function openBxDeclare(code, resolved){
+  BX.pending={ code, sku:resolved.sku||'', source:resolved.source||null,
+               mapped:!!resolved.mapped, suggestions:resolved.suggestions||[] };
+  $('bxDeclare').hidden=false;
+  $('bxSku').textContent=resolved.sku||'—';
+  $('bxScanned').textContent='Scanned '+code;
+  const src=$('bxSrc');
+  src.className='fba-src '+(resolved.source||'manual');
+  src.textContent = resolved.source==='map' ? 'MAP'
+                  : resolved.source==='scanned_sku' ? 'SKU'
+                  : resolved.source==='memory' ? 'REMEMBERED' : 'MANUAL';
+
+  const un=$('bxUnmapped');
+  un.hidden=!!resolved.mapped;
+  if(!resolved.mapped){
+    $('bxManualSku').value='';
+    const box=$('bxSugg'); box.innerHTML='';
+    (resolved.suggestions||[]).forEach(s=>{
+      const b=document.createElement('button');
+      b.textContent=s;
+      b.onclick=()=>{ $('bxManualSku').value=s; $('bxSku').textContent=s; };
+      box.appendChild(b);
+    });
+    $('bxUnmappedMsg').textContent=(resolved.suggestions||[]).length
+      ? 'Not in the FNSKU map. Pick one below or type the SKU.'
+      : 'Not in the FNSKU map. Type the SKU to put it in the box.';
+  }
+
+  // If the SKU is already in this box, say so out loud. The field REPLACES the
+  // quantity, and an operator who expects it to add would otherwise wipe a
+  // count without noticing.
+  const already=BX.lines.find(l=>l.sku===(resolved.sku||''));
+  const warn=$('bxReplaceMsg');
+  if(already && Number(already.qty)>0){
+    warn.hidden=false;
+    warn.textContent=`This box already lists ${already.qty} of ${already.sku}. Entering a number REPLACES it — type the box total, not what you just added.`;
+    $('bxQty').value=String(already.qty);
+  } else { warn.hidden=true; $('bxQty').value=''; }
+
+  const q=$('bxQuick'); q.innerHTML='';
+  [1,6,12,24,36,48].forEach(n=>{
+    const b=document.createElement('button');
+    b.textContent=n;
+    b.onclick=()=>{ $('bxQty').value=String(n); };
+    q.appendChild(b);
+  });
+  $('bxDeclare').scrollIntoView({behavior:'smooth', block:'nearest'});
+  setTimeout(()=>{ const el=$('bxQty'); if(el){ el.focus(); el.select(); } },80);
+}
+
+function hideBxDeclare(){ BX.pending=null; const d=$('bxDeclare'); if(d) d.hidden=true; }
+
+async function bxSetLine(){
+  if(!BX.pending || BX.busy) return;
+  const p=BX.pending;
+  let sku=p.sku, source=p.source;
+  if(!p.mapped){
+    sku=$('bxManualSku').value.trim();
+    if(!sku){ toast('Enter the SKU'); return; }
+    source='manual';
+  }
+  const qty=parseInt($('bxQty').value,10);
+  if(!(qty>=0)){ toast('How many units?'); return; }
+
+  BX.busy=true; $('bxAddBtn').disabled=true;
+  try{
+    await bxApi('POST','set_line',{
+      code:BX.current.code, sku, qty, actor:S.operator||''
+    });
+    hideBxDeclare();
+    await reloadBox();
+    setBPad2('ok','In the box',`${qty} × ${sku}`,p.code);
+    feedback('ok');
+    setTimeout(focusCap,60);
+  }catch(e){
+    if(e.code==='STATUS_BLOCKED'){ toast(e.message); await reloadBox(); showBoxOpen(); }
+    else toast(e.message||'Could not set the line');
+    feedback('err');
+  }finally{ BX.busy=false; $('bxAddBtn').disabled=false; }
+}
+
+/* ---------- scanpad helpers ---------- */
+function setBPad(state,big,hint,code){
+  const p=$('bScanpad'); if(!p) return;
+  p.className='scanpad'+(state?' '+state:'');
+  $('bIcon').textContent = state==='ok'?'✓':state==='err'?'✕':state==='dup'?'!':'▣';
+  $('bBig').textContent=big; $('bCode').textContent=code||'';
+  $('bHint').textContent=hint||'Shelf label (RA0301) to see its boxes, or a box QR to open it.';
+}
+function setBPad2(state,big,hint,code){
+  const p=$('bScanpad2'); if(!p) return;
+  p.className='scanpad'+(state?' '+state:'');
+  $('b2Icon').textContent = state==='ok'?'✓':state==='err'?'✕':state==='dup'?'!':'▣';
+  $('b2Big').textContent=big; $('b2Code').textContent=code||'';
+  $('b2Hint').textContent=hint||'Scan every product going into this box.';
+}
+
 /* ---------- clients (via Netlify function, same as other apps) ---------- */
 async function loadClients(){
   try{
@@ -2170,6 +2626,7 @@ async function loadClients(){
     const rc=$('rClient'); if(rc) rc.innerHTML=opts;
     const oc=$('oClient'); if(oc) oc.innerHTML=opts;
     const cc=$('cntClient'); if(cc) cc.innerHTML=opts;
+    const bc=$('bxClient'); if(bc) bc.innerHTML=opts;
   }catch(err){
     const rc=$('rClient'); if(rc) rc.innerHTML='<option value="">Error loading clients</option>';
     const oc=$('oClient'); if(oc) oc.innerHTML='<option value="">Error loading clients</option>';
@@ -2227,10 +2684,20 @@ $('cntBackLocBtn').onclick=()=>{ CNT.loc=null; CNT.lines=[]; hideCntDeclare(); s
 $('cntAddBtn').onclick=cntAddLine;
 $('cntCancelBtn').onclick=()=>{ hideCntDeclare(); setCPad2('','Scan a product','',''); setTimeout(focusCap,60); };
 $('cntQty').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); cntAddLine(); } });
+$('bxNewBtn').onclick=newBox;
+$('bxClient').onchange=()=>setTimeout(focusCap,60);
+$('bxSealBtn').onclick=sealBox;
+$('bxReopenBtn').onclick=reopenBox;
+$('bxLeaveBtn').onclick=showBoxHome;
+$('bxBackBtn').onclick=showBoxHome;
+$('bxAddBtn').onclick=bxSetLine;
+$('bxCancelBtn').onclick=()=>{ hideBxDeclare(); setBPad2('','Scan a product','',''); setTimeout(focusCap,60); };
+$('bxQty').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); bxSetLine(); } });
+$('bxLoc').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); const v=($('bxLoc').value||'').trim().toUpperCase(); if(v) openShelf(v); } });
 $('loginBtn').onclick=doLogin;
 $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 // keep capture focused when tapping anywhere neutral in a scanning view
-document.addEventListener('click',e=>{ if((S.view==='receiving'||S.view==='outbound'||S.view==='locations'||S.view==='inventory'||S.view==='pallets'||S.view==='fba'||S.view==='count') && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
+document.addEventListener('click',e=>{ if((S.view==='receiving'||S.view==='outbound'||S.view==='locations'||S.view==='inventory'||S.view==='pallets'||S.view==='fba'||S.view==='count'||S.view==='boxes') && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
 // refocus capture after using a select
 ['rClient','rType','rCarrier','oClient','oType','oCarrier'].forEach(id=>{ document.addEventListener('change',e=>{ if(e.target.id===id) setTimeout(focusCap,60); }); });
 
