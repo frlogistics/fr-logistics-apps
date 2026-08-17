@@ -222,6 +222,44 @@ exports.handler = async (event) => {
       });
     }
 
+    // Scanned product -> merchant SKU. Same four-step ladder frm-count.js uses,
+    // but the "remembered" step looks at previous BOXES rather than previous
+    // counts: a code somebody confirmed by hand while packing should still be
+    // known the next time it is packed.
+    if (action === 'resolve_sku') {
+      const code = String(qs.code || '').trim();
+      if (!code) return res(400, { error: 'code is required' });
+
+      const hit = await sb(`wh_fnsku_map?code=eq.${enc(code)}&select=sku&limit=1`);
+      if (hit && hit[0] && hit[0].sku) {
+        return res(200, { sku: hit[0].sku, source: 'map', mapped: true });
+      }
+      const asSku = await sb(`wh_fnsku_map?sku=eq.${enc(code)}&select=sku&limit=1`);
+      if (asSku && asSku[0] && asSku[0].sku) {
+        return res(200, { sku: asSku[0].sku, source: 'scanned_sku', mapped: true });
+      }
+      try {
+        const prior = await sb(
+          `wh_container_events?event=eq.line_set&detail=eq.${enc(code)}` +
+          '&select=sku,actor,created_at&order=created_at.desc&limit=1'
+        );
+        if (prior && prior[0] && prior[0].sku) {
+          return res(200, {
+            sku: prior[0].sku, source: 'memory', mapped: true,
+            confirmed_by: prior[0].actor || null, confirmed_at: prior[0].created_at || null,
+          });
+        }
+      } catch { /* memory is an accelerator, never a reason to fail a scan */ }
+
+      let suggestions = [];
+      try {
+        const like = await sb(`wh_fnsku_map?sku=ilike.*${enc(code)}*&select=sku&limit=5`);
+        suggestions = [...new Set((like || []).map((r) => r.sku))];
+      } catch { /* nicety only */ }
+
+      return res(200, { sku: null, source: null, mapped: false, suggestions });
+    }
+
     if (action === 'container') {
       const c = qs.id
         ? ((await sb(`wh_containers?id=eq.${enc(qs.id)}&select=*&limit=1`)) || [])[0]
@@ -354,8 +392,11 @@ exports.handler = async (event) => {
           container_id: c.id, sku, qty, added_by: actor,
           updated_at: new Date().toISOString(),
         }], 'resolution=merge-duplicates,return=minimal');
+        // `detail` carries the scanned code so resolve_sku can remember a
+        // manual mapping the next time the same barcode shows up.
         await logEvent({ container_id: c.id, event: 'line_set', sku,
-                         qty_before: before, qty_after: qty, actor });
+                         qty_before: before, qty_after: qty, actor,
+                         detail: body.code_scanned ? String(body.code_scanned).slice(0, 120) : null });
       }
 
       await touch(c.id);
