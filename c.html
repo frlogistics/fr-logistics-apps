@@ -122,12 +122,21 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
 const num=n=>(Number(n)||0).toLocaleString('en-US');
 const fdate=d=>d?String(d).slice(0,10):'—';
 
-// The plate can arrive three ways: /c/FRC-000001-A3F9C2 (rewritten to ?p=),
-// ?code=…&k=…, or pasted whole. The function sorts it out; we just forward it.
+// Read the plate from the PATH first, not the query string.
+// /c/:plate is a 200 rewrite, so Netlify hands c.html the ?p= server-side but
+// the browser's address bar keeps the clean /c/FRC-000001-4D2C2D — which means
+// location.search is EMPTY here. Reading only the query string made every
+// scanned label report "missing code". The query string is still honoured as a
+// fallback for /c.html?code=…&k=… opened directly.
 function readParam(){
   const u=new URLSearchParams(location.search);
-  const p=u.get('p')||u.get('code')||'';
-  return { code:p, k:u.get('k')||'' };
+  const fromQuery=u.get('p')||u.get('code')||'';
+  if(fromQuery) return { code:fromQuery, k:u.get('k')||'' };
+
+  // Last path segment, e.g. /c/FRC-000001-4D2C2D
+  const seg=decodeURIComponent((location.pathname.split('/').filter(Boolean).pop())||'');
+  if(/FRC/i.test(seg)) return { code:seg, k:u.get('k')||'' };
+  return { code:'', k:'' };
 }
 
 let DATA=null;
