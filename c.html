@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FR-Logistics · Caja</title>
+<title>FR-Logistics · Container</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
@@ -84,31 +84,31 @@
 <div class="wrap">
   <div class="hdr">
     <div class="wordmark">FR<span>-Logistics</span></div>
-    <div class="eb">Contenido de caja</div>
+    <div class="eb">Container contents</div>
   </div>
-  <div id="out"><div class="card"><div class="loading">Cargando…</div></div></div>
+  <div id="out"><div class="card"><div class="loading">Loading…</div></div></div>
 </div>
 
 <dialog id="lblDlg">
   <div class="modal">
-    <div class="modalHead"><b>Etiqueta 4×6</b><button class="btn noprint" style="width:auto;padding:.3rem .7rem" onclick="document.getElementById('lblDlg').close()">Cerrar</button></div>
+    <div class="modalHead"><b>4x6 Label</b><button class="btn noprint" style="width:auto;padding:.3rem .7rem" onclick="document.getElementById('lblDlg').close()">Close</button></div>
     <div class="modalBody">
       <div class="label" id="label">
         <div class="brand">FR-Logistics · Doral, FL</div>
         <div class="code" id="lCode">—</div>
         <div class="client" id="lClient">—</div>
         <div class="metaL">
-          <div><b>Ubicación</b><span id="lLoc">—</span></div>
-          <div><b>Sellada</b><span id="lDate">—</span></div>
-          <div><b>Estado</b><span id="lStatus">—</span></div>
-          <div><b>Caja</b><span id="lSeq">—</span></div>
+          <div><b>Location</b><span id="lLoc">—</span></div>
+          <div><b>Sealed</b><span id="lDate">—</span></div>
+          <div><b>Status</b><span id="lStatus">—</span></div>
+          <div><b>Box</b><span id="lSeq">—</span></div>
         </div>
         <div class="qrWrap"><div id="qr"></div></div>
-        <div class="hint">Escanea el QR para ver el contenido actualizado.<br>
-          Esta etiqueta no lista el contenido a propósito: cambia, la etiqueta no.</div>
+        <div class="hint">Scan the QR for live contents.<br>
+          This label does not list contents on purpose: contents change, the label does not.</div>
       </div>
       <div class="modalBtns noprint">
-        <button class="btn pri" onclick="window.print()">Imprimir 4×6</button>
+        <button class="btn pri" onclick="window.print()">Print 4x6</button>
       </div>
     </div>
   </div>
@@ -143,15 +143,15 @@ let DATA=null;
 
 async function load(){
   const {code,k}=readParam();
-  if(!code){ $('out').innerHTML='<div class="err">Falta el código de la caja.</div>'; return; }
+  if(!code){ $('out').innerHTML='<div class="err">Missing container code.</div>'; return; }
   try{
     const r=await fetch(`${API}?action=public&code=${encodeURIComponent(code)}&k=${encodeURIComponent(k)}`);
     const j=await r.json();
-    if(!r.ok) throw new Error(j.message||j.error||'No encontrada');
+    if(!r.ok) throw new Error(j.message||j.error||'Not found');
     DATA=j; render(j);
   }catch(e){
     $('out').innerHTML=`<div class="err"><b>${esc(e.message)}</b><br>
-      <span style="font-size:.8rem;color:#7F1D1D">Verifica que escaneaste el QR completo de la etiqueta.</span></div>`;
+      <span style="font-size:.8rem;color:#7F1D1D">Make sure you scanned the full QR on the label.</span></div>`;
   }
 }
 
@@ -165,34 +165,34 @@ function render(d){
         <span class="pill ${esc(d.status)}">${esc(d.status)}</span>
       </div>
       <div class="meta">
-        <div><div class="l">Ubicación</div><div class="v">${esc(d.location_code||'—')}</div></div>
-        <div><div class="l">Unidades</div><div class="v">${num(d.units)}</div></div>
+        <div><div class="l">Location</div><div class="v">${esc(d.location_code||'—')}</div></div>
+        <div><div class="l">Units</div><div class="v">${num(d.units)}</div></div>
         <div><div class="l">SKUs</div><div class="v">${lines.length}</div></div>
-        ${d.weight_lb?`<div><div class="l">Peso</div><div class="v">${d.weight_lb} lb</div></div>`:''}
+        ${d.weight_lb?`<div><div class="l">Weight</div><div class="v">${d.weight_lb} lb</div></div>`:''}
       </div>
     </div>
 
     <div class="card">
-      <div class="ch">Contenido</div>
-      ${lines.length?`<table><thead><tr><th>SKU</th><th style="text-align:right">Unidades</th></tr></thead>
+      <div class="ch">Contents</div>
+      ${lines.length?`<table><thead><tr><th>SKU</th><th style="text-align:right">Units</th></tr></thead>
         <tbody>${lines.map(l=>`<tr><td class="mono">${esc(l.sku)}</td><td class="n">${num(l.qty)}</td></tr>`).join('')}</tbody>
         <tfoot><tr><td>Total</td><td class="n">${num(d.units)}</td></tr></tfoot></table>`
-      :`<div class="loading">Esta caja está vacía.</div>`}
+      :`<div class="loading">This box is empty.</div>`}
       <div class="note">
         ${d.status==='sealed'
-          ? `Caja sellada el ${fdate(d.sealed_at)}. El contenido no ha cambiado desde entonces.`
+          ? `Sealed on ${fdate(d.sealed_at)}. Contents have not changed since.`
           : d.status==='open'
-          ? 'Caja <b>abierta</b> — se ha pickeado de ella, así que el contenido puede haber cambiado desde la última verificación.'
+          ? 'Box is <b>open</b> — it has been picked from, so contents may have changed since the last check.'
           : d.status==='building'
-          ? 'Caja en armado. Todavía no está sellada.'
-          : 'Caja consumida. Esta matrícula está cerrada y no se reutiliza.'}
-        ${d.last_verified_at?`<br>Última verificación: ${fdate(d.last_verified_at)}
-           (${d.last_verify_method==='counted'?'abierta y contada':'escaneada'}).`:''}
+          ? 'Box is being built. Not sealed yet.'
+          : 'Box consumed. This plate is closed and never reused.'}
+        ${d.last_verified_at?`<br>Last checked ${fdate(d.last_verified_at)}
+           (${d.last_verify_method==='counted'?'opened and counted':'scanned'}).`:''}
       </div>
     </div>
 
     <div class="card" style="padding:.9rem">
-      <button class="btn pri" id="printBtn">Imprimir etiqueta 4×6</button>
+      <button class="btn pri" id="printBtn">Print 4x6 label</button>
     </div>`;
   $('printBtn').onclick=openLabel;
 }
