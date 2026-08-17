@@ -54,7 +54,9 @@
   .modalHead{display:flex;justify-content:space-between;align-items:center;padding:.8rem 1rem;border-bottom:1px solid #EEF2F7;font-size:.8rem;font-weight:800}
   .modalBody{padding:1rem}
   .modalBtns{display:flex;gap:.6rem;margin-top:1rem}
+  .printHint{font-size:.72rem;color:#64748B;line-height:1.5;margin-top:.7rem;background:#F8FAFC;border:1px solid #EEF2F7;border-radius:8px;padding:.6rem .75rem}
 
+  .labelWrap{overflow:hidden}
   .label{width:4in;height:6in;background:#fff;color:#000;border:1px solid #ddd;padding:.15in;
          box-sizing:border-box;border-radius:10px;display:flex;flex-direction:column;overflow:hidden;
          transform-origin:top left}
@@ -75,8 +77,16 @@
     .modal{border:none!important;border-radius:0!important;width:auto!important;background:transparent!important}
     .modalHead,.modalBtns,.noprint{display:none!important}
     .modalBody{padding:0!important}
-    .label{width:4in!important;height:6in!important;padding:.10in!important;border:none!important;
-           border-radius:0!important;page-break-after:avoid!important;transform:none!important}
+    /* Every wrapper must give up its size, or a label scaled down for a phone
+       screen prints inside a box shorter than itself and the bottom gets cut. */
+    .labelWrap{height:auto!important;width:auto!important;overflow:visible!important;transform:none!important}
+    /* 0.2in of safe margin on every side. Printers cannot reach the very edge
+       of the stock, so a label sized to the exact 4x6 loses whatever sits
+       against the border — which is where the letters were going missing. */
+    .label{width:4in!important;height:6in!important;padding:.20in!important;border:none!important;
+           border-radius:0!important;page-break-after:avoid!important;transform:none!important;
+           overflow:hidden!important;margin:0!important;box-shadow:none!important;
+           position:relative!important;left:0!important;top:0!important}
   }
 </style>
 </head>
@@ -93,6 +103,7 @@
   <div class="modal">
     <div class="modalHead"><b>4x6 Label</b><button class="btn noprint" style="width:auto;padding:.3rem .7rem" onclick="document.getElementById('lblDlg').close()">Close</button></div>
     <div class="modalBody">
+      <div class="labelWrap" id="labelWrap">
       <div class="label" id="label">
         <div class="brand">FR-Logistics · Doral, FL</div>
         <div class="code" id="lCode">—</div>
@@ -107,8 +118,13 @@
         <div class="hint">Scan the QR for live contents.<br>
           This label does not list contents on purpose: contents change, the label does not.</div>
       </div>
+      </div>
       <div class="modalBtns noprint">
-        <button class="btn pri" onclick="window.print()">Print 4x6</button>
+        <button class="btn pri" id="printBtn2">Print 4x6</button>
+      </div>
+      <div class="printHint noprint">
+        In the print dialog set <b>Paper 4 x 6</b>, <b>Margins: None</b> and
+        <b>Scale: 100%</b>. "Fit to printable area" shifts the label and clips the text.
       </div>
     </div>
   </div>
@@ -212,15 +228,39 @@ function openLabel(){
   // a box somebody picked from must still carry a truthful label.
   new QRCode(box,{ text:d.public_url, width:150, height:150, correctLevel:QRCode.CorrectLevel.M });
 
-  // Fit the 4in-wide label inside a phone screen; print CSS resets the scale.
-  const lbl=$('label');
-  const avail=Math.min(window.innerWidth*0.86, 420);
-  const scale=Math.min(1, avail/384);
-  lbl.style.transform=scale<1?`scale(${scale})`:'none';
-  lbl.parentElement.style.height=scale<1?`${576*scale}px`:'auto';
-
+  fitToScreen();
   $('lblDlg').showModal();
 }
+
+// Shrink the 4in-wide label to fit a phone screen. Both the transform AND the
+// wrapper height are set here, and BOTH are cleared before printing — leaving
+// the wrapper short was what clipped the printed label.
+function fitToScreen(){
+  const lbl=$('label'), wrap=$('labelWrap');
+  const avail=Math.min(window.innerWidth*0.86, 420);
+  const scale=Math.min(1, avail/384);
+  if(scale<1){
+    lbl.style.transform=`scale(${scale})`;
+    wrap.style.height=`${576*scale}px`;
+  } else {
+    lbl.style.transform='none';
+    wrap.style.height='auto';
+  }
+}
+
+function clearScale(){
+  $('label').style.transform='none';
+  $('labelWrap').style.height='auto';
+}
+
+function doPrint(){
+  clearScale();                 // full size before the print snapshot is taken
+  window.print();
+}
+window.addEventListener('afterprint', fitToScreen);
+window.addEventListener('resize', ()=>{ if($('lblDlg').open) fitToScreen(); });
+
+$('printBtn2').onclick=doPrint;
 
 load();
 </script>
