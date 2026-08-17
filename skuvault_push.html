@@ -70,13 +70,13 @@
   </div>
 
   <div class="danger">
-    <h3>Lee esto antes de tocar nada</h3>
-    <p><b>setItemQuantities FIJA la cantidad, no suma ni resta.</b> Lo que mandes se convierte en la verdad
-       de SkuVault, y no hay deshacer. Un plan mal armado no da error: sobrescribe inventario real en silencio.</p>
-    <p><b>Empieza por UNA ubicación chiquita.</b> Empuja F0801 (1 SKU / 4 unidades), ábrela en SkuVault y
-       confirma que quedó como esperabas. Recién ahí sigue con el resto.</p>
-    <p><b>Las líneas en CERO son las que vacían GENERAL.</b> Verifica en el piloto que una línea en cero
-       efectivamente saca el SKU de la ubicación en tu cuenta, antes de mandar las 20 de GENERAL.</p>
+    <h3>Read this before you touch anything</h3>
+    <p><b>setItemQuantities SETS the quantity — it does not add or subtract.</b> Whatever you send becomes
+       SkuVault’s truth, and there is no undo. A wrong plan does not error out: it silently overwrites real inventory.</p>
+    <p><b>Start with ONE small location.</b> Push F0801 (1 SKU / 4 units), open it in SkuVault and confirm
+       it landed as expected. Only then continue with the rest.</p>
+    <p><b>The ZERO lines are what empty GENERAL.</b> Confirm in the pilot that a zero line actually removes
+       the SKU from the location in your account, before sending the 20 GENERAL lines.</p>
   </div>
 
   <div id="msg"></div>
@@ -84,32 +84,32 @@
 
   <div class="card" id="planCard" hidden>
     <div class="ch">
-      <h2>Plan por ubicación</h2>
+      <h2>Plan by location</h2>
       <div class="row">
-        <label style="font-size:.78rem;color:#64748B">Ubicación</label>
+        <label style="font-size:.78rem;color:#64748B">Location</label>
         <select id="locSel"></select>
-        <button class="btn" id="viewBtn">Ver líneas</button>
+        <button class="btn" id="viewBtn">View lines</button>
       </div>
     </div>
-    <div class="cb" id="planBody"><div class="empty">Carga el plan para empezar.</div></div>
+    <div class="cb" id="planBody"><div class="empty">Load the plan to begin.</div></div>
   </div>
 
   <div class="card" id="pushCard" hidden>
-    <div class="ch"><h2>Ejecutar</h2></div>
+    <div class="ch"><h2>Execute</h2></div>
     <div class="cb">
       <div class="row" style="margin-bottom:.7rem">
-        <span style="font-size:.82rem;color:#334155">Escribe la referencia para habilitar:</span>
+        <span style="font-size:.82rem;color:#334155">Type the reference to enable:</span>
         <input id="confirm" placeholder="MBL-AUG-2026" style="width:180px">
-        <input id="who" placeholder="Tu nombre" style="width:150px">
+        <input id="who" placeholder="Your name" style="width:150px">
       </div>
       <div class="row">
-        <button class="btn go" id="pushOneBtn" disabled>Empujar solo <span id="pushLocLbl">—</span></button>
-        <button class="btn" id="pushAllBtn" disabled>Empujar TODAS las ubicaciones</button>
+        <button class="btn go" id="pushOneBtn" disabled>Push <span id="pushLocLbl">—</span> only</button>
+        <button class="btn" id="pushAllBtn" disabled>Push ALL locations</button>
       </div>
       <div class="note">
-        <b>Una ubicación a la vez.</b> El botón de todas existe, pero no lo uses hasta que el piloto
-        haya cuadrado en SkuVault. Cada lote queda registrado antes de mandarse, así que si algo se corta
-        a mitad de camino puedes ver exactamente qué llegó en la pestaña de abajo y seguir desde ahí.
+        <b>One location at a time.</b> The all-locations button exists, but do not use it until the pilot has
+        reconciled in SkuVault. Every batch is logged before it is sent, so if something breaks midway you can
+        see exactly what landed in the log below and resume from there.
       </div>
       <div id="pushOut"></div>
     </div>
@@ -117,8 +117,8 @@
 
   <div class="card" id="statusCard" hidden>
     <div class="ch">
-      <h2>Bitácora</h2>
-      <button class="btn" id="statusBtn">↻ Actualizar</button>
+      <h2>Push log</h2>
+      <button class="btn" id="statusBtn">↻ Refresh</button>
     </div>
     <div class="cb" id="statusBody"></div>
   </div>
@@ -152,15 +152,15 @@ async function loadPlan(){
     const t = j.totals;
     $('totals').hidden=false;
     $('totals').innerHTML = `
-      <div class="kpi"><div class="l">Líneas a mandar</div><div class="v">${num(t.lines_to_send)}</div></div>
-      <div class="kpi"><div class="l">Ubicaciones</div><div class="v">${num(t.locations)}</div></div>
-      <div class="kpi red"><div class="l">Líneas a CERO</div><div class="v">${num(t.lines_zeroing)}</div></div>
-      <div class="kpi"><div class="l">Lotes de 100</div><div class="v">${num(t.batches)}</div></div>
-      <div class="kpi ${t.net_delta<0?'red':'green'}"><div class="l">Cambio neto</div><div class="v">${t.net_delta>0?'+':''}${num(t.net_delta)}</div></div>`;
+      <div class="kpi"><div class="l">Lines to send</div><div class="v">${num(t.lines_to_send)}</div></div>
+      <div class="kpi"><div class="l">Locations</div><div class="v">${num(t.locations)}</div></div>
+      <div class="kpi red"><div class="l">Lines to ZERO</div><div class="v">${num(t.lines_zeroing)}</div></div>
+      <div class="kpi"><div class="l">Batches of 100</div><div class="v">${num(t.batches)}</div></div>
+      <div class="kpi ${t.net_delta<0?'red':'green'}"><div class="l">Net change</div><div class="v">${t.net_delta>0?'+':''}${num(t.net_delta)}</div></div>`;
 
     const locs = Object.entries(j.by_location).sort((a,b)=>a[1].lines-b[1].lines);
     $('locSel').innerHTML = locs.map(([l,v]) =>
-      `<option value="${esc(l)}">${esc(l)} — ${v.lines} línea${v.lines!==1?'s':''}${v.zeroing?` (${v.zeroing} a cero)`:''}</option>`).join('');
+      `<option value="${esc(l)}">${esc(l)} — ${v.lines} line${v.lines!==1?'s':''}${v.zeroing?` (${v.zeroing} to zero)`:''}</option>`).join('');
     S.loc = locs.length ? locs[0][0] : null;
     $('planCard').hidden=false; $('pushCard').hidden=false; $('statusCard').hidden=false;
     renderPlan();
@@ -175,15 +175,15 @@ function renderPlan(){
   $('pushLocLbl').textContent = loc || '—';
   const items = S.plan.items.filter(i => i.LocationCode === loc);
   $('planBody').innerHTML = `
-    <table><thead><tr><th>SKU</th><th style="text-align:right">Antes</th>
-    <th style="text-align:right">Queda en</th><th style="text-align:right">Cambio</th></tr></thead>
+    <table><thead><tr><th>SKU</th><th style="text-align:right">Before</th>
+    <th style="text-align:right">Ends at</th><th style="text-align:right">Change</th></tr></thead>
     <tbody>${items.map(i=>`<tr>
       <td class="mono">${esc(i.Sku)}</td>
       <td class="n">${num(i._before)}</td>
       <td class="n ${i.Quantity===0?'zero':''}">${i.Quantity}</td>
       <td class="n ${i._delta<0?'neg':'pos'}">${i._delta>0?'+':''}${i._delta}</td></tr>`).join('')}
     </tbody></table>
-    ${S.plan.dropped.length ? `<div class="note"><b>No se manda:</b> ${S.plan.dropped.length} línea(s) —
+    ${S.plan.dropped.length ? `<div class="note"><b>Not sent:</b> ${S.plan.dropped.length} line(s) —
       ${esc([...new Set(S.plan.dropped.map(d=>d.why))].join(' · '))}</div>` : ''}`;
 }
 
@@ -196,20 +196,20 @@ function updateConfirm(){
 async function push(all){
   const ref = $('ref').value.trim();
   const loc = S.loc;
-  const scope = all ? 'TODAS las ubicaciones' : loc;
+  const scope = all ? 'ALL locations' : loc;
   const items = all ? S.plan.items : S.plan.items.filter(i=>i.LocationCode===loc);
   const zeros = items.filter(i=>i.Quantity===0).length;
-  if(!confirm(`Vas a FIJAR cantidades en SkuVault.\n\nAlcance: ${scope}\nLíneas: ${items.length}\nDe esas, a CERO: ${zeros}\n\nEsto no se puede deshacer. ¿Seguir?`)) return;
+  if(!confirm(`You are about to SET quantities in SkuVault.\n\nScope: ${scope}\nLines: ${items.length}\nOf those, to ZERO: ${zeros}\n\nThis cannot be undone. Continue?`)) return;
 
   $('pushOneBtn').disabled = $('pushAllBtn').disabled = true;
-  $('pushOut').innerHTML = '<div class="note">Enviando…</div>';
+  $('pushOut').innerHTML = '<div class="note">Sending…</div>';
   try{
     const j = await api('POST','push', {
       reference: ref, confirm: ref, pushed_by: $('who').value.trim() || null,
       ...(all ? { all_locations:true } : { location_code: loc })
     });
-    $('pushOut').innerHTML = `<div class="note"><b>Listo.</b> ${j.pushed} línea(s) aplicadas en ${esc(j.scope)},
-      ${j.zeroed} a cero.<br>${esc(j.next||'')}</div><pre>${esc(JSON.stringify(j.batches,null,2))}</pre>`;
+    $('pushOut').innerHTML = `<div class="note"><b>Done.</b> ${j.pushed} line(s) applied to ${esc(j.scope)},
+      ${j.zeroed} set to zero.<br>${esc(j.next||'')}</div><pre>${esc(JSON.stringify(j.batches,null,2))}</pre>`;
   }catch(e){
     $('pushOut').innerHTML = `<div class="err"><b>${esc(e.message)}</b></div>
       <pre>${esc(JSON.stringify(e.payload,null,2))}</pre>`;
@@ -221,15 +221,15 @@ async function loadStatus(){
     const j = await api('GET','status',{ reference: $('ref').value.trim() });
     const b = j.batches||[];
     $('statusBody').innerHTML = b.length ? `
-      <table><thead><tr><th>Cuándo</th><th>Ubicación</th><th>Lote</th>
-      <th style="text-align:right">Líneas</th><th>Estado</th><th>Por</th></tr></thead>
+      <table><thead><tr><th>When</th><th>Location</th><th>Batch</th>
+      <th style="text-align:right">Lines</th><th>Status</th><th>By</th></tr></thead>
       <tbody>${b.map(x=>`<tr>
         <td class="mono">${esc((x.at||'').replace('T',' ').slice(0,16))}</td>
-        <td class="mono">${esc(x.location||'todas')}</td>
+        <td class="mono">${esc(x.location||'all')}</td>
         <td class="n">${x.batch}</td><td class="n">${x.items}</td>
         <td><span class="pill ${x.status}">${x.status}</span></td>
         <td>${esc(x.by||'—')}</td></tr>`).join('')}</tbody></table>`
-      : '<div class="empty">Todavía no se ha empujado nada.</div>';
+      : '<div class="empty">Nothing pushed yet.</div>';
   }catch(e){ $('statusBody').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
 
