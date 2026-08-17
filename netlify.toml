@@ -51,6 +51,15 @@
   status = 200
   force = true
 
+# Container label QR. The QR encodes /c/FRC-000847-A3F9C2 — plate plus a short
+# derived token. Rewrite (200), not redirect, so the address bar keeps the
+# clean URL the operator sees printed on the box.
+[[redirects]]
+  from = "/c/:plate"
+  to = "/c.html?p=:plate"
+  status = 200
+  force = true
+
 # ─── Headers ────────────────────────────────────────────────────────────────
 
 [[headers]]
