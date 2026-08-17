@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FR-Logistics · Caja</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',-apple-system,sans-serif;background:#F4F6FB;color:#1A2238;padding:1rem;min-height:100vh}
+  .wrap{max-width:620px;margin:0 auto}
+
+  .hdr{display:flex;align-items:center;gap:.7rem;margin-bottom:1rem}
+  .wordmark{font-size:1.15rem;font-weight:900;letter-spacing:-.03em;color:#0F1D35}
+  .wordmark span{color:#00B4AA}
+  .hdr .eb{font-size:.6rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#94A3B8}
+
+  .card{background:#fff;border:1px solid #E4E9F2;border-radius:14px;margin-bottom:.9rem;overflow:hidden}
+  .plate{background:#0C2A3E;color:#fff;padding:1.1rem 1.2rem}
+  .plate .code{font-family:ui-monospace,Consolas,monospace;font-size:2rem;font-weight:800;letter-spacing:.04em;line-height:1.1}
+  .plate .sub{font-size:.82rem;color:#9DB4C4;margin-top:.35rem}
+
+  .pill{display:inline-block;font-size:.63rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:.2rem .55rem;border-radius:20px;margin-top:.5rem}
+  .pill.sealed{background:#DCFCE7;color:#166534}
+  .pill.building{background:#FEF3C7;color:#92400E}
+  .pill.open{background:#E0E7FF;color:#3730A3}
+  .pill.consumed{background:#F1F5F9;color:#64748B}
+
+  .meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.1rem;padding:.2rem}
+  .meta div{padding:.7rem .9rem}
+  .meta .l{font-size:.63rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#94A3B8}
+  .meta .v{font-size:1rem;font-weight:700;color:#0F1D35;margin-top:.15rem}
+
+  table{width:100%;border-collapse:collapse;font-size:.88rem}
+  th{text-align:left;font-size:.63rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#94A3B8;padding:.6rem .9rem;border-bottom:1px solid #EEF2F7}
+  td{padding:.55rem .9rem;border-bottom:1px solid #F5F7FA}
+  td.n{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+  tr:last-child td{border-bottom:none}
+  .mono{font-family:ui-monospace,Consolas,monospace;font-size:.82rem}
+  tfoot td{font-weight:800;background:#F8FAFC;border-top:1px solid #E4E9F2}
+
+  .ch{padding:.75rem .9rem;border-bottom:1px solid #EEF2F7;font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#475569}
+  .note{font-size:.76rem;color:#64748B;line-height:1.55;padding:.75rem .9rem;background:#F8FAFC}
+  .err{background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;border-radius:12px;padding:1.2rem;text-align:center;font-size:.9rem}
+  .loading{padding:2.5rem;text-align:center;color:#94A3B8}
+
+  .btn{border:1px solid #E4E9F2;background:#fff;color:#334155;font:inherit;font-size:.82rem;font-weight:700;padding:.6rem 1rem;border-radius:9px;cursor:pointer;width:100%}
+  .btn.pri{background:#0F1D35;border-color:#0F1D35;color:#fff}
+
+  /* ── 4x6 label · same engine as the Warehouse Release labels ─────────── */
+  dialog{border:none;background:transparent;padding:0;max-width:none;max-height:none}
+  dialog::backdrop{background:rgba(2,6,23,.6)}
+  .modal{width:min(460px,94vw);background:#fff;border-radius:16px;overflow:hidden}
+  .modalHead{display:flex;justify-content:space-between;align-items:center;padding:.8rem 1rem;border-bottom:1px solid #EEF2F7;font-size:.8rem;font-weight:800}
+  .modalBody{padding:1rem}
+  .modalBtns{display:flex;gap:.6rem;margin-top:1rem}
+
+  .label{width:4in;height:6in;background:#fff;color:#000;border:1px solid #ddd;padding:.15in;
+         box-sizing:border-box;border-radius:10px;display:flex;flex-direction:column;overflow:hidden;
+         transform-origin:top left}
+  .label .brand{font-size:11px;font-weight:950;letter-spacing:.5px;text-transform:uppercase;color:#333}
+  .label .code{font-family:ui-monospace,Consolas,monospace;font-size:40px;font-weight:950;letter-spacing:1px;margin-top:6px;line-height:1}
+  .label .client{font-size:19px;font-weight:950;margin-top:10px;line-height:1.15}
+  .label .metaL{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-top:12px;font-size:13px}
+  .label .metaL b{display:block;font-size:10px;color:#444;font-weight:950;text-transform:uppercase;letter-spacing:.4px;margin-bottom:1px}
+  .label .qrWrap{margin-top:auto;display:flex;justify-content:center;padding-top:8px}
+  .label .hint{font-size:9.5px;color:#555;text-align:center;margin-top:6px;line-height:1.35}
+
+  @page{size:4in 6in;margin:0}
+  @media print{
+    html,body{margin:0!important;padding:0!important;background:#fff!important}
+    .wrap,.hdr{display:none!important}
+    dialog{display:none!important}
+    dialog[open]{display:block!important;position:static!important;margin:0!important;padding:0!important}
+    .modal{border:none!important;border-radius:0!important;width:auto!important;background:transparent!important}
+    .modalHead,.modalBtns,.noprint{display:none!important}
+    .modalBody{padding:0!important}
+    .label{width:4in!important;height:6in!important;padding:.10in!important;border:none!important;
+           border-radius:0!important;page-break-after:avoid!important;transform:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <div class="wordmark">FR<span>-Logistics</span></div>
+    <div class="eb">Contenido de caja</div>
+  </div>
+  <div id="out"><div class="card"><div class="loading">Cargando…</div></div></div>
+</div>
+
+<dialog id="lblDlg">
+  <div class="modal">
+    <div class="modalHead"><b>Etiqueta 4×6</b><button class="btn noprint" style="width:auto;padding:.3rem .7rem" onclick="document.getElementById('lblDlg').close()">Cerrar</button></div>
+    <div class="modalBody">
+      <div class="label" id="label">
+        <div class="brand">FR-Logistics · Doral, FL</div>
+        <div class="code" id="lCode">—</div>
+        <div class="client" id="lClient">—</div>
+        <div class="metaL">
+          <div><b>Ubicación</b><span id="lLoc">—</span></div>
+          <div><b>Sellada</b><span id="lDate">—</span></div>
+          <div><b>Estado</b><span id="lStatus">—</span></div>
+          <div><b>Caja</b><span id="lSeq">—</span></div>
+        </div>
+        <div class="qrWrap"><div id="qr"></div></div>
+        <div class="hint">Escanea el QR para ver el contenido actualizado.<br>
+          Esta etiqueta no lista el contenido a propósito: cambia, la etiqueta no.</div>
+      </div>
+      <div class="modalBtns noprint">
+        <button class="btn pri" onclick="window.print()">Imprimir 4×6</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+const API='/.netlify/functions/frm-containers';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num=n=>(Number(n)||0).toLocaleString('en-US');
+const fdate=d=>d?String(d).slice(0,10):'—';
+
+// The plate can arrive three ways: /c/FRC-000001-A3F9C2 (rewritten to ?p=),
+// ?code=…&k=…, or pasted whole. The function sorts it out; we just forward it.
+function readParam(){
+  const u=new URLSearchParams(location.search);
+  const p=u.get('p')||u.get('code')||'';
+  return { code:p, k:u.get('k')||'' };
+}
+
+let DATA=null;
+
+async function load(){
+  const {code,k}=readParam();
+  if(!code){ $('out').innerHTML='<div class="err">Falta el código de la caja.</div>'; return; }
+  try{
+    const r=await fetch(`${API}?action=public&code=${encodeURIComponent(code)}&k=${encodeURIComponent(k)}`);
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.message||j.error||'No encontrada');
+    DATA=j; render(j);
+  }catch(e){
+    $('out').innerHTML=`<div class="err"><b>${esc(e.message)}</b><br>
+      <span style="font-size:.8rem;color:#7F1D1D">Verifica que escaneaste el QR completo de la etiqueta.</span></div>`;
+  }
+}
+
+function render(d){
+  const lines=d.lines||[];
+  $('out').innerHTML=`
+    <div class="card">
+      <div class="plate">
+        <div class="code">${esc(d.code)}</div>
+        <div class="sub">${esc(d.client||'—')}</div>
+        <span class="pill ${esc(d.status)}">${esc(d.status)}</span>
+      </div>
+      <div class="meta">
+        <div><div class="l">Ubicación</div><div class="v">${esc(d.location_code||'—')}</div></div>
+        <div><div class="l">Unidades</div><div class="v">${num(d.units)}</div></div>
+        <div><div class="l">SKUs</div><div class="v">${lines.length}</div></div>
+        ${d.weight_lb?`<div><div class="l">Peso</div><div class="v">${d.weight_lb} lb</div></div>`:''}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ch">Contenido</div>
+      ${lines.length?`<table><thead><tr><th>SKU</th><th style="text-align:right">Unidades</th></tr></thead>
+        <tbody>${lines.map(l=>`<tr><td class="mono">${esc(l.sku)}</td><td class="n">${num(l.qty)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td>Total</td><td class="n">${num(d.units)}</td></tr></tfoot></table>`
+      :`<div class="loading">Esta caja está vacía.</div>`}
+      <div class="note">
+        ${d.status==='sealed'
+          ? `Caja sellada el ${fdate(d.sealed_at)}. El contenido no ha cambiado desde entonces.`
+          : d.status==='open'
+          ? 'Caja <b>abierta</b> — se ha pickeado de ella, así que el contenido puede haber cambiado desde la última verificación.'
+          : d.status==='building'
+          ? 'Caja en armado. Todavía no está sellada.'
+          : 'Caja consumida. Esta matrícula está cerrada y no se reutiliza.'}
+        ${d.last_verified_at?`<br>Última verificación: ${fdate(d.last_verified_at)}
+           (${d.last_verify_method==='counted'?'abierta y contada':'escaneada'}).`:''}
+      </div>
+    </div>
+
+    <div class="card" style="padding:.9rem">
+      <button class="btn pri" id="printBtn">Imprimir etiqueta 4×6</button>
+    </div>`;
+  $('printBtn').onclick=openLabel;
+}
+
+function openLabel(){
+  const d=DATA; if(!d) return;
+  $('lCode').textContent=d.code;
+  $('lClient').textContent=d.client||'—';
+  $('lLoc').textContent=d.location_code||'—';
+  $('lDate').textContent=fdate(d.sealed_at);
+  $('lStatus').textContent=d.status;
+  $('lSeq').textContent=d.box_seq?`${d.box_seq}`:'—';
+
+  const box=$('qr'); box.innerHTML='';
+  // The QR carries the URL, not the bare plate: one symbol that works for the
+  // handheld and for any phone. Contents are deliberately NOT on the label —
+  // a box somebody picked from must still carry a truthful label.
+  new QRCode(box,{ text:d.public_url, width:150, height:150, correctLevel:QRCode.CorrectLevel.M });
+
+  // Fit the 4in-wide label inside a phone screen; print CSS resets the scale.
+  const lbl=$('label');
+  const avail=Math.min(window.innerWidth*0.86, 420);
+  const scale=Math.min(1, avail/384);
+  lbl.style.transform=scale<1?`scale(${scale})`:'none';
+  lbl.parentElement.style.height=scale<1?`${576*scale}px`:'auto';
+
+  $('lblDlg').showModal();
+}
+
+load();
+</script>
+</body>
+</html>
