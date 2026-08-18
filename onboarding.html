@@ -180,10 +180,35 @@ button:disabled{background:#94a3b8 !important;color:#fff;cursor:not-allowed;box-
           <input id="startDate" type="date"/></div>
       </div>
       <div class="fr2">
+        <div class="f"><label>Client Code <span style="font-weight:400;font-size:10px;color:#94a3b8">&nbsp;used in the ship-to name field</span></label>
+          <input id="clientCode" placeholder="auto"/></div>
+        <div class="f"><label>Warehouse Contact</label>
+          <input id="whContact" value="Joe Raymond - Warehouse Manager" readonly/></div>
+      </div>
+      <div class="fr2">
         <div class="f"><label>Prepared By</label>
           <input id="prepBy" value="Jose Fuentes - Operations Manager"/></div>
         <div class="f"><label>Scope / Notes</label>
           <input id="notes" placeholder="Special requirements, SLAs, etc."/></div>
+      </div>
+    </div>
+
+    <!-- PACKAGE CONTENTS -->
+    <div class="ch"><h3>&#128230; Package Contents <span style="font-weight:400;font-size:10px;color:#94a3b8">&nbsp;auto-selected from the Rate Card</span></h3></div>
+    <div class="cb">
+      <div class="fr3" style="font-size:12px;line-height:1.9">
+        <label><input type="checkbox" id="pk_rate" checked disabled/> Rate Card <span style="color:#94a3b8">(always)</span></label>
+        <label><input type="checkbox" id="pk_check" checked/> Onboarding Checklist</label>
+        <label><input type="checkbox" id="pk_agree" checked/> Services Agreement (EN + ES)</label>
+        <label><input type="checkbox" id="pk_ship" checked/> Ship-To Instructions (EN + ES)</label>
+        <label><input type="checkbox" id="pk_guide" checked/> Operating Guide (EN + ES)</label>
+        <label><input type="checkbox" id="pk_sku" checked/> SKU Intake Template (CSV)</label>
+        <label><input type="checkbox" id="pk_ovw" checked/> Company Overview (PPTX)</label>
+        <label><input type="checkbox" id="pk_ds"/> DropShipments email format <span style="color:#94a3b8">(in guide)</span></label>
+        <label><input type="checkbox" id="pk_ds_link"/> Link: DropShipments deck</label>
+        <label><input type="checkbox" id="pk_eco_link"/> Link: EcoPack+ deck</label>
+        <label><input type="checkbox" id="pk_fba_link"/> Link: FBA inbound guide</label>
+        <label><input type="checkbox" id="pk_portal" checked/> Create portal access</label>
       </div>
     </div>
 
@@ -222,6 +247,10 @@ button:disabled{background:#94a3b8 !important;color:#fff;cursor:not-allowed;box-
     <div class="steps">
       <div class="step wait" id="s1"><div class="dot"></div><span>Generating Rate Card PDF</span></div>
       <div class="step wait" id="s2"><div class="dot"></div><span>Generating Onboarding Checklist PDF</span></div>
+      <div class="step wait" id="s6"><div class="dot"></div><span>Generating Ship-To Instructions PDF (EN + ES)</span></div>
+      <div class="step wait" id="s7"><div class="dot"></div><span>Generating Services Agreement PDF (EN + ES)</span></div>
+      <div class="step wait" id="s8"><div class="dot"></div><span>Generating Operating Guide PDF (EN + ES)</span></div>
+      <div class="step wait" id="s9"><div class="dot"></div><span>Creating client portal access</span></div>
       <div class="step wait" id="s3"><div class="dot"></div><span>Saving services &amp; rates to client record</span></div>
       <div class="step wait" id="s4"><div class="dot"></div><span>Sending to Gmail via Netlify</span></div>
       <div class="step wait" id="s5"><div class="dot"></div><span>Finalizing draft in josefuentes@fr-logistics.net</span></div>
@@ -411,6 +440,7 @@ function onClientChange(){
   if(!CLIENT){
     ['ro_company','ro_contact','ro_email','ro_phone','ro_country','ro_lang','ro_type'].forEach(i=>g(i).value='');
     g('minBilling').value='0';
+    g('clientCode').value='';
     pill.style.display='none';
     g('sendBtn').disabled = true;
     SEL = {}; renderTable();
@@ -426,6 +456,14 @@ function onClientChange(){
   g('ro_lang').value    = isES(CLIENT) ? 'Español' : 'English';
   g('ro_type').value    = [CLIENT.type, CLIENT.status].filter(Boolean).join(' / ');
   g('minBilling').value = CLIENT.mmb != null ? CLIENT.mmb : 0;
+  g('clientCode').value = deriveClientCode({clientName: CLIENT.company || CLIENT.name || '', startDate: g('startDate').value});
+  // DropShipments clients need the mandatory email-format section in the guide
+  const svcTxt = ((CLIENT.services||[]).join(' ') + ' ' + (CLIENT.type||'')).toLowerCase();
+  const isDS = /dropship|casillero/.test(svcTxt);
+  g('pk_ds').checked      = isDS;
+  g('pk_ds_link').checked = isDS;
+  g('pk_eco_link').checked = /ecopack/.test(svcTxt);
+  g('pk_fba_link').checked = /fba/.test(svcTxt);
 
   // Suggest sales channel from contracted services
   const svcs = (CLIENT.services||[]).map(s=>String(s));
@@ -777,6 +815,701 @@ function buildChecklistPDF(c) {
   return doc.output('datauristring').split(',')[1];
 }
 
+// ─── SHARED PDF SHELL (same visual language as Rate Card) ────────────────────
+function frPdfShell(tagRight, titleRight) {
+  const {jsPDF} = window.jspdf;
+  const doc = new jsPDF({unit:'pt',format:'letter'});
+  const PW=612, ML=36, W=540, PH=doc.internal.pageSize.getHeight();
+  const DG=[6,95,70], MG=[14,165,95], LG=[236,253,245], DN=[15,23,42], MT=[100,116,139], WH=[255,255,255], BD=[209,250,229];
+  const S = {doc,PW,ML,W,PH,DG,MG,LG,DN,MT,WH,BD,y:0,page:0};
+
+  S.header = function(){
+    doc.setFillColor(...DG); doc.rect(0,0,PW,52,'F');
+    doc.setFillColor(...MG); doc.rect(PW*0.72,0,PW*0.28,52,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(17); doc.setTextColor(...WH);
+    doc.text('FR-Logistics', ML, 20);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+    doc.text('3PL Fulfillment  |  Amazon FBA Prep  |  E-Commerce Logistics', ML, 31);
+    doc.setFontSize(7.5); doc.text(tagRight, PW-ML, 17, {align:'right'});
+    doc.setFont('helvetica','bold'); doc.setFontSize(9);
+    doc.text(String(titleRight||'').slice(0,44), PW-ML, 28, {align:'right'});
+    S.y = 52;
+  };
+  S.footer = function(){
+    doc.setFillColor(15,23,42); doc.rect(0,PH-22,PW,22,'F');
+    doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(100,116,139);
+    doc.text('FR-Logistics  |  10893 NW 17th St, Unit 121, Miami, FL 33172  |  (786) 300-1443  |  info@fr-logistics.net',PW/2,PH-13,{align:'center'});
+    doc.setFontSize(6); doc.text(String(S.page), PW-ML, PH-13, {align:'right'});
+  };
+  S.newPage = function(){ S.footer(); doc.addPage(); S.page++; S.header(); S.y = 66; };
+  S.start   = function(){ S.page = 1; S.header(); S.y = 66; };
+  S.space   = function(need){ if(S.y + need > PH-34) S.newPage(); };
+
+  S.h1 = function(txt){
+    S.space(26);
+    doc.setFillColor(...DG); doc.rect(ML,S.y,W,12,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...WH);
+    doc.text(String(txt).toUpperCase(), ML+5, S.y+8.5);
+    S.y += 17;
+  };
+  S.h2 = function(txt){
+    S.space(20);
+    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...DG);
+    doc.text(txt, ML, S.y+7); S.y += 12;
+  };
+  S.p = function(txt, opt){
+    const o = opt||{};
+    const size = o.size||7.6, indent = o.indent||0, lead = o.lead||9.2;
+    doc.setFont('helvetica', o.bold?'bold':'normal'); doc.setFontSize(size);
+    doc.setTextColor(...(o.color||DN));
+    const lines = doc.splitTextToSize(String(txt), W-indent);
+    lines.forEach(ln => { S.space(lead+2); doc.text(ln, ML+indent, S.y+lead*0.75); S.y += lead; });
+    S.y += (o.gap==null?4:o.gap);
+  };
+  S.li = function(txt){
+    S.space(12);
+    doc.setFillColor(...MG); doc.circle(ML+5, S.y+4.2, 1.6, 'F');
+    S.p(txt, {indent:14, gap:1.5});
+  };
+  S.note = function(title, txt, tone){
+    const t = tone==='warn' ? {bg:[255,251,235], bd:[253,230,138], fg:[146,64,14]}
+                            : {bg:[236,253,245], bd:[167,243,208], fg:[6,95,70]};
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.2);
+    const lines = doc.splitTextToSize(String(txt), W-16);
+    const h = 13 + lines.length*8.6;
+    S.space(h+6);
+    doc.setFillColor(...t.bg); doc.setDrawColor(...t.bd); doc.setLineWidth(.5);
+    doc.roundedRect(ML,S.y,W,h,3,3,'FD');
+    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...t.fg);
+    doc.text(title, ML+7, S.y+9);
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.2); doc.setTextColor(...t.fg);
+    lines.forEach((ln,i)=> doc.text(ln, ML+7, S.y+19+i*8.6));
+    S.y += h+7;
+  };
+  S.kv = function(rows, colW){
+    const cw = colW||W*0.26;
+    rows.forEach(([k,v],i)=>{
+      const lines = doc.splitTextToSize(String(v), W-cw-10);
+      const h = Math.max(13, lines.length*8.6+5);
+      S.space(h+2);
+      doc.setFillColor(...(i%2===0?LG:WH)); doc.setDrawColor(...BD); doc.setLineWidth(.2);
+      doc.rect(ML,S.y,W,h,'FD');
+      doc.setFont('helvetica','bold'); doc.setFontSize(7.2); doc.setTextColor(...DG);
+      doc.text(String(k), ML+5, S.y+9.5);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.2); doc.setTextColor(...DN);
+      lines.forEach((ln,j)=> doc.text(ln, ML+cw, S.y+9.5+j*8.6));
+      S.y += h;
+    });
+    S.y += 6;
+  };
+  S.mono = function(lines){
+    const h = 12 + lines.length*11;
+    S.space(h+6);
+    doc.setFillColor(...LG); doc.setDrawColor(...MG); doc.setLineWidth(.8);
+    doc.roundedRect(ML,S.y,W,h,4,4,'FD');
+    doc.setFont('courier','bold'); doc.setFontSize(10); doc.setTextColor(...DG);
+    lines.forEach((ln,i)=> doc.text(ln, ML+14, S.y+18+i*11));
+    S.y += h+7;
+  };
+  S.out = function(){ S.footer(); return doc.output('datauristring').split(',')[1]; };
+  return S;
+}
+
+// ─── CLIENT CODE ─────────────────────────────────────────────────────────────
+function deriveClientCode(c){
+  const rec = CLIENT || {};
+  const known = rec.client_code || rec.code || rec.warehouse_code || rec.client_id_code;
+  if (known) return String(known).toUpperCase();
+  const words = String(c.clientName||'CLIENT').toUpperCase().replace(/[^A-Z0-9 ]/g,' ').split(/\s+/).filter(Boolean);
+  const a = (words[0]||'CLIENT').slice(0,4);
+  const b = (words[1]||words[0]||'GEN').slice(0,3);
+  const d = (c.startDate ? new Date(c.startDate+'T12:00:00') : new Date());
+  const ymd = String(d.getFullYear()).slice(2) + String(d.getMonth()+1).padStart(2,'0') + String(d.getDate()).padStart(2,'0');
+  return `${a}_${b}-${ymd}`;
+}
+
+// ─── PDF: SHIP-TO INSTRUCTIONS (EN / ES) ─────────────────────────────────────
+function buildShipToPDF(c, es, code) {
+  const NAME = (c.clientName || 'CLIENT').toUpperCase();
+  const CODE = String(code||'').toUpperCase();
+  const S = frPdfShell(es ? 'INSTRUCTIVO DE ENVIO' : 'SHIP-TO INSTRUCTIONS', c.clientName || '');
+  S.start();
+
+  const T = es ? {
+    title:'Como enviar tus productos a nuestro almacen',
+    sub:'Sigue estos pasos para que cada paquete que envies llegue identificado y se procese el mismo dia.',
+    before:'Antes de enviar',
+    b1t:'Haz tu compra', b1d:'Compra tus productos en retailers o distribuidores de EE. UU.: Amazon, Walmart, Target, mayoristas o tiendas en linea.',
+    b2t:'Usa nuestra direccion con tu codigo', b2d:'Copia el formato de abajo tal cual. El codigo es tu identificador permanente y no cambia.',
+    b3t:'Avisanos del envio', b3d:'Envianos el numero de tracking y el detalle del pedido a warehouse@fr-logistics.net, para que lo esperemos y lo recibamos sin demoras.',
+    addr:'Direccion de recepcion',
+    addrSub:'Usa exactamente este formato al comprarle a tus proveedores.',
+    phone:'Telefono de contacto: usa el tuyo, no el nuestro. Los marketplaces lo exigen y el courier te llamara a ti si hay un problema de entrega.',
+    fields:'Como llenar los campos en el checkout',
+    fLabels:[['Full name / Nombre',`${NAME} - ${CODE}`],['Address line 1','10893 NW 17TH ST UNIT 121'],['Address line 2','C/O FR-LOGISTICS'],['City','MIAMI'],['State / ZIP code','FL / 33172'],['Country','UNITED STATES'],['Phone','Tu telefono de contacto']],
+    rules:'Tres reglas que no se pueden omitir',
+    r1t:'Tu codigo de cliente va en el campo del nombre.', r1d:'Es lo unico que nos permite saber de quien es la caja. Los sistemas de los marketplaces recortan o reordenan las lineas secundarias; el campo del nombre siempre sobrevive.',
+    r2t:'UNIT 121 va en el mismo renglon de la calle.', r2d:'Sin la unidad, el courier puede marcar la direccion como incompleta o dejar el paquete en otra puerta del edificio.',
+    r3t:'Nunca uses solo "FR-Logistics" como destinatario.', r3d:'Recibimos paquetes de varios clientes en la misma direccion. Sin tu codigo no hay forma de asignarlo y la caja entra como no identificada.',
+    ok:'CORRECTO', okNote:'Identificable, ruteable y asignado el mismo dia.',
+    bad:'INCORRECTO', badNote:'Sin codigo y sin unidad: la caja queda sin dueno.',
+    flow:'Que hacemos cuando llega tu paquete',
+    f1t:'Recepcion e inspeccion', f1d:'Recibimos, contamos e inspeccionamos la mercancia y la registramos en el sistema bajo tu codigo de cliente.',
+    f2t:'Preparacion segun tu servicio', f2d:'Preparamos la mercancia segun lo acordado en tu contrato: etiquetado, polybag, bundling, kitting, reempaque neutro o inspeccion de calidad.',
+    f3t:'Despacho', f3d:'Despachamos al destino que corresponda a tu operacion - centros de Amazon, courier internacional o cliente final - con la documentacion de salida.',
+    warnT:'Si un paquete llega sin codigo',
+    warnD:'Va a la bandeja de no identificados y te escribimos el mismo dia. Si no logramos asignarlo, aplica el cargo de manejo correspondiente y puede generar almacenaje adicional.',
+    contact:'Contacto del almacen', role:'Warehouse Manager'
+  } : {
+    title:'How to ship your products to our warehouse',
+    sub:'Follow these steps so every package you send arrives identified and is processed the same day.',
+    before:'Before you ship',
+    b1t:'Place your purchase', b1d:'Buy your products from U.S. retailers or distributors: Amazon, Walmart, Target, wholesalers, or online stores.',
+    b2t:'Use our address with your client code', b2d:'Copy the format below exactly as shown. Your code is your permanent identifier and never changes.',
+    b3t:'Notify us of the shipment', b3d:'Send the tracking number and order details to warehouse@fr-logistics.net so we can expect it and receive it without delays.',
+    addr:'Receiving address',
+    addrSub:'Use exactly this format when ordering from your suppliers.',
+    phone:'Contact phone: use yours, not ours. Marketplaces require it, and the carrier will call you if there is a delivery issue.',
+    fields:'How to fill the checkout fields',
+    fLabels:[['Full name',`${NAME} - ${CODE}`],['Address line 1','10893 NW 17TH ST UNIT 121'],['Address line 2','C/O FR-LOGISTICS'],['City','MIAMI'],['State / ZIP code','FL / 33172'],['Country','UNITED STATES'],['Phone','Your contact phone']],
+    rules:'Three rules that cannot be skipped',
+    r1t:'Your client code goes in the name field.', r1d:'It is the only thing that tells us whose box it is. Marketplace systems truncate or reorder secondary address lines; the name field always survives.',
+    r2t:'UNIT 121 goes on the same line as the street.', r2d:'Without the unit, the carrier may flag the address as incomplete or leave the package at another door of the building.',
+    r3t:'Never use "FR-Logistics" alone as the recipient.', r3d:'We receive packages from many clients at the same address. Without your code there is no way to assign it and the box comes in unidentified.',
+    ok:'CORRECT', okNote:'Identifiable, routable, and assigned the same day.',
+    bad:'INCORRECT', badNote:'No code and no unit: the box has no owner.',
+    flow:'What we do when your package arrives',
+    f1t:'Receiving and inspection', f1d:'We receive, count, and inspect the merchandise and register it in our system under your client code.',
+    f2t:'Prep per your service plan', f2d:'We prep the merchandise as agreed in your contract: labeling, polybag, bundling, kitting, neutral repack, or quality inspection.',
+    f3t:'Dispatch', f3d:'We ship to whichever destination your operation requires - Amazon fulfillment centers, international courier, or end customer - with outbound documentation.',
+    warnT:'If a package arrives without a code',
+    warnD:'It goes to the unidentified tray and we email you the same day. If we cannot assign it, the applicable handling charge applies and it may generate additional storage.',
+    contact:'Warehouse contact', role:'Warehouse Manager'
+  };
+
+  S.p(T.title, {bold:true, size:14, color:[6,95,70], gap:3});
+  S.p(T.sub, {size:8, color:[100,116,139], gap:8});
+
+  S.h1(T.before);
+  [[1,T.b1t,T.b1d],[2,T.b2t,T.b2d],[3,T.b3t,T.b3d]].forEach(([n,t,d])=>{
+    S.p(n+'. '+t, {bold:true, size:8, color:[6,95,70], gap:1});
+    S.p(d, {indent:12, gap:5});
+  });
+
+  S.h1(T.addr);
+  S.p(T.addrSub, {size:7.4, color:[100,116,139], gap:4});
+  S.mono([`${NAME} - ${CODE}`,'C/O FR-LOGISTICS','10893 NW 17TH ST UNIT 121','MIAMI, FL 33172','UNITED STATES']);
+  S.p(T.phone, {size:7, color:[100,116,139], gap:8});
+
+  S.h1(T.fields);
+  S.kv(T.fLabels, S.W*0.38);
+
+  S.newPage();
+  S.h1(T.rules);
+  [[1,T.r1t,T.r1d],[2,T.r2t,T.r2d],[3,T.r3t,T.r3d]].forEach(([n,t,d])=>{
+    S.p(n+'. '+t, {bold:true, size:8, color:[6,95,70], gap:1});
+    S.p(d, {indent:12, gap:5});
+  });
+
+  // CORRECT / INCORRECT side-by-side
+  (function(){
+    const doc=S.doc, half=(S.W-10)/2, h=74;
+    S.space(h+8);
+    const y0=S.y;
+    doc.setFillColor(236,253,245); doc.setDrawColor(16,185,129); doc.setLineWidth(.8);
+    doc.roundedRect(S.ML,y0,half,h,4,4,'FD');
+    doc.setFillColor(254,242,242); doc.setDrawColor(248,113,113);
+    doc.roundedRect(S.ML+half+10,y0,half,h,4,4,'FD');
+    doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
+    doc.setTextColor(6,95,70);   doc.text(T.ok,  S.ML+8,        y0+13);
+    doc.setTextColor(153,27,27); doc.text(T.bad, S.ML+half+18,  y0+13);
+    doc.setFont('courier','normal'); doc.setFontSize(7.4);
+    doc.setTextColor(15,23,42);
+    [`${NAME} - ${CODE}`,'C/O FR-LOGISTICS','10893 NW 17TH ST UNIT 121','MIAMI, FL 33172']
+      .forEach((ln,i)=>doc.text(ln.slice(0,34), S.ML+8, y0+26+i*9));
+    doc.setTextColor(120,113,113);
+    ['FR LOGISTICS','10893 NW 17TH ST','MIAMI, FL 33172']
+      .forEach((ln,i)=>doc.text(ln, S.ML+half+18, y0+26+i*9));
+    doc.setFont('helvetica','italic'); doc.setFontSize(6.6);
+    doc.setTextColor(6,95,70);   doc.text(doc.splitTextToSize(T.okNote, half-16),  S.ML+8,       y0+66);
+    doc.setTextColor(153,27,27); doc.text(doc.splitTextToSize(T.badNote, half-16), S.ML+half+18, y0+66);
+    S.y = y0+h+10;
+  })();
+
+  S.h1(T.flow);
+  [[4,T.f1t,T.f1d],[5,T.f2t,T.f2d],[6,T.f3t,T.f3d]].forEach(([n,t,d])=>{
+    S.p(n+'. '+t, {bold:true, size:8, color:[6,95,70], gap:1});
+    S.p(d, {indent:12, gap:5});
+  });
+
+  S.note(T.warnT, T.warnD, 'warn');
+  S.h1(T.contact);
+  S.kv([['Joe Raymond', T.role],['warehouse@fr-logistics.net','+1 786 300 1443']], S.W*0.38);
+
+  return S.out();
+}
+
+// ─── SKU INTAKE TEMPLATE (CSV) ───────────────────────────────────────────────
+// Delivered as CSV rather than XLSX so it opens in Excel, Sheets, and Numbers
+// without a spreadsheet library in the browser.
+function buildSkuTemplateCSV(c, es) {
+  const head = es
+    ? ['SKU','Titulo del producto','ASIN','FNSKU','UPC / EAN','Marca','Marketplace (US/CA/MX)','Seller ID','Unidades por caja master','Peso unitario (lb)','Largo (in)','Ancho (in)','Alto (in)','Tipo de empaque','Instrucciones de prep','Fragil / Liquido / Bateria (S/N)','Fecha de vencimiento (S/N)','Notas']
+    : ['SKU','Product title','ASIN','FNSKU','UPC / EAN','Brand','Marketplace (US/CA/MX)','Seller ID','Units per master carton','Unit weight (lb)','Length (in)','Width (in)','Height (in)','Packaging type','Prep instructions','Fragile / Liquid / Battery (Y/N)','Expiration date (Y/N)','Notes'];
+  const sample = es
+    ? ['EJEMPLO-001','Ejemplo: no borres esta fila hasta leerla','B0XXXXXXXX','X0XXXXXXXX','7501234567890','Tu marca','US','A1XXXXXXXXXXXX','24','1.2','8','6','4','Caja individual','Polybag + etiqueta FNSKU','N','N','Borra esta fila antes de enviar']
+    : ['SAMPLE-001','Example row: read before deleting','B0XXXXXXXX','X0XXXXXXXX','7501234567890','Your brand','US','A1XXXXXXXXXXXX','24','1.2','8','6','4','Individual box','Polybag + FNSKU label','N','N','Delete this row before sending'];
+  const esc = v => /[",\n]/.test(v) ? '"'+String(v).replace(/"/g,'""')+'"' : String(v);
+  const rows = [head, sample, new Array(head.length).fill('')];
+  const csv = '\ufeff' + rows.map(r => r.map(esc).join(',')).join('\r\n') + '\r\n';
+  // btoa needs latin1; the BOM + plain ASCII header keeps this safe.
+  return btoa(unescape(encodeURIComponent(csv)));
+}
+
+// ─── PDF: WELCOME / OPERATING GUIDE (EN / ES) ────────────────────────────────
+// One document instead of four so the client gets a single thing to read:
+// portal access, contacts & SLA, billing, and the ASN format.
+function buildWelcomeGuidePDF(c, es, code, opts) {
+  const o = opts || {};
+  const CODE = String(code||'').toUpperCase();
+  const S = frPdfShell(es ? 'GUIA DE OPERACION' : 'OPERATING GUIDE', c.clientName || '');
+  S.start();
+
+  const T = es ? {
+    title:'Guia de operacion',
+    sub:'Todo lo que necesitas para trabajar con nosotros desde el primer dia.',
+    portal:'1. Acceso a tu portal',
+    portalP:'Ya creamos tu usuario del portal de clientes con el correo de esta cuenta. Nosotros nunca definimos ni conocemos tu contrasena: tu la creas la primera vez.',
+    portalSteps:[
+      'Entra a fr-logistics.net/app/set-password.html y escribe tu correo.',
+      'Pulsa "Send reset link". Te llega un enlace por correo (revisa spam la primera vez).',
+      'Define tu contrasena y entra en fr-logistics.net/app con tu correo y esa contrasena.'],
+    portalUserLbl:'Tu usuario del portal',
+    portalWhat:'Que ves en el portal',
+    portalTabs:[
+      ['Dashboard','Resumen de tu actividad de entrada y salida.'],
+      ['Orders','Tus ordenes y su estado.'],
+      ['Bulk Upload','Carga masiva de ordenes con plantilla CSV precargada con tus datos.'],
+      ['Inventory','Inventario en vivo por SKU y ubicacion.'],
+      ['Tracking','Numeros de guia de tus salidas.']],
+    contacts:'2. Contactos y horarios',
+    contactRows:[
+      ['Operaciones y SKUs','ops@fr-logistics.net'],
+      ['Almacen, entradas y salidas','warehouse@fr-logistics.net  ·  Joe Raymond, Warehouse Manager'],
+      ['Administracion y facturacion','info@fr-logistics.net'],
+      ['WhatsApp','+1 305 240 3172'],
+      ['Horario de recepcion','Lunes a viernes, 9:00 AM - 5:00 PM ET (feriados federales cerrado)'],
+      ['Corte de despacho','2:00 PM ET — lo que entra despues sale el siguiente dia habil']],
+    sla:'Nuestro compromiso de servicio',
+    slaP:'Despachamos dentro de 24 horas habiles desde que recibimos tu instruccion completa (mercancia en almacen + informacion de la orden). Medido sobre nuestro historial real de operaciones, cumplimos ese plazo en el 93.8% de los casos. Horas habiles = lunes a viernes, 9:00 AM - 5:00 PM ET.',
+    slaNoteT:'Que puede parar el reloj',
+    slaNoteD:'Mercancia sin identificar, informacion de SKU incompleta, etiqueta de salida faltante o cuenta con facturas vencidas. En cualquiera de esos casos te escribimos el mismo dia.',
+    billing:'3. Facturacion y pago',
+    billRows:[
+      ['Frecuencia','Segun lo acordado en tu contrato (semanal o mensual)'],
+      ['Terminos','Net 5 desde la fecha de factura, salvo acuerdo distinto en el Rate Card'],
+      ['Como pagar','Tu factura llega por correo con un enlace de pago. Ese enlace es la via oficial: ahi ves el detalle, el saldo y pagas en linea.'],
+      ['Otros metodos','ACH / transferencia, Zelle y cheque empresarial. Si necesitas los datos, escribe a info@fr-logistics.net.'],
+      ['Documentos fiscales','Solicita el W-9 de FR-Logistics Miami, Inc. a info@fr-logistics.net cuando lo necesites.'],
+      ['Contacto de facturacion','Indicanos a que correo debe llegar la factura si es distinto al de esta cuenta.']],
+    billNoteT:'Mora',
+    billNoteD:'Las facturas vencidas devengan 1.5% mensual y podemos retener despachos hasta ponerlas al dia. Preferimos avisarte antes de que eso pase — si algo no cuadra en una factura, avisanos dentro de los 2 dias habiles siguientes.',
+    asn:'4. Aviso de embarque (ASN)',
+    asnP:'Cada envio que nos mandes necesita aviso previo con al menos 24 horas de anticipacion. Sin aviso el paquete entra como no identificado y se demora. Manda un correo a warehouse@fr-logistics.net con este formato:',
+    asnSubject:'Asunto: ASN - ' + (c.clientName||'TU EMPRESA') + ' - [fecha estimada de llegada]',
+    asnFields:['Tracking Number:','Order ID:','Transportista:','Cantidad de cajas/paquetes:','Contenido o referencia:'],
+    asnNoteT:'No cambies las etiquetas',
+    asnNoteD:'Escribe cada linea tal cual aparece arriba, con los dos puntos, una por renglon. Nuestro sistema lee ese formato automaticamente; cualquier variacion obliga a procesarlo a mano.',
+    first:'5. Tu primer envio',
+    firstSteps:[
+      'Llena la plantilla de SKUs que viene adjunta y mandala a ops@fr-logistics.net.',
+      'Envia tu mercancia usando exactamente la direccion del Instructivo de envio adjunto, con tu codigo ' + CODE + ' en el campo del nombre.',
+      'Manda el ASN a warehouse@fr-logistics.net 24 horas antes de la llegada.',
+      'Define tu contrasena del portal y verifica ahi la recepcion.'],
+    dsT:'Clientes DropShipments',
+    dsD:'Tu operacion se procesa leyendo automaticamente los correos que nos envias. Las cinco lineas del formato de arriba son obligatorias y deben ir en espanol tal cual, aunque el resto del correo este en ingles: son las cadenas exactas que lee nuestro sistema. Si envias varias ordenes en una misma caja, separa cada bloque con una linea de guiones (---) y adjunta la etiqueta de cada una.'
+  } : {
+    title:'Operating Guide',
+    sub:'Everything you need to work with us from day one.',
+    portal:'1. Your portal access',
+    portalP:'We already created your client portal user with the email on this account. We never set or see your password — you create it yourself the first time.',
+    portalSteps:[
+      'Go to fr-logistics.net/app/set-password.html and enter your email.',
+      'Click "Send reset link". You will receive an email (check spam the first time).',
+      'Set your password, then sign in at fr-logistics.net/app with your email and that password.'],
+    portalUserLbl:'Your portal user',
+    portalWhat:'What you get in the portal',
+    portalTabs:[
+      ['Dashboard','Overview of your inbound and outbound activity.'],
+      ['Orders','Your orders and their current status.'],
+      ['Bulk Upload','Bulk order upload with a CSV template pre-filled with your agreed fields.'],
+      ['Inventory','Live inventory by SKU and location.'],
+      ['Tracking','Tracking numbers for your outbound shipments.']],
+    contacts:'2. Contacts and hours',
+    contactRows:[
+      ['Operations and SKUs','ops@fr-logistics.net'],
+      ['Warehouse, inbound and outbound','warehouse@fr-logistics.net  ·  Joe Raymond, Warehouse Manager'],
+      ['Admin and billing','info@fr-logistics.net'],
+      ['WhatsApp','+1 305 240 3172'],
+      ['Receiving hours','Monday to Friday, 9:00 AM - 5:00 PM ET (closed on federal holidays)'],
+      ['Dispatch cut-off','2:00 PM ET — anything after that ships the next business day']],
+    sla:'Our service commitment',
+    slaP:'We dispatch within 24 business hours of receiving your complete instruction (goods in the warehouse plus order information). Measured against our real operating history, we meet that window 93.8% of the time. Business hours = Monday to Friday, 9:00 AM - 5:00 PM ET.',
+    slaNoteT:'What stops the clock',
+    slaNoteD:'Unidentified goods, incomplete SKU information, a missing outbound label, or an account with overdue invoices. In any of those cases we email you the same day.',
+    billing:'3. Billing and payment',
+    billRows:[
+      ['Frequency','As agreed in your contract (weekly or monthly)'],
+      ['Terms','Net 5 from invoice date, unless your Rate Card states otherwise'],
+      ['How to pay','Your invoice arrives by email with a payment link. That link is the official channel: it shows the detail, the balance, and lets you pay online.'],
+      ['Other methods','ACH / bank transfer, Zelle, and business check. Email info@fr-logistics.net if you need the details.'],
+      ['Tax documents','Request the FR-Logistics Miami, Inc. W-9 from info@fr-logistics.net whenever you need it.'],
+      ['Billing contact','Tell us which email should receive invoices if it differs from the one on this account.']],
+    billNoteT:'Late payment',
+    billNoteD:'Overdue invoices accrue 1.5% monthly and we may hold dispatches until the account is current. We would rather warn you first — if something looks wrong on an invoice, tell us within 2 business days.',
+    asn:'4. Advance shipment notice (ASN)',
+    asnP:'Every shipment you send us needs at least 24 hours advance notice. Without it the package arrives unidentified and gets delayed. Email warehouse@fr-logistics.net using this format:',
+    asnSubject:'Subject: ASN - ' + (c.clientName||'YOUR COMPANY') + ' - [estimated arrival date]',
+    asnFields:['Tracking Number:','Order ID:','Transportista:','Cantidad de cajas/paquetes:','Contenido o referencia:'],
+    asnNoteT:'Do not translate the labels',
+    asnNoteD:'Type each line exactly as shown above, with the colon, one per line. Our system reads that format automatically; any variation forces manual handling. The labels stay in Spanish even in an English email — they are the exact strings our system matches.',
+    first:'5. Your first shipment',
+    firstSteps:[
+      'Fill in the attached SKU template and send it to ops@fr-logistics.net.',
+      'Ship your goods using exactly the address in the attached Ship-To Instructions, with your code ' + CODE + ' in the name field.',
+      'Email the ASN to warehouse@fr-logistics.net 24 hours before arrival.',
+      'Set your portal password and confirm the receipt there.'],
+    dsT:'DropShipments clients',
+    dsD:'Your operation is processed by automatically reading the emails you send us. The five lines above are mandatory and must stay in Spanish exactly as written, even if the rest of your email is in English — they are the exact strings our system matches. If you send several orders in one box, separate each block with a line of dashes (---) and attach the label for each one.'
+  };
+
+  S.p(T.title, {bold:true, size:15, color:[6,95,70], gap:2});
+  S.p(T.sub, {size:8, color:[100,116,139], gap:8});
+
+  // 1 — Portal
+  S.h1(T.portal);
+  S.p(T.portalP);
+  S.kv([[T.portalUserLbl, c.contactEmail || '-']], S.W*0.30);
+  T.portalSteps.forEach((s,i)=>S.p((i+1)+'. '+s, {indent:8, gap:2}));
+  S.y += 4;
+  S.h2(T.portalWhat);
+  S.kv(T.portalTabs, S.W*0.22);
+
+  // 2 — Contacts + SLA
+  S.h1(T.contacts);
+  S.kv(T.contactRows, S.W*0.30);
+  S.h2(T.sla);
+  S.p(T.slaP);
+  S.note(T.slaNoteT, T.slaNoteD);
+
+  // 3 — Billing
+  S.h1(T.billing);
+  S.kv(T.billRows, S.W*0.24);
+  S.note(T.billNoteT, T.billNoteD, 'warn');
+
+  // 4 — ASN
+  S.h1(T.asn);
+  S.p(T.asnP);
+  S.mono([T.asnSubject.slice(0,58)]);
+  S.mono(T.asnFields);
+  S.note(T.asnNoteT, T.asnNoteD);
+  if (o.dropship) S.note(T.dsT, T.dsD);
+
+  // 5 — First shipment
+  S.h1(T.first);
+  T.firstSteps.forEach((s,i)=>S.p((i+1)+'. '+s, {indent:8, gap:2}));
+
+  return S.out();
+}
+
+// ─── AGREEMENT TEXT (EN / ES) ────────────────────────────────────────────────
+function agreementBody(es){
+  return es ? {
+tag:'CONTRATO DE SERVICIOS', title:'Contrato de Servicios Logisticos',
+sub:'Servicios de Logistica de Terceros (3PL)',
+provider:'PROVEEDOR DE SERVICIOS', clientLbl:'CLIENTE',
+defsTitle:'2. DEFINICIONES', defsIntro:'Para efectos de este Contrato, los siguientes terminos tendran el significado indicado:',
+defs:[
+ ['"Contrato"','Este Contrato de Servicios Logisticos, incluyendo todos sus Anexos, Rate Cards y documentos incorporados.'],
+ ['"Servicios"','Todos los servicios de logistica, almacenaje, preparacion, fulfillment, kitting, bundling y valor agregado prestados por FR-Logistics.'],
+ ['"Inventario"','Los bienes, mercancia o productos del Cliente recibidos, almacenados o manipulados por FR-Logistics.'],
+ ['"Rate Card"','El listado de tarifas, cargos y precios aplicables a los Servicios.'],
+ ['"FBA"','Programa Fulfillment by Amazon, bajo el cual el inventario del Cliente se envia a centros de Amazon.'],
+ ['"FBM"','Programa Fulfillment by Merchant de Amazon, o cualquier fulfillment directo al consumidor (DTC).'],
+ ['"Envio de Entrada"','Cualquier envio de Inventario entregado en la instalacion de FR-Logistics por el Cliente o su proveedor.'],
+ ['"Envio de Salida"','Cualquier envio de Inventario despachado desde la instalacion de FR-Logistics.'],
+ ['"Dia Habil"','Lunes a viernes, excluyendo feriados federales y los observados por FR-Logistics.'],
+ ['"Reclamo"','Cualquier reclamacion del Cliente por perdida, dano, faltante o discrepancia de Inventario.'],
+ ['"Fuerza Mayor"','Cualquier evento fuera del control razonable de una parte, incluyendo desastres naturales, huelgas, actos gubernamentales o interrupciones de transporte.']],
+sections:[
+ {h:'1. ANTECEDENTES', p:[
+  'CONSIDERANDO que FR-Logistics Miami, Inc. ("FR-Logistics" o "Proveedor") es una corporacion de Florida que opera como proveedor logistico tercerizado (3PL) certificado en la Amazon Service Partner Network (SPN), y ofrece almacenaje, preparacion FBA, fulfillment FBM, kitting, bundling y servicios logisticos de valor agregado;',
+  'CONSIDERANDO que el Cliente desea contratar a FR-Logistics para prestar los servicios logisticos aqui descritos, y FR-Logistics desea prestarlos sujeto a los terminos de este Contrato;',
+  'POR TANTO, en consideracion de los compromisos mutuos aqui establecidos, las partes acuerdan lo siguiente:']},
+ {h:'3. ALCANCE DE LOS SERVICIOS', subs:[
+  {h:'3.1 Servicios prestados', p:['FR-Logistics prestara los siguientes servicios, segun lo seleccionado y confirmado en el Checklist de Onboarding y el Rate Card aplicable:'], li:[
+   'Recepcion e inspeccion de Envios de Entrada',
+   'Etiquetado FNSKU, codigos de barra y re-etiquetado',
+   'Polybag, burbuja y empaque de proteccion',
+   'Kitting, bundling y ensamblaje de multiples unidades',
+   'Preparacion Amazon FBA conforme a los requisitos vigentes de empaque y prep de Amazon',
+   'Preparacion Walmart DSV y cumplimiento de routing guide (si esta contratado)',
+   'Fulfillment y despacho de ordenes FBM / DTC',
+   'Almacenaje de inventario a corto y largo plazo',
+   'Procesamiento de removal orders y devoluciones',
+   'Servicios de empaque sustentable EcoPack+ (si esta inscrito)',
+   'Otros servicios de valor agregado acordados por escrito']},
+  {h:'3.2 Estandares de servicio', p:['FR-Logistics prestara los Servicios de manera comercialmente razonable, conforme a los estandares de la industria 3PL en el Estado de Florida, y hara esfuerzos comercialmente razonables para cumplir los requisitos de empaque y preparacion de Amazon, Walmart y demas marketplaces, segun le sean comunicados por el Cliente por escrito.']},
+  {h:'3.3 Cambios en los Servicios', p:['Todo cambio material en el alcance -incluyendo nuevas categorias de SKU, aumento de volumen o servicios adicionales- debe ser solicitado por el Cliente por escrito y confirmado por FR-Logistics, que se reserva el derecho de ajustar precios o terminos al aceptar dicho cambio.']},
+  {h:'3.4 Responsabilidades del Cliente', p:['El Cliente se obliga a:'], li:[
+   'Entregar informacion de producto exacta y completa (dimensiones, peso, instrucciones de prep) para todos los SKUs antes del primer Envio de Entrada',
+   'Enviar aviso anticipado de embarque (ASN) al menos 24 horas antes de cada Envio de Entrada',
+   'Asegurar que el Inventario cumpla la normativa federal, estatal y de los marketplaces antes de enviarlo',
+   'Obtener aprobaciones de marketplace, ungating de categorias y certificaciones regulatorias de sus productos',
+   'Responder las comunicaciones de FR-Logistics dentro de dos (2) Dias Habiles',
+   'Mantener sus cuentas de vendedor activas y en buen estado durante la vigencia del Contrato']}]},
+ {h:'4. TARIFAS Y PAGO', subs:[
+  {h:'4.1 Tarifas', p:['El Cliente pagara las tarifas establecidas en el Rate Card aplicable por todos los Servicios prestados. Todas las tarifas se expresan en dolares estadounidenses (USD) y no incluyen impuestos aplicables salvo indicacion en contrario.']},
+  {h:'4.2 Facturacion y terminos de pago', p:['FR-Logistics emitira facturas de forma semanal o mensual segun lo acordado en el onboarding. El pago vence dentro de los terminos indicados en el Rate Card (por defecto: Net 5 desde la fecha de factura). Las facturas vencidas devengaran intereses de 1.5% mensual (18% anual) o la tasa maxima permitida por la ley de Florida, la que sea menor.']},
+  {h:'4.3 Metodos de pago', p:['Se aceptan ACH/transferencia bancaria, Zelle y cheque empresarial. FR-Logistics puede exigir prepago o deposito de garantia a cuentas nuevas o con historial de mora.']},
+  {h:'4.4 Facturas en disputa', p:['El Cliente debe notificar por escrito cualquier disputa de factura dentro de los dos (2) Dias Habiles siguientes a su recepcion. Las porciones no disputadas siguen venciendo en la fecha original. La falta de notificacion dentro de ese plazo constituye aceptacion de la factura.']},
+  {h:'4.5 Ajuste de tarifas', p:['FR-Logistics puede ajustar tarifas con al menos treinta (30) dias de aviso escrito. El uso continuado de los Servicios despues de la fecha efectiva constituye aceptacion de las nuevas tarifas.']},
+  {h:'4.6 Derecho de retencion', p:['FR-Logistics tendra derecho de retencion (warehouseman lien) sobre todo el Inventario en su posesion por cargos, tarifas y gastos impagos, conforme al Estatuto de Florida 677.209 y al Codigo Comercial Uniforme (UCC) adoptado en Florida.']}]},
+ {h:'5. INVENTARIO Y ALMACENAJE', subs:[
+  {h:'5.1 Recepcion', p:['FR-Logistics inspeccionara los Envios de Entrada unicamente por conteo de piezas y dano externo visible. No realiza inspeccion de calidad a nivel de SKU salvo que se contrate como servicio de valor agregado. El Cliente es responsable de que los productos vengan correctamente empacados para el transito de entrada. FR-Logistics documentara y notificara cualquier discrepancia visible al momento de la recepcion.']},
+  {h:'5.2 Almacenaje', p:['El Inventario del Cliente se almacenara en la instalacion de FR-Logistics ubicada en 10893 NW 17th St, Unit 121, Doral, FL 33172, o en otra instalacion que FR-Logistics designe con aviso escrito previo. Los cargos de almacenaje se devengan segun el Rate Card.','FR-Logistics podra aplicar cargos de almacenaje de largo plazo al Inventario que permanezca mas de noventa (90) dias sin actividad de salida, notificando al Cliente al menos quince (15) dias antes.']},
+  {h:'5.3 Exactitud de inventario', p:['FR-Logistics mantendra registros del Inventario en su sistema de gestion de almacen (WMS). Los conteos se reconcilian a la recepcion y periodicamente segun lo acordado. El Cliente reconoce que pueden ocurrir variaciones menores de hasta 0.5% de las unidades en mano, consideradas dentro de la tolerancia operativa normal.']},
+  {h:'5.4 Materiales restringidos y peligrosos', p:['El Cliente debe declarar por escrito, antes del envio, cualquier Inventario que constituya material peligroso, mercancia restringida o producto sujeto a requisitos regulatorios especiales. FR-Logistics podra rechazar, poner en cuarentena o devolver dicho Inventario no declarado a costa del Cliente, y no sera responsable por danos derivados de la falta de declaracion.']},
+  {h:'5.5 Inventario abandonado', p:['El Inventario que permanezca mas de sesenta (60) dias despues de un aviso escrito de retiro, sin respuesta ni disposicion por parte del Cliente, se considerara abandonado. FR-Logistics podra disponer de el conforme al Estatuto de Florida 677.210 -venta, donacion o descarte- aplicando lo obtenido a los cargos pendientes.']}]},
+ {h:'6. RESPONSABILIDAD Y SU LIMITACION', subs:[
+  {h:'6.1 Responsabilidad de FR-Logistics', p:['FR-Logistics ejercera cuidado razonable en el manejo, almacenaje y procesamiento del Inventario, y respondera por perdida o dano causado por su propia negligencia o dolo, sujeto a las limitaciones de esta Seccion.']},
+  {h:'6.2 Limitacion de responsabilidad', p:['LA RESPONSABILIDAD TOTAL DE FR-LOGISTICS POR CUALQUIER RECLAMO BAJO ESTE CONTRATO NO EXCEDERA EL MENOR DE: (A) EL COSTO REAL DE REPOSICION DEL INVENTARIO PERDIDO O DANADO AL MOMENTO DE LA PERDIDA; O (B) CINCUENTA DOLARES ($50.00) POR UNIDAD, O QUINIENTOS DOLARES ($500.00) POR INCIDENTE, EL QUE SEA MENOR, SALVO QUE EL CLIENTE HAYA DECLARADO UN VALOR MAYOR POR ESCRITO ANTES DE LA RECEPCION Y FR-LOGISTICS LO HAYA ACEPTADO POR ESCRITO.','EN NINGUN CASO FR-LOGISTICS RESPONDERA POR DANOS INDIRECTOS, CONSECUENCIALES, ESPECIALES, INCIDENTALES O PUNITIVOS, INCLUYENDO LUCRO CESANTE, VENTAS PERDIDAS, SUSPENSION DE MARKETPLACE O PERDIDA DE OPORTUNIDAD DE NEGOCIO.']},
+  {h:'6.3 Procedimiento de reclamos', p:['El Cliente debe presentar aviso escrito de cualquier Reclamo dentro de los quince (15) Dias Habiles siguientes a la fecha en que conocio o debio conocer la perdida o dano. Los reclamos presentados fuera de plazo se consideran renunciados. Todo Reclamo debe incluir identificacion de SKU, cantidad afectada, documentacion de respaldo y valor estimado. FR-Logistics investigara y respondera dentro de veinte (20) Dias Habiles.']},
+  {h:'6.4 Seguro del Cliente', p:['Se recomienda enfaticamente que el Cliente mantenga seguro de carga y de responsabilidad de producto sobre su Inventario mientras esta bajo el cuidado de FR-Logistics. La responsabilidad de FR-Logistics sera secundaria a cualquier cobertura de seguro del Cliente.']},
+  {h:'6.5 Responsabilidad del transportista', p:['FR-Logistics actua como shipper of record o gestiona el transporte por cuenta del Cliente. Una vez que el transportista acepta el Envio de Salida, la responsabilidad por perdida o dano se transfiere al transportista. FR-Logistics asistira en la presentacion del reclamo pero no respondera por perdidas causadas por el transportista.']}]},
+ {h:'7. CUMPLIMIENTO REGULATORIO', subs:[
+  {h:'7.1 Obligaciones del Cliente', p:['El Cliente declara y garantiza que:'], li:[
+   'Todo el Inventario es fabricado, importado y vendido licitamente en los Estados Unidos',
+   'Todo el Inventario cumple la normativa federal y estatal aplicable, incluyendo FDA, CPSC, EPA y FTC',
+   'Posee las licencias, permisos y autorizaciones requeridas para vender sus productos en los marketplaces aplicables',
+   'Notificara de inmediato cualquier recall, alerta de seguridad o accion regulatoria que afecte el Inventario almacenado']},
+  {h:'7.2 Categorias especiales', p:['El Cliente reconoce que ciertas categorias -alimentos, suplementos, productos para bebes, cosmeticos, electronicos y materiales peligrosos, entre otras- estan sujetas a requisitos regulatorios reforzados, asume plena responsabilidad por su cumplimiento e indemnizara a FR-Logistics por costos, multas o responsabilidades derivadas de su incumplimiento.']},
+  {h:'7.3 Cumplimiento de marketplaces', p:['FR-Logistics hara esfuerzos comercialmente razonables por ejecutar los Servicios conforme a los estandares de Amazon y Walmart informados por el Cliente. No garantiza la aceptacion de ningun envio por el marketplace ni respondera por penalidades, multas o acciones de cuenta derivadas de temas de producto, contenido o regulatorios atribuibles al Cliente.']}]},
+ {h:'8. CONFIDENCIALIDAD', subs:[
+  {h:'8.1 Informacion confidencial', p:['Cada parte mantendra en estricta reserva toda informacion no publica, propietaria o sensible divulgada por la otra en relacion con este Contrato, incluyendo precios, informacion de producto, estrategias de negocio, datos de clientes y procesos operativos.']},
+  {h:'8.2 Divulgaciones permitidas', p:['La Informacion Confidencial solo podra divulgarse a empleados o contratistas que necesiten conocerla para cumplir las obligaciones de este Contrato y que esten sujetos a obligaciones de confidencialidad no menos restrictivas.']},
+  {h:'8.3 Duracion', p:['Las obligaciones de confidencialidad sobreviviran la terminacion de este Contrato por un periodo de tres (3) anos.']}]},
+ {h:'9. VIGENCIA Y TERMINACION', subs:[
+  {h:'9.1 Vigencia', p:['Este Contrato inicia en la Fecha Efectiva y tendra un plazo inicial de doce (12) meses, salvo terminacion anticipada. Concluido el plazo inicial, se renovara automaticamente por periodos sucesivos de un ano salvo que cualquiera de las partes de aviso escrito de no renovacion con al menos treinta (30) dias de anticipacion.']},
+  {h:'9.2 Terminacion por conveniencia', p:['Cualquiera de las partes puede terminar este Contrato con treinta (30) dias de aviso escrito previo. Todas las tarifas y cargos de almacenaje pendientes hasta la fecha de terminacion siguen siendo exigibles.']},
+  {h:'9.3 Terminacion por causa', p:['Cualquiera de las partes puede terminar de inmediato mediante aviso escrito si la otra: (a) incumple materialmente y no subsana dentro de diez (10) Dias Habiles del aviso; (b) cae en insolvencia, cede bienes a acreedores o enfrenta peticion de quiebra; o (c) cesa sus operaciones ordinarias.']},
+  {h:'9.4 Efectos de la terminacion', p:['A la terminacion, el Cliente debera retirar todo su Inventario dentro de quince (15) Dias Habiles. FR-Logistics podra cobrar almacenaje continuado por el Inventario no retirado. Todas las facturas pendientes se hacen exigibles de inmediato y FR-Logistics conservara su derecho de retencion hasta el pago total.']}]},
+ {h:'10. INDEMNIZACION', p:['Cada parte defendera, indemnizara y mantendra indemne a la otra y a sus directores, empleados y agentes frente a reclamos de terceros, danos, perdidas, costos y gastos (incluyendo honorarios razonables de abogados) que deriven de:'], li:[
+  'El incumplimiento por la parte indemnizante de cualquier declaracion, garantia u obligacion de este Contrato',
+  'La negligencia o dolo de la parte indemnizante',
+  'Los productos del Cliente, incluyendo reclamos de responsabilidad de producto, recalls o acciones regulatorias (el Cliente indemniza a FR-Logistics)',
+  'El incumplimiento por el Cliente de leyes, regulaciones o requisitos de marketplace (el Cliente indemniza a FR-Logistics)']},
+ {h:'11. FUERZA MAYOR', p:['Ninguna parte sera responsable por demoras o incumplimientos causados por un Evento de Fuerza Mayor, siempre que notifique con prontitud por escrito y haga esfuerzos comercialmente razonables por retomar el cumplimiento. Si el evento se prolonga mas de treinta (30) dias consecutivos, cualquiera de las partes podra terminar el Contrato por aviso escrito sin penalidad.']},
+ {h:'12. RESOLUCION DE CONTROVERSIAS', subs:[
+  {h:'12.1 Resolucion informal', p:['Las partes intentaran resolver cualquier controversia mediante negociacion de buena fe entre representantes autorizados dentro de quince (15) Dias Habiles del aviso escrito de la disputa.']},
+  {h:'12.2 Mediacion', p:['Si la resolucion informal no prospera, las partes someteran la disputa a mediacion no vinculante ante un mediador acordado mutuamente en el Condado de Miami-Dade, Florida, antes de iniciar arbitraje o litigio.']},
+  {h:'12.3 Ley aplicable y jurisdiccion', p:['Este Contrato se rige por las leyes del Estado de Florida, sin atender a sus normas de conflicto de leyes. Toda accion legal derivada de este Contrato se presentara exclusivamente ante los tribunales estatales o federales del Condado de Miami-Dade, Florida, a cuya jurisdiccion personal ambas partes se someten.']}]},
+ {h:'13. DISPOSICIONES GENERALES', subs:[
+  {h:'13.1 Acuerdo integro', p:['Este Contrato, junto con sus Anexos, Rate Cards y documentos incorporados, constituye el acuerdo integro entre las partes sobre la materia y reemplaza toda negociacion, representacion o entendimiento previo.']},
+  {h:'13.2 Modificaciones', p:['Este Contrato solo puede modificarse mediante instrumento escrito firmado por representantes autorizados de ambas partes.']},
+  {h:'13.3 Divisibilidad', p:['Si alguna disposicion resulta invalida o inejecutable, se modificara en la medida minima necesaria para hacerla ejecutable y las demas disposiciones continuaran en pleno vigor.']},
+  {h:'13.4 Renuncia', p:['Ninguna renuncia sera efectiva salvo que conste por escrito. La falta de exigir el cumplimiento de una disposicion no constituye renuncia al derecho de exigirla en el futuro.']},
+  {h:'13.5 Cesion', p:['El Cliente no puede ceder este Contrato ni sus derechos sin consentimiento escrito previo de FR-Logistics. FR-Logistics podra cederlo en el marco de una fusion, adquisicion o venta sustancial de activos.']},
+  {h:'13.6 Notificaciones', p:['Toda notificacion debera ser escrita y entregada por correo electronico con confirmacion de recepcion, correo certificado o courier de un dia, a las direcciones indicadas en la portada de este Contrato.']},
+  {h:'13.7 Contratistas independientes', p:['Las partes son contratistas independientes. Nada en este Contrato crea sociedad, joint venture, agencia, franquicia o relacion laboral entre ellas.']},
+  {h:'13.8 Ejemplares / Firma electronica', p:['Este Contrato puede firmarse en ejemplares, cada uno considerado original. Las firmas electronicas se consideran validas y vinculantes en los mismos terminos que las firmas originales conforme a la Florida Electronic Signature Act (Sec. 668.50, Fla. Stat.).']}]}],
+closing:'Este Contrato se rige por las leyes del Estado de Florida. Al firmar, ambas partes reconocen haber leido, entendido y aceptado quedar obligadas por todos los terminos y condiciones aqui contenidos.',
+signTitle:'FIRMAS', sig:'Firma', nameL:'Nombre', titleL:'Cargo', dateL:'Fecha',
+transNote:['Version en espanol', 'Esta traduccion se entrega unicamente para facilitar la comprension del Cliente. En caso de discrepancia, prevalece la version en ingles firmada por las partes.']
+  } : {
+tag:'SERVICES AGREEMENT', title:'Logistics Services Agreement',
+sub:'Third-Party Logistics (3PL) Services',
+provider:'SERVICE PROVIDER', clientLbl:'CLIENT',
+defsTitle:'2. DEFINITIONS', defsIntro:'As used in this Agreement, the following terms shall have the meanings set forth below:',
+defs:[
+ ['"Agreement"','This Logistics Services Agreement including all Exhibits, Rate Cards, and incorporated documents.'],
+ ['"Services"','All logistics, warehousing, prep, fulfillment, kitting, bundling, storage, and value-added services performed by FR-Logistics.'],
+ ['"Inventory"','Client goods, merchandise, products, or items received, stored, or handled by FR-Logistics.'],
+ ['"Rate Card"','The schedule of fees, rates, and service charges applicable to the Services.'],
+ ['"FBA"','Amazon Fulfillment by Amazon program, under which Client inventory is shipped to Amazon fulfillment centers.'],
+ ['"FBM"','Amazon Fulfillment by Merchant program, or any direct-to-consumer (DTC) fulfillment.'],
+ ['"Inbound Shipment"','Any shipment of Inventory delivered to the FR-Logistics facility by or on behalf of Client.'],
+ ['"Outbound Shipment"','Any shipment of Inventory dispatched from the FR-Logistics facility.'],
+ ['"Business Day"','Monday through Friday, excluding federal holidays and FR-Logistics observed holidays.'],
+ ['"Claim"','Any assertion by Client of loss, damage, shortage, or discrepancy relating to Inventory.'],
+ ['"Force Majeure Event"','Any event beyond the reasonable control of a party, including natural disasters, strikes, government acts, or transportation disruptions.']],
+sections:[
+ {h:'1. RECITALS', p:[
+  'WHEREAS, FR-Logistics Miami, Inc. ("FR-Logistics" or "Provider") is a Florida corporation operating as an Amazon Service Partner Network (SPN)-certified third-party logistics (3PL) provider, offering warehousing, FBA prep, FBM fulfillment, kitting, bundling, storage, and value-added logistics services;',
+  'WHEREAS, the Client desires to engage FR-Logistics to perform certain logistics services as described herein, and FR-Logistics desires to provide such services subject to the terms and conditions set forth in this Agreement;',
+  'NOW, THEREFORE, in consideration of the mutual covenants and agreements set forth herein, the parties agree as follows:']},
+ {h:'3. SCOPE OF SERVICES', subs:[
+  {h:'3.1 Services Provided', p:['FR-Logistics agrees to provide the following services as selected and confirmed in the Client Onboarding Checklist and applicable Rate Card:'], li:[
+   'Receiving and inspection of Inbound Shipments',
+   'FNSKU labeling, barcoding, and re-labeling',
+   'Poly-bagging, bubble wrapping, and protective packaging',
+   'Kitting, bundling, and multi-unit assembly',
+   'Amazon FBA prep services in compliance with Amazon current Packaging and Prep Requirements',
+   'Walmart DSV prep and routing guide compliance (if contracted)',
+   'FBM / DTC order fulfillment and shipping',
+   'Short-term and long-term inventory storage',
+   'Removal order and return processing',
+   'EcoPack+ sustainable packaging services (if enrolled)',
+   'Other value-added services as mutually agreed in writing']},
+  {h:'3.2 Service Standards', p:['FR-Logistics shall perform all Services in a commercially reasonable manner, consistent with industry standards for 3PL operations in the State of Florida. FR-Logistics will use commercially reasonable efforts to comply with applicable Amazon, Walmart, and marketplace-specific packaging and prep requirements, as communicated by Client in writing.']},
+  {h:'3.3 Changes to Services', p:['Any material changes to the scope of Services, including new SKU categories, increased volume, or additional service types, must be requested by Client in writing and confirmed by FR-Logistics. FR-Logistics reserves the right to adjust pricing or terms upon accepting a material change in scope.']},
+  {h:'3.4 Client Responsibilities', p:['Client agrees to:'], li:[
+   'Provide accurate and complete product information, dimensions, weight, and prep instructions for all SKUs prior to the first Inbound Shipment',
+   'Provide advance shipment notifications (ASN) at least 24 hours prior to any Inbound Shipment',
+   'Ensure all Inventory complies with applicable federal, state, and marketplace regulations before shipment to FR-Logistics',
+   'Obtain all required marketplace approvals, category ungating, and regulatory certifications for their products',
+   'Respond to FR-Logistics communications within two (2) Business Days',
+   'Maintain active and valid marketplace seller accounts in good standing throughout the term of this Agreement']}]},
+ {h:'4. FEES AND PAYMENT', subs:[
+  {h:'4.1 Fees', p:['Client shall pay FR-Logistics the fees set forth in the applicable Rate Card for all Services rendered. All fees are stated in U.S. Dollars (USD) and are exclusive of applicable taxes unless otherwise noted.']},
+  {h:'4.2 Invoicing and Payment Terms', p:['FR-Logistics shall issue invoices on a weekly or monthly basis as agreed during onboarding. Payment is due within the net terms specified in the Rate Card (default: Net 5 from invoice date). Invoices unpaid after the due date shall accrue interest at the rate of 1.5% per month (18% per annum) or the maximum rate permitted by Florida law, whichever is lower.']},
+  {h:'4.3 Payment Methods', p:['Accepted payment methods include ACH/bank transfer, Zelle, and business check. FR-Logistics reserves the right to require prepayment or a security deposit for new accounts or accounts with a history of late payment.']},
+  {h:'4.4 Disputed Invoices', p:['Client must notify FR-Logistics of any invoice dispute in writing within two (2) Business Days of receipt. Undisputed portions of an invoice remain due on the original payment date. Failure to notify within this period constitutes acceptance of the invoice.']},
+  {h:'4.5 Rate Adjustments', p:['FR-Logistics reserves the right to adjust rates with at least thirty (30) days written notice to Client. Continued use of Services after the effective date of a rate adjustment constitutes Client acceptance of the new rates.']},
+  {h:'4.6 Lien Rights', p:['FR-Logistics shall have a warehouseman lien on all Inventory in its possession for all unpaid charges, fees, and expenses owed by Client, in accordance with Florida Statutes 677.209 and applicable provisions of the Uniform Commercial Code (UCC) as adopted in Florida.']}]},
+ {h:'5. INVENTORY AND WAREHOUSING', subs:[
+  {h:'5.1 Receiving', p:['FR-Logistics will inspect Inbound Shipments for piece count and visible external damage only. FR-Logistics does not perform SKU-level quality inspection unless contracted as a value-added service. Client is responsible for ensuring products are properly packaged for inbound transit. FR-Logistics will document and notify Client of any visible discrepancies upon receipt.']},
+  {h:'5.2 Storage', p:['Client Inventory will be stored at the FR-Logistics facility located at 10893 NW 17th St, Unit 121, Doral, FL 33172, or at such other facility as FR-Logistics may designate with prior written notice to Client. Storage fees accrue as set forth in the Rate Card.','FR-Logistics reserves the right to impose long-term storage fees for Inventory remaining in the facility beyond ninety (90) days without active outbound activity, with at least fifteen (15) days prior notice to Client.']},
+  {h:'5.3 Inventory Accuracy', p:['FR-Logistics will maintain inventory records using its warehouse management system (WMS). Inventory counts will be reconciled upon receiving and periodically as agreed. Client acknowledges that minor inventory variances of up to 0.5% of units on hand may occur and are considered within normal operational tolerance.']},
+  {h:'5.4 Restricted and Hazardous Materials', p:['Client must disclose in writing, prior to shipment, any Inventory that constitutes hazardous materials, dangerous goods, restricted items, or products subject to special regulatory requirements. FR-Logistics reserves the right to refuse, quarantine, or return any undisclosed restricted or hazardous Inventory at Client expense, and shall not be liable for damages arising from Client failure to disclose such materials.']},
+  {h:'5.5 Abandoned Inventory', p:['Inventory remaining in the FR-Logistics facility for more than sixty (60) days after written notice requesting removal, without Client response or arrangement for disposition, shall be deemed abandoned. FR-Logistics may dispose of abandoned Inventory in accordance with Florida Statutes 677.210, including sale, donation, or disposal, with proceeds applied to outstanding charges.']}]},
+ {h:'6. LIABILITY AND LIMITATION OF LIABILITY', subs:[
+  {h:'6.1 FR-Logistics Liability', p:['FR-Logistics shall exercise reasonable care in the handling, storage, and processing of Client Inventory, and shall be liable for loss or damage caused by its own negligence or willful misconduct, subject to the limitations set forth in this Section.']},
+  {h:'6.2 Limitation of Liability', p:['FR-LOGISTICS TOTAL LIABILITY FOR ANY CLAIM ARISING UNDER THIS AGREEMENT SHALL NOT EXCEED THE LESSER OF: (A) THE ACTUAL REPLACEMENT COST OF THE LOST OR DAMAGED INVENTORY AT THE TIME OF LOSS; OR (B) FIFTY DOLLARS ($50.00) PER UNIT, OR FIVE HUNDRED DOLLARS ($500.00) PER INCIDENT, WHICHEVER IS LOWER, UNLESS CLIENT HAS DECLARED A HIGHER VALUE IN WRITING PRIOR TO RECEIPT AND FR-LOGISTICS HAS AGREED IN WRITING TO ACCEPT INCREASED LIABILITY.','IN NO EVENT SHALL FR-LOGISTICS BE LIABLE FOR INDIRECT, CONSEQUENTIAL, SPECIAL, INCIDENTAL, OR PUNITIVE DAMAGES, INCLUDING LOST PROFITS, LOST SALES, MARKETPLACE SUSPENSION, OR LOSS OF BUSINESS OPPORTUNITY, REGARDLESS OF WHETHER FR-LOGISTICS HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.']},
+  {h:'6.3 Claims Procedure', p:['Client must submit written notice of any Claim within fifteen (15) Business Days of the date Client knew or reasonably should have known of the alleged loss or damage. Claims submitted after this period shall be deemed waived. All Claims must include SKU identification, quantity affected, supporting documentation, and estimated value. FR-Logistics shall investigate and respond within twenty (20) Business Days of receipt.']},
+  {h:'6.4 Client Insurance', p:['Client is strongly encouraged to maintain cargo and product liability insurance covering Client Inventory while in the care of FR-Logistics. FR-Logistics liability under this Agreement shall be secondary to any insurance coverage maintained by Client.']},
+  {h:'6.5 Carrier Liability', p:['FR-Logistics acts as a shipper of record or arranges shipping on Client behalf. Once an Outbound Shipment is accepted by the carrier, liability for loss or damage transfers to the carrier. FR-Logistics shall assist Client in filing carrier claims but shall not be liable for carrier-caused losses.']}]},
+ {h:'7. REGULATORY COMPLIANCE', subs:[
+  {h:'7.1 Client Compliance Obligations', p:['Client represents and warrants that:'], li:[
+   'All Inventory is lawfully manufactured, imported, and sold in the United States',
+   'All Inventory complies with applicable federal and Florida state regulations, including FDA, CPSC, EPA, and FTC requirements',
+   'Client holds all required licenses, permits, and authorizations to sell its products on the applicable marketplaces',
+   'Client will promptly notify FR-Logistics of any product recalls, safety alerts, or regulatory actions affecting stored Inventory']},
+  {h:'7.2 Special Categories', p:['Client acknowledges that certain product categories - including food and grocery items, dietary supplements, baby products, cosmetics, electronics, and hazardous materials - are subject to heightened regulatory requirements. Client assumes full responsibility for compliance and agrees to indemnify FR-Logistics for any costs, penalties, or liabilities arising from Client non-compliance.']},
+  {h:'7.3 Marketplace Compliance', p:['FR-Logistics will use commercially reasonable efforts to perform Services in accordance with Amazon and Walmart packaging and prep standards as provided by Client. FR-Logistics does not guarantee marketplace acceptance of any shipment and shall not be liable for marketplace penalties, fines, or account actions arising from product, content, or regulatory issues attributable to Client.']}]},
+ {h:'8. CONFIDENTIALITY', subs:[
+  {h:'8.1 Confidential Information', p:['Each party agrees to maintain in strict confidence all non-public, proprietary, or sensitive information disclosed by the other party in connection with this Agreement, including pricing, product information, business strategies, customer data, and operational processes.']},
+  {h:'8.2 Permitted Disclosures', p:['Confidential Information may be disclosed only to employees or contractors who have a need to know for purposes of performing obligations under this Agreement and who are bound by confidentiality obligations no less restrictive than those set forth herein.']},
+  {h:'8.3 Duration', p:['Confidentiality obligations shall survive termination of this Agreement for a period of three (3) years.']}]},
+ {h:'9. TERM AND TERMINATION', subs:[
+  {h:'9.1 Term', p:['This Agreement shall commence on the Effective Date and continue for an initial term of twelve (12) months, unless earlier terminated as provided herein. Following the Initial Term, this Agreement shall automatically renew for successive one-year periods unless either party provides written notice of non-renewal at least thirty (30) days prior to the end of the then-current term.']},
+  {h:'9.2 Termination for Convenience', p:['Either party may terminate this Agreement upon thirty (30) days prior written notice. All outstanding fees and storage charges through the termination date shall remain due and payable.']},
+  {h:'9.3 Termination for Cause', p:['Either party may terminate immediately upon written notice if the other party: (a) materially breaches this Agreement and fails to cure within ten (10) Business Days of written notice; (b) becomes insolvent, makes a general assignment for the benefit of creditors, or has a petition in bankruptcy filed against it; or (c) ceases to conduct business in the ordinary course.']},
+  {h:'9.4 Effect of Termination', p:['Upon termination, Client shall arrange for removal of all Inventory within fifteen (15) Business Days. FR-Logistics may assess continued storage fees for Inventory not removed within this period. All outstanding invoices shall become immediately due and payable, and FR-Logistics shall retain a lien on Inventory until all outstanding amounts are paid in full.']}]},
+ {h:'10. INDEMNIFICATION', p:['Each party shall defend, indemnify, and hold harmless the other party and its officers, directors, employees, and agents from and against any third-party claims, damages, losses, costs, and expenses (including reasonable attorneys fees) arising out of or relating to:'], li:[
+  'The Indemnifying Party breach of any representation, warranty, or obligation under this Agreement',
+  'The Indemnifying Party negligence or willful misconduct',
+  'Client products, including any product liability claims, recalls, or regulatory actions (Client indemnifies FR-Logistics)',
+  'Client failure to comply with applicable laws, regulations, or marketplace requirements (Client indemnifies FR-Logistics)']},
+ {h:'11. FORCE MAJEURE', p:['Neither party shall be liable for any delay or failure to perform its obligations to the extent caused by a Force Majeure Event, provided that the affected party promptly notifies the other party in writing and uses commercially reasonable efforts to resume performance as soon as practicable. If a Force Majeure Event continues for more than thirty (30) consecutive days, either party may terminate this Agreement upon written notice without penalty.']},
+ {h:'12. DISPUTE RESOLUTION', subs:[
+  {h:'12.1 Informal Resolution', p:['The parties agree to attempt to resolve any dispute through good-faith negotiation between authorized representatives within fifteen (15) Business Days of written notice of the dispute.']},
+  {h:'12.2 Mediation', p:['If informal resolution is unsuccessful, the parties agree to submit the dispute to non-binding mediation administered by a mutually agreed mediator in Miami-Dade County, Florida, before initiating arbitration or litigation.']},
+  {h:'12.3 Governing Law and Jurisdiction', p:['This Agreement shall be governed by and construed in accordance with the laws of the State of Florida, without regard to its conflict of law principles. Any legal action arising from this Agreement shall be brought exclusively in the state or federal courts located in Miami-Dade County, Florida. Both parties hereby consent to the personal jurisdiction of such courts.']}]},
+ {h:'13. GENERAL PROVISIONS', subs:[
+  {h:'13.1 Entire Agreement', p:['This Agreement, together with all Exhibits, Rate Cards, and incorporated documents, constitutes the entire agreement between the parties with respect to the subject matter hereof and supersedes all prior negotiations, representations, warranties, and understandings.']},
+  {h:'13.2 Amendments', p:['This Agreement may not be amended or modified except by a written instrument signed by authorized representatives of both parties.']},
+  {h:'13.3 Severability', p:['If any provision of this Agreement is found to be invalid or unenforceable, such provision shall be modified to the minimum extent necessary to make it enforceable, and the remaining provisions shall continue in full force and effect.']},
+  {h:'13.4 Waiver', p:['No waiver of any provision shall be effective unless in writing. A party failure to enforce any provision shall not constitute a waiver of that party right to enforce such provision in the future.']},
+  {h:'13.5 Assignment', p:['Client may not assign this Agreement or any rights hereunder without FR-Logistics prior written consent. FR-Logistics may assign this Agreement in connection with a merger, acquisition, or sale of substantially all of its assets.']},
+  {h:'13.6 Notices', p:['All notices shall be in writing and delivered by email with confirmation of receipt, certified mail, or overnight courier to the addresses set forth on the cover page of this Agreement.']},
+  {h:'13.7 Independent Contractors', p:['The parties are independent contractors. Nothing in this Agreement shall create a partnership, joint venture, agency, franchise, or employment relationship between the parties.']},
+  {h:'13.8 Counterparts / Electronic Signatures', p:['This Agreement may be executed in counterparts, each of which shall be deemed an original. Electronic signatures shall be deemed valid and binding to the same extent as original signatures under the Florida Electronic Signature Act (Sec. 668.50, Fla. Stat.).']}]}],
+closing:'This Agreement is governed by the laws of the State of Florida. By signing below, both parties acknowledge they have read, understood, and agree to be bound by all terms and conditions herein.',
+signTitle:'SIGNATURES', sig:'Signature', nameL:'Name', titleL:'Title', dateL:'Date',
+transNote:null
+  };
+}
+
+// ─── PDF: SERVICES AGREEMENT (EN / ES) ───────────────────────────────────────
+function buildAgreementPDF(c, es) {
+  const A = agreementBody(es);
+  const S = frPdfShell(A.tag, c.clientName || '');
+  S.start();
+
+  S.p(A.title, {bold:true, size:15, color:[6,95,70], gap:2});
+  S.p(A.sub + '   |   ' + fD(c.startDate), {size:8, color:[100,116,139], gap:8});
+
+  // Cover parties block
+  (function(){
+    const doc=S.doc, half=(S.W-10)/2, h=76, y0=S.y;
+    S.space(h+8);
+    [[S.ML, A.provider, ['FR-Logistics Miami, Inc.','10893 NW 17th St, Unit 121','Doral, FL 33172','info@fr-logistics.net','(786) 300-1443']],
+     [S.ML+half+10, A.clientLbl, [c.clientName||'________________', c.contactName||'________________', c.contactEmail||'________________', (c.contactPhone||'________________'), (c.country||'')]]]
+    .forEach(([x,lbl,lines])=>{
+      doc.setFillColor(236,253,245); doc.setDrawColor(167,243,208); doc.setLineWidth(.6);
+      doc.roundedRect(x,y0,half,h,3,3,'FD');
+      doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(6,95,70);
+      doc.text(lbl, x+8, y0+12);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.6); doc.setTextColor(15,23,42);
+      lines.filter(Boolean).forEach((ln,i)=> doc.text(String(ln).slice(0,44), x+8, y0+25+i*10));
+    });
+    S.y = y0+h+8;
+  })();
+
+  S.kv([['Effective Date', fD(c.startDate)],
+        ['Sales Channel', c.channel||'-'],
+        ['Billing Cadence', (c.cadence||'monthly') + '   |   Min. Monthly: ' + fc(c.minBilling)]], S.W*0.26);
+
+  if (A.transNote) S.note(A.transNote[0], A.transNote[1], 'warn');
+
+  // Definitions
+  S.h1(A.defsTitle);
+  S.p(A.defsIntro, {size:7.4, color:[100,116,139], gap:4});
+  S.kv(A.defs, S.W*0.22);
+
+  // Sections
+  A.sections.forEach(sec=>{
+    S.h1(sec.h);
+    (sec.p||[]).forEach(t=>S.p(t));
+    (sec.li||[]).forEach(t=>S.li(t));
+    (sec.subs||[]).forEach(sub=>{
+      S.h2(sub.h);
+      (sub.p||[]).forEach(t=>S.p(t));
+      (sub.li||[]).forEach(t=>S.li(t));
+      S.y += 2;
+    });
+  });
+
+  S.p(A.closing, {size:7.4, color:[100,116,139], gap:8});
+
+  // Signature block
+  S.space(120);
+  S.h1(A.signTitle);
+  (function(){
+    const doc=S.doc, half=(S.W-10)/2, h=96, y0=S.y;
+    [[S.ML,'FR-LOGISTICS MIAMI, INC.',['Jose Fuentes','Operations Manager']],
+     [S.ML+half+10, (c.clientName||'CLIENT').toUpperCase(), [c.contactName||'', '']]]
+    .forEach(([x,lbl,who])=>{
+      doc.setFillColor(255,255,255); doc.setDrawColor(209,250,229); doc.setLineWidth(.6);
+      doc.roundedRect(x,y0,half,h,3,3,'FD');
+      doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(6,95,70);
+      doc.text(String(lbl).slice(0,34), x+8, y0+13);
+      doc.setDrawColor(148,163,184); doc.setLineWidth(.5);
+      [[A.sig,32],[A.nameL,54],[A.titleL,72],[A.dateL,88]].forEach(([lab,dy],i)=>{
+        doc.line(x+8, y0+dy, x+half-8, y0+dy);
+        doc.setFont('helvetica','normal'); doc.setFontSize(6.4); doc.setTextColor(100,116,139);
+        doc.text(lab, x+8, y0+dy+7);
+        if(i===1 && who[0]){ doc.setFontSize(7.6); doc.setTextColor(15,23,42); doc.text(who[0], x+8, y0+dy-3); }
+        if(i===2 && who[1]){ doc.setFontSize(7.6); doc.setTextColor(15,23,42); doc.text(who[1], x+8, y0+dy-3); }
+      });
+    });
+    S.y = y0+h+6;
+  })();
+
+  return S.out();
+}
+
 // ─── EMAIL HTML (EN/ES by client language) ───────────────────────────────────
 function buildEmailHTML(c, es){
   const T = es ? {
@@ -788,7 +1521,12 @@ function buildEmailHTML(c, es){
     s3:'Su contacto de almac&eacute;n ser&aacute; <b>Joe Raymond</b>, Warehouse Manager &mdash; env&iacute;e packing lists y datos de sus env&iacute;os a <a href="mailto:warehouse@fr-logistics.net" style="color:#0ea55f">warehouse@fr-logistics.net</a>',
     s4:'Direcci&oacute;n del warehouse: <b>10893 NW 17th St. Unit 121, Miami, FL 33172</b>',
     s5:'Si lo desea, puede <a href="https://calendly.com/fr-logistics" style="color:#0ea55f">agendar una llamada introductoria</a> (opcional)',
+    s6:'Revise y firme el <b>Contrato de Servicios</b> adjunto y siga el <b>Instructivo de env&iacute;o al almac&eacute;n</b> antes de su primer env&iacute;o (ambos en espa&ntilde;ol e ingl&eacute;s)',
+    s7:'Ya creamos su acceso al portal. Defina su contrase&ntilde;a en <a href="https://fr-logistics.net/app/set-password.html" style="color:#0ea55f">fr-logistics.net/app</a> con este mismo correo &mdash; ver la <b>Gu&iacute;a de operaci&oacute;n</b> adjunta',
+    s8:'Complete la <b>plantilla de SKUs</b> adjunta y env&iacute;ela a <a href="mailto:ops@fr-logistics.net" style="color:#0ea55f">ops@fr-logistics.net</a>',
     notes:'Notas',
+    docsTitle:'Material de referencia',
+    docs: collateralLinks(true),
   } : {
     dear:`Dear ${esc(c.contactName)||'there'},`,
     welcome:`Welcome to <b>FR-Logistics</b>! We are excited to support <b>${esc(c.clientName)}</b> on your logistics operations. Please find your onboarding package attached.`,
@@ -798,7 +1536,12 @@ function buildEmailHTML(c, es){
     s3:'Your warehouse contact will be <b>Joe Raymond</b>, Warehouse Manager &mdash; send packing lists and shipment details to <a href="mailto:warehouse@fr-logistics.net" style="color:#0ea55f">warehouse@fr-logistics.net</a>',
     s4:'Warehouse address: <b>10893 NW 17th St. Unit 121, Miami, FL 33172</b>',
     s5:'Optionally, <a href="https://calendly.com/fr-logistics" style="color:#0ea55f">schedule an intro call</a> if you would like one',
+    s6:'Review and sign the attached <b>Services Agreement</b>, and follow the <b>Ship-To Instructions</b> before your first inbound (both included in English and Spanish)',
+    s7:'Your portal access is ready. Set your password at <a href="https://fr-logistics.net/app/set-password.html" style="color:#0ea55f">fr-logistics.net/app</a> using this same email &mdash; see the attached <b>Operating Guide</b>',
+    s8:'Fill in the attached <b>SKU template</b> and send it to <a href="mailto:ops@fr-logistics.net" style="color:#0ea55f">ops@fr-logistics.net</a>',
     notes:'Notes',
+    docsTitle:'Reference material',
+    docs: collateralLinks(false),
   };
   return `<!DOCTYPE html><html><body style="margin:0;padding:28px 12px;font-family:Arial,sans-serif;background:#f1f5f9">
 <table width="600" cellpadding="0" cellspacing="0" style="margin:0 auto;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0">
@@ -817,9 +1560,16 @@ function buildEmailHTML(c, es){
       <b>2.</b> ${T.s2}<br>
       <b>3.</b> ${T.s3}<br>
       <b>4.</b> ${T.s4}<br>
-      <b>5.</b> ${T.s5}
+      <b>5.</b> ${T.s5}<br>
+      <b>6.</b> ${T.s6}<br>
+      <b>7.</b> ${T.s7}<br>
+      <b>8.</b> ${T.s8}
     </div>
   </div>
+  ${(T.docs&&T.docs.length)?`<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;padding:14px 16px;margin-bottom:16px">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#059669;margin-bottom:7px">${T.docsTitle}</div>
+    <div style="font-size:12.5px;line-height:1.9">${T.docs.map(d=>`&#128206; <a href="${d.url}" style="color:#0ea55f">${d.title}</a>`).join('<br>')}</div>
+  </div>`:''}
   ${c.notes?`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin-bottom:14px"><p style="font-size:11px;color:#92400e;margin:0;font-style:italic">${T.notes}: ${esc(c.notes)}</p></div>`:''}
 </td></tr>
 <tr><td style="background:#1e293b;padding:13px 30px">
@@ -833,6 +1583,33 @@ function buildEmailHTML(c, es){
 }
 
 // ─── MAIN FLOW ────────────────────────────────────────────────────────────────
+const PORTAL_PROVISION_API = '/.netlify/functions/portal-provision';
+
+// Collateral lives in the public `client-docs` Supabase bucket and is LINKED,
+// not attached — keeps the email light and lets a deck be updated without
+// touching this file. Paths are fixed; manage the files in the Client
+// Documents app.
+const DOCS_BASE = 'https://rijbschnchjiuggrhfrx.supabase.co/storage/v1/object/public/client-docs/collateral/';
+const COLLATERAL = {
+  ds:  {es:{u:'dropshipments-service-es.pptx', t:'Servicio DropShipments'},
+        en:{u:'dropshipments-service-en.pptx', t:'DropShipments Service'}},
+  eco: {es:{u:'ecopack-plus-es.pptx', t:'EcoPack+ — empaque sustentable'},
+        en:{u:'ecopack-plus-en.pptx', t:'EcoPack+ — sustainable packaging'}},
+  fba: {es:{u:'fba-inbound-guide-es.pdf', t:'Guia: como enviar tu inventario a Amazon FBA'},
+        en:{u:'fba-inbound-guide-en.pdf', t:'Guide: shipping your inventory to Amazon FBA'}},
+};
+function collateralLinks(es){
+  const out = [];
+  [['ds','pk_ds_link'],['eco','pk_eco_link'],['fba','pk_fba_link']].forEach(([k,id])=>{
+    const box = g(id);
+    if(box && box.checked){
+      const d = COLLATERAL[k][es?'es':'en'];
+      out.push({title:d.t, url:DOCS_BASE + d.u});
+    }
+  });
+  return out;
+}
+
 async function startOnboarding() {
   if (!CLIENT) { alert('Select a client first. If it does not exist yet, create it in the Clients app.'); return; }
   if (!CLIENT.email) { alert('This client has no email on record. Add it in the Clients app first.'); return; }
@@ -842,6 +1619,7 @@ async function startOnboarding() {
 
   const c = getClientData();
   const wb = buildWriteBack(rates);
+  const es0 = isES(CLIENT);
 
   g('formCard').style.display = 'none';
   g('progressCard').style.display = 'block';
@@ -859,6 +1637,50 @@ async function startOnboarding() {
     await tick();
     const clB64 = buildChecklistPDF(c);
     setStep('s2','done','Onboarding Checklist PDF — ready');
+
+    // Step 2b — Ship-To Instructions PDF (EN + ES)
+    const clientCode = (g('clientCode').value.trim() || deriveClientCode(c)).toUpperCase();
+    g('clientCode').value = clientCode;
+    setStep('s6','active','Generating Ship-To Instructions (EN + ES)...');
+    await tick();
+    const shipEN = buildShipToPDF(c, false, clientCode);
+    const shipES = buildShipToPDF(c, true,  clientCode);
+    setStep('s6','done',`Ship-To Instructions — EN + ES · code ${clientCode}`);
+
+    // Step 2c — Services Agreement PDF (EN + ES)
+    setStep('s7','active','Generating Services Agreement (EN + ES)...');
+    await tick();
+    const agrEN = buildAgreementPDF(c, false);
+    const agrES = buildAgreementPDF(c, true);
+    setStep('s7','done','Services Agreement — EN + ES ready');
+
+    // Step 2d — Operating Guide (portal + contacts/SLA + billing + ASN)
+    const wantDS = g('pk_ds').checked;
+    setStep('s8','active','Generating Operating Guide (EN + ES)...');
+    await tick();
+    const guideEN = buildWelcomeGuidePDF(c, false, clientCode, {dropship: wantDS});
+    const guideES = buildWelcomeGuidePDF(c, true,  clientCode, {dropship: wantDS});
+    const skuCSV  = buildSkuTemplateCSV(c, es0);
+    setStep('s8','done', wantDS ? 'Operating Guide — EN + ES (with DropShipments format)' : 'Operating Guide — EN + ES ready');
+
+    // Step 2e — Portal access (idempotent; safe to re-run)
+    if (g('pk_portal').checked) {
+      setStep('s9','active','Creating client portal access...');
+      try {
+        const pr = await fetch(PORTAL_PROVISION_API, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ client_id: CLIENT.id, email: c.contactEmail })
+        });
+        const pj = await pr.json().catch(()=>({}));
+        if(!pr.ok || pj.error) throw new Error(pj.detail || pj.error || ('API '+pr.status));
+        CLIENT.portal_user = pj.portal_user;
+        setStep('s9','done',`Portal access ready — user ${pj.portal_user} (${pj.auth_user})`);
+      } catch(e) {
+        setStep('s9','fail','Portal access failed: '+e.message+' (package will still be sent)');
+      }
+    } else {
+      setStep('s9','done','Portal access skipped');
+    }
 
     // Step 3 — Write-back to fr_clients
     setStep('s3','active','Saving services & rates to client record...');
@@ -883,19 +1705,40 @@ async function startOnboarding() {
     const safeName = (c.clientName||'Client').replace(/[^a-z0-9]+/gi,'_');
     const es = isES(CLIENT);
     const subject = es ? `Bienvenido a FR-Logistics | ${c.clientName}` : `Welcome to FR-Logistics | ${c.clientName}`;
+    const docs = collateralLinks(es0);
+    const docLines = docs.length
+      ? '\n\n' + (es0 ? 'Material de referencia:' : 'Reference material:') + '\n'
+        + docs.map(d => `- ${d.title}: ${d.url}`).join('\n')
+      : '';
+
+    const PDF='application/pdf';
+    const attachments = [
+      { base64: rcB64, name: `FR_RateCard_${safeName}.pdf`, mimeType: PDF },
+    ];
+    if(g('pk_check').checked) attachments.push({ base64: clB64, name: `FR_Checklist_${safeName}.pdf`, mimeType: PDF });
+    if(g('pk_agree').checked) attachments.push(
+      { base64: agrEN, name: `FR_Services_Agreement_EN_${safeName}.pdf`, mimeType: PDF },
+      { base64: agrES, name: `FR_Contrato_de_Servicios_ES_${safeName}.pdf`, mimeType: PDF });
+    if(g('pk_ship').checked) attachments.push(
+      { base64: shipEN, name: `FR_ShipTo_Instructions_EN_${safeName}.pdf`, mimeType: PDF },
+      { base64: shipES, name: `FR_Instructivo_de_Envio_ES_${safeName}.pdf`, mimeType: PDF });
+    if(g('pk_guide').checked) attachments.push(
+      { base64: guideEN, name: `FR_Operating_Guide_EN_${safeName}.pdf`, mimeType: PDF },
+      { base64: guideES, name: `FR_Guia_de_Operacion_ES_${safeName}.pdf`, mimeType: PDF });
+    if(g('pk_sku').checked) attachments.push(
+      { base64: skuCSV, name: `FR_SKU_Template_${safeName}.csv`, mimeType: 'text/csv' });
+    if(g('pk_ovw').checked) attachments.push({ base64: PPTX_B64,
+      name: 'FR-Logistics_Company_Overview.pptx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+
     const payload = {
       to: c.contactEmail,
       subject,
       htmlBody: buildEmailHTML(c, es),
-      textBody: es
-        ? `Estimado/a ${c.contactName||''},\n\n¡Bienvenido a FR-Logistics! Adjunto encontrará su paquete de onboarding.\n\nPróximos pasos:\n1. Revise el Rate Card y el Checklist de Onboarding\n2. Envíe la información de sus productos a ops@fr-logistics.net\n3. Su contacto de almacén será Joe Raymond, Warehouse Manager — packing lists y datos de envíos a warehouse@fr-logistics.net\n4. Dirección del warehouse: 10893 NW 17th St. Unit 121, Miami, FL 33172\n5. Si lo desea, agende una llamada introductoria: calendly.com/fr-logistics (opcional)\n\nSaludos,\n${c.prepBy}\nFR-Logistics | (786) 300-1443`
-        : `Dear ${c.contactName||'there'},\n\nWelcome to FR-Logistics! Please find your onboarding package attached.\n\nNext steps:\n1. Review Rate Card and Onboarding Checklist\n2. Send product info to ops@fr-logistics.net\n3. Your warehouse contact will be Joe Raymond, Warehouse Manager — send packing lists and shipment details to warehouse@fr-logistics.net\n4. Warehouse address: 10893 NW 17th St. Unit 121, Miami, FL 33172\n5. Optionally, schedule an intro call: calendly.com/fr-logistics\n\nBest,\n${c.prepBy}\nFR-Logistics | (786) 300-1443`,
-      attachments: [
-        { base64: rcB64,   name: `FR_RateCard_${safeName}.pdf`,   mimeType: 'application/pdf' },
-        { base64: clB64,   name: `FR_Checklist_${safeName}.pdf`,  mimeType: 'application/pdf' },
-        { base64: PPTX_B64, name: 'FR-Logistics_Company_Overview.pptx',
-          mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' },
-      ]
+      textBody: (docLines ? '' : '') + (es
+        ? `Estimado/a ${c.contactName||''},\n\n¡Bienvenido a FR-Logistics! Adjunto encontrará su paquete de onboarding.\n\nPróximos pasos:\n1. Revise el Rate Card y el Checklist de Onboarding\n2. Envíe la información de sus productos a ops@fr-logistics.net\n3. Su contacto de almacén será Joe Raymond, Warehouse Manager — packing lists y datos de envíos a warehouse@fr-logistics.net\n4. Dirección del warehouse: 10893 NW 17th St. Unit 121, Miami, FL 33172\n5. Si lo desea, agende una llamada introductoria: calendly.com/fr-logistics (opcional)\n6. Revise y firme el Contrato de Servicios adjunto y siga el Instructivo de envio al almacen antes de su primer envio (ES/EN)\n7. Su acceso al portal ya esta creado: defina su contrasena en fr-logistics.net/app/set-password.html con este mismo correo\n8. Complete la plantilla de SKUs adjunta y enviela a ops@fr-logistics.net\n\nSaludos,\n${c.prepBy}\nFR-Logistics | (786) 300-1443`
+        : `Dear ${c.contactName||'there'},\n\nWelcome to FR-Logistics! Please find your onboarding package attached.\n\nNext steps:\n1. Review Rate Card and Onboarding Checklist\n2. Send product info to ops@fr-logistics.net\n3. Your warehouse contact will be Joe Raymond, Warehouse Manager — send packing lists and shipment details to warehouse@fr-logistics.net\n4. Warehouse address: 10893 NW 17th St. Unit 121, Miami, FL 33172\n5. Optionally, schedule an intro call: calendly.com/fr-logistics\n6. Review and sign the attached Services Agreement and follow the Ship-To Instructions before your first inbound (EN/ES)\n7. Your portal access is ready: set your password at fr-logistics.net/app/set-password.html using this same email\n8. Fill in the attached SKU template and send it to ops@fr-logistics.net\n\nBest,\n${c.prepBy}\nFR-Logistics | (786) 300-1443`) + docLines,
+      attachments: attachments
     };
 
     try {
@@ -922,15 +1765,16 @@ async function startOnboarding() {
           <strong>Saved to client record:</strong><br>
           &#128736; Services: ${wb.services.map(esc).join(', ')||'—'}<br>
           &#128176; Rate overrides: ${nOvr?nOvr+' service(s) at negotiated rate':'none — all at DEFAULT rates'}<br><br>
-          <strong>Attachments (3):</strong><br>
-          &#128196; FR_RateCard_${safeName}.pdf (${rates.length} services)<br>
-          &#9989; FR_Checklist_${safeName}.pdf<br>
-          &#128202; FR-Logistics_Company_Overview.pptx
+          <strong>Attachments (${attachments.length}):</strong><br>
+          ${attachments.map(a=>'&#128206; '+esc(a.name)).join('<br>')}<br><br>
+          <strong>Client code used:</strong> ${esc(clientCode)}<br>
+          <strong>Portal user:</strong> ${esc(CLIENT.portal_user || 'not created')}
+          ${docs.length?`<br><strong>Linked material:</strong> ${docs.map(d=>esc(d.title)).join(', ')}`:''}
         </p>
       </div>`;
 
   } catch (err) {
-    ['s1','s2','s3','s4','s5'].forEach(id => {
+    ['s1','s2','s6','s7','s8','s9','s3','s4','s5'].forEach(id => {
       if (g(id).className.includes('active')) setStep(id,'fail','Error: '+err.message);
     });
     g('progressCard').style.display = 'none';
@@ -946,7 +1790,8 @@ async function startOnboarding() {
 function resetForm() {
   if (!confirm('Reset the form?')) return;
   g('clientSel').value=''; onClientChange();
-  g('notes').value=''; g('minBilling').value='0';
+  g('notes').value=''; g('minBilling').value='0'; g('clientCode').value='';
+  ['pk_ds','pk_ds_link','pk_eco_link','pk_fba_link'].forEach(i=>g(i).checked=false);
   g('startDate').value = new Date().toISOString().slice(0,10);
   g('prepBy').value = 'Jose Fuentes - Operations Manager';
   g('channel').value = 'Multi-Channel';
@@ -958,8 +1803,12 @@ function resetAll() {
   g('formCard').style.display     = 'block';
   g('progressCard').style.display = 'none';
   g('resultCard').style.display   = 'none';
-  ['s1','s2','s3','s4','s5'].forEach(id => setStep(id,'wait',
+  ['s1','s2','s6','s7','s8','s9','s3','s4','s5'].forEach(id => setStep(id,'wait',
     {s1:'Generating Rate Card PDF',s2:'Generating Onboarding Checklist PDF',
+     s6:'Generating Ship-To Instructions PDF (EN + ES)',
+     s7:'Generating Services Agreement PDF (EN + ES)',
+     s8:'Generating Operating Guide PDF (EN + ES)',
+     s9:'Creating client portal access',
      s3:'Saving services & rates to client record',
      s4:'Sending to Gmail via Netlify',s5:'Finalizing draft in josefuentes@fr-logistics.net'}[id]));
   g('clientSel').value=''; onClientChange();
