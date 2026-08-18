@@ -68,6 +68,17 @@
   .label .qrWrap{margin-top:auto;display:flex;justify-content:center;padding-top:8px}
   .label .hint{font-size:9.5px;color:#555;text-align:center;margin-top:6px;line-height:1.35}
 
+  /* Embedded mode: the print agent loads this page in a same-origin iframe and
+     calls print() on it. Only the label renders — no page chrome, no dialog —
+     so the printed output comes from the SAME renderer the QR points at.
+     Duplicating the label markup in the agent would let the two drift. */
+  body.embed{padding:0;background:#fff}
+  body.embed .wrap,body.embed .modalHead,body.embed .modalBtns,body.embed .printHint{display:none!important}
+  body.embed dialog{display:block;position:static;margin:0;padding:0;border:none;max-width:none}
+  body.embed .modal{width:auto;border-radius:0}
+  body.embed .modalBody{padding:0}
+  body.embed .label{border:none;border-radius:0}
+
   @page{size:4in 6in;margin:0}
   @media print{
     html,body{margin:0!important;padding:0!important;background:#fff!important}
@@ -144,6 +155,8 @@ const fdate=d=>d?String(d).slice(0,10):'—';
 // location.search is EMPTY here. Reading only the query string made every
 // scanned label report "missing code". The query string is still honoured as a
 // fallback for /c.html?code=…&k=… opened directly.
+const EMBED=new URLSearchParams(location.search).get('embed')==='1';
+
 function readParam(){
   const u=new URLSearchParams(location.search);
   const fromQuery=u.get('p')||u.get('code')||'';
@@ -164,7 +177,8 @@ async function load(){
     const r=await fetch(`${API}?action=public&code=${encodeURIComponent(code)}&k=${encodeURIComponent(k)}`);
     const j=await r.json();
     if(!r.ok) throw new Error(j.message||j.error||'Not found');
-    DATA=j; render(j);
+    DATA=j;
+    if(EMBED) renderEmbed(); else render(j);
   }catch(e){
     $('out').innerHTML=`<div class="err"><b>${esc(e.message)}</b><br>
       <span style="font-size:.8rem;color:#7F1D1D">Make sure you scanned the full QR on the label.</span></div>`;
@@ -213,7 +227,18 @@ function render(d){
   $('printBtn').onclick=openLabel;
 }
 
-function openLabel(){
+// In embed mode skip the summary entirely and go straight to the label, at
+// full size — the iframe is off-screen, so there is nothing to fit.
+function renderEmbed(){
+  document.body.classList.add('embed');
+  fillLabel();
+  const dlg=$('lblDlg');
+  if(!dlg.open) dlg.show();
+  clearScale();
+  window.parent.postMessage({ frLabelReady:true, code:(DATA&&DATA.code)||null }, '*');
+}
+
+function fillLabel(){
   const d=DATA; if(!d) return;
   $('lCode').textContent=d.code;
   $('lClient').textContent=d.client||'—';
@@ -227,7 +252,11 @@ function openLabel(){
   // handheld and for any phone. Contents are deliberately NOT on the label —
   // a box somebody picked from must still carry a truthful label.
   new QRCode(box,{ text:d.public_url, width:150, height:150, correctLevel:QRCode.CorrectLevel.M });
+}
 
+function openLabel(){
+  if(!DATA) return;
+  fillLabel();
   fitToScreen();
   $('lblDlg').showModal();
 }
