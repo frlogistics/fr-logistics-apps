@@ -260,6 +260,51 @@ exports.handler = async (event) => {
       return res(200, { sku: null, source: null, mapped: false, suggestions });
     }
 
+    // ── PRINT QUEUE ───────────────────────────────────────────────────────
+    // The agent polls this. Returns ONE job at a time and claims it in the same
+    // breath: the PATCH filters on status=queued, so if two polls overlap the
+    // second one updates zero rows and gets nothing. Without that filter a slow
+    // network turns into duplicate labels, which is worse than none — a second
+    // label on a second box means two boxes wearing the same plate.
+    if (action === 'next_job') {
+      const agent = String(qs.agent || 'agent').slice(0, 60);
+      const queued = await sb(
+        'wh_print_jobs?status=eq.queued&select=*&order=created_at.asc&limit=1'
+      );
+      if (!queued || !queued[0]) return res(200, { job: null });
+
+      const claimed = await patch(
+        `wh_print_jobs?id=eq.${enc(queued[0].id)}&status=eq.queued`,
+        { status: 'printing', agent, claimed_at: new Date().toISOString(),
+          attempts: (queued[0].attempts || 0) + 1 }
+      );
+      if (!claimed || !claimed[0]) return res(200, { job: null, raced: true });
+
+      const job = claimed[0];
+      let container = null, lines = [];
+      if (job.container_id) {
+        const rows = await sb(`wh_containers?id=eq.${enc(job.container_id)}&select=*&limit=1`);
+        container = rows && rows[0] ? rows[0] : null;
+        if (container) lines = (await linesOf(container.id)) || [];
+      }
+      return res(200, {
+        job,
+        container,
+        lines: lines.filter((l) => l.qty > 0),
+        label_url: container ? publicUrl(container.code) : null,
+      });
+    }
+
+    if (action === 'print_queue') {
+      const rows = await sb('v_wh_print_queue?select=*&order=created_at.desc&limit=50');
+      const all = rows || [];
+      return res(200, {
+        jobs: all,
+        queued: all.filter((j) => j.status === 'queued').length,
+        stalled: all.filter((j) => j.stalled).length,
+      });
+    }
+
     if (action === 'container') {
       const c = qs.id
         ? ((await sb(`wh_containers?id=eq.${enc(qs.id)}&select=*&limit=1`)) || [])[0]
@@ -336,6 +381,46 @@ exports.handler = async (event) => {
     // ── WRITES ────────────────────────────────────────────────────────────
     if (event.httpMethod !== 'POST') return res(405, { error: 'Method not allowed' });
     const actor = body.actor ? String(body.actor).slice(0, 60) : null;
+
+    if (action === 'queue_print') {
+      const copies = Math.min(Math.max(parseInt(body.copies, 10) || 1, 1), 20);
+      if (body.kind === 'test') {
+        const j = await post('wh_print_jobs', [{
+          kind: 'test', copies, requested_by: actor, code: 'TEST',
+        }]);
+        return res(200, { job: j[0] });
+      }
+      const c0 = await getByCode(body.code);
+      if (!c0) return res(404, { error: 'Container not found', code: body.code || null });
+      const j = await post('wh_print_jobs', [{
+        kind: 'container_label', container_id: c0.id, code: c0.code,
+        copies, requested_by: actor,
+      }]);
+      return res(200, { job: j[0], code: c0.code, label_url: publicUrl(c0.code) });
+    }
+
+    if (action === 'finish_job') {
+      const id = body.job_id;
+      if (!id) return res(400, { error: 'job_id is required' });
+      const ok = body.ok !== false;
+      const upd = await patch(`wh_print_jobs?id=eq.${enc(id)}`, {
+        status: ok ? 'done' : 'failed',
+        error: ok ? null : String(body.error || 'unknown').slice(0, 500),
+        finished_at: new Date().toISOString(),
+      });
+      return res(200, { job: upd && upd[0] });
+    }
+
+    // A job left in 'printing' after the tab was closed would block nothing but
+    // would lie in the queue view forever. This puts it back in line.
+    if (action === 'requeue_job') {
+      const id = body.job_id;
+      if (!id) return res(400, { error: 'job_id is required' });
+      const upd = await patch(`wh_print_jobs?id=eq.${enc(id)}`, {
+        status: 'queued', agent: null, claimed_at: null, error: null,
+      });
+      return res(200, { job: upd && upd[0] });
+    }
 
     if (action === 'create') {
       const loc = body.location_code ? String(body.location_code).trim().toUpperCase() : null;
