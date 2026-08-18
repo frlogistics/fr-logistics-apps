@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FR-Logistics · Print Agent</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',-apple-system,sans-serif;background:#0C2A3E;color:#fff;padding:1.5rem;min-height:100vh}
+  .wrap{max-width:860px;margin:0 auto}
+
+  .hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.2rem;flex-wrap:wrap;gap:1rem}
+  .wordmark{font-size:1.3rem;font-weight:900;letter-spacing:-.03em}
+  .wordmark span{color:#00B4AA}
+  .eb{font-size:.62rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#7B93A6}
+
+  /* The single most important thing on this screen: is the agent alive?
+     A print queue that has quietly stopped is worse than no queue, because
+     people keep sending jobs and assume they printed. */
+  .state{border-radius:16px;padding:1.6rem;text-align:center;margin-bottom:1.1rem;transition:background .3s}
+  .state.on{background:#15803D}
+  .state.off{background:#B91C1C}
+  .state.busy{background:#B45309}
+  .state .big{font-size:1.9rem;font-weight:900;letter-spacing:-.02em;line-height:1.1}
+  .state .sub{font-size:.9rem;margin-top:.4rem;opacity:.9}
+  .dot{display:inline-block;width:12px;height:12px;border-radius:50%;background:#fff;margin-right:.5rem;vertical-align:middle}
+  .state.on .dot{animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.7rem;margin-bottom:1.1rem}
+  .kpi{background:#123A54;border-radius:12px;padding:.85rem 1rem}
+  .kpi .l{font-size:.63rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:#7B93A6}
+  .kpi .v{font-size:1.6rem;font-weight:800;margin-top:.15rem;line-height:1.1}
+  .kpi.warn .v{color:#FCD34D}
+
+  .card{background:#123A54;border-radius:12px;margin-bottom:1rem;overflow:hidden}
+  .ch{padding:.75rem 1rem;border-bottom:1px solid #1D4D6B;font-size:.72rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:#9DB4C4;display:flex;justify-content:space-between;align-items:center}
+  table{width:100%;border-collapse:collapse;font-size:.82rem}
+  th{text-align:left;font-size:.62rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#7B93A6;padding:.5rem .9rem;border-bottom:1px solid #1D4D6B}
+  td{padding:.45rem .9rem;border-bottom:1px solid #17435F}
+  tr:last-child td{border-bottom:none}
+  .mono{font-family:ui-monospace,Consolas,monospace;font-size:.79rem}
+  .pill{display:inline-block;font-size:.6rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:.15rem .45rem;border-radius:20px}
+  .pill.queued{background:#FEF3C7;color:#92400E}
+  .pill.printing{background:#DBEAFE;color:#1E40AF}
+  .pill.done{background:#DCFCE7;color:#166534}
+  .pill.failed{background:#FEE2E2;color:#991B1B}
+  .pill.cancelled{background:#E2E8F0;color:#475569}
+
+  .btn{border:1px solid #2C5F80;background:#0F3348;color:#DCE9F2;font:inherit;font-size:.79rem;font-weight:700;padding:.5rem .95rem;border-radius:9px;cursor:pointer}
+  .btn:hover{background:#164561}
+  .btn.pri{background:#00B4AA;border-color:#00B4AA;color:#04252B}
+  .acts{display:flex;gap:.6rem;flex-wrap:wrap}
+  .note{font-size:.76rem;color:#9DB4C4;line-height:1.6;padding:.8rem 1rem}
+  .note b{color:#DCE9F2}
+  .empty{padding:1.6rem;text-align:center;color:#7B93A6;font-size:.85rem}
+
+  /* The renderer. Kept off-screen rather than display:none — a hidden iframe
+     does not lay out, and printing it produces a blank label. */
+  #stage{position:fixed;left:-9999px;top:0;width:4.2in;height:6.2in;border:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <div>
+      <div class="wordmark">FR<span>-Logistics</span></div>
+      <div class="eb">Label print agent</div>
+    </div>
+    <div class="acts">
+      <button class="btn" id="testBtn">Test print</button>
+      <button class="btn pri" id="toggleBtn">Pause</button>
+    </div>
+  </div>
+
+  <div class="state off" id="state">
+    <div class="big"><span class="dot"></span><span id="stateBig">Starting…</span></div>
+    <div class="sub" id="stateSub">Connecting to the queue</div>
+  </div>
+
+  <div class="grid">
+    <div class="kpi"><div class="l">Waiting</div><div class="v" id="kQueued">—</div></div>
+    <div class="kpi"><div class="l">Printed today</div><div class="v" id="kDone">—</div></div>
+    <div class="kpi warn"><div class="l">Failed</div><div class="v" id="kFailed">—</div></div>
+    <div class="kpi"><div class="l">Last poll</div><div class="v" id="kPoll" style="font-size:1.1rem">—</div></div>
+  </div>
+
+  <div class="card">
+    <div class="ch"><span>Recent jobs</span><button class="btn" id="refreshBtn" style="padding:.25rem .6rem;font-size:.7rem">Refresh</button></div>
+    <div id="jobs"><div class="empty">Loading…</div></div>
+  </div>
+
+  <div class="card">
+    <div class="ch">Leave this tab open</div>
+    <div class="note">
+      This tab is the printer. If it is closed, boxes can still be sealed on the handheld and
+      their labels queue up here — nothing is lost — but nothing prints until it is reopened.<br><br>
+      <b>Chrome must be launched with</b> <span class="mono">--kiosk-printing</span>, and the
+      <b>MUNBYN ITPP129S (USB)</b> must stay as the Windows default printer. Labels go to whichever
+      printer Windows calls default; there is no way to pick one from here.
+    </div>
+  </div>
+</div>
+
+<iframe id="stage"></iframe>
+
+<script>
+const API='/.netlify/functions/frm-containers';
+const AGENT='warehouse-pc';
+const POLL_MS=2500;
+const PRINT_SETTLE_MS=1800;   // let Chrome hand the job to the spooler before the next one
+
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const S={ running:true, busy:false, lastPoll:null, lastError:null };
+
+async function api(method,action,payload){
+  const url=method==='GET' ? `${API}?action=${action}&${new URLSearchParams(payload||{})}` : API;
+  const r=await fetch(url, method==='GET'?{}:{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action,...(payload||{})})
+  });
+  const t=await r.text();
+  let j={}; try{ j=t?JSON.parse(t):{}; }catch{ j={error:'Non-JSON',message:t.slice(0,300)}; }
+  if(!r.ok) throw new Error(j.message||j.error||('HTTP '+r.status));
+  return j;
+}
+
+function setState(cls,big,sub){
+  const el=$('state');
+  el.className='state '+cls;
+  $('stateBig').textContent=big;
+  $('stateSub').textContent=sub;
+}
+
+// Loads the label in the iframe and prints it. Resolves when the frame says it
+// is ready, or after a timeout — a stuck frame must not freeze the queue.
+function printLabel(url){
+  return new Promise((resolve,reject)=>{
+    const frame=$('stage');
+    let settled=false;
+    const done=(err)=>{ if(settled) return; settled=true;
+      window.removeEventListener('message',onMsg); clearTimeout(timer);
+      err?reject(err):resolve(); };
+
+    const onMsg=(e)=>{
+      if(!e.data||!e.data.frLabelReady) return;
+      // Small beat so the QR canvas is actually painted before the snapshot.
+      setTimeout(()=>{
+        try{ frame.contentWindow.focus(); frame.contentWindow.print(); done(); }
+        catch(err){ done(err); }
+      },400);
+    };
+    const timer=setTimeout(()=>done(new Error('label did not load in 15s')),15000);
+    window.addEventListener('message',onMsg);
+    frame.src=url+(url.includes('?')?'&':'?')+'embed=1&t='+Date.now();
+  });
+}
+
+async function tick(){
+  if(!S.running||S.busy){ return; }
+  S.busy=true;
+  try{
+    const j=await api('GET','next_job',{agent:AGENT});
+    S.lastPoll=new Date(); S.lastError=null;
+
+    if(!j.job){
+      setState('on','Ready','Waiting for labels · '+$('kQueued').textContent+' in queue');
+    } else {
+      const job=j.job;
+      const copies=Math.min(job.copies||1,20);
+      setState('busy','Printing '+(job.code||'test'), copies>1?`${copies} copies`:'1 label');
+      try{
+        if(job.kind==='test'){
+          // A test job proves the whole chain — flag, default printer, paper
+          // size — without needing a real box.
+          $('stage').srcdoc='<html><body style="margin:0;font:700 22px Arial;'+
+            'width:4in;height:6in;display:flex;align-items:center;justify-content:center;'+
+            'text-align:center">FR-LOGISTICS<br>PRINT AGENT TEST<br>'+
+            new Date().toLocaleString()+'</body></html>';
+          await new Promise(r=>setTimeout(r,600));
+          $('stage').contentWindow.print();
+        } else {
+          if(!j.label_url) throw new Error('job has no label URL');
+          for(let i=0;i<copies;i++){
+            await printLabel(j.label_url);
+            if(i<copies-1) await new Promise(r=>setTimeout(r,PRINT_SETTLE_MS));
+          }
+        }
+        await api('POST','finish_job',{job_id:job.id, ok:true});
+      }catch(err){
+        await api('POST','finish_job',{job_id:job.id, ok:false, error:String(err.message||err)});
+        setState('off','Print failed', String(err.message||err));
+      }
+      await new Promise(r=>setTimeout(r,PRINT_SETTLE_MS));
+      loadQueue();
+    }
+  }catch(e){
+    S.lastError=e.message;
+    setState('off','Cannot reach the queue', e.message);
+  }finally{
+    S.busy=false;
+    $('kPoll').textContent = S.lastPoll ? S.lastPoll.toLocaleTimeString() : '—';
+  }
+}
+
+async function loadQueue(){
+  try{
+    const j=await api('GET','print_queue',{});
+    const jobs=j.jobs||[];
+    const today=new Date().toISOString().slice(0,10);
+    $('kQueued').textContent=j.queued||0;
+    $('kDone').textContent=jobs.filter(x=>x.status==='done'&&(x.finished_at||'').slice(0,10)===today).length;
+    $('kFailed').textContent=jobs.filter(x=>x.status==='failed').length;
+
+    $('jobs').innerHTML = jobs.length ? `
+      <table><thead><tr><th>When</th><th>Box</th><th style="text-align:right">Copies</th>
+      <th>Status</th><th>By</th><th></th></tr></thead>
+      <tbody>${jobs.slice(0,15).map(x=>`<tr>
+        <td class="mono">${esc((x.created_at||'').replace('T',' ').slice(5,16))}</td>
+        <td class="mono">${esc(x.code||'—')}</td>
+        <td style="text-align:right">${x.copies}</td>
+        <td><span class="pill ${x.status}">${x.status}</span>${x.stalled?' <span class="pill failed">stalled</span>':''}</td>
+        <td>${esc(x.requested_by||'—')}</td>
+        <td>${(x.status==='failed'||x.stalled)?`<button class="btn" data-requeue="${x.id}" style="padding:.2rem .5rem;font-size:.68rem">Retry</button>`:''}</td>
+      </tr>`).join('')}</tbody></table>`
+      : '<div class="empty">No jobs yet.</div>';
+
+    document.querySelectorAll('[data-requeue]').forEach(b=>b.onclick=async()=>{
+      await api('POST','requeue_job',{job_id:b.dataset.requeue});
+      loadQueue();
+    });
+  }catch(e){ $('jobs').innerHTML=`<div class="empty">${esc(e.message)}</div>`; }
+}
+
+$('toggleBtn').onclick=()=>{
+  S.running=!S.running;
+  $('toggleBtn').textContent=S.running?'Pause':'Resume';
+  if(!S.running) setState('off','Paused','The queue keeps filling; nothing is printing');
+};
+$('testBtn').onclick=async()=>{
+  await api('POST','queue_print',{kind:'test', actor:'agent', copies:1});
+  loadQueue();
+};
+$('refreshBtn').onclick=loadQueue;
+
+setState('on','Starting…','Connecting to the queue');
+loadQueue();
+tick();
+setInterval(tick, POLL_MS);
+setInterval(loadQueue, 15000);
+</script>
+</body>
+</html>
