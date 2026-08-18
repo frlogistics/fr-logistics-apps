@@ -106,7 +106,10 @@
 <iframe id="stage"></iframe>
 
 <script>
-const API='/.netlify/functions/frm-containers';
+// The queue moved out of frm-containers: inbound and pallet labels have
+// nothing to do with containers, and one function should not have to know
+// about every table in the warehouse.
+const API='/.netlify/functions/frm-print';
 const AGENT='warehouse-pc';
 const POLL_MS=2500;
 const PRINT_SETTLE_MS=1800;   // let Chrome hand the job to the spooler before the next one
@@ -145,6 +148,9 @@ function printLabel(url){
       err?reject(err):resolve(); };
 
     const onMsg=(e)=>{
+      // A renderer that cannot build its label says so, instead of leaving the
+      // job stuck in 'printing' until somebody notices the queue stopped.
+      if(e.data&&e.data.frLabelError){ done(new Error(e.data.message||'label failed to render')); return; }
       if(!e.data||!e.data.frLabelReady) return;
       // Small beat so the QR canvas is actually painted before the snapshot.
       setTimeout(()=>{
