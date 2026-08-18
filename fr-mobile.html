@@ -757,6 +757,7 @@
   </footer>
 
   <footer class="acts" id="palFoot" hidden>
+    <button class="btn ghost" id="palLabelBtn">🖨</button>
     <button class="btn ghost" id="palFullBtn">Mark FULL</button>
     <button class="btn ghost" id="palWrapBtn">Wrapped ✓</button>
     <button class="btn stop" id="palCloseBtn">Close pallet</button>
@@ -994,6 +995,17 @@ function refreshList(){
     const photoTag = r.photos ? ` 📷${r.photos>1?r.photos:''}` : '';
     const badge = r.saving?'saving…' : r.error?('⚠ '+r.error) : (r.type.replace(/^(Inbound|Outbound) /,'').replace(/[()]/g,'')+photoTag);
     li.innerHTML=`<span class="code">${r.tracking}</span><span class="badge">${badge}</span>`;
+    // Only once the row exists in the database, and never for outbound: an
+    // outbound box already wears the carrier label and a second barcode on the
+    // same box is how a sorter misreads it.
+    if(r.rowId && !r.removed && (r.direction||'Inbound')!=='Outbound'){
+      const pb=document.createElement('button');
+      pb.className='btn ghost';
+      pb.textContent='🖨';
+      pb.style.cssText='flex:0 0 auto;padding:.15rem .5rem;font-size:.95rem;min-height:0;margin-left:.4rem';
+      pb.onclick=(e)=>{ e.stopPropagation(); queuePrint('inbound_label',{ref_id:r.rowId}, r.tracking.slice(-8)); };
+      li.appendChild(pb);
+    }
     if(r.photos && r.photoUrls && r.photoUrls.length){
       li.querySelector('.badge').style.cssText='color:var(--teal-d);font-weight:700';
       li.querySelector('.badge').onclick=(e)=>{ e.stopPropagation(); viewPhotos(r); };
@@ -2440,7 +2452,7 @@ async function sealBox(){
     // Sealing is the moment the plate becomes meaningful: contents are locked,
     // so a label printed now cannot be outrun by a change. Offer it right here
     // instead of hoping somebody remembers to go and print it later.
-    if(confirm(`${BX.current.code} sealed.\n\nPrint its 4x6 label now?`)) queueLabel(1);
+    if(confirm(`${BX.current.code} sealed.\n\nPrint its 4x6 label now?`)) queueLabel();
   }catch(e){
     if(e.code==='EMPTY_BOX'){ toast(e.message); feedback('err'); return; }
     toast(e.message||'Could not seal'); feedback('err');
@@ -2602,13 +2614,26 @@ async function bxSetLine(){
 // TCP 9100, so Android's print stack cannot see it at all. The tab on the
 // warehouse PC drains the queue. Queuing also means Joe never has to walk to
 // the printer to start a job.
-async function queueLabel(copies){
-  if(!BX.current){ toast('No box open'); return; }
+// One entry point for every label this app prints. The queue lives in
+// frm-print; nothing here talks to the printer directly, because the MUNBYN
+// speaks raw TSPL over TCP and no browser can reach it.
+async function queuePrint(kind, payload, label){
   try{
-    await bxApi('POST','queue_print',{code:BX.current.code, copies:copies||1, actor:S.operator||''});
-    toast(`${BX.current.code} sent to the printer`);
+    const res=await fetch(`${API_BASE}/frm-print`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'queue_print', kind, actor:S.operator||'', copies:1, ...(payload||{})})
+    });
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(j.message||j.error||('HTTP '+res.status));
+    toast(`${label||j.code||'Label'} sent to the printer`);
     feedback('ok');
+    return j;
   }catch(e){ toast(e.message||'Could not queue the label'); feedback('err'); }
+}
+
+async function queueLabel(){
+  if(!BX.current){ toast('No box open'); return; }
+  return queuePrint('container_label', {code:BX.current.code}, BX.current.code);
 }
 
 // Kept for the office: opens the label page so it can be printed by hand or
@@ -2718,7 +2743,14 @@ $('bxSealBtn').onclick=sealBox;
 $('bxReopenBtn').onclick=reopenBox;
 $('bxLeaveBtn').onclick=showBoxHome;
 $('bxBackBtn').onclick=showBoxHome;
-$('bxLabelBtn').onclick=()=>queueLabel(1);
+$('bxLabelBtn').onclick=()=>queueLabel();
+$('palLabelBtn').onclick=()=>{
+  // The pallets module keeps the printed code, not the row uuid — frm-print
+  // resolves one from the other.
+  const code=(typeof PAL!=='undefined'&&PAL.current)?PAL.current.palletId:null;
+  if(!code){ toast('No pallet open'); return; }
+  queuePrint('pallet_label',{code}, code);
+};
 $('bxAddBtn').onclick=bxSetLine;
 $('bxCancelBtn').onclick=()=>{ hideBxDeclare(); setBPad2('','Scan a product','',''); setTimeout(focusCap,60); };
 $('bxQty').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); bxSetLine(); } });
