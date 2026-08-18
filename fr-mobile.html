@@ -2440,7 +2440,7 @@ async function sealBox(){
     // Sealing is the moment the plate becomes meaningful: contents are locked,
     // so a label printed now cannot be outrun by a change. Offer it right here
     // instead of hoping somebody remembers to go and print it later.
-    if(confirm(`${BX.current.code} sealed.\n\nPrint its 4x6 label now?`)) openLabelPage();
+    if(confirm(`${BX.current.code} sealed.\n\nPrint its 4x6 label now?`)) queueLabel(1);
   }catch(e){
     if(e.code==='EMPTY_BOX'){ toast(e.message); feedback('err'); return; }
     toast(e.message||'Could not seal'); feedback('err');
@@ -2598,6 +2598,21 @@ async function bxSetLine(){
 // The label lives on the public page, which is also what the QR points at —
 // one place that renders it, so the printed label and the page a customer
 // scans can never drift apart.
+// Queue it — do NOT try to print from here. The MUNBYN speaks raw TSPL over
+// TCP 9100, so Android's print stack cannot see it at all. The tab on the
+// warehouse PC drains the queue. Queuing also means Joe never has to walk to
+// the printer to start a job.
+async function queueLabel(copies){
+  if(!BX.current){ toast('No box open'); return; }
+  try{
+    await bxApi('POST','queue_print',{code:BX.current.code, copies:copies||1, actor:S.operator||''});
+    toast(`${BX.current.code} sent to the printer`);
+    feedback('ok');
+  }catch(e){ toast(e.message||'Could not queue the label'); feedback('err'); }
+}
+
+// Kept for the office: opens the label page so it can be printed by hand or
+// checked on screen.
 function openLabelPage(){
   if(!BX.publicUrl){ toast('No label URL for this box'); return; }
   window.open(BX.publicUrl, '_blank');
@@ -2703,7 +2718,7 @@ $('bxSealBtn').onclick=sealBox;
 $('bxReopenBtn').onclick=reopenBox;
 $('bxLeaveBtn').onclick=showBoxHome;
 $('bxBackBtn').onclick=showBoxHome;
-$('bxLabelBtn').onclick=openLabelPage;
+$('bxLabelBtn').onclick=()=>queueLabel(1);
 $('bxAddBtn').onclick=bxSetLine;
 $('bxCancelBtn').onclick=()=>{ hideBxDeclare(); setBPad2('','Scan a product','',''); setTimeout(focusCap,60); };
 $('bxQty').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); bxSetLine(); } });
