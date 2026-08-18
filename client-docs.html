@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Client Documents — FR-Logistics</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#0f172a}
+  .wrap{max-width:900px;margin:0 auto;padding:20px 16px 60px}
+  .hd{background:linear-gradient(135deg,#065f46,#16a34a);border-radius:12px;padding:20px 24px;color:#fff;margin-bottom:16px}
+  .hd h1{margin:0;font-size:19px}
+  .hd p{margin:5px 0 0;font-size:12.5px;color:rgba(209,250,229,.92);line-height:1.55}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden}
+  .ch{padding:13px 18px;border-bottom:1px solid #e2e8f0;background:#f8fafc}
+  .ch h3{margin:0;font-size:13px;font-weight:700}
+  .row{display:flex;align-items:center;gap:14px;padding:13px 18px;border-bottom:1px solid #f1f5f9;flex-wrap:wrap}
+  .row:last-child{border-bottom:none}
+  .meta{flex:1;min-width:230px}
+  .name{font-size:13px;font-weight:700}
+  .sub{font-size:11px;color:#94a3b8;margin-top:3px;word-break:break-all}
+  .pill{font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.4px}
+  .ok{background:#dcfce7;color:#166534}
+  .missing{background:#fef3c7;color:#92400e}
+  .err{background:#fee2e2;color:#991b1b}
+  .busy{background:#e0e7ff;color:#3730a3}
+  button{border:none;border-radius:8px;padding:8px 15px;font-size:12px;font-weight:700;cursor:pointer;background:#059669;color:#fff}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  button.sec{background:#e2e8f0;color:#0f172a}
+  a.lnk{font-size:11px;color:#059669;text-decoration:none;font-weight:700}
+  .note{background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:12px 15px;font-size:12px;color:#92400e;line-height:1.6;margin-top:14px}
+  input[type=file]{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hd">
+    <h1>Client Documents</h1>
+    <p>Collateral linked from the onboarding welcome email. Public URLs are fixed — uploading a new revision replaces the file in place, and every email already sent keeps working.</p>
+  </div>
+
+  <div class="card">
+    <div class="ch"><h3>Collateral library</h3></div>
+    <div id="list"><div class="row"><div class="meta"><div class="name">Loading…</div></div></div></div>
+  </div>
+
+  <div class="note">
+    <b>These files are publicly readable.</b> Anyone with the link can download them — that is intentional, since clients open them straight from the email without signing in. Do not put pricing, contracts, or anything client-specific here.
+  </div>
+</div>
+
+<input type="file" id="picker"/>
+
+<script>
+const API = '/.netlify/functions/client-docs';
+let files = [], pendingSlug = null;
+
+const fmtSize = n => n == null ? '' : (n < 1024*1024 ? (n/1024).toFixed(0)+' KB' : (n/1024/1024).toFixed(1)+' MB');
+const esc = s => String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function load(){
+  const el = document.getElementById('list');
+  try{
+    const r = await fetch(API+'?action=list');
+    const j = await r.json();
+    if(!r.ok || j.error) throw new Error(j.error||('API '+r.status));
+    files = j.files || [];
+    render();
+  }catch(e){
+    el.innerHTML = '<div class="row"><div class="meta"><div class="name">Could not load the library</div>'
+      + '<div class="sub">'+esc(e.message)+'</div></div>'
+      + '<button class="sec" onclick="load()">Retry</button></div>';
+  }
+}
+
+function render(){
+  document.getElementById('list').innerHTML = files.map(f=>`
+    <div class="row" id="row_${f.slug}">
+      <div class="meta">
+        <div class="name">${esc(f.label)}</div>
+        <div class="sub">${esc(f.path)}${f.size?' · '+fmtSize(f.size):''}${f.updated_at?' · updated '+new Date(f.updated_at).toLocaleDateString('en-US'):''}</div>
+      </div>
+      <span class="pill ${f.present?'ok':'missing'}" id="pill_${f.slug}">${f.present?'Published':'Missing'}</span>
+      ${f.present?`<a class="lnk" href="${esc(f.url)}" target="_blank" rel="noopener">Open</a>`:''}
+      <button onclick="pick('${f.slug}')">${f.present?'Replace':'Upload'}</button>
+    </div>`).join('');
+}
+
+function pick(slug){
+  pendingSlug = slug;
+  const p = document.getElementById('picker');
+  p.value = '';
+  p.accept = slug.startsWith('fba') ? '.pdf' : '.pptx';
+  p.click();
+}
+
+document.getElementById('picker').addEventListener('change', async (ev) => {
+  const file = ev.target.files[0];
+  const slug = pendingSlug;
+  if(!file || !slug) return;
+
+  const pill = document.getElementById('pill_'+slug);
+  pill.className = 'pill busy'; pill.textContent = 'Uploading…';
+
+  try{
+    const base64 = await new Promise((res,rej)=>{
+      const rd = new FileReader();
+      rd.onload = () => res(String(rd.result).split(',')[1]);
+      rd.onerror = () => rej(new Error('Could not read the file'));
+      rd.readAsDataURL(file);
+    });
+    const r = await fetch(API, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ slug, base64, filename: file.name })
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok || j.error) throw new Error(j.detail || j.error || ('API '+r.status));
+    pill.className = 'pill ok'; pill.textContent = 'Published';
+    await load();
+  }catch(e){
+    pill.className = 'pill err'; pill.textContent = 'Failed';
+    alert('Upload failed: ' + e.message);
+  }
+});
+
+load();
+</script>
+</body>
+</html>
