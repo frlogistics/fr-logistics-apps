@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FR-Logistics · Label</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',-apple-system,sans-serif;background:#F4F6FB;padding:1rem;display:flex;
+       flex-direction:column;align-items:center;gap:1rem}
+  body.embed{background:#fff;padding:0;display:block}
+  body.embed .noprint{display:none!important}
+
+  .label{width:4in;height:6in;background:#fff;color:#000;border:1px solid #ddd;padding:.15in;
+         box-sizing:border-box;border-radius:10px;display:flex;flex-direction:column;overflow:hidden;
+         transform-origin:top left}
+  .brand{font-size:11px;font-weight:900;letter-spacing:.5px;text-transform:uppercase;color:#333;
+         display:flex;justify-content:space-between;align-items:baseline}
+  .brand .kindTag{font-size:10px;border:1.5px solid #000;border-radius:4px;padding:1px 6px;letter-spacing:.6px}
+
+  /* The client is the single most useful thing on a package sitting on a
+     shelf: it decides who the box belongs to before anyone opens it. */
+  .client{font-size:26px;font-weight:900;line-height:1.1;margin-top:10px}
+  .code{font-family:ui-monospace,Consolas,monospace;font-size:20px;font-weight:800;
+        letter-spacing:.5px;margin-top:8px;word-break:break-all;line-height:1.15}
+  .meta{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-top:12px;font-size:13px}
+  .meta b{display:block;font-size:10px;color:#444;font-weight:900;text-transform:uppercase;
+          letter-spacing:.4px;margin-bottom:1px}
+  .notes{margin-top:10px;font-size:12px;line-height:1.35;max-height:.75in;overflow:hidden}
+  .qrWrap{margin-top:auto;display:flex;justify-content:center;padding-top:8px}
+  .hint{font-size:9.5px;color:#555;text-align:center;margin-top:6px;line-height:1.35}
+
+  .btn{border:1px solid #E4E9F2;background:#fff;font:inherit;font-size:.82rem;font-weight:700;
+       padding:.6rem 1.1rem;border-radius:9px;cursor:pointer}
+  .btn.pri{background:#0F1D35;border-color:#0F1D35;color:#fff}
+  .err{background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;border-radius:10px;padding:1rem;
+       font-size:.9rem;max-width:420px;text-align:center}
+  .tip{font-size:.74rem;color:#64748B;max-width:4in;line-height:1.5;text-align:center}
+
+  @page{size:4in 6in;margin:0}
+  @media print{
+    html,body{margin:0!important;padding:0!important;background:#fff!important}
+    .noprint{display:none!important}
+    /* 0.20in of safe margin: thermal printers cannot reach the edge of the
+       stock, and anything sitting against the border simply does not print. */
+    .label{width:4in!important;height:6in!important;padding:.20in!important;border:none!important;
+           border-radius:0!important;transform:none!important;margin:0!important;
+           page-break-after:avoid!important;position:relative!important;left:0!important;top:0!important}
+  }
+</style>
+</head>
+<body>
+<div id="out"><div class="tip noprint">Loading…</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+const API='/.netlify/functions/frm-label-data';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const U=new URLSearchParams(location.search);
+const EMBED=U.get('embed')==='1';
+const TYPE=U.get('type')||'';
+const ID=U.get('id')||'';
+
+const fdate=d=>d?String(d).slice(0,10):'—';
+
+async function load(){
+  if(!TYPE||!ID){ fail('Missing type or id.'); return; }
+  try{
+    const r=await fetch(`${API}?type=${encodeURIComponent(TYPE)}&id=${encodeURIComponent(ID)}`);
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.message||j.error||'Not found');
+    render(j);
+  }catch(e){ fail(e.message); }
+}
+
+function fail(msg){
+  $('out').innerHTML=`<div class="err">${esc(msg)}</div>`;
+  // Tell the agent anyway: a job that never reports back sits in the queue as
+  // 'printing' forever and the operator never learns it failed.
+  if(EMBED) window.parent.postMessage({frLabelError:true, message:msg}, '*');
+}
+
+function render(d){
+  const rows=(d.meta||[]).map(m=>`<div><b>${esc(m.label)}</b><span>${esc(m.value||'—')}</span></div>`).join('');
+  $('out').innerHTML=`
+    <div class="label" id="label">
+      <div class="brand"><span>FR-Logistics · Doral, FL</span><span class="kindTag">${esc(d.tag)}</span></div>
+      <div class="client">${esc(d.client||'—')}</div>
+      <div class="code">${esc(d.code||'—')}</div>
+      <div class="meta">${rows}</div>
+      ${d.notes?`<div class="notes"><b style="font-size:10px;text-transform:uppercase;letter-spacing:.4px">Notes</b>${esc(d.notes)}</div>`:''}
+      <div class="qrWrap"><div id="qr"></div></div>
+      <div class="hint">${esc(d.hint||'Scan the QR to open this record.')}</div>
+    </div>
+    ${EMBED?'':`<button class="btn pri noprint" id="printBtn">Print 4x6</button>
+      <div class="tip noprint">In the print dialog set <b>Paper 4 x 6</b>, <b>Margins: None</b>
+      and <b>Scale: 100%</b>. "Fit to printable area" shifts the label and clips the text.</div>`}`;
+
+  const box=$('qr'); box.innerHTML='';
+  new QRCode(box,{ text:d.qr||d.code||'', width:140, height:140, correctLevel:QRCode.CorrectLevel.M });
+
+  if(EMBED){
+    document.body.classList.add('embed');
+    // Give the QR canvas a beat to paint before the agent snapshots the page.
+    setTimeout(()=>window.parent.postMessage({frLabelReady:true, code:d.code}, '*'), 250);
+  } else {
+    fitToScreen();
+    $('printBtn').onclick=()=>{ clearScale(); window.print(); };
+    window.addEventListener('afterprint', fitToScreen);
+    window.addEventListener('resize', fitToScreen);
+  }
+}
+
+// Shrink to fit a phone screen. Cleared before printing — leaving a scale on
+// the element is what clipped the very first labels we printed.
+function fitToScreen(){
+  const l=$('label'); if(!l) return;
+  const scale=Math.min(1, Math.min(window.innerWidth*0.9, 420)/384);
+  l.style.transform = scale<1 ? `scale(${scale})` : 'none';
+  l.style.marginBottom = scale<1 ? `${-576*(1-scale)}px` : '0';
+}
+function clearScale(){
+  const l=$('label'); if(!l) return;
+  l.style.transform='none'; l.style.marginBottom='0';
+}
+
+load();
+</script>
+</body>
+</html>
