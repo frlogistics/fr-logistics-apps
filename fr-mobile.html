@@ -677,7 +677,8 @@
           </div>
           <div class="field">
             <label for="bxLoc">Shelf</label>
-            <input id="bxLoc" type="text" placeholder="Scan or type RA0301" autocomplete="off">
+            <input id="bxLoc" type="text" list="bxLocOptions" placeholder="Scan or type RA0301" autocomplete="off">
+            <datalist id="bxLocOptions"></datalist>
           </div>
           <button class="btn" id="bxNewBtn" style="width:100%;margin-top:6px">+ New box</button>
         </div>
@@ -689,6 +690,19 @@
           </div>
           <ul class="lc-list" id="bxLocList"></ul>
           <div class="lc-empty" id="bxLocEmpty">No boxes on this shelf yet.</div>
+        </div>
+
+        <!-- What this shelf still owes. Lives HERE and never in the quantity
+             panel: showing the expected number right before asking "how many?"
+             makes people type what they were shown. -->
+        <div class="lcard" id="bxPlanCard" hidden>
+          <div class="lc-head" style="margin-bottom:6px">
+            <div class="lc-code" style="font-size:15px">Still to box</div>
+            <span class="lc-total" id="bxPlanTotal">0</span>
+          </div>
+          <div class="lc-sub" id="bxPlanAge" style="margin-bottom:8px"></div>
+          <ul class="lc-list" id="bxPlanList"></ul>
+          <div class="lc-empty" id="bxPlanEmpty">Nothing pending on this shelf.</div>
         </div>
       </div>
 
@@ -738,6 +752,8 @@
           </div>
           <div class="sugg" id="bxQuick"></div>
           <div class="warnbox" id="bxReplaceMsg" hidden></div>
+          <div class="warnbox" id="bxClientMsg" hidden></div>
+          <div class="lc-sub" id="bxCtx" style="margin:2px 0 6px"></div>
 
           <div style="display:flex;gap:10px;margin-top:4px">
             <button class="btn ghost" id="bxCancelBtn" style="flex:0 0 38%">Cancel</button>
@@ -2300,7 +2316,8 @@ function setCPad2(state,big,hint,code){
 
    SkuVault still owns quantity. Nothing here writes to it.
    ============================================================ */
-const BX={ current:null, lines:[], loc:null, locBoxes:[], pending:null, busy:false, publicUrl:null };
+const BX={ current:null, lines:[], loc:null, locBoxes:[], pending:null, busy:false,
+           publicUrl:null, plan:null, locations:null };
 
 async function bxApi(method, action, payload){
   const url = method==='GET'
@@ -2316,6 +2333,7 @@ async function bxApi(method, action, payload){
 }
 
 function initBoxes(){
+  loadLocations();
   const sel=$('bxClient');
   if(sel && S.clients.length && sel.options.length<=1){
     sel.innerHTML='<option value="">— Select client —</option>'+
@@ -2324,7 +2342,52 @@ function initBoxes(){
   if(BX.current) showBoxOpen(); else showBoxHome();
 }
 
+// 153 shelf codes, loaded once. Enough to stop a typo from inventing a shelf.
+async function loadLocations(){
+  if(BX.locations) return BX.locations;
+  try{
+    const j=await bxApi('GET','locations',{});
+    BX.locations=j.locations||[];
+    const dl=$('bxLocOptions');
+    if(dl) dl.innerHTML=BX.locations.map(c=>`<option value="${c}">`).join('');
+  }catch(e){ BX.locations=[]; }
+  return BX.locations;
+}
+
+async function loadShelfPlan(loc){
+  const card=$('bxPlanCard'), ul=$('bxPlanList'), empty=$('bxPlanEmpty');
+  card.hidden=false; ul.innerHTML=''; empty.style.display='none';
+  const sel=$('bxClient');
+  try{
+    const j=await bxApi('GET','location_plan',{location_code:loc, client:(sel&&sel.value)||''});
+    BX.plan=j;
+    if(!j.known_location){
+      empty.style.display='block';
+      empty.textContent=`${loc} is not a shelf in this warehouse.`;
+      $('bxPlanTotal').textContent='—'; $('bxPlanAge').textContent='';
+      return;
+    }
+    $('bxPlanTotal').textContent=j.totals.pending;
+    // Say how old the mirror is rather than passing 2h-old numbers off as live.
+    const mins=j.synced_at ? Math.round((Date.now()-new Date(j.synced_at))/60000) : null;
+    $('bxPlanAge').textContent = mins==null ? ''
+      : `SkuVault as of ${mins} min ago · ${j.totals.done} of ${j.totals.skus} SKUs fully boxed`;
+
+    const pend=(j.lines||[]).filter(l=>l.qty_pending>0 || l.state==='OVER_BOXED');
+    if(!pend.length){ empty.style.display='block'; empty.textContent='Nothing pending on this shelf.'; return; }
+    pend.slice(0,40).forEach(l=>{
+      const li=document.createElement('li');
+      const over=l.state==='OVER_BOXED';
+      li.innerHTML=`<div style="flex:1"><div class="sku">${l.sku}</div>`+
+        `<div class="cli">${over?`⚠ boxed ${l.qty_boxed} of ${l.qty_wms}`:`${l.qty_boxed} boxed of ${l.qty_wms}`}</div></div>`+
+        `<span class="qty">${over?'+'+(l.qty_boxed-l.qty_wms):l.qty_pending}</span>`;
+      ul.appendChild(li);
+    });
+  }catch(e){ empty.style.display='block'; empty.textContent='Could not load the shelf plan.'; }
+}
+
 function showBoxHome(){
+  $('bxPlanCard').hidden=true;
   $('bxHome').hidden=false; $('bxOpen').hidden=true;
   $('bxFoot').hidden=true; $('bxSealedFoot').hidden=true;
   BX.current=null; BX.lines=[]; hideBxDeclare();
@@ -2367,6 +2430,7 @@ async function openShelf(loc){
     BX.locBoxes=j.containers||[];
     $('bxLocTitle').textContent=loc;
     $('bxLocUnits').textContent=j.units||0;
+    loadShelfPlan(loc);
     if(!BX.locBoxes.length){ empty.textContent='No boxes on this shelf yet.'; return; }
     empty.style.display='none';
     BX.locBoxes.forEach(b=>{
@@ -2395,7 +2459,11 @@ async function newBox(){
     BX.current=j.container; BX.lines=[]; BX.publicUrl=j.public_url||null;
     toast(`${j.container.code} created`);
     showBoxOpen(); feedback('ok'); setTimeout(focusCap,60);
-  }catch(e){ toast(e.message||'Could not create the box'); feedback('err'); }
+  }catch(e){
+    if(e.code==='UNKNOWN_LOCATION'){ toast(e.message); setBPad('err','Unknown shelf',e.message,loc); }
+    else toast(e.message||'Could not create the box');
+    feedback('err');
+  }
 }
 
 async function loadBox(code){
@@ -2449,6 +2517,20 @@ async function sealBox(){
     BX.current=j.container;
     await reloadBox();
     showBoxOpen(); feedback('ok');
+
+    // Told at the moment the operator is deciding whether to start another box.
+    const sh=j.shelf;
+    if(sh){
+      if(sh.over_boxed && sh.over_boxed.length){
+        alert('Heads up on '+sh.location_code+':\n\n'+
+          sh.over_boxed.map(o=>`${o.sku}: ${o.boxed} boxed, SkuVault has ${o.wms}`).join('\n')+
+          '\n\nWorth a look before you move on.');
+      } else if(sh.pending_units>0){
+        toast(`${sh.location_code}: ${sh.pending_units} units still loose in ${sh.pending_skus} SKUs`);
+      } else {
+        toast(`${sh.location_code} fully boxed ✓`);
+      }
+    }
     // Sealing is the moment the plate becomes meaningful: contents are locked,
     // so a label printed now cannot be outrun by a change. Offer it right here
     // instead of hoping somebody remembers to go and print it later.
@@ -2528,7 +2610,8 @@ async function boxScan(code){
 
 function openBxDeclare(code, resolved){
   BX.pending={ code, sku:resolved.sku||'', source:resolved.source||null,
-               mapped:!!resolved.mapped, suggestions:resolved.suggestions||[] };
+               mapped:!!resolved.mapped, suggestions:resolved.suggestions||[],
+               skuClient:resolved.sku_client||null };
   $('bxDeclare').hidden=false;
   $('bxSku').textContent=resolved.sku||'—';
   $('bxScanned').textContent='Scanned '+code;
@@ -2572,6 +2655,19 @@ function openBxDeclare(code, resolved){
     b.onclick=()=>{ $('bxQty').value=String(n); };
     q.appendChild(b);
   });
+  // The one packing error nobody catches downstream. A wrong quantity turns up
+  // at the next count; a SKU packed into the wrong client's box gets shipped to
+  // the wrong client. 56 of 63 shelves hold a single client, so this is rarely
+  // a false alarm — but it warns, it does not block, because the 7 mixed
+  // shelves are real.
+  const cw=$('bxClientMsg');
+  const boxClient=(BX.current&&BX.current.client)||'';
+  if(resolved.sku_client && boxClient && resolved.sku_client!==boxClient){
+    cw.hidden=false;
+    cw.textContent=`⚠ ${resolved.sku} belongs to ${resolved.sku_client}, not ${boxClient}. Only add it if you are sure.`;
+  } else cw.hidden=true;
+
+  $('bxCtx').textContent='';
   $('bxDeclare').scrollIntoView({behavior:'smooth', block:'nearest'});
   setTimeout(()=>{ const el=$('bxQty'); if(el){ el.focus(); el.select(); } },80);
 }
@@ -2592,12 +2688,44 @@ async function bxSetLine(){
 
   BX.busy=true; $('bxAddBtn').disabled=true;
   try{
-    await bxApi('POST','set_line',{
-      code:BX.current.code, sku, qty, actor:S.operator||'', code_scanned:p.code
-    });
+    let r;
+    try{
+      r=await bxApi('POST','set_line',{
+        code:BX.current.code, sku, qty, actor:S.operator||'', code_scanned:p.code
+      });
+    }catch(e){
+      // A string nobody recognises does not silently become inventory. This is
+      // the Milano lesson: three scanned codes that were not SKUs left 36 units
+      // physically in the warehouse and invisible to SkuVault.
+      if(e.code==='UNKNOWN_SKU'){
+        if(!confirm(`"${sku}" is not a SKU we know.\n\nPut it in the box anyway? It will be flagged for review.`)){
+          BX.busy=false; $('bxAddBtn').disabled=false; return;
+        }
+        r=await bxApi('POST','set_line',{
+          code:BX.current.code, sku, qty, actor:S.operator||'', code_scanned:p.code,
+          confirm_unknown_sku:true
+        });
+      } else throw e;
+    }
+
     hideBxDeclare();
     await reloadBox();
-    setBPad2('ok','In the box',`${qty} × ${sku}`,p.code);
+
+    // Verification without anchoring: the number was committed first, the
+    // comparison comes after.
+    const c=r&&r.context;
+    if(c){
+      const left=(c.qty_wms||0)-(c.qty_boxed||0);
+      const msg = c.state==='OVER_BOXED'
+        ? `⚠ ${c.qty_boxed} boxed vs ${c.qty_wms} SkuVault has here`
+        : left>0 ? `${c.qty_boxed} boxed · ${left} still loose here`
+        : `${c.qty_boxed} boxed · shelf complete for this SKU`;
+      setBPad2(c.state==='OVER_BOXED'?'dup':'ok', `${qty} × ${sku}`.slice(0,40), msg, p.code);
+      if(c.state==='OVER_BOXED') toast(msg);
+    } else {
+      setBPad2('ok','In the box',`${qty} × ${sku}`,p.code);
+    }
+    if(BX.loc) loadShelfPlan(BX.loc);
     feedback('ok');
     setTimeout(focusCap,60);
   }catch(e){
