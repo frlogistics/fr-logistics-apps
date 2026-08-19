@@ -230,13 +230,31 @@ exports.handler = async (event) => {
       const code = String(qs.code || '').trim();
       if (!code) return res(400, { error: 'code is required' });
 
+      // Every SKU with stock has an owner (verified: zero orphans), which makes
+      // "this SKU belongs to another client" the strongest signal we have — and
+      // the only packing error nobody catches later. A wrong quantity shows up
+      // at the next count; a SKU packed into the wrong client's box ships out.
+      const ownerOf = async (sku) => {
+        try {
+          const r = await sb(`wh_sku_clients?sku=eq.${enc(sku)}&select=client&limit=1`);
+          return r && r[0] ? r[0].client : null;
+        } catch { return null; }
+      };
+
       const hit = await sb(`wh_fnsku_map?code=eq.${enc(code)}&select=sku&limit=1`);
       if (hit && hit[0] && hit[0].sku) {
-        return res(200, { sku: hit[0].sku, source: 'map', mapped: true });
+        return res(200, { sku: hit[0].sku, source: 'map', mapped: true,
+                          sku_client: await ownerOf(hit[0].sku) });
       }
       const asSku = await sb(`wh_fnsku_map?sku=eq.${enc(code)}&select=sku&limit=1`);
       if (asSku && asSku[0] && asSku[0].sku) {
-        return res(200, { sku: asSku[0].sku, source: 'scanned_sku', mapped: true });
+        return res(200, { sku: asSku[0].sku, source: 'scanned_sku', mapped: true,
+                          sku_client: await ownerOf(asSku[0].sku) });
+      }
+      const asOwned = await sb(`wh_sku_clients?sku=eq.${enc(code)}&select=sku,client&limit=1`);
+      if (asOwned && asOwned[0]) {
+        return res(200, { sku: asOwned[0].sku, source: 'scanned_sku', mapped: true,
+                          sku_client: asOwned[0].client });
       }
       try {
         const prior = await sb(
@@ -302,6 +320,50 @@ exports.handler = async (event) => {
         jobs: all,
         queued: all.filter((j) => j.status === 'queued').length,
         stalled: all.filter((j) => j.stalled).length,
+      });
+    }
+
+    // Valid shelf codes. The location field used to be free text, so a typo
+    // like RA0031 silently created a box on a shelf that does not exist and
+    // nobody found out until someone went looking for the carton.
+    if (action === 'locations') {
+      const rows = await sb('wh_locations?select=location_code,zone&order=location_code.asc&limit=500');
+      return res(200, { locations: (rows || []).map((r) => r.location_code) });
+    }
+
+    // What this shelf still owes: every SKU SkuVault says is here, how much is
+    // already boxed, how much is loose. This is the checklist the operator
+    // works from — it belongs on the SHELF screen, never in the quantity box.
+    // Showing "24 expected" right before asking "how many?" is the same trap as
+    // a non-blind count: people type the number they were shown.
+    if (action === 'location_plan') {
+      const loc = String(qs.location_code || '').trim().toUpperCase();
+      if (!loc) return res(400, { error: 'location_code is required' });
+
+      const known = await sb(`wh_locations?location_code=eq.${enc(loc)}&select=location_code&limit=1`);
+      const rows = await sb(
+        `v_wh_location_plan?location_code=eq.${enc(loc)}&select=*&limit=500`
+      );
+      let lines = rows || [];
+      if (qs.client) lines = lines.filter((r) => !r.sku_client || r.sku_client === qs.client);
+
+      lines.sort((a, b) => (b.qty_pending - a.qty_pending) || String(a.sku).localeCompare(b.sku));
+      const synced = lines.map((r) => r.synced_at).filter(Boolean).sort().pop() || null;
+
+      return res(200, {
+        location_code: loc,
+        known_location: !!(known && known[0]),
+        lines,
+        totals: {
+          skus: lines.length,
+          wms: lines.reduce((n, r) => n + (r.qty_wms || 0), 0),
+          boxed: lines.reduce((n, r) => n + (r.qty_boxed || 0), 0),
+          pending: lines.reduce((n, r) => n + Math.max(r.qty_pending || 0, 0), 0),
+          done: lines.filter((r) => r.state === 'DONE').length,
+        },
+        // Surfaced so the screen can say how old these numbers are instead of
+        // presenting a 2h-old mirror as if it were live.
+        synced_at: synced,
       });
     }
 
@@ -424,6 +486,19 @@ exports.handler = async (event) => {
 
     if (action === 'create') {
       const loc = body.location_code ? String(body.location_code).trim().toUpperCase() : null;
+
+      // Blocked, not warned. Whether a shelf exists is an internal fact that
+      // does not depend on SkuVault being right, so there is no honest reason
+      // to let a typo through.
+      if (loc) {
+        const known = await sb(`wh_locations?location_code=eq.${enc(loc)}&select=location_code&limit=1`);
+        if (!known || !known[0]) {
+          return res(400, {
+            error: 'UNKNOWN_LOCATION',
+            message: `${loc} is not a shelf in this warehouse. Check the code and try again.`,
+          });
+        }
+      }
       let client = body.client || null;
       if (body.client_id && !client) {
         const cli = await sb(`fr_clients?id=eq.${enc(body.client_id)}&select=company,name&limit=1`);
@@ -470,6 +545,25 @@ exports.handler = async (event) => {
           return res(400, { error: 'qty must be a whole number between 0 and 100000' });
         }
         const qty = Number(body.qty);
+
+        // The Milano lesson, enforced. Three scanned codes that were not SKUs
+        // went into that count and 36 units ended up belonging to nothing —
+        // physically in the warehouse, invisible to SkuVault. A string nobody
+        // recognises does not silently become inventory.
+        if (before === null && !body.confirm_unknown_sku) {
+          const [owned, mapped] = await Promise.all([
+            sb(`wh_sku_clients?sku=eq.${enc(sku)}&select=client&limit=1`),
+            sb(`wh_fnsku_map?sku=eq.${enc(sku)}&select=sku&limit=1`),
+          ]);
+          const knownSku = (owned && owned[0]) || (mapped && mapped[0]);
+          if (!knownSku) {
+            return res(409, {
+              error: 'UNKNOWN_SKU',
+              message: `"${sku}" is not a SKU we know. Resend with confirm_unknown_sku to put it in the box anyway — it will be flagged for review.`,
+              sku,
+            });
+          }
+        }
         // Upsert: a box's contents is a set, so re-scanning a SKU REPLACES its
         // quantity rather than adding to it. Packing is not counting — if a
         // second scan added, a double scan would silently inflate the box.
@@ -486,8 +580,23 @@ exports.handler = async (event) => {
 
       await touch(c.id);
       const lines = await linesOf(c.id);
+
+      // Context returned AFTER the quantity was entered, never before. The
+      // operator commits to his number first, then sees how it sits against the
+      // shelf — verification without anchoring.
+      let context = null;
+      if (c.location_code) {
+        try {
+          const plan = await sb(
+            `v_wh_location_plan?location_code=eq.${enc(c.location_code)}` +
+            `&sku=eq.${enc(sku)}&select=qty_wms,qty_boxed,qty_pending,state,sku_client,synced_at&limit=1`
+          );
+          if (plan && plan[0]) context = plan[0];
+        } catch { /* context is a nicety; never fail the capture over it */ }
+      }
+
       return res(200, {
-        container: c, lines,
+        container: c, lines, context,
         units: lines.reduce((n, l) => n + (Number(l.qty) || 0), 0),
         skus: lines.filter((l) => l.qty > 0).length,
       });
@@ -517,7 +626,26 @@ exports.handler = async (event) => {
       });
       await logEvent({ container_id: c.id, event: 'sealed', actor,
                        detail: `${lines.length} SKUs / ${units} units` });
-      return res(200, { container: updated[0], lines, units });
+
+      // What the shelf still owes, told at the moment the operator is deciding
+      // whether to start another box.
+      let shelf = null;
+      if (c.location_code) {
+        try {
+          const rows = await sb(
+            `v_wh_location_plan?location_code=eq.${enc(c.location_code)}&select=*&limit=500`
+          );
+          const all = rows || [];
+          shelf = {
+            location_code: c.location_code,
+            pending_skus: all.filter((r) => (r.qty_pending || 0) > 0).length,
+            pending_units: all.reduce((n, r) => n + Math.max(r.qty_pending || 0, 0), 0),
+            over_boxed: all.filter((r) => r.state === 'OVER_BOXED')
+                           .map((r) => ({ sku: r.sku, boxed: r.qty_boxed, wms: r.qty_wms })),
+          };
+        } catch { /* the seal already succeeded; a missing summary is not a failure */ }
+      }
+      return res(200, { container: updated[0], lines, units, shelf });
     }
 
     if (action === 'open') {
