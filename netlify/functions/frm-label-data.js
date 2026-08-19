@@ -44,6 +44,23 @@ exports.handler = async (event) => {
   };
 
   const short = (s, n) => (s && String(s).length > n ? String(s).slice(0, n - 1) + '…' : (s || ''));
+
+  // Every meta value goes through here. `pallets.packages` is a JSON array of
+  // {tracking, addedAt, notes}, and String()-ing it printed a 4x6 label full of
+  // "[object Object]". A label is the one place where a silent formatting bug
+  // costs paper and gets stuck on a pallet, so anything that is not a plain
+  // scalar is refused rather than rendered.
+  const scalar = (v) => {
+    if (v === null || v === undefined) return '';
+    if (Array.isArray(v)) return String(v.length);      // a list means "how many"
+    if (typeof v === 'object') return '';
+    return String(v);
+  };
+  const count = (v) => {
+    if (Array.isArray(v)) return v.length;
+    if (typeof v === 'string') { try { const a = JSON.parse(v); return Array.isArray(a) ? a.length : 0; } catch { return 0; } }
+    return Number(v) || 0;
+  };
   const day = (d) => (d ? String(d).slice(0, 10) : '');
 
   try {
@@ -71,10 +88,10 @@ exports.handler = async (event) => {
         // Strips the redundant "Inbound (…)" wrapper so the type reads as
         // RMA / Overstock / Prep Service at a glance on the shelf.
         meta: [
-          { label: 'Type',     value: String(s.type || '').replace(/^Inbound\s*/i, '').replace(/[()]/g, '') },
-          { label: 'Carrier',  value: s.carrier },
+          { label: 'Type',     value: scalar(s.type).replace(/^Inbound\s*/i, '').replace(/[()]/g, '') },
+          { label: 'Carrier',  value: scalar(s.carrier) },
           { label: 'Received', value: day(s.received_at || s.created_at) },
-          { label: 'Ref',      value: String(s.tracking || '').slice(-8) },
+          { label: 'Ref',      value: scalar(s.tracking).slice(-8) },
         ],
         notes: short(s.notes, 160),
         qr: s.tracking,
@@ -93,9 +110,10 @@ exports.handler = async (event) => {
         client: p.client,
         code: p.pallet_id,
         meta: [
-          { label: 'Size',     value: p.pallet_size },
-          { label: 'Packages', value: String(p.packages ?? 0) },
-          { label: 'Status',   value: p.status },
+          { label: 'Size',     value: scalar(p.pallet_size) },
+          // packages is a JSON array of scanned trackings, not a number.
+          { label: 'Packages', value: String(count(p.packages)) },
+          { label: 'Status',   value: scalar(p.status) },
           { label: 'Built',    value: day(p.created_at) },
         ],
         // Package count is printed but the list is not: packages get added
@@ -117,10 +135,10 @@ exports.handler = async (event) => {
         client: w.client,
         code: w.release_id,
         meta: [
-          { label: 'Cargo',   value: w.cargo_type },
-          { label: 'Units',   value: String(w.qty_units ?? '—') },
+          { label: 'Cargo',   value: scalar(w.cargo_type) },
+          { label: 'Units',   value: scalar(w.qty_units) || '—' },
           { label: 'Weight',  value: w.weight_lb ? `${w.weight_lb} lb` : '—' },
-          { label: 'Pickup',  value: short(w.pickup_company, 22) },
+          { label: 'Pickup',  value: short(scalar(w.pickup_company), 22) },
         ],
         notes: w.reference ? `Ref: ${short(w.reference, 120)}` : '',
         qr: `${SITE}/m/${w.release_id}`,
