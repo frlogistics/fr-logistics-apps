@@ -28,8 +28,8 @@ function sb() {
 
 // ─────────────────────────────────────────────────────────────────────
 // 1. EXISTING CLIENT LOOKUP
-// Normalizes phone (strip +, spaces, dashes) and matches against
-// fr_clients.wa_number. Returns { clientId, clientName, preferredLanguage } or null.
+// Normalizes phone and matches against fr_clients.wa_number.
+// Returns { clientId, clientName, preferredLanguage } or null.
 // ─────────────────────────────────────────────────────────────────────
 
 function normalizePhone(raw) {
@@ -54,10 +54,31 @@ export async function lookupExistingClient(waNumber) {
   }
   if (!data?.length) return null;
 
-  const match = data.find(
+  // fr_clients tiene duplicados historicos (mismo wa_number en dos filas).
+  // Recolectamos TODOS los matches y, si hay mas de uno, preferimos el que
+  // trae mas datos (company + lang), en vez del .find() que devolvia el
+  // primero del arreglo a ciegas.
+  const matches = data.filter(
     (c) => c.wa_number && normalizePhone(c.wa_number) === normalized
   );
-  if (!match) return null;
+  if (!matches.length) return null;
+
+  const match =
+    matches.length === 1
+      ? matches[0]
+      : matches
+          .slice()
+          .sort(
+            (a, b) =>
+              (b.company ? 1 : 0) + (b.lang ? 1 : 0) -
+              ((a.company ? 1 : 0) + (a.lang ? 1 : 0))
+          )[0];
+
+  if (matches.length > 1) {
+    console.warn(
+      `[agent-db] lookupExistingClient: ${matches.length} fr_clients rows share wa_number ${normalized}; picked id=${match.id}`
+    );
+  }
 
   return {
     clientId: match.id,
@@ -72,7 +93,9 @@ export async function lookupExistingClient(waNumber) {
 
 /**
  * Returns the active conversation for a WhatsApp number, or null.
- * "Active" means: not in 'lost' or 'completed' state, and updated <24h ago.
+ * "Active" means: not in 'lost'/'completed'/'paused' state, updated <24h ago.
+ * Paused conversations are excluded so a human-owned thread is never
+ * reopened by the agent; the router checks paused_by_human separately.
  */
 export async function getActiveConversation(waNumber) {
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -81,7 +104,7 @@ export async function getActiveConversation(waNumber) {
     .from("wa_agent_conversations")
     .select("*")
     .eq("wa_number", waNumber)
-    .not("state", "in", "(lost,completed)")
+    .not("state", "in", "(lost,completed,paused)")
     .gte("updated_at", cutoff)
     .order("updated_at", { ascending: false })
     .limit(1);
@@ -94,7 +117,35 @@ export async function getActiveConversation(waNumber) {
 }
 
 /**
+ * Returns the most recent conversation for a number REGARDLESS of state or
+ * age (paused, completed, old — all count). Used to inherit already-captured
+ * contact data into a fresh conversation so we never re-ask a lead for a
+ * name/email they already gave in a previous session.
+ * Returns the row or null.
+ */
+export async function getLastConversationAny(waNumber) {
+  const { data, error } = await sb()
+    .from("wa_agent_conversations")
+    .select("id, captured_name, captured_email, captured_service, lead_id, is_existing_client, client_id, language")
+    .eq("wa_number", waNumber)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error("[agent-db] getLastConversationAny error:", error.message);
+    return null;
+  }
+  return data?.[0] || null;
+}
+
+/**
  * Creates a new conversation row. Returns the inserted row or null on error.
+ *
+ * Inherits captured contact data (name, email, service, lead_id) from the
+ * number's most recent prior conversation when the caller doesn't override
+ * it. This is the fix for a lead being asked for their name/email again on
+ * every new 24h session — the data lived on the previous (now completed or
+ * paused) row and was lost.
  */
 export async function createConversation({
   waNumber,
@@ -112,6 +163,9 @@ export async function createConversation({
     ? "greeted"               // We can greet directly
     : "pending_language";     // Need bilingual prompt first
 
+  // Pull forward anything we already know about this number.
+  const prior = await getLastConversationAny(waNumber);
+
   const row = {
     wa_number: waNumber,
     wa_profile_name: waProfileName || null,
@@ -119,10 +173,15 @@ export async function createConversation({
     state: initialState,
     language: langLower,
     language_source: languageSource || null,
-    is_existing_client: !!isExistingClient,
-    client_id: clientId || null,
+    is_existing_client: !!isExistingClient || !!prior?.is_existing_client,
+    client_id: clientId || prior?.client_id || null,
     last_user_message_at: new Date().toISOString(),
     message_count: 1,
+    // Inherited contact data — only carried over, never invented.
+    captured_name: prior?.captured_name || null,
+    captured_email: prior?.captured_email || null,
+    captured_service: prior?.captured_service || null,
+    lead_id: prior?.lead_id || null,
   };
 
   const { data, error } = await sb()
@@ -134,6 +193,12 @@ export async function createConversation({
   if (error) {
     console.error("[agent-db] createConversation error:", error.message);
     return null;
+  }
+
+  if (prior && (prior.captured_name || prior.captured_email)) {
+    console.log(
+      `[agent-db] new conv for ${waNumber} inherited contact data from prior conv ${prior.id}`
+    );
   }
   return data;
 }
@@ -149,8 +214,7 @@ export async function updateConversationOnUserMessage(conversationId, patch = {}
   };
 
   // We can't do "message_count = message_count + 1" via the supabase-js
-  // table builder, so we use rpc if available — fallback to manual fetch+set.
-  // Simplest: fetch current, increment, write back. Race-safe enough at our scale.
+  // table builder, so we fetch current, increment, write back.
   const { data: current } = await sb()
     .from("wa_agent_conversations")
     .select("message_count")
@@ -190,6 +254,67 @@ export async function recordAgentMessage(conversationId, newState = null) {
   if (error) {
     console.error("[agent-db] recordAgentMessage error:", error.message);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// NAME VALIDATION — reject junk before it becomes a chat title
+//
+// captured_name has repeatedly stored whole paragraphs (a lead pasting
+// "My name is X and my email is Y and I'd prefer to..." lands verbatim in
+// captured_name, and the inbox then titles the chat with that paragraph).
+// A real name is short: a few words, no @, no line breaks, no question
+// marks, no long sentences. When the reply isn't a plausible name we store
+// NOTHING rather than garbage — the router can re-ask or fall back to the
+// WhatsApp profile name.
+// ─────────────────────────────────────────────────────────────────────
+
+export function looksLikeValidName(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return false;
+  if (s.length > 40) return false;              // real names are short
+  if (/[\n\r]/.test(s)) return false;           // multi-line = pasted blob
+  if (/[@?]/.test(s)) return false;             // email / a question, not a name
+  if (/\d{3,}/.test(s)) return false;           // phone numbers etc.
+  const words = s.split(/\s+/).filter(Boolean);
+  if (words.length > 4) return false;           // "my name is Juan Viton" style blobs
+  return true;
+}
+
+/**
+ * Cleans a raw reply into a storable name, or returns null if it doesn't
+ * look like a name. Strips a leading "mi nombre es " / "my name is " /
+ * "soy " / "me llamo " so those common lead-ins don't blow the word count.
+ */
+export function extractName(raw) {
+  let s = String(raw || "").trim();
+  s = s.replace(
+    /^(mi nombre es|me llamo|soy|my name is|i am|i'm|this is)\s+/i,
+    ""
+  ).trim();
+  // Drop a trailing email if they wrote "Juan juan@x.com" on one line.
+  s = s.replace(/\s*\S+@\S+.*$/, "").trim();
+  return looksLikeValidName(s) ? s : null;
+}
+
+/**
+ * Sets captured_name ONLY if the value looks like a real name.
+ * Returns the stored name, or null if it was rejected (caller can re-ask).
+ */
+export async function setCapturedName(conversationId, rawName) {
+  const clean = extractName(rawName);
+  if (!clean) {
+    console.log(`[agent-db] setCapturedName rejected junk for conv ${conversationId}`);
+    return null;
+  }
+  const { error } = await sb()
+    .from("wa_agent_conversations")
+    .update({ captured_name: clean })
+    .eq("id", conversationId);
+  if (error) {
+    console.error("[agent-db] setCapturedName error:", error.message);
+    return null;
+  }
+  return clean;
 }
 
 /**
