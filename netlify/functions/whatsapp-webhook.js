@@ -130,6 +130,13 @@ export default async function handler(req) {
       const contact = contacts.find((c) => c.wa_id === from);
       const clientName = contact?.profile?.name || from;
 
+      // STOP/BAJA y ALTA se detectan aqui para marcar el mensaje; el registro
+      // y la confirmacion ocurren en el fan-out (no bloquean el 200 a Meta).
+      // Un mensaje de baja NO se enruta al agente (no queremos que LIAM
+      // responda un menu a quien pide que lo dejen de contactar).
+      const optOut = isOptOutText(text);
+      const optIn  = isOptInText(text);
+
       newMessages.push({
         id,
         from,
@@ -141,6 +148,8 @@ export default async function handler(req) {
         mimeType,
         caption,
         isInternal,
+        isOptOut: optOut,
+        isOptIn: optIn,
       });
     }
 
@@ -231,8 +240,11 @@ async function notifyOutOfBand(messages, agentMessages) {
   await Promise.allSettled([
     sendEmail(messages).catch(e => console.error('[webhook] email error:', e?.message || e)),
     sendPush(messages).catch(e => console.error('[webhook] push error:', e?.message || e)),
-    // [NEW Sprint 1] Route to Liam agent
-    routeToAgent((agentMessages || messages).filter(m => !m.isInternal))
+    // [NEW 2026-08-20] Registrar bajas/altas y mandar confirmacion.
+    handleOptOutsAndIns(messages).catch(e => console.error('[webhook] optout error:', e?.message || e)),
+    // [NEW Sprint 1] Route to Liam agent. Se excluyen numeros propios y
+    // cualquier mensaje de baja/alta (no debe dispararse el agente).
+    routeToAgent((agentMessages || messages).filter(m => !m.isInternal && !m.isOptOut && !m.isOptIn))
       .catch(e => console.error('[webhook] agent error:', e?.message || e)),
     downloadMedia(messages).catch(e => console.error('[webhook] media error:', e?.message || e)),
   ]);
@@ -240,10 +252,17 @@ async function notifyOutOfBand(messages, agentMessages) {
 
 // [NEW Sprint 1] Loop over new messages and route each to the agent.
 // Errors per-message are swallowed so one bad message doesn't block others.
+// [NEW 2026-08-20] Antes de enrutar, se descarta cualquier numero con baja
+// ACTIVA en wa_optouts — asi un numero que se dio de baja en una sesion
+// anterior tampoco recibe respuesta del agente.
 async function routeToAgent(messages) {
   if (!messages?.length) return;
   for (const msg of messages) {
     try {
+      if (await isOptedOut(msg.from)) {
+        console.log('[webhook] ' + msg.from + ' esta en baja (wa_optouts) — no se enruta al agente');
+        continue;
+      }
       await routeIncomingMessage(msg);
     } catch (err) {
       console.error('[webhook] agent route error for msg ' + msg.id + ':', err?.message || err);
@@ -279,6 +298,199 @@ function escapeHtml(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// ───────────────────────────────── STOP / BAJA — opt-out  [NEW 2026-08-20]
+// Detecta palabras de baja (STOP/BAJA/UNSUBSCRIBE/CANCELAR SUSCRIPCION) y
+// altas (ALTA). Cuando alguien se da de baja: se registra en wa_optouts,
+// se pausa cualquier conversacion viva del agente para ese numero, y se le
+// manda UNA confirmacion. El mensaje igual se persiste arriba en wa_messages.
+// El chequeo isOptedOut() se usa para saltarse el agente en mensajes futuros.
+
+// Coinciden como MENSAJE COMPLETO, no como subcadena: "stop" dispara, pero
+// "non-stop shipping" no. Se toleran espacios y algo de puntuacion final.
+const OPTOUT_PATTERNS = [
+  /^\s*stop[.!]?\s*$/i,
+  /^\s*baja[.!]?\s*$/i,
+  /^\s*unsubscribe[.!]?\s*$/i,
+  /^\s*cancelar(\s+suscripci[oó]n)?[.!]?\s*$/i,
+];
+
+function isOptOutText(body) {
+  const s = String(body || "").trim();
+  if (!s || s.length > 40) return false;
+  return OPTOUT_PATTERNS.some((re) => re.test(s));
+}
+
+function optOutKeyword(body) {
+  const s = String(body || "").trim().toLowerCase();
+  if (/^stop/.test(s)) return "STOP";
+  if (/^baja/.test(s)) return "BAJA";
+  if (/^unsubscribe/.test(s)) return "UNSUBSCRIBE";
+  if (/^cancelar/.test(s)) return "CANCELAR";
+  return "OPTOUT";
+}
+
+// "ALTA" reactiva.
+function isOptInText(body) {
+  return /^\s*alta[.!]?\s*$/i.test(String(body || "").trim());
+}
+
+const OPTOUT_CONFIRM =
+  "Listo, no volverás a recibir mensajes automáticos de FR-Logistics. " +
+  "Si fue un error o quieres reactivarlos, escribe *ALTA*.\n\n" +
+  "Done — you won't receive automated messages from FR-Logistics anymore. " +
+  "If this was a mistake or you want to resume, reply *ALTA*.";
+
+const OPTIN_CONFIRM =
+  "Listo, reactivamos los mensajes. ¿En qué te podemos ayudar? 🤝\n\n" +
+  "Done — messages resumed. How can we help? 🤝";
+
+function sbRest() {
+  const sbUrl = process.env.SUPABASE_URL;
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  if (!sbUrl || !sbKey) return null;
+  return { sbUrl, sbKey };
+}
+
+// ¿Este numero tiene baja ACTIVA? (reopted_in_at IS NULL). Fail-open: si la
+// consulta falla, devuelve false para no bloquear a un cliente por un blip.
+async function isOptedOut(fromNumber) {
+  const creds = sbRest();
+  if (!creds) return false;
+  try {
+    const num = String(fromNumber || "").replace(/[^0-9]/g, "");
+    const r = await fetch(
+      `${creds.sbUrl}/rest/v1/wa_optouts?wa_number=eq.${encodeURIComponent(num)}&reopted_in_at=is.null&select=wa_number`,
+      { headers: { apikey: creds.sbKey, Authorization: `Bearer ${creds.sbKey}` } }
+    );
+    if (!r.ok) return false;
+    const rows = await r.json().catch(() => []);
+    return Array.isArray(rows) && rows.length > 0;
+  } catch (e) {
+    console.error("[webhook] isOptedOut error:", e?.message || e);
+    return false;
+  }
+}
+
+// Registra la baja (upsert por wa_number) y pausa conversaciones del agente.
+async function recordOptOut(fromNumber, body) {
+  const creds = sbRest();
+  if (!creds) return;
+  const num = String(fromNumber || "").replace(/[^0-9]/g, "");
+  const keyword = optOutKeyword(body);
+  try {
+    await fetch(`${creds.sbUrl}/rest/v1/wa_optouts?on_conflict=wa_number`, {
+      method: "POST",
+      headers: {
+        apikey: creds.sbKey,
+        Authorization: `Bearer ${creds.sbKey}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify({
+        wa_number: num,
+        opted_out_at: new Date().toISOString(),
+        keyword,
+        last_message: String(body || "").slice(0, 500),
+        source: "whatsapp_keyword",
+        reopted_in_at: null,
+      }),
+    });
+    // Pausar cualquier conversacion viva del agente para ese numero.
+    await fetch(
+      `${creds.sbUrl}/rest/v1/wa_agent_conversations?wa_number=eq.${encodeURIComponent(num)}`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: creds.sbKey,
+          Authorization: `Bearer ${creds.sbKey}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({
+          paused_by_human: true,
+          paused_at: new Date().toISOString(),
+          paused_by: "optout",
+          state: "paused",
+        }),
+      }
+    );
+    console.log(`[webhook] opt-out registrado (${keyword}) para ${num}`);
+  } catch (e) {
+    console.error("[webhook] recordOptOut error:", e?.message || e);
+  }
+}
+
+// Marca el alta (reopted_in_at) sin borrar el historico de baja.
+async function recordOptIn(fromNumber) {
+  const creds = sbRest();
+  if (!creds) return;
+  const num = String(fromNumber || "").replace(/[^0-9]/g, "");
+  try {
+    await fetch(
+      `${creds.sbUrl}/rest/v1/wa_optouts?wa_number=eq.${encodeURIComponent(num)}&reopted_in_at=is.null`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: creds.sbKey,
+          Authorization: `Bearer ${creds.sbKey}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({ reopted_in_at: new Date().toISOString() }),
+      }
+    );
+    console.log(`[webhook] opt-in (ALTA) registrado para ${num}`);
+  } catch (e) {
+    console.error("[webhook] recordOptIn error:", e?.message || e);
+  }
+}
+
+// Envia un texto simple por Meta Cloud API. El webhook no tenia un sender
+// propio (solo el router lo tenia); este es minimo y solo para las
+// confirmaciones de baja/alta.
+async function sendText(toNumber, bodyText) {
+  const token   = process.env.WHATSAPP_TOKEN;
+  const phoneId = process.env.WHATSAPP_PHONE_ID;
+  if (!token || !phoneId) {
+    console.error("[webhook] sendText: falta WHATSAPP_TOKEN / WHATSAPP_PHONE_ID");
+    return;
+  }
+  try {
+    const r = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${phoneId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: String(toNumber || "").replace(/[^0-9]/g, ""),
+        type: "text",
+        text: { body: bodyText },
+      }),
+    });
+    if (!r.ok) {
+      const t = await r.text().catch(() => "");
+      console.error(`[webhook] sendText failed HTTP ${r.status} ${t}`);
+    }
+  } catch (e) {
+    console.error("[webhook] sendText error:", e?.message || e);
+  }
+}
+
+// Procesa las bajas/altas del lote. Se llama en el fan-out (no bloquea el
+// 200 a Meta). Devuelve el set de numeros que se dieron de baja en ESTE lote
+// para que no se enruten al agente.
+async function handleOptOutsAndIns(messages) {
+  for (const m of messages || []) {
+    if (m.isInternal) continue;
+    if (isOptOutText(m.text)) {
+      await recordOptOut(m.from, m.text);
+      await sendText(m.from, OPTOUT_CONFIRM);
+    } else if (isOptInText(m.text)) {
+      await recordOptIn(m.from);
+      await sendText(m.from, OPTIN_CONFIRM);
+    }
+  }
 }
 
 // ───────────────────────────────── Media download  [NEW 2026-07-31]
