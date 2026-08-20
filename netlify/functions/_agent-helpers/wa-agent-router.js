@@ -26,6 +26,7 @@ import {
   createLeadFromConversation,
   linkConversationToLead,
   markHandoff,
+  pauseConversation,
 } from "./wa-agent-db.js";
 import { sendAndRecord } from "./wa-agent-send.js";
 import {
@@ -795,6 +796,20 @@ async function setSubState(conversationId, subState) {
 }
 
 // Updates captured name + email on the conversation
+// Reject junk names before they become the chat title. captured_name has
+// stored whole pasted paragraphs ("Sure! My name is X and my email is...")
+// which the inbox then shows as the conversation title. A real name is
+// short: <=40 chars, <=4 words, no @, no line breaks, no "?" and no long
+// digit runs. When the value isn't a plausible name we skip it (keep any
+// existing name) rather than overwrite with garbage.
+function isPlausibleName(raw) {
+  const s = String(raw || "").trim();
+  if (!s || s.length > 40) return false;
+  if (/[\n\r@?]/.test(s)) return false;
+  if (/\d{3,}/.test(s)) return false;
+  return s.split(/\s+/).filter(Boolean).length <= 4;
+}
+
 async function setCapturedNameEmail(conversationId, name, email) {
   const { createClient } = await import("@supabase/supabase-js");
   const sb = createClient(
@@ -803,7 +818,8 @@ async function setCapturedNameEmail(conversationId, name, email) {
     { auth: { persistSession: false } }
   );
   const patch = {};
-  if (name) patch.captured_name = name;
+  if (name && isPlausibleName(name)) patch.captured_name = name;
+  else if (name) console.log(`[router] setCapturedNameEmail: rejected junk name for conv ${conversationId}`);
   if (email) patch.captured_email = email;
   if (Object.keys(patch).length === 0) return;
   await sb
@@ -1272,32 +1288,6 @@ async function escalateToHuman(conv, msg, language, reason) {
       .eq("id", conv.id);
   } catch (e) {
     console.error(`[agent-router] escalation state update failed: ${e.message}`);
-  }
-}
-
-// Silences Liam for a conversation by setting paused_by_human. STEP 3
-// Branch A in routeIncomingMessage returns early when this flag is set, so
-// after this runs the agent no longer replies — the human owns the thread
-// from the inbox. Call this AFTER any farewell has already been sent.
-// Best-effort: never throws.
-async function pauseConversation(conversationId, pausedBy) {
-  try {
-    const { createClient } = await import("@supabase/supabase-js");
-    const sb = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY,
-      { auth: { persistSession: false } }
-    );
-    await sb
-      .from("wa_agent_conversations")
-      .update({
-        paused_by_human: true,
-        paused_at: new Date().toISOString(),
-        paused_by: pausedBy || "agent",
-      })
-      .eq("id", conversationId);
-  } catch (e) {
-    console.error(`[agent-router] pauseConversation failed: ${e.message}`);
   }
 }
 
