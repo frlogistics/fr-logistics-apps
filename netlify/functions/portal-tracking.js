@@ -144,6 +144,28 @@ function trackingUrl(carrierCode, trackingNumber) {
   return `https://www.google.com/search?q=${t}`;
 }
 
+// --- "View as client" (internal use only) ----------------------------------
+// warehouse@fr-logistics.net can add ?as_client=<fr_clients.id> to read the
+// portal exactly as that client sees it. The parameter is honored ONLY for
+// that email: any other caller's as_client is ignored and the lookup falls
+// back to their own portal_user, so a client can never reach another client's
+// data by adding it to the URL. Read-only by design — no write function
+// (portal-order-create, portal-orders-bulk-create) accepts as_client, so an
+// internal user cannot create an order while viewing as somebody else.
+const PORTAL_ADMIN_EMAIL = 'warehouse@fr-logistics.net';
+const AS_CLIENT_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function clientFilter(portalUser, params) {
+  const asClient = String((params || {}).as_client || '').trim();
+  const isAdmin =
+    String(portalUser || '').trim().toLowerCase() === PORTAL_ADMIN_EMAIL;
+  if (isAdmin && AS_CLIENT_UUID_RE.test(asClient)) {
+    return `id=eq.${asClient}`;
+  }
+  return `portal_user=eq.${encodeURIComponent(portalUser)}`;
+}
+
 exports.handler = async (event) => {
   const origin = event.headers.origin || event.headers.Origin || '';
   const headers = corsHeaders(origin);
@@ -163,7 +185,7 @@ exports.handler = async (event) => {
 
   try {
     const clientRes = await sbFetch(
-      `fr_clients?portal_user=eq.${encodeURIComponent(portalUser)}` +
+      `fr_clients?${clientFilter(portalUser, event.queryStringParameters)}` +
         `&select=id,name,company,billing_source,ss_custom_field_1,store_name,aliases`
     );
     if (!clientRes.ok) {
