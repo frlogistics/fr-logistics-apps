@@ -1115,8 +1115,6 @@ async function saveQualifyField(conversationId, field, rawField, normalizedValue
 // Jose Fuentes handles it, personally. Liam never offers one.
 // ─────────────────────────────────────────────────────────────────────
 
-const CALENDLY_DISCOVERY = "https://calendly.com/fr-logistics/discoverycall";
-
 // Unambiguous: the person is asking about coming here in person.
 const VISIT_STRONG = [
   /\bvisit(a|as|ar|arlos|arlas|arte|arnos|amos|aremos|ando|[aá]ndolos)\b/i,
@@ -1188,21 +1186,19 @@ function isVisitRequest(text) {
 // misunderstanding.
 function visitPolicyText(language) {
   return (language || "EN").toUpperCase() === "ES"
-    ? "El primer contacto siempre es una videollamada de Discovery Call con Jose Fuentes 📹\n\n" +
+    ? "El primer contacto siempre es una videollamada de Discovery Call con nuestro equipo 📹\n\n" +
         "No agendamos visitas a nuestras instalaciones por este chat. Nuestra dirección en Doral es el punto de recepción de mercancía de clientes activos, no atendemos walk-ins.\n\n" +
-        `Agenda tu llamada aquí: ${CALENDLY_DISCOVERY}\n\n` +
-        "En esa llamada revisamos tu operación, volúmenes, servicios y costos."
-    : "First contact is always a Discovery Call over video with Jose Fuentes 📹\n\n" +
+        "Déjame tu nombre y email y nuestro equipo te contacta para coordinar la llamada, donde revisamos tu operación, volúmenes, servicios y costos."
+    : "First contact is always a Discovery Call over video with our team 📹\n\n" +
         "We don't schedule on-site appointments through this chat. Our Doral address is the receiving point for active clients' freight — we don't take walk-ins.\n\n" +
-        `Book your call here: ${CALENDLY_DISCOVERY}\n\n` +
-        "On that call we go over your operation, volumes, services and pricing.";
+        "Share your name and email and our team will reach out to set up the call, where we go over your operation, volumes, services and pricing.";
 }
 
 // Same rule for an existing client, minus the sales link: it goes to Jose.
 function visitReplyClient(language) {
   return (language || "EN").toUpperCase() === "ES"
-    ? "Eso lo coordina Jose Fuentes directamente 🤝 Le paso tu mensaje ahora y él te confirma por aquí."
-    : "That's coordinated by Jose Fuentes directly 🤝 I'm passing your message along now and he'll confirm here.";
+    ? "Eso lo coordina nuestro equipo directamente 🤝 Le paso tu mensaje ahora y te confirman por aquí."
+    : "That's coordinated by our team directly 🤝 I'm passing your message along now and they'll confirm here.";
 }
 
 /**
@@ -1279,6 +1275,32 @@ async function escalateToHuman(conv, msg, language, reason) {
   }
 }
 
+// Silences Liam for a conversation by setting paused_by_human. STEP 3
+// Branch A in routeIncomingMessage returns early when this flag is set, so
+// after this runs the agent no longer replies — the human owns the thread
+// from the inbox. Call this AFTER any farewell has already been sent.
+// Best-effort: never throws.
+async function pauseConversation(conversationId, pausedBy) {
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const sb = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY,
+      { auth: { persistSession: false } }
+    );
+    await sb
+      .from("wa_agent_conversations")
+      .update({
+        paused_by_human: true,
+        paused_at: new Date().toISOString(),
+        paused_by: pausedBy || "agent",
+      })
+      .eq("id", conversationId);
+  } catch (e) {
+    console.error(`[agent-router] pauseConversation failed: ${e.message}`);
+  }
+}
+
 async function completeHandoff(conv, msg, name, email) {
   const { from } = msg;
   const language = (conv.language || "en").toUpperCase();
@@ -1328,5 +1350,12 @@ async function completeHandoff(conv, msg, name, email) {
   }
 
   // 3. Mark conversation as completed (state=handoff_email, sub_state=completed)
+  //    AND pause the agent. The farewell above has already been sent, so
+  //    setting paused_by_human here silences Liam without swallowing the
+  //    goodbye. This is the code-level fix for the 2026-08-20 regression:
+  //    handoff_required alone never stopped the bot, so Liam and a human
+  //    could both message the same prospect. STEP 3 Branch A in the router
+  //    honors paused_by_human, so this is what actually enforces silence.
   await markInfoEmailSent(conv.id);
+  await pauseConversation(conv.id, "handoff_complete");
 }
