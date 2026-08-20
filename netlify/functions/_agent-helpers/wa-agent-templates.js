@@ -46,7 +46,7 @@ Si buscas servicio logístico, perfecto. Podemos hablar de:
 2️⃣ Master Case (recepción de contenedores)
 3️⃣ Dropshipment (sin inventario)
 4️⃣ EcoPack+ (envíos sostenibles)
-5️⃣ Otro / hablar con Jose
+5️⃣ Otro / hablar con nuestro equipo
 
 ¿Cómo te puedo ayudar hoy?`,
 
@@ -66,7 +66,7 @@ If you need logistics service, perfect. We can talk about:
 2️⃣ Master Case (container receiving)
 3️⃣ Dropshipment (no inventory)
 4️⃣ EcoPack+ (sustainable shipping)
-5️⃣ Other / talk to Jose
+5️⃣ Other / talk to our team
 
 How can I help you today?`,
 
@@ -92,7 +92,7 @@ If you need logistics service, we can talk about:
 2️⃣ Master Case
 3️⃣ Dropshipment
 4️⃣ EcoPack+
-5️⃣ Other / talk to Jose
+5️⃣ Other / talk to our team
 
 How can I help?`,
 
@@ -107,7 +107,7 @@ Si buscas servicio logístico, podemos hablar de:
 2️⃣ Master Case
 3️⃣ Dropshipment
 4️⃣ EcoPack+
-5️⃣ Otro / hablar con Jose
+5️⃣ Otro / hablar con nuestro equipo
 
 ¿Cómo te puedo ayudar?`,
 
@@ -126,7 +126,7 @@ Perdón, no entendí — responde EN o ES.`,
 2️⃣ Master Case
 3️⃣ Dropshipment
 4️⃣ EcoPack+
-5️⃣ Other / talk to Jose
+5️⃣ Other / talk to our team
 
 How can I help?`,
 
@@ -142,69 +142,69 @@ How can I help?`,
 
 ⚠️ *Recordatorio:* FBA Prep es un *servicio de pago desde $0.55/unidad* (no empleo, no curso).
 
-Para darte la mejor info sobre *FBA Prep*, déjame hacerte 3 preguntas rápidas. Después te conecto con Jose Fuentes para que te dé una cotización personalizada.`,
+Para darte la mejor info sobre *FBA Prep*, déjame hacerte 3 preguntas rápidas. Después te conecto con nuestro equipo para que te dé una cotización personalizada.`,
 
   qualify_intro_fba_prep_en: () =>
 `Excellent choice! 📦
 
 ⚠️ *Quick reminder:* FBA Prep is a *paid service from $0.55/unit* (not a job, not a course).
 
-To give you the best info on *FBA Prep*, let me ask you 3 quick questions. Then I'll connect you with Jose Fuentes for a personalized quote.`,
+To give you the best info on *FBA Prep*, let me ask you 3 quick questions. Then I'll connect you with our team for a personalized quote.`,
 
   qualify_intro_master_case_es: () =>
 `¡Excelente! 📥
 
 ⚠️ *Recordatorio:* Master Case es un *servicio de pago desde $2.50/cartón* (no empleo, no curso).
 
-Para darte la mejor info sobre *Master Case Receiving*, déjame hacerte 3 preguntas rápidas. Después te conecto con Jose Fuentes para una cotización.`,
+Para darte la mejor info sobre *Master Case Receiving*, déjame hacerte 3 preguntas rápidas. Después te conecto con nuestro equipo para una cotización.`,
 
   qualify_intro_master_case_en: () =>
 `Excellent! 📥
 
 ⚠️ *Quick reminder:* Master Case is a *paid service from $2.50/carton* (not a job, not a course).
 
-To give you the best info on *Master Case Receiving*, let me ask you 3 quick questions. Then I'll connect you with Jose Fuentes for a quote.`,
+To give you the best info on *Master Case Receiving*, let me ask you 3 quick questions. Then I'll connect you with our team for a quote.`,
 
   qualify_intro_dropship_es: () =>
 `¡Genial! 🚚
 
 ⚠️ *Importante:* Dropshipment es un *servicio de pago desde $6/paquete* — NO pagamos por hacer dropshipping ni damos cursos. Tú nos contratas a nosotros.
 
-Para darte la mejor info sobre *Dropshipment*, déjame hacerte 3 preguntas rápidas. Después te conecto con Jose Fuentes para una cotización.`,
+Para darte la mejor info sobre *Dropshipment*, déjame hacerte 3 preguntas rápidas. Después te conecto con nuestro equipo para una cotización.`,
 
   qualify_intro_dropship_en: () =>
 `Awesome! 🚚
 
 ⚠️ *Important:* Dropshipment is a *paid service from $6/package* — we do NOT pay for dropshipping, no courses. You hire us, not the other way around.
 
-To give you the best info on *Dropshipment*, let me ask you 3 quick questions. Then I'll connect you with Jose Fuentes for a quote.`,
+To give you the best info on *Dropshipment*, let me ask you 3 quick questions. Then I'll connect you with our team for a quote.`,
 
   qualify_intro_ecopack_es: () =>
 `¡Me encanta! 🌱
 
 ⚠️ *Recordatorio:* EcoPack+ es un *servicio de pago* (no empleo, no curso).
 
-Para darte la mejor info sobre *EcoPack+*, déjame hacerte 3 preguntas rápidas. Después te conecto con Jose Fuentes para una cotización.`,
+Para darte la mejor info sobre *EcoPack+*, déjame hacerte 3 preguntas rápidas. Después te conecto con nuestro equipo para una cotización.`,
 
   qualify_intro_ecopack_en: () =>
 `Love it! 🌱
 
 ⚠️ *Quick reminder:* EcoPack+ is a *paid service* (not a job, not a course).
 
-To give you the best info on *EcoPack+*, let me ask you 3 quick questions. Then I'll connect you with Jose Fuentes for a quote.`,
+To give you the best info on *EcoPack+*, let me ask you 3 quick questions. Then I'll connect you with our team for a quote.`,
 
   // After Q3 answered — bridge to contact capture
   qualify_done_es: () =>
 `¡Perfecto, gracias! 🙏
 
-Ya tengo lo que necesito para que Jose Fuentes te prepare una propuesta personalizada.
+Ya tengo lo que necesito para que nuestro equipo te prepare una propuesta personalizada.
 
 ¿Me dejas tu nombre y email para que te contacte?`,
 
   qualify_done_en: () =>
 `Perfect, thanks! 🙏
 
-I have everything Jose Fuentes needs to prepare a personalized proposal for you.
+I have everything our team needs to prepare a personalized proposal for you.
 
 Could you share your name and email so he can reach out?`,
 
@@ -221,7 +221,7 @@ Could you share your name and email so he can reach out?`,
 2️⃣ Master Case — Recepción de contenedores
 3️⃣ Dropshipment — Sellers sin inventario
 4️⃣ EcoPack+ — Envíos sostenibles
-5️⃣ Hablar con Jose Fuentes
+5️⃣ Hablar con nuestro equipo
 
 _(O escríbeme tu pregunta y te respondo)_`,
 
@@ -232,7 +232,7 @@ _(O escríbeme tu pregunta y te respondo)_`,
 2️⃣ Master Case — Container receiving
 3️⃣ Dropshipment — Sellers without inventory
 4️⃣ EcoPack+ — Sustainable shipping
-5️⃣ Talk to Jose Fuentes
+5️⃣ Talk to our team
 
 _(Or just ask me anything)_`,
 
@@ -246,10 +246,10 @@ _(Or just ask me anything)_`,
   // ───────────────────────────────────────────────────────────────
 
   faq_followup_short_es: () =>
-`¿Te ayudo con algo más? Escríbeme tu pregunta, o pon *5* si prefieres hablar con Jose.`,
+`¿Te ayudo con algo más? Escríbeme tu pregunta, o pon *5* si prefieres hablar con nuestro equipo.`,
 
   faq_followup_short_en: () =>
-`Anything else? Just type your question, or reply *5* to talk to Jose.`,
+`Anything else? Just type your question, or reply *5* to talk to our team.`,
 
   // ───────────────────────────────────────────────────────────────
   // MEDIA RECEIVED (added 2026-07-31)
@@ -290,12 +290,12 @@ If there's anything I can help with in the meantime, just type it out.`,
   // ───────────────────────────────────────────────────────────────
 
   handoff_jose_ack_es: () =>
-`Perfecto, le aviso a Jose Fuentes ahora mismo.
+`Perfecto, le paso tu información a nuestro equipo ahora mismo.
 
 Mientras tanto, ¿puedes dejarme tu nombre y email para que él pueda contactarte?`,
 
   handoff_jose_ack_en: () =>
-`Got it — I'm notifying Jose Fuentes right now.
+`Got it — I'm passing your info to our team right now.
 
 In the meantime, could you share your name and email so he can reach out?`,
 
@@ -312,16 +312,10 @@ In the meantime, could you share your name and email so he can reach out?`,
 `Thanks, ${name}. What's your email?`,
 
   handoff_jose_complete_es: (name) =>
-`Listo, ${name}. Jose Fuentes te contactará lo antes posible al email que dejaste.
-
-Si prefieres adelantarlo, agenda una llamada aquí:
-https://calendly.com/fr-logistics/discoverycall`,
+`Listo, ${name}. Nuestro equipo te contactará lo antes posible al email que dejaste. 🤝`,
 
   handoff_jose_complete_en: (name) =>
-`All set, ${name}. Jose Fuentes will reach out asap to the email you provided.
-
-If you'd rather move faster, book a call here:
-https://calendly.com/fr-logistics/discoverycall`,
+`All set, ${name}. Our team will reach out asap to the email you provided. 🤝`,
 
   // ───────────────────────────────────────────────────────────────
   // KILL SWITCH — agent disabled (monthly cap reached)
@@ -333,7 +327,7 @@ https://calendly.com/fr-logistics/discoverycall`,
 En este momento estamos con alta demanda.
 Nuestro equipo te contactará pronto a través de info@fr-logistics.net.
 
-Si es urgente, agenda aquí: https://calendly.com/fr-logistics/discoverycall`,
+Si es urgente, escríbenos a info@fr-logistics.net`,
 
   kill_switch_en: () =>
 `Hi! I'm Liam from FR-Logistics.
@@ -341,7 +335,7 @@ Si es urgente, agenda aquí: https://calendly.com/fr-logistics/discoverycall`,
 We're experiencing high demand right now.
 Our team will contact you shortly via info@fr-logistics.net.
 
-If urgent, book here: https://calendly.com/fr-logistics/discoverycall`,
+If urgent, email us at info@fr-logistics.net`,
 
   // ───────────────────────────────────────────────────────────────
   // EXISTING CLIENT — bot doesn't qualify, redirects to human inbox
@@ -376,13 +370,13 @@ If urgent, email us at warehouse@fr-logistics.net`,
 `Veo que no pudimos continuar la conversación.
 
 Cuando estés listo para retomarla, solo escríbeme aquí y te ayudo.
-Mientras tanto, puedes visitar fr-logistics.net o agendar en https://calendly.com/fr-logistics/discoverycall`,
+Mientras tanto, puedes visitar fr-logistics.net`,
 
   timeout_en: () =>
 `Looks like we couldn't continue the conversation.
 
 Whenever you're ready to pick it back up, just message me here.
-Meanwhile, you can visit fr-logistics.net or book at https://calendly.com/fr-logistics/discoverycall`,
+Meanwhile, you can visit fr-logistics.net`,
 };
 
 // ─────────────────────────────────────────────────────────────────────
