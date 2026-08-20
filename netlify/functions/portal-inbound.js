@@ -38,6 +38,13 @@ const MAX_DAYS = 400;
 
 const ADMIN_EMAIL = 'warehouse@fr-logistics.net';
 
+// "View as client": the admin may pass ?as_client=<fr_clients.id> to read this
+// tab exactly as that client sees it. Honored ONLY for the admin email — any
+// other caller's as_client is ignored and the lookup falls back to their own
+// portal_user, so a client can never reach another client's rows with it.
+const AS_CLIENT_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // Client-safe columns only. billed_at / billing_id are internal billing
 // fields and must never reach the client payload.
 const CLIENT_COLUMNS = 'received_at,created_at,tracking,carrier,type,notes,photo_urls';
@@ -163,6 +170,12 @@ export const handler = async (event) => {
     if (days > MAX_DAYS) days = MAX_DAYS;
 
     const isAdmin = portalUser.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    const asClientRaw = String(event.queryStringParameters?.as_client || '').trim();
+    // Only the admin can view as somebody else. With as_client set we behave
+    // exactly like that client's own session; without it, the admin sees the
+    // combined all-clients log.
+    const viewingAs = isAdmin && AS_CLIENT_UUID_RE.test(asClientRaw) ? asClientRaw : '';
+    const allClients = isAdmin && !viewingAs;
     const since = new Date(Date.now() - days * 86400 * 1000).toISOString();
 
     // received_at is the dock timestamp and is what the client cares about,
@@ -172,15 +185,18 @@ export const handler = async (event) => {
       `&or=(received_at.gte.${since},and(received_at.is.null,created_at.gte.${since}))`;
 
     let url;
-    if (isAdmin) {
+    if (allClients) {
       url =
         `shipments_general?direction=eq.Inbound` +
         windowFilter +
         `&select=${ADMIN_COLUMNS}` +
         `&order=received_at.desc.nullslast`;
     } else {
+      const clientLookup = viewingAs
+        ? `id=eq.${viewingAs}`
+        : `portal_user=eq.${encodeURIComponent(portalUser)}`;
       const clientRes = await sbFetch(
-        `fr_clients?portal_user=eq.${encodeURIComponent(portalUser)}&select=id,name,company,store_name&limit=1`
+        `fr_clients?${clientLookup}&select=id,name,company,store_name&limit=1`
       );
       const clientRows = await clientRes.json();
       if (!Array.isArray(clientRows) || clientRows.length === 0) {
@@ -226,7 +242,7 @@ export const handler = async (event) => {
         warning: norm.warning,
         photos,
       };
-      if (isAdmin) out.client = r.client || '—';
+      if (allClients) out.client = r.client || '—';
       return out;
     });
 
@@ -238,14 +254,18 @@ export const handler = async (event) => {
     const out = {
       ok: true,
       mode: 'ok',
-      isAdmin,
+      // isAdmin drives the extra Client column in the UI. When viewing AS a
+      // client we deliberately report false: the screen must look exactly like
+      // that client's own.
+      isAdmin: allClients,
+      viewing_as: viewingAs || null,
       window_days: days,
       generated_at: new Date().toISOString(),
       count: packages.length,
       by_type: byType,
       packages,
     };
-    if (!isAdmin && typeof clientMeta !== 'undefined') out.client = clientMeta;
+    if (!allClients && typeof clientMeta !== 'undefined') out.client = clientMeta;
 
     return resp(200, out, origin);
   } catch (err) {
