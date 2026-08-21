@@ -70,7 +70,8 @@ Return ONLY a JSON object, no markdown fences and no commentary, with exactly th
   "amz_shipment_id": string|null,
   "origin_fc": string|null,
   "process_date": "YYYY-MM-DD"|null,
-  "items": [ { "fnsku": string|null, "asin": string|null, "upc": string|null, "qty": number|null, "title": string|null } ],
+  "lpn": string|null,
+  "items": [ { "fnsku": string|null, "asin": string|null, "upc": string|null, "lpn": string|null, "qty": number|null, "title": string|null } ],
   "confidence": number
 }
 
@@ -82,12 +83,16 @@ Rules:
 - "origin_fc" is the Amazon fulfillment center code, usually visible inside the RA number or next to the origin address (for example ABQ1).
 - If a field is unreadable or absent, use null. Never guess to fill a gap.
 - "confidence" is 0 to 1 and reflects how sure you are of the fields you DID fill.
-- Multiple line items means multiple entries in "items".`;
+- Multiple line items means multiple entries in "items".
+- "lpn" is Amazon's license plate number for a returned unit, printed on a sticker and usually starting with LPN. Customer returns carry one; removals and vendor returns normally do not. Put it at the top level when the document has a single one, and inside the item when each line has its own.`;
 
-function buildSummary(items) {
+function buildSummary(items, topLpn) {
   const parts = (items || [])
     .map((it) => {
-      const code = it.fnsku || it.asin || it.upc;
+      // A customer return often has no FNSKU at all: the LPN sticker is the
+      // only usable identifier, and it is what resolves the unit in the FBA
+      // Customer Returns report. Fall back to it rather than returning nothing.
+      const code = it.fnsku || it.asin || it.upc || it.lpn || topLpn;
       if (!code) return null;
       // Number(null) is 0 and 0 is finite — check for an actual value first,
       // otherwise a missing quantity would print as "(0)".
@@ -213,7 +218,8 @@ exports.handler = async (event) => {
 
     const items = Array.isArray(parsed.items) ? parsed.items : [];
     const confidence = Number(parsed.confidence);
-    const summary = buildSummary(items);
+    const topLpn = parsed.lpn || null;
+    const summary = buildSummary(items, topLpn);
 
     let status;
     if (parsed.is_slip === false) status = 'no_slip';
@@ -227,6 +233,7 @@ exports.handler = async (event) => {
       vret_id: parsed.vret_id || null,
       amz_shipment_id: parsed.amz_shipment_id || null,
       origin_fc: parsed.origin_fc || null,
+      lpn: topLpn,
       process_date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.process_date || '') ? parsed.process_date : null,
       items,
       summary: summary || null,
