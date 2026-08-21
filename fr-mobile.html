@@ -999,6 +999,17 @@ function setPad(state,big,hint,code){
   if(state==='ok'||state==='dup'){ clearTimeout(p._t); p._t=setTimeout(()=>{ if($(ids.pad)) setPad('','Scan tracking','',''); },1400); }
 }
 
+/* True when this package should carry a photo of its Amazon packing slip and
+   does not have one yet. Inbound only; Overstock (removals) and RMA are the
+   two types that come with the slip. */
+function needsSlipPhoto(r){
+  if(!r || r.removed || r.saving) return false;
+  if((r.direction||'Inbound')==='Outbound') return false;
+  if(r.photos) return false;
+  const t=(r.type||'').toLowerCase();
+  return t.indexOf('overstock')!==-1 || t.indexOf('rma')!==-1 || t.indexOf('return')!==-1;
+}
+
 function refreshList(){
   const ids=mode().ids, session=curSession();
   const ul=$(ids.list), n=session.length;
@@ -1009,7 +1020,13 @@ function refreshList(){
     const li=document.createElement('li');
     if(r.removed) li.className='gone';
     const photoTag = r.photos ? ` 📷${r.photos>1?r.photos:''}` : '';
-    const badge = r.saving?'saving…' : r.error?('⚠ '+r.error) : (r.type.replace(/^(Inbound|Outbound) /,'').replace(/[()]/g,'')+photoTag);
+    // Overstock and RMA arrive with an Amazon packing slip that carries the
+    // FNSKU, the quantity and the RA number. That slip is the only place that
+    // data exists, and photographing it is what feeds the automatic reading —
+    // so the row nags until there is a photo.
+    const wantsSlip = needsSlipPhoto(r);
+    const slipTag = wantsSlip ? ' 📷 needed' : '';
+    const badge = r.saving?'saving…' : r.error?('⚠ '+r.error) : (r.type.replace(/^(Inbound|Outbound) /,'').replace(/[()]/g,'')+photoTag+slipTag);
     li.innerHTML=`<span class="code">${r.tracking}</span><span class="badge">${badge}</span>`;
     // Only once the row exists in the database, and never for outbound: an
     // outbound box already wears the carrier label and a second barcode on the
@@ -1025,6 +1042,8 @@ function refreshList(){
     if(r.photos && r.photoUrls && r.photoUrls.length){
       li.querySelector('.badge').style.cssText='color:var(--teal-d);font-weight:700';
       li.querySelector('.badge').onclick=(e)=>{ e.stopPropagation(); viewPhotos(r); };
+    } else if(wantsSlip){
+      li.querySelector('.badge').style.cssText='color:#b45309;font-weight:700';
     }
     if(!r.removed){
       const b=document.createElement('button');b.className='undo';b.textContent='↺';b.title='Undo';
@@ -1100,12 +1119,30 @@ function takePhoto(){
       target.photoUrls=(target.photoUrls||[]).concat(j.photo_urls||[]);
       feedback('ok'); toast('Photo added to '+target.tracking.slice(-8));
       refreshList();
+      // Read the Amazon packing slip out of the photo we just stored, so the
+      // FNSKU / qty / RA# never has to be typed. Fire and FORGET on purpose:
+      // the photo and the inbound row are already saved, so the operator moves
+      // on to the next box while this runs. A failure here costs nothing.
+      askSlipExtract(target.tracking, (j.photo_urls||[])[0]);
     }catch(err){
       feedback('err'); toast('Photo failed: '+(err.message||'try again'));
     }
     focusCap();
   };
   inp.click();
+}
+
+/* Fire-and-forget call to slip-extract. Never awaited, never surfaced as an
+   error to the operator: this is enrichment, not part of receiving. */
+function askSlipExtract(tracking, photoUrl){
+  if(!tracking || !photoUrl) return;
+  try{
+    fetch(`${API_BASE}/slip-extract`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({tracking, photo_url:photoUrl})
+    }).catch(()=>{});
+  }catch(_){ /* nothing to do: the photo is already saved */ }
 }
 
 /* Downscale + compress to keep uploads small (AS01P is 13MP). */
