@@ -51,7 +51,7 @@ exports.handler = async (event) => {
   try {
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/fr_clients` +
-        `?select=id,name,company,store_name,portal_user,active` +
+        `?select=id,name,company,store_name,portal_user,active,status` +
         `&active=is.true` +
         `&order=company.asc.nullslast`,
       {
@@ -69,11 +69,30 @@ exports.handler = async (event) => {
 
     // Company is the canonical display identifier across every app; name is
     // only a fallback for legacy rows where company is empty.
-    const clients = (Array.isArray(rows) ? rows : [])
+    const raw = (Array.isArray(rows) ? rows : []).map((c) => ({
+      id: c.id,
+      label: c.company || c.name || c.store_name || '(unnamed)',
+      contact: (c.name || '').trim(),
+      // `active` and `status` disagree on several rows (some are active=true
+      // with status 'Inactive'). We filter on `active`, which is what the rest
+      // of the stack uses, and pass `status` through so the UI can group by it
+      // instead of silently mixing live clients with dormant ones.
+      status: c.status || '',
+      has_portal: !!(c.portal_user && String(c.portal_user).trim()),
+    }));
+
+    // Two rows can carry the exact same company name (there are real duplicates
+    // in the roster). An internal user picking blindly between two identical
+    // options is precisely the mistake this selector exists to prevent, so a
+    // repeated label gets the contact name appended to tell them apart.
+    const labelCounts = raw.reduce((acc, c) => {
+      acc[c.label] = (acc[c.label] || 0) + 1;
+      return acc;
+    }, {});
+    const clients = raw
       .map((c) => ({
-        id: c.id,
-        label: c.company || c.name || c.store_name || '(unnamed)',
-        has_portal: !!(c.portal_user && String(c.portal_user).trim()),
+        ...c,
+        label: labelCounts[c.label] > 1 && c.contact ? `${c.label} — ${c.contact}` : c.label,
       }))
       .sort((a, b) => a.label.localeCompare(b.label));
 
