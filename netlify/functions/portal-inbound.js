@@ -47,13 +47,37 @@ const AS_CLIENT_UUID_RE =
 
 // Client-safe columns only. billed_at / billing_id are internal billing
 // fields and must never reach the client payload.
-const CLIENT_COLUMNS = 'received_at,created_at,tracking,carrier,type,notes,photo_urls';
+const CLIENT_COLUMNS = 'id,received_at,created_at,tracking,carrier,type,notes,photo_urls';
 const ADMIN_COLUMNS = CLIENT_COLUMNS + ',client';
 
 // Internal scanner breadcrumbs that must not be shown to the client.
 // Anything else in `notes` is a real reference the warehouse wrote down
 // (usually the FNSKU + qty printed on the box), which IS useful to them.
 const INTERNAL_NOTE_RE = /^\s*scanned via fr mobile\b.*$/i;
+
+// Reading of the Amazon packing slip photographed at the dock (slip-extract.js).
+// Only 'ok' rows are joined: a low-confidence or failed reading stays internal,
+// because showing a client the wrong FNSKU is worse than showing nothing.
+async function fetchSlipSummaries(sinceIso) {
+  try {
+    const res = await sbFetch(
+      `wh_slip_extractions?status=eq.ok&created_at=gte.${sinceIso}` +
+        `&select=shipment_id,summary,ra_number,vret_id,origin_fc` +
+        `&order=created_at.desc`
+    );
+    if (!res.ok) return new Map();
+    const rows = await res.json();
+    const map = new Map();
+    for (const r of Array.isArray(rows) ? rows : []) {
+      // Rows come newest first; keep the newest reading per shipment.
+      if (r.shipment_id && r.summary && !map.has(r.shipment_id)) map.set(r.shipment_id, r);
+    }
+    return map;
+  } catch {
+    // Enrichment only — never let it break the tab.
+    return new Map();
+  }
+}
 
 function corsHeaders(origin) {
   const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
@@ -224,12 +248,16 @@ export const handler = async (event) => {
     }
 
     const rows = await res.json();
+    const slips = await fetchSlipSummaries(since);
 
     const packages = (Array.isArray(rows) ? rows : []).map((r) => {
       const ts = r.received_at || r.created_at || '';
       const norm = normalizeTracking(r.tracking);
       const carrier = norm.carrier || (r.carrier && r.carrier !== 'Other' ? r.carrier : '');
       const photos = Array.isArray(r.photo_urls) ? r.photo_urls.filter(Boolean) : [];
+      // What the operator typed always wins over what the model read.
+      const typed = cleanNote(r.notes);
+      const slip = slips.get(r.id);
       const out = {
         received_at: ts,
         date: ts ? ts.slice(0, 10) : '',
@@ -238,7 +266,10 @@ export const handler = async (event) => {
         carrier: carrier || '—',
         type: r.type || '—',
         type_key: typeKey(r.type),
-        reference: cleanNote(r.notes),
+        reference: typed || (slip ? slip.summary : ''),
+        reference_source: typed ? 'operator' : (slip ? 'slip' : ''),
+        ra_number: slip ? slip.ra_number || '' : '',
+        origin_fc: slip ? slip.origin_fc || '' : '',
         warning: norm.warning,
         photos,
       };
