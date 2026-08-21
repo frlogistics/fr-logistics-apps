@@ -135,7 +135,7 @@ exports.handler = async (event) => {
     const statusFilter = isAdmin ? 'in.(ok,low_confidence)' : 'eq.ok';
     const slipRes = await sb(
       `wh_slip_extractions?status=${statusFilter}&created_at=gte.${since}` +
-        `&select=shipment_id,status,items,ra_number,vret_id,amz_shipment_id,origin_fc,process_date,confidence,photo_url` +
+        `&select=shipment_id,status,items,ra_number,vret_id,amz_shipment_id,origin_fc,process_date,confidence,photo_url,lpn` +
         `&order=created_at.desc`
     );
     const slips = slipRes.ok ? await slipRes.json() : [];
@@ -164,6 +164,9 @@ exports.handler = async (event) => {
           fnsku: it.fnsku || '',
           asin: it.asin || '',
           upc: it.upc || '',
+          // Per-item LPN when the slip lists one per line; otherwise the
+          // document-level one. Customer returns are identified by this.
+          lpn: it.lpn || s.lpn || '',
           title: it.title || '',
           qty_declared:
             it.qty === null || it.qty === undefined || it.qty === '' ? null : Number(it.qty),
@@ -183,7 +186,7 @@ exports.handler = async (event) => {
     //    of my SKU arrived this month".
     const rollup = new Map();
     for (const l of lines) {
-      const key = l.sku || l.fnsku || l.upc || '(unidentified)';
+      const key = l.sku || l.fnsku || l.upc || l.lpn || '(unidentified)';
       const cur = rollup.get(key) || {
         sku: l.sku,
         fnsku: l.fnsku,
