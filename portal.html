@@ -1484,5 +1484,522 @@ document.addEventListener('DOMContentLoaded',()=>syncClientView(null));
 })();
 </script>
 
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     INBOX SIGNALS  ·  2026-08-24
+     Capa de señales sobre el WhatsApp Inbox. Autocontenida: no toca ni una
+     línea del código existente, se engancha envolviendo renderInboxList
+     igual que hace la capa de enriquecimiento de leads.
+
+     Qué agrega:
+       · Barra de píldoras con contadores, clicables como filtro
+       · Semáforo de la ventana de 24h de Meta en cada hilo
+       · Chip de canal (WhatsApp / Web / Instagram)
+       · Orden por urgencia en vez de por fecha
+       · Búsqueda dentro del cuerpo de los mensajes
+
+     El eje del diseño es la VENTANA DE 24 HORAS. No es una meta interna:
+     pasadas 24h desde el último mensaje del cliente, Meta no deja responder
+     con texto libre — hace falta plantilla aprobada. Por eso el semáforo es
+     lo más visible de toda la pantalla.
+     ═══════════════════════════════════════════════════════════════════ -->
+<style>
+/* ── Barra de píldoras ─────────────────────────────────────────────── */
+#inboxSignals{padding:12px;border-bottom:1px solid var(--border);background:
+  linear-gradient(180deg,#fbfdff 0%,var(--card) 100%);display:flex;flex-wrap:wrap;gap:7px}
+.sigPill{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border-radius:999px;
+  border:1.5px solid transparent;font-size:11.5px;font-weight:600;cursor:pointer;
+  font-family:inherit;line-height:1;transition:transform .14s ease,box-shadow .14s ease,filter .14s ease;
+  white-space:nowrap;user-select:none}
+.sigPill:hover{transform:translateY(-1.5px);filter:brightness(.97)}
+.sigPill:active{transform:translateY(0)}
+.sigPill .n{font-size:13px;font-weight:800;letter-spacing:-.02em}
+.sigPill.on{box-shadow:0 0 0 2.5px rgba(15,23,42,.14),0 4px 10px rgba(15,23,42,.13)}
+.sigPill.zero{opacity:.42;filter:saturate(.35)}
+
+/* Cada estado con su color. El rojo se reserva para lo irreversible. */
+.sig-wait  {background:#fff7ed;color:#9a3412;border-color:#fed7aa}
+.sig-soon  {background:#fefce8;color:#854d0e;border-color:#fde68a}
+.sig-closed{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
+.sig-unread{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
+.sig-paused{background:#f5f3ff;color:#6d28d9;border-color:#ddd6fe}
+.sig-web   {background:#ecfeff;color:#0e7490;border-color:#a5f3fc}
+.sig-all   {background:#f1f5f9;color:#334155;border-color:#e2e8f0}
+
+/* La píldora de ventana cerrada late — es plata que se está perdiendo. */
+.sigPill.sig-closed:not(.zero)::before{content:'';width:7px;height:7px;border-radius:50%;
+  background:#ef4444;animation:sigPulse 1.9s ease-in-out infinite}
+@keyframes sigPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.78)}}
+
+/* ── Barra lateral de urgencia en cada hilo ────────────────────────── */
+.inboxItem{position:relative}
+.inboxItem[data-sig]::after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
+.inboxItem[data-sig="closed"]::after{background:linear-gradient(180deg,#f87171,#dc2626)}
+.inboxItem[data-sig="soon"]::after{background:linear-gradient(180deg,#fbbf24,#d97706)}
+.inboxItem[data-sig="wait"]::after{background:linear-gradient(180deg,#fb923c,#ea580c)}
+.inboxItem.active[data-sig]::after{width:0}
+
+/* ── Etiquetas dentro del hilo ─────────────────────────────────────── */
+.sigTag{display:inline-flex;align-items:center;gap:3px;font-size:9.5px;font-weight:700;
+  padding:2px 6px;border-radius:5px;letter-spacing:.01em;vertical-align:middle;white-space:nowrap}
+.tag-closed{background:#fee2e2;color:#b91c1c}
+.tag-soon  {background:#fef3c7;color:#92400e}
+.tag-open  {background:#dcfce7;color:#15803d}
+.tag-web   {background:#cffafe;color:#0e7490}
+.tag-wa    {background:#dcfce7;color:#166534}
+.tag-ig    {background:#fce7f3;color:#9d174d}
+
+/* Reloj de ventana: el número grande a la derecha del hilo */
+.sigClock{font-size:10px;font-weight:800;letter-spacing:-.01em;white-space:nowrap}
+.clock-open{color:#16a34a}.clock-soon{color:#d97706}.clock-closed{color:#dc2626}
+
+#inboxSignalsEmpty{display:none;text-align:center;padding:34px 20px;color:var(--muted);font-size:13px}
+
+@media (prefers-reduced-motion:reduce){
+  .sigPill,.sigPill.sig-closed::before{transition:none!important;animation:none!important}
+}
+</style>
+
+<script>
+(function(){
+  'use strict';
+
+  // La ventana de Meta: 24h desde el ÚLTIMO mensaje ENTRANTE del cliente.
+  // Un saliente nuestro no la reabre — solo el cliente reinicia el reloj.
+  var WINDOW_H   = 24;
+  var SOON_H     = 6;      // por debajo de esto, ámbar
+  var MSG_API    = '/.netlify/functions/wa-messages';
+  var REFRESH_MS = 60000;
+
+  var threads    = {};     // clave normalizada -> señales del hilo
+  var activePill = 'all';
+  var counts     = {all:0,wait:0,soon:0,closed:0,unread:0,paused:0,web:0};
+
+  function normP(p){
+    var d = String(p||'').replace(/\D/g,'');
+    if(!d) return '';
+    if(d.length===12 && d.indexOf('11')===0) d = d.slice(1);
+    if(d.length===10 && /^[2-9]/.test(d))    d = '1'+d;
+    return d;
+  }
+
+  // El canal se deduce del prefijo de la dirección CRUDA, antes de
+  // normalizar. Por eso un visitante web salía como "+53829817…": el uuid
+  // de sesión pasaba por el formateador de teléfonos.
+  function channelOf(raw){
+    var s = String(raw||'').toLowerCase();
+    if(s.indexOf('web:')===0) return 'web';
+    if(s.indexOf('ig:')===0)  return 'instagram';
+    return 'whatsapp';
+  }
+
+  // ── Construir el índice de señales ──────────────────────────────────
+  function buildIndex(messages){
+    var t = {};
+    (messages||[]).forEach(function(m){
+      var raw  = m.direction==='inbound' ? m.from : m.to;
+      var chan = channelOf(raw);
+      var key  = chan==='whatsapp' ? normP(raw) : String(raw||'');
+      if(!key) return;
+
+      if(!t[key]) t[key] = {key:key, channel:chan, lastIn:0, lastOut:0, unread:0, bodies:[]};
+      var ts = m.timestamp || 0;
+      if(m.direction==='inbound'){
+        if(ts > t[key].lastIn) t[key].lastIn = ts;
+        if(!m.read) t[key].unread++;
+      } else {
+        if(ts > t[key].lastOut) t[key].lastOut = ts;
+      }
+      if(m.text) t[key].bodies.push(String(m.text).toLowerCase());
+    });
+
+    var now = Date.now()/1000;
+    counts  = {all:0,wait:0,soon:0,closed:0,unread:0,paused:0,web:0};
+
+    Object.keys(t).forEach(function(k){
+      var x = t[k];
+      // Horas restantes de ventana. Solo aplica a WhatsApp: el chat web y
+      // los DMs no tienen ese límite de Meta.
+      x.hoursLeft = x.lastIn ? (WINDOW_H - (now - x.lastIn)/3600) : null;
+      x.windowed  = (x.channel === 'whatsapp' && x.lastIn > 0);
+      x.waiting   = x.lastIn > 0 && (x.lastOut === 0 || x.lastOut < x.lastIn);
+
+      if(!x.windowed)              x.state = 'nowindow';
+      else if(x.hoursLeft <= 0)    x.state = 'closed';
+      else if(x.hoursLeft <= SOON_H) x.state = 'soon';
+      else                         x.state = 'open';
+
+      // Señal de la barra lateral: primero lo irreversible, luego lo urgente.
+      x.sig = x.state==='closed' && x.waiting ? 'closed'
+            : x.state==='soon'   && x.waiting ? 'soon'
+            : x.waiting                       ? 'wait'
+            : '';
+
+      counts.all++;
+      if(x.waiting)                          counts.wait++;
+      if(x.state==='soon'   && x.waiting)    counts.soon++;
+      if(x.state==='closed' && x.waiting)    counts.closed++;
+      if(x.unread>0)                         counts.unread++;
+      if(x.channel==='web')                  counts.web++;
+    });
+
+    threads = t;
+  }
+
+  function sigFor(phone){
+    return threads[normP(phone)] || threads[String(phone||'')] || null;
+  }
+
+  // ── La barra de píldoras ────────────────────────────────────────────
+  var PILLS = [
+    {id:'all',    cls:'sig-all',    label:'Todos'},
+    {id:'wait',   cls:'sig-wait',   label:'Sin responder'},
+    {id:'soon',   cls:'sig-soon',   label:'Por vencer'},
+    {id:'closed', cls:'sig-closed', label:'Ventana cerrada'},
+    {id:'unread', cls:'sig-unread', label:'Sin leer'},
+    {id:'web',    cls:'sig-web',    label:'Web'}
+  ];
+
+  function renderPills(){
+    var bar = document.getElementById('inboxSignals');
+    if(!bar) return;
+    bar.innerHTML = PILLS.map(function(p){
+      var n    = counts[p.id] || 0;
+      var zero = (n===0 && p.id!=='all') ? ' zero' : '';
+      var on   = (activePill===p.id) ? ' on' : '';
+      return '<button class="sigPill '+p.cls+zero+on+'" data-pill="'+p.id+'" '+
+             'title="'+p.label+'"><span class="n">'+n+'</span>'+p.label+'</button>';
+    }).join('');
+  }
+
+  function onPillClick(e){
+    var b = e.target.closest('.sigPill');
+    if(!b) return;
+    var id = b.getAttribute('data-pill');
+    activePill = (activePill===id && id!=='all') ? 'all' : id;
+    renderPills();
+    if(typeof window.renderInboxList==='function') window.renderInboxList();
+  }
+
+  function injectBar(){
+    var header = document.querySelector('#tabWhatsapp .inboxList .inboxHeader');
+    if(!header || document.getElementById('inboxSignals')) return;
+    var bar = document.createElement('div');
+    bar.id = 'inboxSignals';
+    bar.addEventListener('click', onPillClick);
+    // Debajo del buscador si existe, si no justo bajo la cabecera.
+    var searchWrap = document.getElementById('inboxSearchWrap');
+    (searchWrap || header).insertAdjacentElement('afterend', bar);
+    renderPills();
+  }
+
+  // ── Pintar señales sobre las filas ya renderizadas ──────────────────
+  function fmtClock(h){
+    if(h === null)  return '';
+    if(h <= 0)      return 'cerrada';
+    if(h < 1)       return Math.round(h*60) + ' min';
+    return Math.floor(h) + ' h';
+  }
+
+  function decorate(){
+    var lb = document.getElementById('inboxListBody');
+    if(!lb) return;
+    var rows = Array.prototype.slice.call(lb.querySelectorAll('.inboxItem'));
+    var shown = 0;
+
+    rows.forEach(function(row){
+      var oc = row.getAttribute('onclick') || '';
+      var m  = oc.match(/openThread\('([^']*)'/);
+      var s  = m ? sigFor(m[1]) : null;
+      if(!s){ row.removeAttribute('data-sig'); return; }
+
+      row.setAttribute('data-sig', s.sig);
+      row.dataset.sigOrder = orderScore(s);
+
+      // Chip de canal + estado de ventana, una sola vez por fila.
+      var fromEl = row.querySelector('.inboxFrom');
+      if(fromEl && !fromEl.querySelector('.sigTag')){
+        if(s.channel === 'web'){
+          fromEl.insertAdjacentHTML('beforeend',
+            ' <span class="sigTag tag-web">WEB</span>');
+        } else if(s.channel === 'instagram'){
+          fromEl.insertAdjacentHTML('beforeend',
+            ' <span class="sigTag tag-ig">IG</span>');
+        }
+        if(s.windowed && s.waiting){
+          var cls = s.state==='closed' ? 'tag-closed'
+                  : s.state==='soon'   ? 'tag-soon' : 'tag-open';
+          var txt = s.state==='closed' ? 'VENTANA CERRADA'
+                  : s.state==='soon'   ? 'POR VENCER' : 'ESPERANDO';
+          fromEl.insertAdjacentHTML('beforeend',
+            ' <span class="sigTag '+cls+'">'+txt+'</span>');
+        }
+      }
+
+      // Reloj de ventana debajo de la hora.
+      var right = row.querySelector('.inboxTime');
+      if(right && right.parentElement && !right.parentElement.querySelector('.sigClock') && s.windowed){
+        var ck = s.state==='closed' ? 'clock-closed'
+               : s.state==='soon'   ? 'clock-soon' : 'clock-open';
+        right.insertAdjacentHTML('afterend',
+          '<div class="sigClock '+ck+'">'+fmtClock(s.hoursLeft)+'</div>');
+      }
+
+      // Filtro por píldora activa.
+      var pass = activePill==='all'
+        || (activePill==='wait'   && s.waiting)
+        || (activePill==='soon'   && s.waiting && s.state==='soon')
+        || (activePill==='closed' && s.waiting && s.state==='closed')
+        || (activePill==='unread' && s.unread>0)
+        || (activePill==='web'    && s.channel==='web');
+
+      if(!pass){ row.style.display='none'; }
+      else if(row.style.display==='none' && !window.__inboxSearchActive){ row.style.display=''; }
+      if(row.style.display!=='none') shown++;
+    });
+
+    // Reordenar por urgencia: lo que vence primero, arriba.
+    if(activePill==='all'){
+      rows.filter(function(r){ return r.dataset.sigOrder; })
+          .sort(function(a,b){ return b.dataset.sigOrder - a.dataset.sigOrder; })
+          .forEach(function(r){ lb.appendChild(r); });
+    }
+
+    var ce = document.getElementById('inboxCount');
+    if(ce && activePill!=='all'){
+      ce.textContent = shown + ' de ' + counts.all;
+    }
+
+    var empty = document.getElementById('inboxSignalsEmpty');
+    if(!empty){
+      empty = document.createElement('div');
+      empty.id = 'inboxSignalsEmpty';
+      empty.innerHTML = '<div style="font-size:26px;margin-bottom:8px">✅</div>Nada pendiente en este filtro.';
+      lb.appendChild(empty);
+    }
+    empty.style.display = (shown===0 && activePill!=='all') ? 'block' : 'none';
+  }
+
+  // Puntaje de urgencia. Lo irreversible pesa más que lo urgente, y a
+  // igualdad de estado gana el que lleva más tiempo esperando.
+  function orderScore(s){
+    if(!s.waiting) return 1;
+    var base = s.state==='closed' ? 4000000
+             : s.state==='soon'   ? 3000000
+             : 2000000;
+    return base + Math.max(0, 100000 - Math.round(s.hoursLeft||0));
+  }
+
+  // ── Enganche: envolver renderInboxList sin tocar el original ────────
+  function wrap(){
+    var orig = window.renderInboxList;
+    if(typeof orig !== 'function' || orig.__signals) return;
+    window.renderInboxList = function(){
+      orig.apply(this, arguments);
+      injectBar();
+      try{ decorate(); }catch(err){ console.error('[inbox-signals]', err); }
+    };
+    window.renderInboxList.__signals = true;
+  }
+
+  function refresh(){
+    fetch(MSG_API)
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        buildIndex(Array.isArray(data) ? data : []);
+        renderPills();
+        if(typeof window.renderInboxList==='function') window.renderInboxList();
+      })
+      .catch(function(){ /* el inbox sigue funcionando sin señales */ });
+  }
+
+  function boot(){
+    wrap();
+    injectBar();
+    refresh();
+  }
+
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest('[onclick*="switchTab(\'Whatsapp\'"]');
+    if(btn) setTimeout(boot, 260);
+  });
+
+  setInterval(function(){
+    var ws = document.getElementById('tabWhatsapp');
+    if(ws && ws.classList.contains('active')) refresh();
+  }, REFRESH_MS);
+
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(boot, 900); });
+  } else {
+    setTimeout(boot, 900);
+  }
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     INBOX · TEMA OSCURO NEÓN  ·  2026-08-24
+     Solo dentro de #tabWhatsapp. Las otras pestañas (Apps, Clients,
+     Dashboard, EcoPack+) no se enteran de que este archivo existe.
+
+     El inbox se lee como una CONSOLA embebida: panel oscuro con bordes
+     redondeados sobre el fondo claro del portal. No es medio tema a medias
+     — es un módulo con identidad propia, que es como se ve en las
+     herramientas que sirvieron de referencia.
+     ═══════════════════════════════════════════════════════════════════ -->
+<style>
+#tabWhatsapp{
+  --d-bg:#0B1120; --d-panel:#111A2E; --d-panel2:#161F36;
+  --d-line:rgba(148,163,184,.14); --d-line2:rgba(148,163,184,.22);
+  --d-txt:#E6EDF7; --d-mut:#8FA3BF;
+  --n-green:#22D97F; --n-cyan:#22D3EE; --n-amber:#FBBF24;
+  --n-red:#FF5A6E;   --n-violet:#A78BFA; --n-blue:#60A5FA;
+}
+
+/* ── Los dos paneles ───────────────────────────────────────────────── */
+#tabWhatsapp .inboxList,
+#tabWhatsapp .inboxThread{
+  background:
+    radial-gradient(1100px 420px at 8% -12%, rgba(34,211,238,.09), transparent 62%),
+    radial-gradient(900px 400px at 96% 104%, rgba(34,217,127,.08), transparent 60%),
+    linear-gradient(168deg, var(--d-panel) 0%, var(--d-bg) 100%);
+  border:1px solid var(--d-line);
+  box-shadow:0 18px 44px rgba(3,7,18,.42), inset 0 1px 0 rgba(255,255,255,.045);
+  color:var(--d-txt);
+}
+
+/* Hilo fino de luz en el borde superior — el detalle que da el acabado */
+#tabWhatsapp .inboxList,#tabWhatsapp .inboxThread{position:relative;overflow:hidden}
+#tabWhatsapp .inboxList{overflow-y:auto}
+#tabWhatsapp .inboxList::before,#tabWhatsapp .inboxThread::before{
+  content:'';position:absolute;top:0;left:12%;right:12%;height:1px;z-index:5;
+  background:linear-gradient(90deg,transparent,rgba(34,211,238,.55),rgba(34,217,127,.45),transparent)}
+
+#tabWhatsapp .inboxHeader{
+  border-bottom:1px solid var(--d-line);color:var(--d-mut);
+  background:linear-gradient(180deg,rgba(255,255,255,.035),transparent);
+  letter-spacing:.02em;text-transform:uppercase;font-size:11.5px}
+#tabWhatsapp #inboxCount{color:var(--n-cyan);font-weight:700;text-transform:none;font-size:12px}
+
+/* ── Filas ─────────────────────────────────────────────────────────── */
+#tabWhatsapp .inboxItem{
+  border-bottom:1px solid rgba(148,163,184,.09);
+  transition:background .16s ease, box-shadow .16s ease}
+#tabWhatsapp .inboxItem:hover{background:rgba(148,163,184,.07)}
+#tabWhatsapp .inboxItem.active{
+  background:linear-gradient(90deg,rgba(34,217,127,.16),rgba(34,217,127,.03));
+  border-left:3px solid var(--n-green);
+  box-shadow:inset 0 0 26px rgba(34,217,127,.09)}
+#tabWhatsapp .inboxFrom{color:var(--d-txt)}
+#tabWhatsapp .inboxPreview,#tabWhatsapp .inboxTime{color:var(--d-mut)}
+#tabWhatsapp .inboxItem.unread .inboxFrom{color:#fff}
+#tabWhatsapp .inboxAvatar{
+  background:linear-gradient(140deg,#0E9F6E,#22D97F);color:#052014;
+  box-shadow:0 0 0 1px rgba(34,217,127,.32),0 0 16px rgba(34,217,127,.28)}
+#tabWhatsapp .inboxUnreadDot{
+  background:var(--n-cyan);box-shadow:0 0 10px rgba(34,211,238,.85)}
+
+/* ── Burbujas ──────────────────────────────────────────────────────── */
+#tabWhatsapp .bubble.in{
+  background:rgba(148,163,184,.11);border:1px solid var(--d-line2);color:var(--d-txt)}
+#tabWhatsapp .bubble.out{
+  background:linear-gradient(135deg,#0F9A66,#1DBE78);color:#04170E;border:none;
+  box-shadow:0 4px 16px rgba(29,190,120,.24)}
+#tabWhatsapp .bubbleTime{opacity:.72}
+#tabWhatsapp .threadEmpty{color:var(--d-mut)}
+
+/* ── Barra de respuesta ────────────────────────────────────────────── */
+#tabWhatsapp .replyBar{
+  border-top:1px solid var(--d-line);
+  background:linear-gradient(180deg,transparent,rgba(0,0,0,.22))}
+#tabWhatsapp .replyInput{
+  background:rgba(8,13,26,.75);border:1px solid var(--d-line2);color:var(--d-txt)}
+#tabWhatsapp .replyInput::placeholder{color:#64748B}
+#tabWhatsapp .replyInput:focus{
+  border-color:var(--n-green);box-shadow:0 0 0 3px rgba(34,217,127,.15)}
+#tabWhatsapp .replyBtn{
+  background:linear-gradient(135deg,#16A34A,#22D97F);color:#04170E;
+  box-shadow:0 4px 14px rgba(34,217,127,.3)}
+#tabWhatsapp .replyBtn:disabled{background:#334155;color:#64748B;box-shadow:none}
+
+/* Buscador y botones sueltos del inbox */
+#tabWhatsapp #inboxSearchWrap{
+  border-bottom:1px solid var(--d-line);
+  background:linear-gradient(180deg,rgba(255,255,255,.03),transparent)}
+#tabWhatsapp #inboxSearch{
+  background:rgba(8,13,26,.7);border:1px solid var(--d-line2);color:var(--d-txt)}
+#tabWhatsapp #inboxSearch::placeholder{color:#64748B}
+#tabWhatsapp #inboxSearch:focus{
+  border-color:var(--n-cyan);box-shadow:0 0 0 3px rgba(34,211,238,.14)}
+#tabWhatsapp #inboxSearchHint{color:var(--d-mut)}
+
+/* Barra de scroll a tono */
+#tabWhatsapp .inboxList::-webkit-scrollbar,
+#tabWhatsapp .threadMsgs::-webkit-scrollbar{width:9px}
+#tabWhatsapp .inboxList::-webkit-scrollbar-thumb,
+#tabWhatsapp .threadMsgs::-webkit-scrollbar-thumb{
+  background:rgba(148,163,184,.26);border-radius:9px}
+#tabWhatsapp .inboxList::-webkit-scrollbar-track,
+#tabWhatsapp .threadMsgs::-webkit-scrollbar-track{background:transparent}
+
+/* ── Píldoras, ahora en neón ───────────────────────────────────────── */
+#inboxSignals{
+  background:linear-gradient(180deg,rgba(255,255,255,.04),transparent);
+  border-bottom:1px solid var(--d-line)}
+#tabWhatsapp .sigPill{
+  background:rgba(148,163,184,.09);border:1px solid var(--d-line2);
+  color:var(--d-mut);backdrop-filter:blur(6px)}
+#tabWhatsapp .sigPill .n{color:#fff}
+#tabWhatsapp .sigPill:hover{filter:brightness(1.22)}
+
+#tabWhatsapp .sig-all   {color:#CBD5E1}
+#tabWhatsapp .sig-wait  {color:#FDBA74;border-color:rgba(251,146,60,.42);background:rgba(251,146,60,.12)}
+#tabWhatsapp .sig-soon  {color:#FCD34D;border-color:rgba(251,191,36,.42);background:rgba(251,191,36,.12)}
+#tabWhatsapp .sig-closed{color:#FF8A9B;border-color:rgba(255,90,110,.5);background:rgba(255,90,110,.14);
+  box-shadow:0 0 18px rgba(255,90,110,.2)}
+#tabWhatsapp .sig-unread{color:#93C5FD;border-color:rgba(96,165,250,.42);background:rgba(96,165,250,.12)}
+#tabWhatsapp .sig-web   {color:#67E8F9;border-color:rgba(34,211,238,.45);background:rgba(34,211,238,.12)}
+
+#tabWhatsapp .sigPill.on{
+  box-shadow:0 0 0 2px rgba(255,255,255,.16),0 0 22px currentColor;
+  filter:brightness(1.3)}
+#tabWhatsapp .sigPill.zero{opacity:.3;filter:saturate(.2);box-shadow:none}
+
+/* ── Etiquetas y reloj ─────────────────────────────────────────────── */
+#tabWhatsapp .tag-closed{background:rgba(255,90,110,.18);color:#FF8A9B;
+  box-shadow:0 0 12px rgba(255,90,110,.28)}
+#tabWhatsapp .tag-soon  {background:rgba(251,191,36,.18);color:#FCD34D}
+#tabWhatsapp .tag-open  {background:rgba(34,217,127,.16);color:#5EEAA5}
+#tabWhatsapp .tag-web   {background:rgba(34,211,238,.18);color:#67E8F9}
+#tabWhatsapp .tag-wa    {background:rgba(34,217,127,.16);color:#5EEAA5}
+#tabWhatsapp .tag-ig    {background:rgba(236,72,153,.18);color:#F9A8D4}
+
+#tabWhatsapp .clock-open  {color:#5EEAA5}
+#tabWhatsapp .clock-soon  {color:#FCD34D;text-shadow:0 0 9px rgba(251,191,36,.5)}
+#tabWhatsapp .clock-closed{color:#FF8A9B;text-shadow:0 0 9px rgba(255,90,110,.6)}
+
+/* La barra lateral de urgencia, con brillo hacia adentro */
+#tabWhatsapp .inboxItem[data-sig="closed"]::after{
+  background:linear-gradient(180deg,#FF8A9B,#E11D48);box-shadow:0 0 16px rgba(255,90,110,.75)}
+#tabWhatsapp .inboxItem[data-sig="soon"]::after{
+  background:linear-gradient(180deg,#FCD34D,#D97706);box-shadow:0 0 14px rgba(251,191,36,.6)}
+#tabWhatsapp .inboxItem[data-sig="wait"]::after{
+  background:linear-gradient(180deg,#FDBA74,#EA580C);box-shadow:0 0 12px rgba(251,146,60,.45)}
+
+#tabWhatsapp #inboxSignalsEmpty{color:var(--d-mut)}
+
+/* Badges de lead de la capa de enriquecimiento — se ven lavados en oscuro */
+#tabWhatsapp .leadBadge{filter:brightness(.92) saturate(1.25)}
+
+/* Cabecera del hilo abierto */
+#tabWhatsapp #threadHeader{border-bottom:1px solid var(--d-line)}
+#tabWhatsapp #threadName{color:#fff;text-transform:none;font-size:14px}
+#tabWhatsapp #threadPhone{color:var(--d-mut)}
+
+@media (prefers-reduced-motion:reduce){
+  #tabWhatsapp *{transition:none!important;animation:none!important}
+}
+</style>
+
 </body>
 </html>
