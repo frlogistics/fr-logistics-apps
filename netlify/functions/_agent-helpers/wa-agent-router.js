@@ -13,6 +13,16 @@
 //
 // This function is BEST-EFFORT. It must NEVER throw. If anything fails,
 // it returns silently — the webhook already handled Blobs/email/push.
+//
+// MULTICANAL (2026-08-22). El router NO se forkea por canal: la maquina de
+// estados, el visit guard, el decay de menu, los reintentos y la politica
+// de handoff son los mismos para WhatsApp, chat web e Instagram.
+// Lo unico que cambia es POR DONDE SALE la respuesta, y eso se resuelve en
+// los dos despachadores de abajo (sendAndRecord / sendOnce) leyendo el
+// prefijo de la direccion. Por eso las ~30 llamadas de envio que hay en
+// este archivo quedaron intactas.
+//
+// msg.from puede ser: "13055551234" (WhatsApp), "web:<sesion>", "ig:<IGSID>".
 
 import { detectLanguage, parseLanguageChoice } from "./wa-language-detect.js";
 import { TEMPLATES, parseMenuChoice } from "./wa-agent-templates.js";
@@ -27,8 +37,10 @@ import {
   linkConversationToLead,
   markHandoff,
   pauseConversation,
+  parseAddress,
+  sendWebOutbound,
 } from "./wa-agent-db.js";
-import { sendAndRecord } from "./wa-agent-send.js";
+import { sendAndRecord as sendWhatsAppAndRecord } from "./wa-agent-send.js";
 import {
   extractEmail,
   isValidEmail,
@@ -53,7 +65,7 @@ import {
   isMediaPlaceholder,
   mediaKind,
   isClosing,
-  sendOnce,
+  sendOnce as sendWhatsAppOnce,
   bumpRetry,
   resetRetry,
   maxedOut,
@@ -61,6 +73,34 @@ import {
   MENU_FULL,
   MENU_SHORT,
 } from "./wa-agent-guards.js";
+
+// ─────────────────────────────────────────────────────────────────────
+// DESPACHADORES DE ENVIO
+//
+// Toda salida del router pasa por aqui. El canal se deduce del prefijo de
+// `to`, no de estado compartido del modulo: dos invocaciones concurrentes
+// en el mismo contenedor Lambda (una de WhatsApp y una del sitio) no se
+// pueden pisar, porque cada una lleva su canal dentro del propio valor.
+//
+// Contrato de retorno, identico para los tres canales:
+//   { ok: boolean, suppressed?: boolean }
+// ─────────────────────────────────────────────────────────────────────
+
+async function sendAndRecord(args) {
+  const { channel } = parseAddress(args.to);
+  if (channel === "whatsapp") return await sendWhatsAppAndRecord(args);
+  if (channel === "web") return await sendWebOutbound({ ...args, once: false });
+  console.error(`[agent-router] sin transporte para el canal ${channel}`);
+  return { ok: false, suppressed: false };
+}
+
+async function sendOnce(args) {
+  const { channel } = parseAddress(args.to);
+  if (channel === "whatsapp") return await sendWhatsAppOnce(args);
+  if (channel === "web") return await sendWebOutbound({ ...args, once: true });
+  console.error(`[agent-router] sin transporte para el canal ${channel}`);
+  return { ok: false, suppressed: false };
+}
 
 /**
  * Main entry point — called per inbound message.
@@ -79,7 +119,10 @@ export async function routeIncomingMessage(msg) {
       return;
     }
 
-    const fromE164 = from.startsWith("+") ? from : `+${from}`;
+    // El prefijo telefonico solo sirve para detectar idioma en WhatsApp.
+    // En web/Instagram va vacio para que detectLanguage caiga al texto en
+    // vez de leer digitos de un uuid como si fueran un pais.
+    const fromE164 = phonePrefixOf(from);
 
     // ─── STEP 0: Human shortcut ───────────────────────────────────
     // If user types "humano" / "human" / "quiero hablar con jose" from ANY
@@ -252,7 +295,7 @@ export async function routeIncomingMessage(msg) {
 // ─────────────────────────────────────────────────────────────────────
 async function handleNewExistingClientMessage(existingClient, msg) {
   const { from, text, clientName } = msg;
-  const fromE164 = from.startsWith("+") ? from : `+${from}`;
+  const fromE164 = phonePrefixOf(from);
 
   // Use stored preferred_language if available; otherwise detect
   let language = existingClient.preferredLanguage;   // 'ES' | 'EN' | null
@@ -299,7 +342,7 @@ async function handleNewExistingClientMessage(existingClient, msg) {
 // ─────────────────────────────────────────────────────────────────────
 async function handleHumanShortcut(msg) {
   const { from, text, clientName } = msg;
-  const fromE164 = from.startsWith("+") ? from : `+${from}`;
+  const fromE164 = phonePrefixOf(from);
 
   // Look up existing conversation (any state, not just active)
   const existingConv = await getActiveConversation(from);
@@ -383,7 +426,7 @@ async function handleHumanShortcut(msg) {
 // ─────────────────────────────────────────────────────────────────────
 async function handleNewLeadMessage(msg) {
   const { from, text, clientName } = msg;
-  const fromE164 = from.startsWith("+") ? from : `+${from}`;
+  const fromE164 = phonePrefixOf(from);
 
   const detected = detectLanguage(text, fromE164);
   // detected.language: 'ES' | 'EN' | 'UNKNOWN'
@@ -682,8 +725,9 @@ async function buildFollowup(conversationId, language) {
 }
 
 // Load the last N user/assistant messages from wa_messages for LLM context.
-// We use from_number to filter by the lead's wa number (since conversation_id
-// isn't a column in wa_messages).
+// Se filtra por la DIRECCION en from_number/to_number, que ahora puede ser
+// un numero, "web:<sesion>" o "ig:<IGSID>" — el filtro es el mismo para los
+// tres porque el canal ya viene embebido en el valor.
 async function loadRecentHistory(waNumber, n = 5) {
   try {
     const { createClient } = await import("@supabase/supabase-js");
@@ -741,6 +785,15 @@ async function updateConversationFAQHit(conversationId, faqId) {
 // ─────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────
+
+// Devuelve la direccion en E.164 SOLO si el canal es telefonico.
+// detectLanguage() usa el prefijo de pais como pista; alimentarlo con los
+// digitos sueltos de un uuid de sesion web daria un idioma al azar.
+function phonePrefixOf(address) {
+  const addr = parseAddress(address);
+  if (addr.channel !== "whatsapp" || !addr.waNumber) return "";
+  return `+${addr.waNumber}`;
+}
 
 function labelService(key, lang) {
   const map = {
