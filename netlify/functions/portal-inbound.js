@@ -62,7 +62,7 @@ async function fetchSlipSummaries(sinceIso) {
   try {
     const res = await sbFetch(
       `wh_slip_extractions?status=eq.ok&created_at=gte.${sinceIso}` +
-        `&select=shipment_id,summary,ra_number,vret_id,origin_fc` +
+        `&select=shipment_id,summary,ra_number,vret_id,origin_fc,items,lpn` +
         `&order=created_at.desc`
     );
     if (!res.ok) return new Map();
@@ -268,6 +268,20 @@ export const handler = async (event) => {
         type_key: typeKey(r.type),
         reference: typed || (slip ? slip.summary : ''),
         reference_source: typed ? 'operator' : (slip ? 'slip' : ''),
+        // Structured version of the same reading, so the export can put the
+        // code and the quantity in separate columns instead of shipping
+        // "X004HGE41Z (8)" as one string the client has to split by hand.
+        slip_items: slip && Array.isArray(slip.items)
+          ? slip.items
+              .map((it) => ({
+                code: it.fnsku || it.asin || it.upc || it.lpn || slip.lpn || '',
+                qty:
+                  it.qty === null || it.qty === undefined || it.qty === ''
+                    ? null
+                    : Number(it.qty),
+              }))
+              .filter((it) => it.code)
+          : [],
         ra_number: slip ? slip.ra_number || '' : '',
         origin_fc: slip ? slip.origin_fc || '' : '',
         warning: norm.warning,
