@@ -1123,7 +1123,7 @@ function takePhoto(){
       // FNSKU / qty / RA# never has to be typed. Fire and FORGET on purpose:
       // the photo and the inbound row are already saved, so the operator moves
       // on to the next box while this runs. A failure here costs nothing.
-      askSlipExtract(target.tracking, (j.photo_urls||[])[0]);
+      askSlipExtract(target.tracking, (j.photo_urls||[])[0], target.type);
     }catch(err){
       feedback('err'); toast('Photo failed: '+(err.message||'try again'));
     }
@@ -1134,8 +1134,15 @@ function takePhoto(){
 
 /* Fire-and-forget call to slip-extract. Never awaited, never surfaced as an
    error to the operator: this is enrichment, not part of receiving. */
-function askSlipExtract(tracking, photoUrl){
+function askSlipExtract(tracking, photoUrl, type){
   if(!tracking || !photoUrl) return;
+  // Only Overstock and RMA arrive with an Amazon packing slip. In the first
+  // live batch 10 of 14 calls were photos of FBA inbound shipments that carry
+  // no slip at all: the reading was correctly classified as no_slip, but it was
+  // a paid call for nothing. Gate on the same rule the 📷 reminder uses.
+  const t=(type||'').toLowerCase();
+  const carriesSlip = t.indexOf('overstock')!==-1 || t.indexOf('rma')!==-1 || t.indexOf('return')!==-1;
+  if(!carriesSlip) return;
   try{
     fetch(`${API_BASE}/slip-extract`,{
       method:'POST',
