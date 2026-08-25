@@ -33,6 +33,12 @@ const AI_KEY = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
 // keep reading cleanly; Sonnet is the safer default for angled phone photos.
 const MODEL = process.env.SLIP_EXTRACT_MODEL || 'claude-sonnet-5';
 
+// Amazon product titles run past 200 characters, and a slip with several lines
+// blew past a 1000-token budget mid-array — the response came back as truncated
+// JSON and the whole reading was lost. Give it real headroom and also cap the
+// titles in the prompt: both together, because either one alone can fail.
+const MAX_TOKENS = 3000;
+
 // Below this we do not publish the reading to the client.
 const MIN_CONFIDENCE = 0.75;
 
@@ -82,6 +88,7 @@ Rules:
 - ASINs are 10 characters and normally start with B0. Only fill "asin" when the code really looks like one.
 - "origin_fc" is the Amazon fulfillment center code, usually visible inside the RA number or next to the origin address (for example ABQ1).
 - If a field is unreadable or absent, use null. Never guess to fill a gap.
+- "title" must be at most 80 characters: take the beginning of the printed product name and stop there. Do not transcribe the full marketing title.
 - "confidence" is 0 to 1 and reflects how sure you are of the fields you DID fill.
 - Multiple line items means multiple entries in "items".
 - "lpn" is Amazon's license plate number for a returned unit, printed on a sticker and usually starting with LPN. Customer returns carry one; removals and vendor returns normally do not. Put it at the top level when the document has a single one, and inside the item when each line has its own.`;
@@ -102,6 +109,16 @@ function buildSummary(items, topLpn) {
     })
     .filter(Boolean);
   return parts.length ? parts.join(' · ') : '';
+}
+
+// The RA number carries the fulfillment center as its second-to-last segment
+// (QB8G6-260814YX3-IGQ1-1 -> IGQ1). The model often leaves origin_fc null even
+// when the RA is right there, so derive it rather than asking for it twice.
+function fcFromRa(ra) {
+  const parts = String(ra || '').split('-').filter(Boolean);
+  if (parts.length < 2) return null;
+  const candidate = parts[parts.length - 2].toUpperCase();
+  return /^[A-Z]{3,4}\d{1,2}$/.test(candidate) ? candidate : null;
 }
 
 function parseModelJson(text) {
@@ -185,36 +202,51 @@ exports.handler = async (event) => {
     const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
     const b64 = Buffer.from(await imgRes.arrayBuffer()).toString('base64');
 
-    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': AI_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 1000,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'image', source: { type: 'base64', media_type: contentType, data: b64 } },
-              { type: 'text', text: PROMPT },
-            ],
-          },
-        ],
-      }),
-    });
+    // One retry on a malformed reply. The failure we actually saw in production
+    // was truncated JSON, so the retry leans harder on brevity rather than
+    // repeating the identical request and hoping.
+    async function askModel(extraInstruction) {
+      const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': AI_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: MAX_TOKENS,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'image', source: { type: 'base64', media_type: contentType, data: b64 } },
+                { type: 'text', text: PROMPT + (extraInstruction || '') },
+              ],
+            },
+          ],
+        }),
+      });
+      if (!aiRes.ok) throw new Error(`anthropic ${aiRes.status}: ${(await aiRes.text()).slice(0, 300)}`);
+      const aiJson = await aiRes.json();
+      return (aiJson.content || [])
+        .filter((b) => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n');
+    }
 
-    if (!aiRes.ok) throw new Error(`anthropic ${aiRes.status}: ${(await aiRes.text()).slice(0, 300)}`);
-    const aiJson = await aiRes.json();
-    const text = (aiJson.content || [])
-      .filter((b) => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n');
-
-    const parsed = parseModelJson(text);
+    let parsed;
+    let attempts = 1;
+    try {
+      parsed = parseModelJson(await askModel());
+    } catch (firstErr) {
+      attempts = 2;
+      parsed = parseModelJson(
+        await askModel(
+          '\n\nIMPORTANT: your previous reply was not valid JSON. Reply with the JSON object and nothing else. Omit "title" entirely if that is what it takes to keep the object complete and well formed.'
+        )
+      );
+    }
 
     const items = Array.isArray(parsed.items) ? parsed.items : [];
     const confidence = Number(parsed.confidence);
@@ -232,14 +264,14 @@ exports.handler = async (event) => {
       ra_number: parsed.ra_number || null,
       vret_id: parsed.vret_id || null,
       amz_shipment_id: parsed.amz_shipment_id || null,
-      origin_fc: parsed.origin_fc || null,
+      origin_fc: parsed.origin_fc || fcFromRa(parsed.ra_number) || null,
       lpn: topLpn,
       process_date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.process_date || '') ? parsed.process_date : null,
       items,
       summary: summary || null,
       confidence: Number.isFinite(confidence) ? confidence : null,
       model: MODEL,
-      raw_response: parsed,
+      raw_response: { ...parsed, _attempts: attempts },
       error: null,
       completed_at: new Date().toISOString(),
     };
