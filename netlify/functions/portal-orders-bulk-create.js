@@ -43,6 +43,71 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 const MAX_ROWS = 500;
 
+// ---------------------------------------------------------------------------
+// Internal "View as client" — WRITES (August 2026)
+// ---------------------------------------------------------------------------
+// The portal's read functions accept ?as_client=<fr_clients.id> so the
+// warehouse account can look at the portal exactly as a client sees it.
+// Writes used to refuse that parameter outright, which meant the internal
+// account could not upload a CSV or key an order on a client's behalf: the
+// lookup fell back to fr_clients.portal_user = warehouse@... , matched
+// nothing, and returned "No client linked to this portal user".
+//
+// Writes now accept as_client, under stricter rules than reads:
+//   * ONLY the admin email may pass it. Anybody else who sends the parameter
+//     gets a flat 403 — a real client never has a reason to send it, so its
+//     presence is a tamper signal, not something to silently ignore.
+//   * The value must be a well-formed UUID; anything else is rejected before
+//     it reaches PostgREST.
+//   * The admin account with NO as_client is a hard 400 with a message that
+//     says what to do, instead of the misleading "no client linked" 404.
+//   * Every row written this way is stamped in internal_notes with the
+//     operator and timestamp, so a misfiled order can be traced later. This
+//     is the audit trail that replaces the old blanket ban (see the six WS4B
+//     orders filed under the wrong client in August 2026).
+const PORTAL_ADMIN_EMAIL = String(process.env.PORTAL_ADMIN_EMAIL || 'warehouse@fr-logistics.net')
+  .trim()
+  .toLowerCase();
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isPortalAdmin(portalUser) {
+  return String(portalUser || '').trim().toLowerCase() === PORTAL_ADMIN_EMAIL;
+}
+
+// Decide which fr_clients row this write belongs to.
+// Returns { error, status } on refusal, or { filter, onBehalf } on success.
+// `filter` is the PostgREST predicate; `onBehalf` is true when the internal
+// account is writing for somebody else and the row needs an audit stamp.
+function resolveClientTarget(portalUser, asClient) {
+  const admin = isPortalAdmin(portalUser);
+  const raw = asClient === undefined || asClient === null ? '' : String(asClient).trim();
+
+  if (raw === '') {
+    if (admin) {
+      return {
+        status: 400,
+        error: 'Internal view: pick a client in the "Viewing as" selector before submitting. ' +
+               'The warehouse account is not a client itself, so an order has to be filed under one.',
+      };
+    }
+    return { filter: `portal_user=eq.${encodeURIComponent(portalUser)}`, onBehalf: false };
+  }
+
+  if (!admin) {
+    return { status: 403, error: 'Not allowed to submit on behalf of another client' };
+  }
+  if (!UUID_RE.test(raw)) {
+    return { status: 400, error: 'Invalid as_client' };
+  }
+  return { filter: `id=eq.${raw}`, onBehalf: true };
+}
+
+// Text dropped into client_orders.internal_notes for on-behalf writes.
+function onBehalfStamp(portalUser) {
+  return `Created from the internal view by ${portalUser} on ${new Date().toISOString()}`;
+}
+
 // ShipStation header → internal DB column. Only the fields the portal cares
 // about; the other 32 ShipStation columns (Order Total, Buyer info, weights,
 // etc.) are ignored silently so the CSV can be uploaded as-is.
@@ -299,10 +364,16 @@ exports.handler = async (event) => {
   }
 
   try {
-    // 1. Resolve client by portal_user — include csv_defaults so we can apply
-    //    them to every row before validation. Single round trip.
+    // 1. Resolve the target client — either the one linked to portal_user, or
+    //    the one the internal account is explicitly filing for (as_client).
+    //    csv_defaults comes back in the same round trip so we can apply them
+    //    to every row before validation.
+    const target = resolveClientTarget(portalUser, payload.as_client);
+    if (target.error) {
+      return { statusCode: target.status, headers, body: JSON.stringify({ error: target.error }) };
+    }
     const clientRes = await sbFetch(
-      `fr_clients?portal_user=eq.${encodeURIComponent(portalUser)}&select=id,name,csv_defaults`
+      `fr_clients?${target.filter}&select=id,name,company,csv_defaults`
     );
     if (!clientRes.ok) {
       const t = await clientRes.text();
@@ -310,9 +381,18 @@ exports.handler = async (event) => {
     }
     const clients = await clientRes.json();
     if (!clients.length) {
-      return { statusCode: 404, headers, body: JSON.stringify({ error: 'No client linked to this portal user' }) };
+      return {
+        statusCode: 404,
+        headers,
+        body: JSON.stringify({
+          error: target.onBehalf
+            ? 'The selected client no longer exists'
+            : 'No client linked to this portal user',
+        }),
+      };
     }
     const client = clients[0];
+    const clientLabel = client.company || client.name || client.id;
     const csvDefaults = client.csv_defaults || {};
 
     // 2. Map ShipStation headers → internal field names, then force the
@@ -384,6 +464,8 @@ exports.handler = async (event) => {
         { client_id: client.id, order_number: grp.order_number, status: 'pending' },
         grp.order
       );
+      // Audit stamp: who filed this, for whom, when. Only on internal writes.
+      if (target.onBehalf) orderRow.internal_notes = onBehalfStamp(portalUser);
 
       const insertRes = await sbFetch('client_orders', {
         method: 'POST',
@@ -437,6 +519,10 @@ exports.handler = async (event) => {
         failed_orders: failed,
         row_errors: rowErrors,
         total_rows_received: rawRows.length,
+        // Echoed back so the UI can confirm out loud WHICH client the rows
+        // landed under — the cheapest guard against a misfiled batch.
+        client: { id: client.id, label: clientLabel },
+        on_behalf: !!target.onBehalf,
       }),
     };
   } catch (err) {
