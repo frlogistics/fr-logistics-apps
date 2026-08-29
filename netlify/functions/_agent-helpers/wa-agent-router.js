@@ -856,11 +856,9 @@ async function setSubState(conversationId, subState) {
 // digit runs. When the value isn't a plausible name we skip it (keep any
 // existing name) rather than overwrite with garbage.
 function isPlausibleName(raw) {
-  const s = String(raw || "").trim();
-  if (!s || s.length > 40) return false;
-  if (/[\n\r@?]/.test(s)) return false;
-  if (/\d{3,}/.test(s)) return false;
-  return s.split(/\s+/).filter(Boolean).length <= 4;
+  // Delegates to the capture module so the router and the parser can never
+  // disagree about what a name is.
+  return looksLikeName(String(raw || "").trim());
 }
 
 async function setCapturedNameEmail(conversationId, name, email) {
@@ -891,7 +889,11 @@ async function updateLeadFromCapture(leadId, { name, email }) {
     { auth: { persistSession: false } }
   );
   const patch = {};
-  if (name) patch.name = name;
+  // Same guard as setCapturedNameEmail. Without it wa_leads.name accepted
+  // whatever the parser returned, which is how entire messages ended up as
+  // lead names while wa_agent_conversations stayed clean.
+  if (name && isPlausibleName(name)) patch.name = name;
+  else if (name) console.log(`[router] updateLeadFromCapture: rejected junk name for lead ${leadId}`);
   if (email) patch.email = email;
   if (Object.keys(patch).length === 0) return;
   await sb
