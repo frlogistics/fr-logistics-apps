@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FR-Logistics · Pipeline Scorecard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',-apple-system,sans-serif;background:#F4F6FB;color:#1A2238;padding:1.4rem;min-height:100vh}
+  .wrap{max-width:1560px;margin:0 auto}
+
+  .hdr{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem;margin-bottom:1.3rem}
+  .hdr .eb{font-size:.66rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#00B4AA;margin-bottom:.3rem}
+  .hdr h1{font-size:1.55rem;font-weight:800;letter-spacing:-.02em;color:#0F1D35}
+  .hdr .sub{font-size:.85rem;color:#7B8AA0;margin-top:.2rem}
+  .hdrTools{display:flex;align-items:center;gap:.6rem}
+  .searchWrap{position:relative;display:flex;align-items:center}
+  #q{font-family:inherit;font-size:.85rem;padding:.5rem .8rem .5rem 2rem;width:270px;
+     border:1px solid #E4E9F2;border-radius:8px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-3.5-3.5'/%3E%3C/svg%3E") no-repeat .55rem center/.9rem}
+  #q:focus{outline:2px solid #00B4AA;border-color:#00B4AA}
+  #qClear{position:absolute;right:.45rem;border:none;background:none;cursor:pointer;
+          color:#94A3B8;font-size:1rem;line-height:1;padding:.2rem;display:none}
+  #qCount{font-size:.72rem;color:#7B8AA0;white-space:nowrap}
+  @media(max-width:820px){ #q{width:100%} .searchWrap{width:100%} }
+
+  .btn{border:1px solid #E4E9F2;background:#fff;color:#0F1D35;font-family:inherit;font-size:.78rem;font-weight:700;
+       padding:.5rem .9rem;border-radius:8px;cursor:pointer;transition:all .12s}
+  .btn:hover{border-color:#00B4AA;color:#00B4AA}
+  .btn:focus-visible{outline:2px solid #00B4AA;outline-offset:2px}
+  .btn.on{background:#0F1D35;color:#fff;border-color:#0F1D35}
+
+  /* KPI strip */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:.75rem;margin-bottom:1.2rem}
+  .kpi{background:#fff;border:1px solid #E4E9F2;border-radius:12px;padding:.95rem 1.05rem;box-shadow:0 2px 8px rgba(20,30,60,.04)}
+  .kpi .l{font-size:.66rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#94A3B8}
+  .kpi .v{font-size:1.85rem;font-weight:900;letter-spacing:-.03em;color:#0F1D35;margin-top:.3rem;line-height:1}
+  .kpi .f{font-size:.72rem;color:#7B8AA0;margin-top:.35rem}
+  /* Traffic light. Three saturated colours only — a fourth tone stops the
+     eye reading it as a signal. Yellow carries near-black text because
+     white on yellow fails contrast. */
+  .kpi.alert{border:2px solid #DC2626;background:#FEF2F2}
+  .kpi.alert .v{color:#DC2626}
+  .kpi.alert .l{color:#DC2626}
+  .kpi.warn{border:2px solid #EAB308;background:#FEFCE8}
+  .kpi.warn .v{color:#A16207}
+  .kpi.warn .l{color:#A16207}
+  .kpi.good .v{color:#15803D}
+
+  .card{background:#fff;border:1px solid #E4E9F2;border-radius:12px;box-shadow:0 2px 8px rgba(20,30,60,.04);margin-bottom:1.1rem}
+  .ch{padding:.85rem 1.1rem;border-bottom:1px solid #EEF2F7;display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap}
+  .ch h2{font-size:.82rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#475569}
+  .ch .note{font-size:.72rem;color:#94A3B8;font-weight:500;letter-spacing:0;text-transform:none}
+
+  table{width:100%;border-collapse:collapse;font-size:.82rem}
+  th{text-align:left;font-size:.64rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:#94A3B8;
+     padding:.6rem 1.1rem;border-bottom:1px solid #EEF2F7;white-space:nowrap;background:#FBFCFE}
+  td{padding:.7rem 1.1rem;border-bottom:1px solid #F4F7FA;vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  tr.row:hover{background:#F8FAFC}
+  .acct{font-weight:700;color:#0F1D35}
+  .meta{font-size:.72rem;color:#7B8AA0;margin-top:.15rem}
+  .ref{font-family:'Consolas',ui-monospace,monospace;font-size:.72rem;color:#475569}
+  .amt{font-family:'Consolas',ui-monospace,monospace;font-weight:700;color:#0F1D35;white-space:nowrap}
+
+  /* signature element: the idle-age bar. Length and colour encode how long
+     an item has sat with nobody touching it. */
+  .age{display:flex;align-items:center;gap:.45rem;min-width:104px}
+  .ageBar{height:6px;border-radius:3px;background:#00B4AA;flex-shrink:0}
+  .ageTxt{font-size:.7rem;font-weight:700;color:#7B8AA0;white-space:nowrap}
+  .a1{background:#16A34A}   /* 0-14 days  — moving */
+  .a2{background:#EAB308}   /* 15-30 days — slowing */
+  .a3{background:#DC2626}   /* 30+ days   — stopped */
+  .ageTxt.t3{color:#DC2626;font-weight:800}
+  .ageTxt.t2{color:#A16207;font-weight:800}
+
+  .flag{font-size:.66rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:.22rem .5rem;border-radius:5px;background:#DC2626;color:#fff;white-space:nowrap}
+  .flag.due{background:#EAB308;color:#1C1917}
+
+  select,input[type=text],input[type=date]{font-family:inherit;font-size:.76rem;padding:.32rem .45rem;
+       border:1px solid #E4E9F2;border-radius:6px;background:#fff;color:#0F1D35;max-width:100%}
+  select:focus,input:focus{outline:2px solid #00B4AA;outline-offset:0;border-color:#00B4AA}
+  .actWrap{display:flex;flex-direction:column;gap:.3rem;min-width:220px}
+  .actWrap input[type=text]{width:100%}
+  .actRow{display:flex;gap:.3rem;align-items:center}
+
+  .empty{padding:2.2rem 1.1rem;text-align:center;color:#94A3B8;font-size:.85rem}
+  .toast{position:fixed;bottom:1.2rem;right:1.2rem;background:#0F1D35;color:#fff;padding:.7rem 1.1rem;border-radius:9px;
+         font-size:.82rem;font-weight:600;box-shadow:0 6px 20px rgba(15,29,53,.25);opacity:0;transform:translateY(8px);
+         transition:opacity .2s,transform .2s;pointer-events:none;z-index:50;max-width:min(420px,90vw)}
+  .toast.show{opacity:1;transform:translateY(0)}
+  .toast.err{background:#C0392B}
+  .saving{opacity:.5}
+  .ovl{display:none;position:fixed;inset:0;background:rgba(15,29,53,.45);z-index:60;
+       align-items:center;justify-content:center;padding:1rem}
+  .ovl.show{display:flex}
+  .modal{background:#fff;border-radius:14px;width:min(860px,96vw);max-height:90vh;display:flex;
+         flex-direction:column;box-shadow:0 18px 50px rgba(15,29,53,.3)}
+  .mh{padding:1rem 1.2rem;border-bottom:1px solid #EEF2F7;display:flex;justify-content:space-between;align-items:center;gap:1rem}
+  .mh h3{font-size:.95rem;font-weight:800;color:#0F1D35}
+  .mb{padding:1.1rem 1.2rem;overflow:auto}
+  .mf{padding:.9rem 1.2rem;border-top:1px solid #EEF2F7;display:flex;justify-content:flex-end;align-items:center;gap:.6rem;flex-wrap:wrap}
+  .mf .note{margin-right:auto;font-size:.74rem;color:#7B8AA0}
+  .warn{background:#FEFCE8;border:2px solid #EAB308;border-radius:9px;padding:.7rem .9rem;margin-bottom:.9rem}
+  .warn.stop{background:#FEF2F2;border-color:#DC2626}
+  .warn li{font-size:.78rem;color:#713F12;margin-left:1rem;line-height:1.5}
+  .warn.stop li{color:#991B1B}
+  .kv{display:grid;grid-template-columns:150px 1fr;gap:.3rem .8rem;font-size:.8rem;margin-bottom:1rem}
+  .kv dt{color:#94A3B8;font-weight:700}
+  .kv dd{color:#0F1D35}
+  .rt{width:100%;border-collapse:collapse;font-size:.78rem}
+  .rt th{padding:.4rem .6rem;font-size:.62rem}
+  .rt td{padding:.4rem .6rem;border-bottom:1px solid #F4F7FA}
+  .modal.wide{width:min(1000px,96vw)}
+  .dsHead{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;
+          padding-bottom:.9rem;border-bottom:1px solid #EEF2F7;margin-bottom:1rem}
+  .dsHead h4{font-size:1.15rem;font-weight:800;color:#0F1D35;letter-spacing:-.01em}
+  .dsBadge{font-size:.64rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+           padding:.25rem .55rem;border-radius:5px}
+  .dsBadge.client{background:#16A34A;color:#fff}
+  .dsBadge.prospect{background:#EAB308;color:#1C1917}
+  .sec{margin-bottom:1.3rem}
+  .secH{display:flex;align-items:baseline;gap:.5rem;margin-bottom:.45rem}
+  .secH h5{font-size:.68rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:#475569}
+  .secH .cnt{font-size:.7rem;color:#94A3B8;font-weight:600}
+  .secEmpty{font-size:.78rem;color:#94A3B8;padding:.3rem 0}
+  .secErr{font-size:.78rem;color:#991B1B;background:#FEF2F2;border:1px solid #DC2626;
+          border-radius:7px;padding:.5rem .7rem}
+  .dsLink{background:none;border:none;padding:0;font:inherit;color:#0F1D35;font-weight:700;
+          cursor:pointer;text-align:left;border-bottom:1px dotted #94A3B8}
+  .dsLink:hover{color:#00867E;border-bottom-color:#00867E}
+  .rateGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:.3rem .9rem;font-size:.78rem}
+  .rateGrid span{display:flex;justify-content:space-between;gap:.5rem;padding:.15rem 0;border-bottom:1px solid #F4F7FA}
+  .rateGrid b{font-family:'Consolas',ui-monospace,monospace;color:#0F1D35}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  @media(max-width:820px){ body{padding:.9rem} .hdr{align-items:flex-start} th,td{padding:.55rem .7rem} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hdr">
+    <div>
+      <div class="eb">FR-Logistics · Commercial</div>
+      <h1>Pipeline Scorecard</h1>
+      <div class="sub" id="sub">Loading…</div>
+    </div>
+    <div class="hdrTools">
+      <div class="searchWrap">
+        <input type="search" id="q" placeholder="Search name, company, email, phone, reference"
+               autocomplete="off" oninput="onSearch(this.value)"
+               onkeydown="if(event.key==='Escape'){this.value='';onSearch('')}">
+        <button id="qClear" onclick="document.getElementById('q').value='';onSearch('')"
+                title="Clear search" aria-label="Clear search">&times;</button>
+      </div>
+      <span id="qCount"></span>
+      <button class="btn on" id="fAll"    onclick="setFilter('all',this)">All</button>
+      <button class="btn"    id="fAction" onclick="setFilter('action',this)">Needs action</button>
+      <button class="btn"    id="fStale"  onclick="setFilter('stale',this)">Idle 30+ days</button>
+      <button class="btn" onclick="load()">Refresh</button>
+      <button class="btn" onclick="signOut()" title="Forget the token on this browser">Sign out</button>
+    </div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="card">
+    <div class="ch">
+      <h2>Quotes</h2>
+      <span class="note">Change the status here and it saves to the database immediately.</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>Account</th><th>Reference</th><th>Monthly</th><th>Minimum</th>
+          <th>Idle</th><th>Expires</th><th>Status</th>
+        </tr></thead>
+        <tbody id="qBody"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="qEmpty" style="display:none">No quotes match the current search or filter.</div>
+  </div>
+
+  <div class="card">
+    <div class="ch">
+      <h2>Leads</h2>
+      <span class="note">Only real leads. Duplicates, internal numbers and vendors are filtered out.</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>Contact</th><th>Interest</th><th>Source</th>
+          <th>Idle</th><th>Next action</th><th>Status</th>
+        </tr></thead>
+        <tbody id="lBody"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="lEmpty" style="display:none">No leads match the current search or filter.</div>
+  </div>
+
+</div>
+<div id="convOverlay" class="ovl" onclick="if(event.target===this)closeConvert()">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="convTitle">
+    <div class="mh"><h3 id="convTitle">Create client from quote</h3>
+      <button class="btn" onclick="closeConvert()" aria-label="Close">Close</button></div>
+    <div class="mb" id="convBody">Loading…</div>
+    <div class="mf">
+      <span class="note" id="convHint"></span>
+      <button class="btn" onclick="closeConvert()">Cancel</button>
+      <button class="btn on" id="convGo" onclick="doConvert()">Create client</button>
+    </div>
+  </div>
+</div>
+<div id="gateOverlay" class="ovl" style="z-index:70">
+  <div class="modal" style="width:min(460px,94vw)" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+    <div class="mh"><h3 id="gateTitle">Access token required</h3></div>
+    <div class="mb">
+      <p style="font-size:.85rem;color:#475569;line-height:1.55;margin-bottom:.9rem">
+        This board shows quote amounts and prospect contacts, so the API asks for
+        a token. Enter it once — it stays in this browser only.</p>
+      <input type="password" id="gateInput" placeholder="Access token"
+             style="width:100%;padding:.6rem .7rem;font-size:.9rem"
+             onkeydown="if(event.key==='Enter')submitToken()">
+      <div id="gateErr" style="display:none;font-size:.78rem;color:#C0392B;margin-top:.5rem">
+        That token was rejected. Check it in Netlify under FR_APP_TOKEN.</div>
+    </div>
+    <div class="mf"><button class="btn on" onclick="submitToken()">Unlock</button></div>
+  </div>
+</div>
+<div id="dsOverlay" class="ovl" onclick="if(event.target===this)closeDossier()">
+  <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="dsTitle">
+    <div class="mh"><h3 id="dsTitle">Account file</h3>
+      <button class="btn" onclick="closeDossier()" aria-label="Close">Close</button></div>
+    <div class="mb" id="dsBody">Loading…</div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const API = "/.netlify/functions/crm-board";
+/* ── Access token ──────────────────────────────────────────────────────────
+   The API refuses any request without this token. It is typed once and kept
+   in this browser only — it is never written into the page, because this
+   repository is public. Clearing it signs this browser out. */
+const TOKEN_KEY = "fr_app_token";
+const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } };
+const setToken = (t) => { try { localStorage.setItem(TOKEN_KEY, t); } catch {} };
+const clearToken = () => { try { localStorage.removeItem(TOKEN_KEY); } catch {} };
+const authHeaders = (extra) => Object.assign({ "x-fr-token": getToken() }, extra || {});
+const CONVERT_API = "/.netlify/functions/quote-convert";
+const DOSSIER_API = "/.netlify/functions/client-dossier";
+const QUOTE_STATUSES = ['draft','sent','negotiating','won','lost'];
+const LEAD_STATUSES   = ['new','qualifying','sent_to_sales','won','lost'];
+let DATA = { quotes:[], leads:[], kpi:{} };
+let FILTER = 'all';
+let QUERY = '';
+
+/* Search runs over the data already in memory — no endpoint, no round trip.
+   Every field someone might arrive with is searchable, because the point is
+   "a +57 number just messaged me, who is this?". */
+const norm = s => String(s==null?'':s).toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^a-z0-9@.]+/g,' ').trim();
+
+function haystack(row, kind){
+  const f = kind==='quote'
+    ? [row.client_name,row.contact_name,row.contact_email,row.quote_id,row.op_type,row.channel,row.notes,row.owner]
+    : [row.name,row.email,row.phone,row.country,row.service,row.service_detail,
+       row.monthly_volume,row.source,row.notes,row.next_action,row.owner];
+  return norm(f.join(' ')) + ' ' + String(row.phone||'').replace(/\D/g,'');
+}
+
+function matchesQuery(row, kind){
+  if(!QUERY) return true;
+  const hay = row._hay || (row._hay = haystack(row,kind));
+  // Every term must appear somewhere, so "juan argentina" narrows instead of widening.
+  return QUERY.split(' ').filter(Boolean).every(t => hay.includes(t));
+}
+
+let _qTimer;
+function onSearch(v){
+  document.getElementById('qClear').style.display = v ? 'block' : 'none';
+  clearTimeout(_qTimer);
+  _qTimer = setTimeout(()=>{
+    const digits = v.replace(/\D/g,'');
+    QUERY = digits.length >= 6 ? digits : norm(v);
+    render();
+  }, 120);
+}
+
+const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const money = n => (n==null||n==='') ? '—'
+  : '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+
+let toastTimer;
+function toast(msg, isErr){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast show'+(isErr?' err':'');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.className='toast',3600);
+}
+
+/* The idle bar is the spine of this board: how long something has sat
+   with nobody touching it. Caps at 60 days so one ancient row does not
+   flatten the rest of the scale. */
+/* Traffic light, three states only:
+   green 0-14d moving · yellow 15-30d slowing · red 30+d stopped. */
+function ageCell(days){
+  if(days==null) return '<span class="ageTxt">—</span>';
+  const w   = Math.max(8, Math.min(60, days) / 60 * 64);
+  const cls = days>30 ? 'a3' : days>14 ? 'a2' : 'a1';
+  const txt = days>30 ? 't3' : days>14 ? 't2' : '';
+  const lbl = days===0 ? 'today' : days+'d';
+  return `<div class="age"><span class="ageBar ${cls}" style="width:${w}px"></span>`
+       + `<span class="ageTxt ${txt}">${lbl}</span></div>`;
+}
+
+/* One control, not two: the select already shows the current status, so the
+   pill next to it was repeating itself and costing a line per row. */
+function statusSelect(kind, id, current){
+  const list = kind==='quote' ? QUOTE_STATUSES : LEAD_STATUSES;
+  const fn   = kind==='quote' ? 'saveQuoteStatus' : 'saveLeadStatus';
+  const opts = list.map(s=>`<option value="${s}"${s===current?' selected':''}>`
+             + s.replace(/_/g,' ')+`</option>`).join('');
+  return `<select class="statusSel s-${esc(current)}" onchange="${fn}('${esc(id)}',this)"
+                  aria-label="Status">${opts}</select>`;
+}
+
+function renderKPIs(k){
+  const cards = [
+    ['Open quotes', k.open_quotes, `${k.unsent_quotes} still unsent`, k.unsent_quotes>0?'warn':''],
+    ['Value on the table', money(k.value_on_table), 'Monthly, open quotes only', 'good'],
+    ['Expiring in 7 days', k.expiring_7d, k.expired_quotes?`${k.expired_quotes} already expired`:'None expired', (k.expiring_7d||k.expired_quotes)?'alert':''],
+    ['Leads untouched', k.leads_untouched, `${k.leads_working} being worked`, k.leads_untouched>25?'warn':''],
+    ['Overdue actions', k.actions_overdue, `${k.actions_next_7d} due in 7 days`, k.actions_overdue>0?'alert':''],
+    ['Idle over 30 days', k.stale_over_30d, 'Quotes and leads, nobody touched', k.stale_over_30d>10?'warn':''],
+    ['Won', k.won_quotes, `${k.lost_quotes} lost`, 'good']
+  ];
+  document.getElementById('kpis').innerHTML = cards.map(([l,v,f,c])=>
+    `<div class="kpi ${c}"><div class="l">${esc(l)}</div><div class="v">${esc(v)}</div>`
+   +`<div class="f">${esc(f)}</div></div>`).join('');
+}
+
+function passes(row, kind){
+  if(!matchesQuery(row, kind)) return false;
+  if(FILTER==='stale')  return (row.days_idle||0) > 30;
+  if(FILTER==='action') return kind==='quote'
+    ? (row.expired || (row.days_to_expiry!=null && row.days_to_expiry<=7) || row.status==='draft')
+    : (row.action_overdue || row.status==='new');
+  return true;
+}
+
+function renderQuotes(){
+  const rows = DATA.quotes
+    .filter(q=>['draft','sent','negotiating'].includes(q.status))
+    .filter(q=>passes(q,'quote'));
+  document.getElementById('qEmpty').style.display = rows.length?'none':'block';
+  document.getElementById('qBody').innerHTML = rows.map(q=>{
+    // A quote expiring today is as urgent as one already expired — both red.
+    let exp = '<span class="ageTxt">—</span>';
+    if(q.expired) exp = `<span class="flag">expired ${Math.abs(q.days_to_expiry)}d ago</span>`;
+    else if(q.days_to_expiry===0) exp = `<span class="flag">expires today</span>`;
+    else if(q.days_to_expiry!=null) exp = q.days_to_expiry<=7
+      ? `<span class="flag due">in ${q.days_to_expiry}d</span>`
+      : `<span class="ageTxt">${esc(q.valid_until)}</span>`;
+    const unsent = q.status==='draft' ? ' <span class="flag due">not sent</span>' : '';
+    return `<tr class="row" id="q-${esc(q.quote_id)}">
+      <td><button class="dsLink" onclick="openDossier({quote_id:'${esc(q.quote_id)}'})"
+                  title="Open account file">${esc(q.client_name)}</button>${unsent}
+          <div class="meta">${esc(q.contact_name||q.contact_email||'')}</div></td>
+      <td><span class="ref">${esc(q.quote_id)}</span><div class="meta">${esc(q.op_type||'')}</div></td>
+      <td class="amt">${money(q.subtotal)}</td>
+      <td class="amt">${money(q.min_billing)}</td>
+      <td>${ageCell(q.days_idle)}</td>
+      <td>${exp}</td>
+      <td>${statusSelect('quote', q.quote_id, q.status)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderLeads(){
+  const rows = DATA.leads.filter(l=>passes(l,'lead'));
+  document.getElementById('lEmpty').style.display = rows.length?'none':'block';
+  document.getElementById('lBody').innerHTML = rows.map(l=>{
+    const name = (l.name||'').length>60 ? (l.name||'').slice(0,60)+'…' : (l.name||l.email||'Unnamed');
+    const due  = l.action_overdue ? '<span class="flag">overdue</span>' : '';
+    const interest = l.service_detail
+      ? (l.service_detail.length>70 ? l.service_detail.slice(0,70)+'…' : l.service_detail)
+      : (l.service||'').replace(/_/g,' ');
+    return `<tr class="row" id="l-${esc(l.id)}">
+      <td><button class="dsLink" onclick="openDossier({lead_id:'${esc(l.id)}'})"
+                  title="Open account file">${esc(name)}</button>
+          <div class="meta">${esc(l.email||'')}${l.phone?' · '+esc(l.phone):''}</div></td>
+      <td><div class="meta" style="margin:0">${esc(interest)}</div>
+          ${l.monthly_volume?`<div class="meta">${esc(l.monthly_volume)}</div>`:''}</td>
+      <td><div class="meta" style="margin:0">${esc((l.source||'').replace(/_/g,' '))}</div>
+          <div class="meta">${esc((l.created_at||'').slice(0,10))}</div></td>
+      <td>${ageCell(l.days_idle)}</td>
+      <td><div class="actWrap">
+            <input type="text" value="${esc(l.next_action||'')}" placeholder="What happens next"
+                   onchange="saveLeadAction('${esc(l.id)}',this)">
+            <div class="actRow">
+              <input type="date" value="${esc(l.next_action_date||'')}"
+                     onchange="saveLeadDate('${esc(l.id)}',this)">${due}
+            </div>
+          </div></td>
+      <td>${statusSelect('lead', l.id, l.status)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function render(){
+  renderKPIs(DATA.kpi); renderQuotes(); renderLeads();
+  const q = DATA.quotes.filter(x=>['draft','sent','negotiating'].includes(x.status) && passes(x,'quote')).length;
+  const l = DATA.leads.filter(x=>passes(x,'lead')).length;
+  document.getElementById('qCount').textContent =
+    QUERY ? `${q+l} match${q+l===1?'':'es'}` : '';
+}
+
+function setFilter(f, btn){
+  FILTER=f;
+  document.querySelectorAll('.hdrTools .btn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  render();
+}
+
+async function load(){
+  try{
+    if(!getToken()){ showGate(false); return; }
+    const r = await fetch(API+'?action=board', { headers: authHeaders() });
+    const j = await r.json();
+    if(r.status===401 || j.need_token){ showGate(true); return; }
+    if(!j.ok) throw new Error(j.error||'Could not load the board');
+    DATA=j; render();
+    document.getElementById('sub').textContent =
+      'Live from Supabase · updated '+new Date(j.generated_at)
+        .toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  }catch(e){
+    document.getElementById('sub').textContent='Could not reach the board. Press Refresh to try again.';
+    toast(e.message,true);
+  }
+}
+
+async function post(body, rowEl){
+  if(rowEl) rowEl.classList.add('saving');
+  try{
+    const r = await fetch(API,{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),
+                              body:JSON.stringify(body)});
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'Save failed');
+    return j.row;
+  } finally { if(rowEl) rowEl.classList.remove('saving'); }
+}
+
+async function saveQuoteStatus(quoteId, sel){
+  const row=document.getElementById('q-'+quoteId);
+  try{
+    await post({action:'update_quote',quote_id:quoteId,status:sel.value},row);
+    const q=DATA.quotes.find(x=>x.quote_id===quoteId); if(q) q.status=sel.value;
+    toast('Quote '+quoteId+' moved to '+sel.value.replace(/_/g,' ')); render();
+    if(sel.value==='won') openConvert(quoteId);
+  }catch(e){ toast(e.message,true); load(); }
+}
+async function saveLeadStatus(id, sel){
+  const row=document.getElementById('l-'+id);
+  try{
+    await post({action:'update_lead',id:id,status:sel.value},row);
+    const l=DATA.leads.find(x=>x.id===id); if(l) l.status=sel.value;
+    toast('Lead moved to '+sel.value.replace(/_/g,' ')); render();
+  }catch(e){ toast(e.message,true); load(); }
+}
+async function saveLeadAction(id, input){
+  try{
+    await post({action:'update_lead',id:id,next_action:input.value},document.getElementById('l-'+id));
+    const l=DATA.leads.find(x=>x.id===id); if(l) l.next_action=input.value;
+    toast('Next action saved');
+  }catch(e){ toast(e.message,true); }
+}
+async function saveLeadDate(id, input){
+  try{
+    await post({action:'update_lead',id:id,next_action_date:input.value||null},
+               document.getElementById('l-'+id));
+    const l=DATA.leads.find(x=>x.id===id); if(l) l.next_action_date=input.value||null;
+    toast('Date saved'); load();
+  }catch(e){ toast(e.message,true); }
+}
+
+/* ── Create client from a won quote ────────────────────────────────────────
+   Always previews first. Nothing is written until "Create client" is pressed. */
+let _convQuote=null, _convAllowDup=false;
+
+async function openConvert(quoteId){
+  _convQuote=quoteId; _convAllowDup=false;
+  document.getElementById('convOverlay').classList.add('show');
+  document.getElementById('convBody').innerHTML='Loading preview…';
+  document.getElementById('convGo').style.display='none';
+  document.getElementById('convHint').textContent='';
+  try{
+    const r=await fetch(CONVERT_API,{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),
+                                    body:JSON.stringify({quote_id:quoteId})});
+    const p=await r.json();
+    if(!p.ok) throw new Error(p.error||'Preview failed');
+    renderConvert(p);
+  }catch(e){
+    document.getElementById('convBody').innerHTML='<div class="warn stop"><li>'+esc(e.message)+'</li></div>';
+  }
+}
+function closeConvert(){ document.getElementById('convOverlay').classList.remove('show'); _convQuote=null; }
+
+function renderConvert(p){
+  const c=p.client;
+  const dupes=(p.existing_clients||[]).length;
+  let html='';
+  if(p.warnings&&p.warnings.length)
+    html+='<div class="warn'+(p.blocking?' stop':'')+'"><ul style="list-style:disc">'
+        + p.warnings.map(w=>'<li>'+esc(w)+'</li>').join('')+'</ul></div>';
+  html+='<dl class="kv">'
+     +'<dt>Client code</dt><dd class="ref">'+esc(p.client_code)+'</dd>'
+     +'<dt>Company</dt><dd>'+esc(c.company)+'</dd>'
+     +'<dt>Contact</dt><dd>'+esc(c.name)+(c.email?' · '+esc(c.email):'')+'</dd>'
+     +'<dt>Status</dt><dd>'+esc(c.status)+'</dd>'
+     +'<dt>Minimum billing</dt><dd>'+money(c.mmb)+'</dd>'
+     +'<dt>Services</dt><dd>'+esc((p.services||[]).join(', ')||'—')+'</dd>'
+     +'</dl>';
+  html+='<div style="font-size:.68rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;'
+      + 'color:#94A3B8;margin-bottom:.4rem">Rates that become contractual</div>';
+  if(!(p.rates||[]).length){
+    html+='<div class="meta">No quoted line maps to a rate column.</div>';
+  }else{
+    html+='<table class="rt"><thead><tr><th>Service</th><th>Code</th><th>Column</th><th>Rate</th></tr></thead><tbody>'
+        + p.rates.map(r=>'<tr><td>'+esc(r.service||'')+'</td><td class="ref">'+esc(r.code)+'</td>'
+        + '<td class="ref">'+esc(r.column)+(r.billing_gap?' <span class="flag due">not billed yet</span>':'')+'</td>'
+        + '<td class="amt">$'+Number(r.rate).toFixed(2)+'</td></tr>').join('')+'</tbody></table>';
+  }
+  if((p.unmapped||[]).length)
+    html+='<div class="meta" style="margin-top:.7rem">Not saved: '
+        + p.unmapped.map(u=>esc(u.code)).join(', ')+'</div>';
+  document.getElementById('convBody').innerHTML=html;
+
+  const go=document.getElementById('convGo');
+  if(p.quote_status!=='won'){
+    go.style.display='none';
+    document.getElementById('convHint').textContent='Mark the quote won before converting it.';
+  }else{
+    go.style.display='';
+    go.textContent = dupes ? 'Create anyway' : 'Create client';
+    _convAllowDup = dupes>0;
+    document.getElementById('convHint').textContent = dupes
+      ? 'A matching client already exists. Check it before creating a second record.'
+      : 'This writes to fr_clients and fr_client_rates.';
+  }
+}
+
+async function doConvert(){
+  const go=document.getElementById('convGo');
+  go.disabled=true; go.textContent='Creating…';
+  try{
+    const r=await fetch(CONVERT_API,{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),
+      body:JSON.stringify({quote_id:_convQuote,confirm:true,allow_duplicate:_convAllowDup})});
+    const j=await r.json();
+    if(!j.ok) throw new Error(j.error||'Could not create the client');
+    toast('Client '+j.client_code+' created with '+j.rates_written+' rates');
+    closeConvert(); load();
+  }catch(e){ toast(e.message,true); }
+  finally{ go.disabled=false; go.textContent='Create client'; }
+}
+
+function showGate(wrong){
+  document.getElementById('gateErr').style.display = wrong ? 'block' : 'none';
+  document.getElementById('gateOverlay').classList.add('show');
+  setTimeout(()=>document.getElementById('gateInput').focus(),50);
+}
+function submitToken(){
+  const v=document.getElementById('gateInput').value.trim();
+  if(!v) return;
+  setToken(v);
+  document.getElementById('gateOverlay').classList.remove('show');
+  document.getElementById('gateInput').value='';
+  load();
+}
+function signOut(){ clearToken(); location.reload(); }
+
+/* ── Account file ──────────────────────────────────────────────────────────
+   Read only. Everything known about one account: who they are, their quotes,
+   the leads they came in through, recent operations and negotiated rates.
+   Each section shows the last few rows and the true total beside it — a
+   client with 221 shipments does not need 221 rows to be understood. */
+function closeDossier(){ document.getElementById('dsOverlay').classList.remove('show'); }
+
+async function openDossier(params){
+  const qs = new URLSearchParams(params).toString();
+  document.getElementById('dsOverlay').classList.add('show');
+  document.getElementById('dsBody').innerHTML = 'Loading…';
+  try{
+    const r = await fetch(DOSSIER_API+'?'+qs, { headers: authHeaders() });
+    const d = await r.json();
+    if(r.status===401 || d.need_token){ closeDossier(); showGate(true); return; }
+    if(!d.ok) throw new Error(d.error||'Could not load the account file');
+    renderDossier(d);
+  }catch(e){
+    document.getElementById('dsBody').innerHTML =
+      '<div class="secErr">'+esc(e.message)+'</div>';
+  }
+}
+
+const dsDate = s => s ? String(s).slice(0,10) : '—';
+
+function section(title, block, cols, rowFn){
+  if(block && block.error)
+    return sh(title,'') + '<div class="secErr">Could not load: '+esc(block.error)+'</div></div>';
+  const rows = (block && block.rows) || [];
+  const total = (block && block.total) || 0;
+  const count = total > rows.length ? `showing ${rows.length} of ${total}` : `${total}`;
+  if(!rows.length) return sh(title,'0') + '<div class="secEmpty">Nothing recorded.</div></div>';
+  return sh(title,count)
+    + '<table class="rt"><thead><tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'
+    + rows.map(rowFn).join('') + '</tbody></table></div>';
+}
+function sh(title,count){
+  return '<div class="sec"><div class="secH"><h5>'+esc(title)+'</h5>'
+       + '<span class="cnt">'+esc(count)+'</span></div>';
+}
+const td = v => '<td>'+esc(v==null||v===''?'—':v)+'</td>';
+
+function renderDossier(d){
+  const c = d.client;
+  const title = c ? c.company : (d.quotes.rows[0]?.client_name || d.leads.rows[0]?.name || 'Account');
+  let html = '<div class="dsHead"><div>'
+    + '<h4>'+esc(title)+'</h4>'
+    + '<div class="meta">'+esc([c&&c.name, c&&c.email, c&&c.phone, c&&c.country].filter(Boolean).join(' · ')
+        || (d.quotes.rows[0]&&d.quotes.rows[0].contact_email) || '')+'</div></div>'
+    + '<span class="dsBadge '+(d.is_client?'client':'prospect')+'">'
+    + (d.is_client ? esc(c.status||'client') : 'prospect') + '</span></div>';
+
+  if(c){
+    html += '<dl class="kv">'
+      + '<dt>Client code</dt><dd class="ref">'+esc(c.ss_custom_field_1||'—')+'</dd>'
+      + '<dt>Services</dt><dd>'+esc((c.services||[]).join(', ')||'—')+'</dd>'
+      + '<dt>Minimum billing</dt><dd>'+(c.mmb?money(c.mmb):'<b style="color:#DC2626">none set</b>')+'</dd>'
+      + '<dt>Billing cycle</dt><dd>'+esc(c.billing_cadence||'—')+'</dd>'
+      + '<dt>Shipping markup</dt><dd>'+esc(c.shipping_markup!=null?c.shipping_markup+'%':'—')+'</dd>'
+      + '<dt>Since</dt><dd>'+dsDate(c.created_at)+'</dd>'
+      + '</dl>';
+    if(c.notes) html += '<div class="meta" style="margin:-.4rem 0 1rem">'+esc(c.notes)+'</div>';
+  } else if(d.note){
+    html += '<div class="warn"><li>'+esc(d.note)+'</li></div>';
+  }
+
+  html += section('Quotes', d.quotes,
+    ['Reference','Scope','Monthly','Minimum','Date','Status'],
+    q => '<tr>'+td(q.quote_id)+td(q.op_type)+td(q.subtotal!=null?money(q.subtotal):'—')
+       + td(q.min_billing!=null?money(q.min_billing):'—')+td(dsDate(q.quote_date))
+       + '<td><span class="statusSel s-'+esc(q.status)+'" style="cursor:default">'
+       + esc(String(q.status).replace(/_/g,' '))+'</span></td></tr>');
+
+  html += section('Leads', d.leads,
+    ['Name','Contact','Interest','Source','First seen','Status'],
+    l => '<tr>'+td((l.name||'').slice(0,40))+td(l.email||l.phone)
+       + td((l.service_detail||l.service||'').slice(0,60))+td((l.source||'').replace(/_/g,' '))
+       + td(dsDate(l.created_at))+td(String(l.status||'').replace(/_/g,' '))+'</tr>');
+
+  if(d.is_client){
+    html += section('Recent shipments', d.shipments,
+      ['Received','Direction','Type','Carrier','Tracking','Billed'],
+      s => '<tr>'+td(dsDate(s.received_at||s.created_at))+td(s.direction)+td(s.type)
+         + td(s.carrier)+td(s.tracking)+td(s.billed_at?'yes':'no')+'</tr>');
+
+    html += section('Recent orders', d.orders,
+      ['Date','Order','Recipient','Destination','Service','Status'],
+      o => '<tr>'+td(dsDate(o.created_at))+td(o.order_number)+td(o.recipient_name)
+         + td([o.city,o.state,o.country_code].filter(Boolean).join(', '))
+         + td(o.shipping_service)+td(o.status)+'</tr>');
+
+    html += section('DropShipments', d.dropshipments,
+      ['Date','Tracking in','Carrier','Content','Boxes','Status'],
+      s => '<tr>'+td(dsDate(s.created_at))+td(s.tracking_number)+td(s.carrier)
+         + td((s.content||'').slice(0,40))+td(s.qty_boxes)+td(s.status)+'</tr>');
+
+    html += section('Billing', d.billing,
+      ['Invoice','Period','Packages','Minimum','Total','Status'],
+      b => '<tr>'+td(b.invoice_number)
+         + td(dsDate(b.period_start)+' → '+dsDate(b.period_end))+td(b.package_count)
+         + td(b.mmb_amount!=null?money(b.mmb_amount):'—')
+         + '<td class="amt">'+(b.total_usd!=null?money(b.total_usd):'—')+'</td>'
+         + td(b.status)+'</tr>');
+
+    // Rates are a wide row of numbers, so they read better as pairs than as a table.
+    const rr = (d.rates && d.rates.rows && d.rates.rows[0]) || null;
+    if(rr){
+      const skip = new Set(['id','client_name','client_id','updated_at','created_at','notes']);
+      const pairs = Object.entries(rr).filter(([k,v])=>!skip.has(k) && v!=null && v!=='');
+      html += sh('Negotiated rates', String(pairs.length)+' set')
+        + (pairs.length
+            ? '<div class="rateGrid">'+pairs.map(([k,v])=>'<span>'+esc(k.replace(/_/g,' '))
+              + '<b>$'+Number(v).toFixed(2)+'</b></span>').join('')+'</div>'
+            : '<div class="secEmpty">Falls back to DEFAULT rates.</div>')
+        + '</div>';
+    } else {
+      html += sh('Negotiated rates','0')
+        + '<div class="secEmpty">No rate row — this account bills at DEFAULT rates.</div></div>';
+    }
+  }
+
+  document.getElementById('dsBody').innerHTML = html;
+}
+
+load();
+setInterval(load, 120000);
+</script>
+</body>
+</html>
