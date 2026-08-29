@@ -15,6 +15,14 @@
   .hdr h1{font-size:1.55rem;font-weight:800;letter-spacing:-.02em;color:#0F1D35}
   .hdr .sub{font-size:.85rem;color:#7B8AA0;margin-top:.2rem}
   .hdrTools{display:flex;align-items:center;gap:.6rem}
+  .searchWrap{position:relative;display:flex;align-items:center}
+  #q{font-family:inherit;font-size:.85rem;padding:.5rem .8rem .5rem 2rem;width:270px;
+     border:1px solid #E4E9F2;border-radius:8px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-3.5-3.5'/%3E%3C/svg%3E") no-repeat .55rem center/.9rem}
+  #q:focus{outline:2px solid #00B4AA;border-color:#00B4AA}
+  #qClear{position:absolute;right:.45rem;border:none;background:none;cursor:pointer;
+          color:#94A3B8;font-size:1rem;line-height:1;padding:.2rem;display:none}
+  #qCount{font-size:.72rem;color:#7B8AA0;white-space:nowrap}
+  @media(max-width:820px){ #q{width:100%} .searchWrap{width:100%} }
 
   .btn{border:1px solid #E4E9F2;background:#fff;color:#0F1D35;font-family:inherit;font-size:.78rem;font-weight:700;
        padding:.5rem .9rem;border-radius:8px;cursor:pointer;transition:all .12s}
@@ -28,11 +36,16 @@
   .kpi .l{font-size:.66rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#94A3B8}
   .kpi .v{font-size:1.85rem;font-weight:900;letter-spacing:-.03em;color:#0F1D35;margin-top:.3rem;line-height:1}
   .kpi .f{font-size:.72rem;color:#7B8AA0;margin-top:.35rem}
-  .kpi.alert{border-color:#F3B0B0;background:#FFF7F7}
-  .kpi.alert .v{color:#C0392B}
-  .kpi.warn{border-color:#F4D9A8;background:#FFFCF5}
-  .kpi.warn .v{color:#B26B00}
-  .kpi.good .v{color:#00867E}
+  /* Traffic light. Three saturated colours only — a fourth tone stops the
+     eye reading it as a signal. Yellow carries near-black text because
+     white on yellow fails contrast. */
+  .kpi.alert{border:2px solid #DC2626;background:#FEF2F2}
+  .kpi.alert .v{color:#DC2626}
+  .kpi.alert .l{color:#DC2626}
+  .kpi.warn{border:2px solid #EAB308;background:#FEFCE8}
+  .kpi.warn .v{color:#A16207}
+  .kpi.warn .l{color:#A16207}
+  .kpi.good .v{color:#15803D}
 
   .card{background:#fff;border:1px solid #E4E9F2;border-radius:12px;box-shadow:0 2px 8px rgba(20,30,60,.04);margin-bottom:1.1rem}
   .ch{padding:.85rem 1.1rem;border-bottom:1px solid #EEF2F7;display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap}
@@ -55,20 +68,14 @@
   .age{display:flex;align-items:center;gap:.45rem;min-width:104px}
   .ageBar{height:6px;border-radius:3px;background:#00B4AA;flex-shrink:0}
   .ageTxt{font-size:.7rem;font-weight:700;color:#7B8AA0;white-space:nowrap}
-  .a1{background:#00B4AA}.a2{background:#F0B429}.a3{background:#E8833A}.a4{background:#C0392B}
+  .a1{background:#16A34A}   /* 0-14 days  — moving */
+  .a2{background:#EAB308}   /* 15-30 days — slowing */
+  .a3{background:#DC2626}   /* 30+ days   — stopped */
+  .ageTxt.t3{color:#DC2626;font-weight:800}
+  .ageTxt.t2{color:#A16207;font-weight:800}
 
-  .pill{display:inline-block;font-size:.66rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
-        padding:.2rem .5rem;border-radius:5px;white-space:nowrap}
-  .p-draft{background:#EEF2F7;color:#475569}
-  .p-sent{background:#E6F7F6;color:#00867E}
-  .p-negotiating{background:#FFF4E0;color:#B26B00}
-  .p-won{background:#E4F6E8;color:#1E7B3C}
-  .p-lost{background:#F6E7E7;color:#A03A2E}
-  .p-new{background:#EAF0FB;color:#3A5BA0}
-  .p-qualifying{background:#FFF4E0;color:#B26B00}
-  .p-sent_to_sales{background:#E6F7F6;color:#00867E}
-  .flag{font-size:.66rem;font-weight:800;padding:.2rem .45rem;border-radius:5px;background:#FBE9E7;color:#C0392B;white-space:nowrap}
-  .flag.due{background:#FFF4E0;color:#B26B00}
+  .flag{font-size:.66rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:.22rem .5rem;border-radius:5px;background:#DC2626;color:#fff;white-space:nowrap}
+  .flag.due{background:#EAB308;color:#1C1917}
 
   select,input[type=text],input[type=date]{font-family:inherit;font-size:.76rem;padding:.32rem .45rem;
        border:1px solid #E4E9F2;border-radius:6px;background:#fff;color:#0F1D35;max-width:100%}
@@ -94,10 +101,10 @@
   .mb{padding:1.1rem 1.2rem;overflow:auto}
   .mf{padding:.9rem 1.2rem;border-top:1px solid #EEF2F7;display:flex;justify-content:flex-end;align-items:center;gap:.6rem;flex-wrap:wrap}
   .mf .note{margin-right:auto;font-size:.74rem;color:#7B8AA0}
-  .warn{background:#FFFCF5;border:1px solid #F4D9A8;border-radius:9px;padding:.7rem .9rem;margin-bottom:.9rem}
-  .warn.stop{background:#FFF7F7;border-color:#F3B0B0}
-  .warn li{font-size:.78rem;color:#7A5A18;margin-left:1rem;line-height:1.5}
-  .warn.stop li{color:#8E2F22}
+  .warn{background:#FEFCE8;border:2px solid #EAB308;border-radius:9px;padding:.7rem .9rem;margin-bottom:.9rem}
+  .warn.stop{background:#FEF2F2;border-color:#DC2626}
+  .warn li{font-size:.78rem;color:#713F12;margin-left:1rem;line-height:1.5}
+  .warn.stop li{color:#991B1B}
   .kv{display:grid;grid-template-columns:150px 1fr;gap:.3rem .8rem;font-size:.8rem;margin-bottom:1rem}
   .kv dt{color:#94A3B8;font-weight:700}
   .kv dd{color:#0F1D35}
@@ -118,10 +125,19 @@
       <div class="sub" id="sub">Loading…</div>
     </div>
     <div class="hdrTools">
+      <div class="searchWrap">
+        <input type="search" id="q" placeholder="Search name, company, email, phone, reference"
+               autocomplete="off" oninput="onSearch(this.value)"
+               onkeydown="if(event.key==='Escape'){this.value='';onSearch('')}">
+        <button id="qClear" onclick="document.getElementById('q').value='';onSearch('')"
+                title="Clear search" aria-label="Clear search">&times;</button>
+      </div>
+      <span id="qCount"></span>
       <button class="btn on" id="fAll"    onclick="setFilter('all',this)">All</button>
       <button class="btn"    id="fAction" onclick="setFilter('action',this)">Needs action</button>
       <button class="btn"    id="fStale"  onclick="setFilter('stale',this)">Idle 30+ days</button>
       <button class="btn" onclick="load()">Refresh</button>
+      <button class="btn" onclick="signOut()" title="Forget the token on this browser">Sign out</button>
     </div>
   </div>
 
@@ -141,7 +157,7 @@
         <tbody id="qBody"></tbody>
       </table>
     </div>
-    <div class="empty" id="qEmpty" style="display:none">No quotes match this filter.</div>
+    <div class="empty" id="qEmpty" style="display:none">No quotes match the current search or filter.</div>
   </div>
 
   <div class="card">
@@ -158,7 +174,7 @@
         <tbody id="lBody"></tbody>
       </table>
     </div>
-    <div class="empty" id="lEmpty" style="display:none">No leads match this filter.</div>
+    <div class="empty" id="lEmpty" style="display:none">No leads match the current search or filter.</div>
   </div>
 
 </div>
@@ -174,15 +190,74 @@
     </div>
   </div>
 </div>
+<div id="gateOverlay" class="ovl" style="z-index:70">
+  <div class="modal" style="width:min(460px,94vw)" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+    <div class="mh"><h3 id="gateTitle">Access token required</h3></div>
+    <div class="mb">
+      <p style="font-size:.85rem;color:#475569;line-height:1.55;margin-bottom:.9rem">
+        This board shows quote amounts and prospect contacts, so the API asks for
+        a token. Enter it once — it stays in this browser only.</p>
+      <input type="password" id="gateInput" placeholder="Access token"
+             style="width:100%;padding:.6rem .7rem;font-size:.9rem"
+             onkeydown="if(event.key==='Enter')submitToken()">
+      <div id="gateErr" style="display:none;font-size:.78rem;color:#C0392B;margin-top:.5rem">
+        That token was rejected. Check it in Netlify under FR_APP_TOKEN.</div>
+    </div>
+    <div class="mf"><button class="btn on" onclick="submitToken()">Unlock</button></div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
 const API = "/.netlify/functions/crm-board";
+/* ── Access token ──────────────────────────────────────────────────────────
+   The API refuses any request without this token. It is typed once and kept
+   in this browser only — it is never written into the page, because this
+   repository is public. Clearing it signs this browser out. */
+const TOKEN_KEY = "fr_app_token";
+const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } };
+const setToken = (t) => { try { localStorage.setItem(TOKEN_KEY, t); } catch {} };
+const clearToken = () => { try { localStorage.removeItem(TOKEN_KEY); } catch {} };
+const authHeaders = (extra) => Object.assign({ "x-fr-token": getToken() }, extra || {});
 const CONVERT_API = "/.netlify/functions/quote-convert";
 const QUOTE_STATUSES = ['draft','sent','negotiating','won','lost'];
 const LEAD_STATUSES   = ['new','qualifying','sent_to_sales','won','lost'];
 let DATA = { quotes:[], leads:[], kpi:{} };
 let FILTER = 'all';
+let QUERY = '';
+
+/* Search runs over the data already in memory — no endpoint, no round trip.
+   Every field someone might arrive with is searchable, because the point is
+   "a +57 number just messaged me, who is this?". */
+const norm = s => String(s==null?'':s).toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^a-z0-9@.]+/g,' ').trim();
+
+function haystack(row, kind){
+  const f = kind==='quote'
+    ? [row.client_name,row.contact_name,row.contact_email,row.quote_id,row.op_type,row.channel,row.notes,row.owner]
+    : [row.name,row.email,row.phone,row.country,row.service,row.service_detail,
+       row.monthly_volume,row.source,row.notes,row.next_action,row.owner];
+  return norm(f.join(' ')) + ' ' + String(row.phone||'').replace(/\D/g,'');
+}
+
+function matchesQuery(row, kind){
+  if(!QUERY) return true;
+  const hay = row._hay || (row._hay = haystack(row,kind));
+  // Every term must appear somewhere, so "juan argentina" narrows instead of widening.
+  return QUERY.split(' ').filter(Boolean).every(t => hay.includes(t));
+}
+
+let _qTimer;
+function onSearch(v){
+  document.getElementById('qClear').style.display = v ? 'block' : 'none';
+  clearTimeout(_qTimer);
+  _qTimer = setTimeout(()=>{
+    const digits = v.replace(/\D/g,'');
+    QUERY = digits.length >= 6 ? digits : norm(v);
+    render();
+  }, 120);
+}
 
 const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
                   .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -199,22 +274,27 @@ function toast(msg, isErr){
 /* The idle bar is the spine of this board: how long something has sat
    with nobody touching it. Caps at 60 days so one ancient row does not
    flatten the rest of the scale. */
+/* Traffic light, three states only:
+   green 0-14d moving · yellow 15-30d slowing · red 30+d stopped. */
 function ageCell(days){
   if(days==null) return '<span class="ageTxt">—</span>';
-  const w   = Math.max(6, Math.min(60, days) / 60 * 64);
-  const cls = days>30 ? 'a4' : days>14 ? 'a3' : days>7 ? 'a2' : 'a1';
+  const w   = Math.max(8, Math.min(60, days) / 60 * 64);
+  const cls = days>30 ? 'a3' : days>14 ? 'a2' : 'a1';
+  const txt = days>30 ? 't3' : days>14 ? 't2' : '';
   const lbl = days===0 ? 'today' : days+'d';
   return `<div class="age"><span class="ageBar ${cls}" style="width:${w}px"></span>`
-       + `<span class="ageTxt">${lbl}</span></div>`;
+       + `<span class="ageTxt ${txt}">${lbl}</span></div>`;
 }
 
+/* One control, not two: the select already shows the current status, so the
+   pill next to it was repeating itself and costing a line per row. */
 function statusSelect(kind, id, current){
   const list = kind==='quote' ? QUOTE_STATUSES : LEAD_STATUSES;
   const fn   = kind==='quote' ? 'saveQuoteStatus' : 'saveLeadStatus';
   const opts = list.map(s=>`<option value="${s}"${s===current?' selected':''}>`
              + s.replace(/_/g,' ')+`</option>`).join('');
-  return `<span class="pill p-${esc(current)}">${esc(String(current).replace(/_/g,' '))}</span>`
-       + `<br><select style="margin-top:.35rem" onchange="${fn}('${esc(id)}',this)">${opts}</select>`;
+  return `<select class="statusSel s-${esc(current)}" onchange="${fn}('${esc(id)}',this)"
+                  aria-label="Status">${opts}</select>`;
 }
 
 function renderKPIs(k){
@@ -233,6 +313,7 @@ function renderKPIs(k){
 }
 
 function passes(row, kind){
+  if(!matchesQuery(row, kind)) return false;
   if(FILTER==='stale')  return (row.days_idle||0) > 30;
   if(FILTER==='action') return kind==='quote'
     ? (row.expired || (row.days_to_expiry!=null && row.days_to_expiry<=7) || row.status==='draft')
@@ -246,8 +327,10 @@ function renderQuotes(){
     .filter(q=>passes(q,'quote'));
   document.getElementById('qEmpty').style.display = rows.length?'none':'block';
   document.getElementById('qBody').innerHTML = rows.map(q=>{
+    // A quote expiring today is as urgent as one already expired — both red.
     let exp = '<span class="ageTxt">—</span>';
     if(q.expired) exp = `<span class="flag">expired ${Math.abs(q.days_to_expiry)}d ago</span>`;
+    else if(q.days_to_expiry===0) exp = `<span class="flag">expires today</span>`;
     else if(q.days_to_expiry!=null) exp = q.days_to_expiry<=7
       ? `<span class="flag due">in ${q.days_to_expiry}d</span>`
       : `<span class="ageTxt">${esc(q.valid_until)}</span>`;
@@ -295,7 +378,13 @@ function renderLeads(){
   }).join('');
 }
 
-function render(){ renderKPIs(DATA.kpi); renderQuotes(); renderLeads(); }
+function render(){
+  renderKPIs(DATA.kpi); renderQuotes(); renderLeads();
+  const q = DATA.quotes.filter(x=>['draft','sent','negotiating'].includes(x.status) && passes(x,'quote')).length;
+  const l = DATA.leads.filter(x=>passes(x,'lead')).length;
+  document.getElementById('qCount').textContent =
+    QUERY ? `${q+l} match${q+l===1?'':'es'}` : '';
+}
 
 function setFilter(f, btn){
   FILTER=f;
@@ -306,8 +395,10 @@ function setFilter(f, btn){
 
 async function load(){
   try{
-    const r = await fetch(API+'?action=board');
+    if(!getToken()){ showGate(false); return; }
+    const r = await fetch(API+'?action=board', { headers: authHeaders() });
     const j = await r.json();
+    if(r.status===401 || j.need_token){ showGate(true); return; }
     if(!j.ok) throw new Error(j.error||'Could not load the board');
     DATA=j; render();
     document.getElementById('sub').textContent =
@@ -322,7 +413,7 @@ async function load(){
 async function post(body, rowEl){
   if(rowEl) rowEl.classList.add('saving');
   try{
-    const r = await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},
+    const r = await fetch(API,{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),
                               body:JSON.stringify(body)});
     const j = await r.json();
     if(!j.ok) throw new Error(j.error||'Save failed');
@@ -374,7 +465,7 @@ async function openConvert(quoteId){
   document.getElementById('convGo').style.display='none';
   document.getElementById('convHint').textContent='';
   try{
-    const r=await fetch(CONVERT_API,{method:'POST',headers:{'Content-Type':'application/json'},
+    const r=await fetch(CONVERT_API,{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),
                                     body:JSON.stringify({quote_id:quoteId})});
     const p=await r.json();
     if(!p.ok) throw new Error(p.error||'Preview failed');
@@ -433,7 +524,7 @@ async function doConvert(){
   const go=document.getElementById('convGo');
   go.disabled=true; go.textContent='Creating…';
   try{
-    const r=await fetch(CONVERT_API,{method:'POST',headers:{'Content-Type':'application/json'},
+    const r=await fetch(CONVERT_API,{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),
       body:JSON.stringify({quote_id:_convQuote,confirm:true,allow_duplicate:_convAllowDup})});
     const j=await r.json();
     if(!j.ok) throw new Error(j.error||'Could not create the client');
@@ -442,6 +533,21 @@ async function doConvert(){
   }catch(e){ toast(e.message,true); }
   finally{ go.disabled=false; go.textContent='Create client'; }
 }
+
+function showGate(wrong){
+  document.getElementById('gateErr').style.display = wrong ? 'block' : 'none';
+  document.getElementById('gateOverlay').classList.add('show');
+  setTimeout(()=>document.getElementById('gateInput').focus(),50);
+}
+function submitToken(){
+  const v=document.getElementById('gateInput').value.trim();
+  if(!v) return;
+  setToken(v);
+  document.getElementById('gateOverlay').classList.remove('show');
+  document.getElementById('gateInput').value='';
+  load();
+}
+function signOut(){ clearToken(); location.reload(); }
 
 load();
 setInterval(load, 120000);
