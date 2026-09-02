@@ -239,7 +239,7 @@
           <span class="ic">📦</span>
           <span><span class="nm">Inventory</span><br><span class="sub">Stock by client</span></span>
         </button>
-        <button class="mod"data-open="/pallets.html" >
+        <button class="mod" data-go="pallets">
           <span class="ic">🧱</span>
           <span><span class="nm">Pallets</span><br><span class="sub">Returns pallet builder</span></span>
         </button>
@@ -1021,6 +1021,7 @@ function needsSlipPhoto(r){
   if(!r || r.removed || r.saving) return false;
   if((r.direction||'Inbound')==='Outbound') return false;
   if(r.photos) return false;
+  if(r.slipStatus) return false;            // operator already answered: no slip in the carton
   if(receivingModeFor(r)==='receipt_only') return false;
   const t=(r.type||'').toLowerCase();
   return t.indexOf('overstock')!==-1 || t.indexOf('rma')!==-1 || t.indexOf('return')!==-1;
@@ -1041,7 +1042,9 @@ function refreshList(){
     // data exists, and photographing it is what feeds the automatic reading —
     // so the row nags until there is a photo.
     const wantsSlip = needsSlipPhoto(r);
-    const slipTag = wantsSlip ? ' 📷 needed' : '';
+    const noSlipTag = r.slipStatus==='no_slip' ? ' · no slip'
+                    : r.slipStatus==='damaged_slip' ? ' · slip unreadable' : '';
+    const slipTag = wantsSlip ? ' 📷 needed' : noSlipTag;
     const badge = r.saving?'saving…' : r.error?('⚠ '+r.error) : (r.type.replace(/^(Inbound|Outbound) /,'').replace(/[()]/g,'')+photoTag+slipTag);
     li.innerHTML=`<span class="code">${r.tracking}</span><span class="badge">${badge}</span>`;
     // Only once the row exists in the database, and never for outbound: an
@@ -1055,11 +1058,27 @@ function refreshList(){
       pb.onclick=(e)=>{ e.stopPropagation(); queuePrint('inbound_label',{ref_id:r.rowId}, r.tracking.slice(-8)); };
       li.appendChild(pb);
     }
+    // "No slip" escape hatch. A missing photo is ambiguous: it can mean the
+    // operator skipped it, or that the carton really came without a slip.
+    // This button lets the operator say which, so the coverage number means
+    // something instead of just counting blanks.
+    if(wantsSlip && r.rowId && !r.removed){
+      const nb=document.createElement('button');
+      nb.className='btn ghost';
+      nb.textContent='No slip';
+      nb.title='The carton had no packing slip inside';
+      nb.style.cssText='flex:0 0 auto;padding:.15rem .5rem;font-size:.8rem;min-height:0;margin-left:.4rem';
+      nb.onclick=(e)=>{ e.stopPropagation(); markNoSlip(r); };
+      li.appendChild(nb);
+    }
     if(r.photos && r.photoUrls && r.photoUrls.length){
       li.querySelector('.badge').style.cssText='color:var(--teal-d);font-weight:700';
       li.querySelector('.badge').onclick=(e)=>{ e.stopPropagation(); viewPhotos(r); };
     } else if(wantsSlip){
       li.querySelector('.badge').style.cssText='color:#b45309;font-weight:700';
+    } else if(r.slipStatus){
+      li.querySelector('.badge').style.cssText='color:var(--muted,#64748b)';
+      li.querySelector('.badge').onclick=(e)=>{ e.stopPropagation(); clearNoSlip(r); };
     }
     if(!r.removed){
       const b=document.createElement('button');b.className='undo';b.textContent='↺';b.title='Undo';
@@ -1067,6 +1086,42 @@ function refreshList(){
     }
     ul.appendChild(li);
   });
+}
+
+/* Record that the carton arrived with no packing slip inside. Optimistic:
+   the row updates immediately and rolls back if the write fails. */
+async function markNoSlip(rec){
+  if(!rec || rec.slipStatus) return;
+  rec.slipStatus='no_slip'; refreshList();
+  try{
+    const res=await fetch(`${API_BASE}/frm-slip-status`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({tracking:rec.tracking, slip_status:'no_slip', operator:S.operator})
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    toast('Marked: no slip in carton');
+  }catch(err){
+    rec.slipStatus=null; refreshList();
+    toast('Could not save — try again');
+  }
+}
+
+/* Undo the mark, for when the slip turns up after all. */
+async function clearNoSlip(rec){
+  if(!rec || !rec.slipStatus) return;
+  const prev=rec.slipStatus;
+  rec.slipStatus=null; refreshList();
+  try{
+    const res=await fetch(`${API_BASE}/frm-slip-status`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({tracking:rec.tracking, slip_status:null, operator:S.operator})
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    toast('Mark removed — photo needed again');
+  }catch(err){
+    rec.slipStatus=prev; refreshList();
+    toast('Could not save — try again');
+  }
 }
 
 async function undo(rec){
