@@ -1,0 +1,2961 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0c2a3e">
+<title>FR Mobile</title>
+<style>
+  :root{
+    --navy:#0c2a3e; --navy-2:#123a54; --teal:#0aa3a3; --teal-d:#087f7f;
+    --red:#e0483d; --amber:#f2a900; --green:#22a06b; --green-d:#1a8657;
+    --ink:#0d1b26; --paper:#f4f6f7; --line:#d5dde2; --muted:#5f7280;
+    --white:#fff; --shadow:0 2px 10px rgba(12,42,62,.10);
+    --tap:56px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--paper); color:var(--ink);
+    font-size:17px; line-height:1.35;
+    overscroll-behavior:none; user-select:none;
+  }
+  /* App shell */
+  #app{display:flex;flex-direction:column;height:100dvh;max-width:640px;margin:0 auto;background:var(--paper)}
+  header.bar{
+    background:var(--navy); color:var(--white);
+    display:flex;align-items:center;gap:10px;
+    padding:10px 12px; min-height:52px; flex:0 0 auto;
+  }
+  header.bar .back{
+    width:40px;height:40px;border:0;background:transparent;color:#fff;
+    font-size:26px;border-radius:10px;display:none;align-items:center;justify-content:center;
+  }
+  header.bar.has-back .back{display:flex}
+  header.bar h1{font-size:18px;margin:0;font-weight:650;flex:1;letter-spacing:.2px}
+  header.bar .op{
+    font-size:13px;background:rgba(255,255,255,.14);padding:5px 10px;border-radius:20px;
+    max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  main{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px}
+  .view{display:none}
+  .view.active{display:block;animation:fade .18s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  /* HOME grid */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .mod{
+    background:var(--white);border:1px solid var(--line);border-radius:16px;
+    padding:18px 14px;min-height:120px;box-shadow:var(--shadow);
+    display:flex;flex-direction:column;justify-content:space-between;
+    text-align:left;color:var(--ink);
+  }
+  .mod:active{transform:scale(.97)}
+  .mod.dim{opacity:.42}
+  .mod .ic{font-size:30px;line-height:1}
+  .mod .nm{font-size:17px;font-weight:650}
+  .mod .sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .mod .soon{font-size:10px;font-weight:700;color:var(--amber);letter-spacing:.5px}
+  .hello{padding:2px 2px 14px;color:var(--muted);font-size:14px}
+  .hello b{color:var(--ink)}
+
+  /* Receiving */
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:5px;letter-spacing:.3px;text-transform:uppercase}
+  select,input[type=text]{
+    width:100%;height:var(--tap);border:1.5px solid var(--line);border-radius:12px;
+    padding:0 14px;font-size:17px;background:var(--white);color:var(--ink);appearance:none;
+  }
+  select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235f7280' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:40px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+  /* Scan pad — the big status surface */
+  .scanpad{
+    border:2.5px dashed var(--line);border-radius:18px;background:var(--white);
+    min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:8px;margin:6px 0 14px;transition:background .12s,border-color .12s;position:relative;
+  }
+  .scanpad .big{font-size:19px;font-weight:650;color:var(--muted)}
+  .scanpad .lastcode{font-size:15px;font-family:ui-monospace,Menlo,monospace;color:var(--ink);word-break:break-all;padding:0 14px;text-align:center}
+  .scanpad .hint{font-size:12px;color:var(--muted)}
+  .scanpad.ok{background:#e7f6ef;border-color:var(--green);border-style:solid}
+  .scanpad.ok .big{color:var(--green-d)}
+  .scanpad.dup{background:#fff6e5;border-color:var(--amber);border-style:solid}
+  .scanpad.dup .big{color:#a9760a}
+  .scanpad.err{background:#fdecea;border-color:var(--red);border-style:solid}
+  .scanpad.err .big{color:var(--red)}
+  .scanpad .icon{font-size:38px;line-height:1}
+
+  /* Counter + list */
+  .counter{display:flex;align-items:baseline;gap:8px;margin:2px 0 10px;padding:0 2px}
+  .counter .n{font-size:34px;font-weight:750;color:var(--teal-d);font-variant-numeric:tabular-nums}
+  .counter .lbl{font-size:13px;color:var(--muted)}
+  ul.scans{list-style:none;margin:0;padding:0}
+  ul.scans li{
+    display:flex;align-items:center;gap:10px;background:var(--white);
+    border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;
+  }
+  ul.scans li .code{flex:1;font-family:ui-monospace,Menlo,monospace;font-size:14px;word-break:break-all}
+  ul.scans li .badge{font-size:11px;color:var(--muted);white-space:nowrap}
+  ul.scans li .undo{
+    border:0;background:#fdecea;color:var(--red);width:38px;height:38px;border-radius:10px;
+    font-size:18px;flex:0 0 auto;
+  }
+  ul.scans li.gone{opacity:.4;text-decoration:line-through}
+  .empty{color:var(--muted);text-align:center;font-size:14px;padding:18px 0}
+
+  /* Footer actions */
+  [hidden]{display:none !important;}
+  footer.acts{
+    flex:0 0 auto;display:flex;gap:10px;padding:12px 14px;
+    background:var(--white);border-top:1px solid var(--line);
+    padding-bottom:calc(12px + env(safe-area-inset-bottom));
+  }
+  footer.acts[hidden]{display:none !important;}
+  .btn{
+    flex:1;height:var(--tap);border:0;border-radius:14px;font-size:16px;font-weight:650;
+    display:flex;align-items:center;justify-content:center;gap:8px;color:#fff;background:var(--teal);
+  }
+  .btn:active{transform:scale(.98)}
+  .btn.ghost{background:var(--paper);color:var(--navy);border:1.5px solid var(--line)}
+  .btn.stop{background:var(--navy)}
+  .btn:disabled{opacity:.5}
+
+  /* hidden capture input — receives trigger keystrokes without raising the keyboard */
+  #capture{position:fixed;opacity:0;height:1px;width:1px;pointer-events:none;left:-9999px;top:0}
+
+  /* Toast */
+  #toast{
+    position:fixed;left:50%;bottom:88px;transform:translateX(-50%) translateY(20px);
+    background:var(--navy);color:#fff;padding:11px 18px;border-radius:24px;font-size:14px;
+    opacity:0;transition:.2s;pointer-events:none;z-index:50;max-width:88%;text-align:center;
+  }
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* login gate */
+  #gate{position:fixed;inset:0;background:var(--navy);color:#fff;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:16px;padding:28px;z-index:100;text-align:center}
+  #gate h2{margin:0;font-size:22px}
+  #gate p{margin:0;color:#b9cdd8;font-size:14px}
+  #gate input{max-width:320px;color:var(--ink)}
+  #gate .btn{max-width:320px;width:100%}
+  #gate .err{color:#ffb4ad;font-size:13px;min-height:16px}
+  .muted-link{color:#7fd4d4;font-size:13px;background:none;border:0;text-decoration:underline}
+
+  /* Locations */
+  .syncbar{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    background:var(--white);border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:12px;font-size:12px;color:var(--muted)}
+  .syncbar .syncbtn{border:1.5px solid var(--line);background:var(--paper);color:var(--navy);
+    border-radius:9px;padding:7px 12px;font-size:13px;font-weight:600;white-space:nowrap}
+  .syncbar .syncbtn:active{transform:scale(.97)}
+  .syncbar .syncbtn.busy{opacity:.6}
+  .lcard{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:16px;margin-top:4px;box-shadow:var(--shadow)}
+  .lcard .lc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .lcard .lc-code{font-family:ui-monospace,Menlo,monospace;font-size:20px;font-weight:750;color:var(--navy)}
+  .lcard .lc-sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .lcard .lc-zone{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--teal-d);background:#e7f6ef;padding:4px 9px;border-radius:20px;white-space:nowrap}
+  .occ{margin:4px 0 14px}
+  .occ .bar{height:12px;border-radius:8px;background:#eef2f4;overflow:hidden}
+  .occ .fill{height:100%;border-radius:8px;transition:width .3s}
+  .occ .lbl{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:5px}
+  .occ .fill.low{background:var(--green)} .occ .fill.mid{background:var(--amber)} .occ .fill.high{background:var(--red)}
+  .lc-list{list-style:none;margin:0;padding:0}
+  .lc-list li{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+  .lc-list li:first-child{border-top:0}
+  .lc-list .sku{flex:1;font-family:ui-monospace,Menlo,monospace;font-size:14px;font-weight:600;word-break:break-all}
+  .lc-list .cli{font-size:11px;color:var(--muted)}
+  .lc-list .qty{font-size:16px;font-weight:750;color:var(--teal-d);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .lc-empty{color:var(--muted);text-align:center;padding:16px 0;font-size:14px}
+  .lc-total{margin-top:12px;padding-top:12px;border-top:2px solid var(--line);display:flex;justify-content:space-between;font-weight:700;font-size:15px}
+
+  /* FBA count */
+  .seg{display:flex;gap:8px;margin:2px 0 12px}
+  .seg button{
+    flex:1;height:46px;border:1.5px solid var(--line);background:var(--white);color:var(--muted);
+    border-radius:12px;font-size:15px;font-weight:650;
+  }
+  .seg button.on{background:var(--navy);border-color:var(--navy);color:#fff}
+  .row4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:7px}
+  .row4 input{padding:0 8px;font-size:15px;text-align:center}
+  .row4 label{font-size:10px;text-align:center}
+  .fba-msku{
+    font-family:ui-monospace,Menlo,monospace;font-size:16px;font-weight:700;color:var(--navy);
+    word-break:break-all;
+  }
+  .fba-src{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;padding:3px 8px;border-radius:20px;white-space:nowrap}
+  .fba-src.map{color:var(--green-d);background:#e7f6ef}
+  .fba-src.scanned_sku{color:var(--teal-d);background:#e4f5f5}
+  .fba-src.manual{color:#a9760a;background:#fff6e5}
+  .fba-src.memory{color:var(--navy);background:#e8eef3}
+  ul.scans li.fba{align-items:flex-start}
+  ul.scans li .lineinfo{flex:1;min-width:0}
+  ul.scans li .lineinfo .l1{font-family:ui-monospace,Menlo,monospace;font-size:14px;font-weight:600;word-break:break-all}
+  ul.scans li .lineinfo .l2{font-size:12px;color:var(--muted);margin-top:2px}
+  .warnbox{background:#fff6e5;border:1px solid var(--amber);border-radius:12px;padding:10px 12px;font-size:13px;color:#7a5600;margin-bottom:10px}
+  .sugg{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .sugg button{border:1.5px solid var(--line);background:var(--paper);color:var(--navy);border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;font-family:ui-monospace,Menlo,monospace}
+</style>
+</head>
+<body>
+
+<!-- LOGIN GATE -->
+<div id="gate">
+  <div style="font-size:34px;font-weight:800;letter-spacing:1px">FR<span style="color:var(--teal)">Mobile</span></div>
+  <p>Warehouse · Doral</p>
+  <input id="opname" type="text" inputmode="text" placeholder="Your name (operator)" autocomplete="off">
+  <input id="pin" type="password" inputmode="text" placeholder="PIN" autocomplete="off">
+  <button class="btn" id="loginBtn">Sign in</button>
+  <div class="err" id="loginErr"></div>
+</div>
+
+<div id="app" hidden>
+  <header class="bar" id="topbar">
+    <button class="back" id="backBtn" aria-label="Atrás">‹</button>
+    <h1 id="title">FR Mobile</h1>
+    <span class="op" id="opBadge">—</span>
+  </header>
+
+  <main id="main">
+    <!-- global scan capture (hidden, always present so it works in any scanning view) -->
+    <input id="capture" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="none">
+    <!-- HOME -->
+    <section class="view active" id="v-home">
+      <div class="hello">Hi <b id="helloName">operator</b> — pick a module.</div>
+      <div class="grid">
+        <button class="mod" data-go="receiving">
+          <span class="ic">📥</span>
+          <span><span class="nm">Receiving</span><br><span class="sub">Log packages by scan</span></span>
+        </button>
+        <button class="mod" data-go="outbound">
+          <span class="ic">📤</span>
+          <span><span class="nm">Outbound</span><br><span class="sub">Log shipments by scan</span></span>
+        </button>
+        <button class="mod" data-go="locations">
+          <span class="ic">📍</span>
+          <span><span class="nm">Locations</span><br><span class="sub">Scan to see what's stored where</span></span>
+        </button>
+        <button class="mod" data-go="inventory">
+          <span class="ic">📦</span>
+          <span><span class="nm">Inventory</span><br><span class="sub">Stock by client</span></span>
+        </button>
+        <button class="mod"data-open="/pallets.html" >
+          <span class="ic">🧱</span>
+          <span><span class="nm">Pallets</span><br><span class="sub">Returns pallet builder</span></span>
+        </button>
+       <button class="mod" data-open="/fba-count.html">
+          <span class="ic">🏷️</span>
+          <span><span class="nm">FBA Count</span><br><span class="sub">Count boxes and loose units</span></span>
+        </button>
+        <button class="mod" data-go="count">
+          <span class="ic">🔢</span>
+          <span><span class="nm">Stock Count</span><br><span class="sub">Blind count by location</span></span>
+        </button>
+        <button class="mod" data-go="boxes">
+          <span class="ic">🗃️</span>
+          <span><span class="nm">Boxes</span><br><span class="sub">Build, seal and move cartons</span></span>
+        </button>
+      </div>
+    </section>
+
+    <!-- RECEIVING -->
+    <section class="view" id="v-receiving">
+      <div class="field">
+        <label for="rClient">Client</label>
+        <select id="rClient"><option value="">Loading…</option></select>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="rType">Type</label>
+          <select id="rType">
+            <option>Inbound (General)</option>
+            <option>Inbound (Amazon FBA)</option>
+            <option>Inbound (Drop-Shipment)</option>
+            <option>Inbound (Prep Service)</option>
+            <option>Overstock</option>
+            <option>RMA (Returns)</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="rCarrier">Carrier</label>
+          <select id="rCarrier">
+            <option>Amazon</option><option>UPS</option><option>USPS</option>
+            <option>FedEx</option><option>Walmart</option><option>Other</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="scanpad" id="scanpad" tabindex="-1">
+        <div class="icon" id="spIcon">▣</div>
+        <div class="big" id="spBig">Scan tracking</div>
+        <div class="lastcode" id="spCode"></div>
+        <div class="hint" id="spHint">Pull the trigger to scan. Photo button adds an image to the last package.</div>
+      </div>
+
+      <div class="counter">
+        <span class="n" id="rCount">0</span>
+        <span class="lbl">packages received this session</span>
+      </div>
+
+      <ul class="scans" id="rList"></ul>
+      <div class="empty" id="rEmpty">No scans yet. The first one will show here.</div>
+    </section>
+
+    <!-- OUTBOUND -->
+    <section class="view" id="v-outbound">
+      <div class="field">
+        <label for="oClient">Client</label>
+        <select id="oClient"><option value="">Loading…</option></select>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="oType">Type</label>
+          <select id="oType">
+            <option>Outbound (Shipment)</option>
+            <option>Outbound (Drop-Shipment)</option>
+            <option>Outbound (Pickup EcoPack+)</option>
+            <option>Replacement</option>
+            <option>Return to Sender</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="oCarrier">Carrier</label>
+          <select id="oCarrier">
+            <option>Amazon</option><option>UPS</option><option>USPS</option>
+            <option>FedEx</option><option>Walmart</option><option>Other</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="scanpad" id="oScanpad" tabindex="-1">
+        <div class="icon" id="oIcon">▣</div>
+        <div class="big" id="oBig">Scan tracking</div>
+        <div class="lastcode" id="oCode"></div>
+        <div class="hint" id="oHint">Pull the trigger to scan. Photo button adds an image to the last shipment.</div>
+      </div>
+
+      <div class="counter">
+        <span class="n" id="oCount">0</span>
+        <span class="lbl">shipments dispatched this session</span>
+      </div>
+
+      <ul class="scans" id="oList"></ul>
+      <div class="empty" id="oEmpty">No scans yet. The first one will show here.</div>
+    </section>
+
+    <!-- LOCATIONS (read-only lookup) -->
+    <section class="view" id="v-locations">
+      <div class="syncbar" id="syncbar">
+        <span id="syncInfo">Loading inventory…</span>
+        <button id="syncBtn" class="syncbtn">↻ Refresh</button>
+      </div>
+
+      <div class="scanpad" id="lScanpad" tabindex="-1">
+        <div class="icon" id="lIcon">▣</div>
+        <div class="big" id="lBig">Scan a location or product</div>
+        <div class="lastcode" id="lCode"></div>
+        <div class="hint" id="lHint">Location (RA0101) shows what's stored there. Product (FNSKU) shows where it is.</div>
+      </div>
+
+      <div id="lResult"></div>
+    </section>
+
+    <!-- INVENTORY (read-only, stock by client) -->
+    <section class="view" id="v-inventory">
+      <div class="syncbar" id="invSyncbar">
+        <span id="invSyncInfo">Loading inventory…</span>
+        <button id="invSyncBtn" class="syncbtn">↻ Refresh</button>
+      </div>
+
+      <div class="field">
+        <label for="invClient">Client</label>
+        <select id="invClient"><option value="">— Select client —</option></select>
+      </div>
+
+      <div class="scanpad" id="iScanpad" tabindex="-1" style="min-height:auto;padding:14px">
+        <div class="hint" id="iHint" style="margin:0">Pick a client above, or scan any product to see its owner's stock.</div>
+      </div>
+
+      <div id="invResult"></div>
+    </section>
+
+    <!-- PALLETS (returns pallet builder — writes to pallets / pallet_packages) -->
+    <section class="view" id="v-pallets">
+      <!-- when no pallet is active: create or load -->
+      <div id="palNoPallet">
+        <div class="lcard">
+          <div class="lc-code" style="font-size:16px;margin-bottom:12px">Start a pallet</div>
+          <div class="field">
+            <label for="palClient">Client</label>
+            <select id="palClient"><option value="">— Select client —</option></select>
+          </div>
+          <div class="field">
+            <label for="palSize">Pallet size</label>
+            <select id="palSize">
+              <option>48x40 Standard</option>
+              <option>48x48</option>
+              <option>Gaylord</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <button class="btn go" id="palCreateBtn" style="width:100%;margin-top:6px">+ New pallet</button>
+        </div>
+        <div class="lcard">
+          <div class="lc-code" style="font-size:15px;margin-bottom:10px">Open pallets</div>
+          <ul class="lc-list" id="palOpenList"></ul>
+          <div class="lc-empty" id="palOpenEmpty">No open pallets.</div>
+        </div>
+      </div>
+
+      <!-- when a pallet is active: scan into it -->
+      <div id="palActive" hidden>
+        <div class="lcard" style="background:var(--navy);color:#fff">
+          <div class="lc-head" style="margin:0">
+            <div>
+              <div class="lc-code" style="color:#fff;font-size:15px" id="palId">FRP-…</div>
+              <div class="lc-sub" style="color:#bcd" id="palMeta">—</div>
+            </div>
+            <span class="lc-zone" id="palCount">0</span>
+          </div>
+        </div>
+
+        <div class="scanpad" id="pScanpad" tabindex="-1">
+          <div class="icon" id="pIcon">▣</div>
+          <div class="big" id="pBig">Scan package tracking</div>
+          <div class="lastcode" id="pCode"></div>
+          <div class="hint" id="pHint">Pull the trigger to add a package to this pallet.</div>
+        </div>
+
+        <ul class="scans" id="palPkgList"></ul>
+        <div class="empty" id="palPkgEmpty">No packages yet. Scan the first one.</div>
+      </div>
+    </section>
+
+    <!-- FBA COUNT (Send to Amazon manifest — writes to fba_shipments / fba_shipment_lines) -->
+    <section class="view" id="v-fba">
+      <!-- no active shipment: create or load -->
+      <div id="fbaNoShip">
+        <div class="lcard">
+          <div class="lc-code" style="font-size:16px;margin-bottom:12px">Start a count</div>
+          <div class="field">
+            <label for="fbaClient">Client</label>
+            <select id="fbaClient"><option value="">— Select client —</option></select>
+          </div>
+          <div class="field">
+            <label for="fbaRef">Reference</label>
+            <input id="fbaRef" type="text" placeholder="e.g. SDI-AGO-01" autocomplete="off">
+          </div>
+          <button class="btn go" id="fbaCreateBtn" style="width:100%;margin-top:6px">+ New count</button>
+        </div>
+        <div class="lcard">
+          <div class="lc-code" style="font-size:15px;margin-bottom:10px">Open counts</div>
+          <ul class="lc-list" id="fbaOpenList"></ul>
+          <div class="lc-empty" id="fbaOpenEmpty">No open counts.</div>
+        </div>
+      </div>
+
+      <!-- active shipment: scan and declare -->
+      <div id="fbaActive" hidden>
+        <div class="lcard" style="background:var(--navy);color:#fff">
+          <div class="lc-head" style="margin:0">
+            <div>
+              <div class="lc-code" style="color:#fff;font-size:15px" id="fbaRefLbl">—</div>
+              <div class="lc-sub" style="color:#bcd" id="fbaMeta">—</div>
+            </div>
+            <span class="lc-zone" id="fbaUnits">0</span>
+          </div>
+        </div>
+
+        <div id="fbaWarn" hidden></div>
+
+        <div class="scanpad" id="fScanpad" tabindex="-1">
+          <div class="icon" id="fIcon">▣</div>
+          <div class="big" id="fBig">Scan a product</div>
+          <div class="lastcode" id="fCode"></div>
+          <div class="hint" id="fHint">Pull the trigger on the FNSKU. Then declare box or loose.</div>
+        </div>
+
+        <!-- declaration panel: appears after a scan resolves -->
+        <div class="lcard" id="fbaDeclare" hidden>
+          <div class="lc-head" style="margin-bottom:10px">
+            <div style="flex:1;min-width:0">
+              <div class="fba-msku" id="fbaMsku">—</div>
+              <div class="lc-sub" id="fbaScanned">—</div>
+            </div>
+            <span class="fba-src map" id="fbaSrc">MAP</span>
+          </div>
+
+          <!-- shown only when the scanned code has no mapping -->
+          <div id="fbaUnmapped" hidden>
+            <div class="warnbox" id="fbaUnmappedMsg">Not in the FNSKU map. Pick the merchant SKU or type it.</div>
+            <div class="field">
+              <label for="fbaManualMsku">Merchant SKU</label>
+              <input id="fbaManualMsku" type="text" placeholder="Type the MSKU" autocomplete="off">
+            </div>
+            <div class="sugg" id="fbaSugg"></div>
+          </div>
+
+          <div class="seg">
+            <button id="fbaTypeCase" class="on">Box of one item</button>
+            <button id="fbaTypeLoose">Loose units</button>
+          </div>
+
+          <!-- case pack -->
+          <div id="fbaCaseFields">
+            <div class="row2">
+              <div class="field">
+                <label for="fbaUpb">Units per box</label>
+                <input id="fbaUpb" type="text" inputmode="numeric" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="fbaBoxes">How many boxes</label>
+                <input id="fbaBoxes" type="text" inputmode="numeric" autocomplete="off">
+              </div>
+            </div>
+            <div class="field">
+              <label>Measure ONE box — the rest are assumed identical</label>
+              <div class="row4">
+                <input id="fbaL" type="text" inputmode="decimal" placeholder="L in" autocomplete="off">
+                <input id="fbaW" type="text" inputmode="decimal" placeholder="W in" autocomplete="off">
+                <input id="fbaH" type="text" inputmode="decimal" placeholder="H in" autocomplete="off">
+                <input id="fbaWt" type="text" inputmode="decimal" placeholder="lb" autocomplete="off">
+              </div>
+            </div>
+            <div class="lc-sub" id="fbaCaseTotal" style="margin:-4px 0 10px">—</div>
+          </div>
+
+          <!-- loose -->
+          <div id="fbaLooseFields" hidden>
+            <div class="field">
+              <label for="fbaQty">Loose units</label>
+              <input id="fbaQty" type="text" inputmode="numeric" autocomplete="off">
+            </div>
+            <div class="lc-sub" style="margin:-6px 0 10px">Adds to this SKU's loose line. The shipping boxes get decided when packing.</div>
+          </div>
+
+          <div style="display:flex;gap:10px">
+            <button class="btn ghost" id="fbaCancelBtn" style="flex:0 0 38%">Cancel</button>
+            <button class="btn" id="fbaAddBtn">Add line</button>
+          </div>
+        </div>
+
+        <ul class="scans" id="fbaLineList"></ul>
+        <div class="empty" id="fbaLineEmpty">No lines yet. Scan the first product.</div>
+      </div>
+    </section>
+
+    <!-- STOCK COUNT (blind physical / cycle count; compares against a frozen snapshot) -->
+    <section class="view" id="v-count">
+
+      <!-- no active count: start one or resume -->
+      <div id="cntNoCount">
+        <div class="lcard">
+          <div class="lc-code" style="font-size:16px;margin-bottom:12px">Start a count</div>
+          <div class="field">
+            <label for="cntClient">Client</label>
+            <select id="cntClient"><option value="">— Select client —</option></select>
+          </div>
+          <div id="cntPre" class="warnbox" hidden></div>
+          <div class="field">
+            <label for="cntRef">Reference</label>
+            <input id="cntRef" type="text" placeholder="e.g. MBL-AGO-2026" autocomplete="off">
+          </div>
+          <button class="btn" id="cntCreateBtn" style="width:100%;margin-top:6px">+ New count</button>
+        </div>
+        <div class="lcard">
+          <div class="lc-code" style="font-size:15px;margin-bottom:10px">Counts in progress</div>
+          <ul class="lc-list" id="cntOpenList"></ul>
+          <div class="lc-empty" id="cntOpenEmpty">No counts in progress.</div>
+        </div>
+      </div>
+
+      <!-- active count -->
+      <div id="cntActive" hidden>
+        <div class="lcard" style="background:var(--navy);color:#fff">
+          <div class="lc-head" style="margin:0">
+            <div style="flex:1;min-width:0">
+              <div class="lc-code" style="color:#fff;font-size:15px" id="cntRefLbl">—</div>
+              <div class="lc-sub" style="color:#bcd" id="cntMeta">—</div>
+            </div>
+            <span class="lc-zone" id="cntProg">0/0</span>
+          </div>
+        </div>
+
+        <!-- walking: pick or scan a location -->
+        <div id="cntWalk">
+          <div class="scanpad" id="cScanpad" tabindex="-1">
+            <div class="icon" id="cIcon">▣</div>
+            <div class="big" id="cBig">Scan a location</div>
+            <div class="lastcode" id="cCode"></div>
+            <div class="hint" id="cHint">Pull the trigger on the shelf label (RA0101) to open it.</div>
+          </div>
+          <div class="lcard">
+            <div class="lc-head" style="margin-bottom:10px">
+              <div class="lc-code" style="font-size:15px">Locations</div>
+              <span class="lc-zone" id="cntWalkCnt">—</span>
+            </div>
+            <ul class="lc-list" id="cntLocList"></ul>
+            <div class="lc-empty" id="cntLocEmpty">Loading…</div>
+          </div>
+        </div>
+
+        <!-- inside a location -->
+        <div id="cntInLoc" hidden>
+          <div class="lcard">
+            <div class="lc-head" style="margin-bottom:6px">
+              <div style="flex:1;min-width:0">
+                <div class="lc-code" id="cntLocCode">—</div>
+                <div class="lc-sub" id="cntLocSub">—</div>
+              </div>
+              <span class="lc-total" id="cntLocTotal">0</span>
+            </div>
+          </div>
+
+          <div class="scanpad" id="cScanpad2" tabindex="-1">
+            <div class="icon" id="c2Icon">▣</div>
+            <div class="big" id="c2Big">Scan a product</div>
+            <div class="lastcode" id="c2Code"></div>
+            <div class="hint" id="c2Hint">Scan every product in this location. Scan the next shelf label when done.</div>
+          </div>
+
+          <!-- quantity panel: appears after a scan resolves -->
+          <div class="lcard" id="cntDeclare" hidden>
+            <div class="lc-head" style="margin-bottom:10px">
+              <div style="flex:1;min-width:0">
+                <div class="fba-msku" id="cntSku">—</div>
+                <div class="lc-sub" id="cntScanned">—</div>
+              </div>
+              <span class="fba-src map" id="cntSrc">MAP</span>
+            </div>
+
+            <div id="cntUnmapped" hidden>
+              <div class="warnbox" id="cntUnmappedMsg">Not in the FNSKU map. Pick the SKU or type it.</div>
+              <div class="field">
+                <label for="cntManualSku">Merchant SKU</label>
+                <input id="cntManualSku" type="text" placeholder="Type the SKU" autocomplete="off">
+              </div>
+              <div class="sugg" id="cntSugg"></div>
+            </div>
+
+            <div class="field">
+              <label for="cntQty">How many units?</label>
+              <input id="cntQty" type="text" inputmode="numeric" autocomplete="off" placeholder="Count them, then type">
+            </div>
+            <div class="sugg" id="cntQuick"></div>
+
+            <div style="display:flex;gap:10px;margin-top:4px">
+              <button class="btn ghost" id="cntCancelBtn" style="flex:0 0 38%">Cancel</button>
+              <button class="btn" id="cntAddBtn">Add</button>
+            </div>
+          </div>
+
+          <ul class="lc-list" id="cntLineList"></ul>
+          <div class="lc-empty" id="cntLineEmpty">Nothing counted here yet.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- BOXES · container / license-plate layer -->
+    <section class="view" id="v-boxes">
+
+      <!-- pick a location, or scan straight into a box -->
+      <div id="bxHome">
+        <div class="scanpad" id="bScanpad" tabindex="-1">
+          <div class="icon" id="bIcon">▣</div>
+          <div class="big" id="bBig">Scan a shelf or a box</div>
+          <div class="lastcode" id="bCode"></div>
+          <div class="hint" id="bHint">Shelf label (RA0301) to see its boxes, or a box QR to open it.</div>
+        </div>
+
+        <div class="lcard">
+          <div class="lc-code" style="font-size:15px;margin-bottom:10px">Start a new box</div>
+          <div class="field">
+            <label for="bxClient">Client</label>
+            <select id="bxClient"><option value="">— Select client —</option></select>
+          </div>
+          <div class="field">
+            <label for="bxLoc">Shelf</label>
+            <input id="bxLoc" type="text" list="bxLocOptions" placeholder="Scan or type RA0301" autocomplete="off">
+            <datalist id="bxLocOptions"></datalist>
+          </div>
+          <button class="btn" id="bxNewBtn" style="width:100%;margin-top:6px">+ New box</button>
+        </div>
+
+        <div class="lcard" id="bxLocCard" hidden>
+          <div class="lc-head" style="margin-bottom:10px">
+            <div class="lc-code" id="bxLocTitle">—</div>
+            <span class="lc-total" id="bxLocUnits">0</span>
+          </div>
+          <ul class="lc-list" id="bxLocList"></ul>
+          <div class="lc-empty" id="bxLocEmpty">No boxes on this shelf yet.</div>
+        </div>
+
+        <!-- What this shelf still owes. Lives HERE and never in the quantity
+             panel: showing the expected number right before asking "how many?"
+             makes people type what they were shown. -->
+        <div class="lcard" id="bxPlanCard" hidden>
+          <div class="lc-head" style="margin-bottom:6px">
+            <div class="lc-code" style="font-size:15px">Still to box</div>
+            <span class="lc-total" id="bxPlanTotal">0</span>
+          </div>
+          <div class="lc-sub" id="bxPlanAge" style="margin-bottom:8px"></div>
+          <ul class="lc-list" id="bxPlanList"></ul>
+          <div class="lc-empty" id="bxPlanEmpty">Nothing pending on this shelf.</div>
+        </div>
+      </div>
+
+      <!-- inside a box -->
+      <div id="bxOpen" hidden>
+        <div class="lcard" style="background:var(--navy);color:#fff">
+          <div class="lc-head" style="margin:0">
+            <div style="flex:1;min-width:0">
+              <div class="lc-code" style="color:#fff;font-size:18px;letter-spacing:.5px" id="bxCode">—</div>
+              <div class="lc-sub" style="color:#bcd" id="bxMeta">—</div>
+            </div>
+            <span class="lc-total" id="bxUnits">0</span>
+          </div>
+        </div>
+
+        <div class="warnbox" id="bxSealedMsg" hidden></div>
+
+        <div class="scanpad" id="bScanpad2" tabindex="-1">
+          <div class="icon" id="b2Icon">▣</div>
+          <div class="big" id="b2Big">Scan a product</div>
+          <div class="lastcode" id="b2Code"></div>
+          <div class="hint" id="b2Hint">Scan every product going into this box.</div>
+        </div>
+
+        <!-- quantity panel -->
+        <div class="lcard" id="bxDeclare" hidden>
+          <div class="lc-head" style="margin-bottom:10px">
+            <div style="flex:1;min-width:0">
+              <div class="fba-msku" id="bxSku">—</div>
+              <div class="lc-sub" id="bxScanned">—</div>
+            </div>
+            <span class="fba-src map" id="bxSrc">MAP</span>
+          </div>
+
+          <div id="bxUnmapped" hidden>
+            <div class="warnbox" id="bxUnmappedMsg">Not in the FNSKU map. Pick the SKU or type it.</div>
+            <div class="field">
+              <label for="bxManualSku">Merchant SKU</label>
+              <input id="bxManualSku" type="text" placeholder="Type the SKU" autocomplete="off">
+            </div>
+            <div class="sugg" id="bxSugg"></div>
+          </div>
+
+          <div class="field">
+            <label for="bxQty">How many units in the box?</label>
+            <input id="bxQty" type="text" inputmode="numeric" autocomplete="off" placeholder="Total for this SKU">
+          </div>
+          <div class="sugg" id="bxQuick"></div>
+          <div class="warnbox" id="bxReplaceMsg" hidden></div>
+          <div class="warnbox" id="bxClientMsg" hidden></div>
+          <div class="lc-sub" id="bxCtx" style="margin:2px 0 6px"></div>
+
+          <div style="display:flex;gap:10px;margin-top:4px">
+            <button class="btn ghost" id="bxCancelBtn" style="flex:0 0 38%">Cancel</button>
+            <button class="btn" id="bxAddBtn">Set</button>
+          </div>
+        </div>
+
+        <ul class="lc-list" id="bxLineList"></ul>
+        <div class="lc-empty" id="bxLineEmpty">Nothing in this box yet.</div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="acts" id="foot" hidden>
+    <button class="btn ghost" id="camBtn">📷 Photo</button>
+    <button class="btn stop" id="finishBtn">Finish session</button>
+  </footer>
+
+  <footer class="acts" id="palFoot" hidden>
+    <button class="btn ghost" id="palLabelBtn">🖨</button>
+    <button class="btn ghost" id="palFullBtn">Mark FULL</button>
+    <button class="btn ghost" id="palWrapBtn">Wrapped ✓</button>
+    <button class="btn stop" id="palCloseBtn">Close pallet</button>
+  </footer>
+  <footer class="acts" id="fbaFoot" hidden>
+    <button class="btn ghost" id="fbaBackBtn">Leave open</button>
+    <button class="btn stop" id="fbaCloseBtn">Close count</button>
+  </footer>
+  <footer class="acts" id="cntFoot" hidden>
+    <button class="btn ghost" id="cntLeaveBtn">Leave open</button>
+    <button class="btn stop" id="cntFinishBtn">Finish count</button>
+  </footer>
+  <footer class="acts" id="bxFoot" hidden>
+    <button class="btn ghost" id="bxLeaveBtn">Leave open</button>
+    <button class="btn" id="bxSealBtn">Seal box ✓</button>
+  </footer>
+  <footer class="acts" id="bxSealedFoot" hidden>
+    <button class="btn ghost" id="bxBackBtn">Back</button>
+    <button class="btn" id="bxLabelBtn">Print label</button>
+    <button class="btn stop" id="bxReopenBtn">Open box</button>
+  </footer>
+  <footer class="acts" id="cntLocFoot" hidden>
+    <button class="btn ghost" id="cntBackLocBtn">Back to list</button>
+    <button class="btn" id="cntCloseLocBtn">Location done ✓</button>
+  </footer>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ============================================================
+   FR MOBILE — corte 1: Home + Receiving + scan engine
+   Writes go through Netlify functions (service key, RLS-safe):
+     GET  /clients-list   -> client roster
+     POST /frm-receive    -> insert inbound scan into shipments_general
+   ============================================================ */
+const API_BASE='https://apps.fr-logistics.net/.netlify/functions';
+
+const S={ operator:null, clients:[], view:'home',
+  session:[], seen:new Set(),           // receiving session (kept as-is)
+  outSession:[], outSeen:new Set() };   // outbound session
+
+// Per-mode config so receiving and outbound share one engine.
+const MODES={
+  receiving:{ direction:'Inbound', session:'session', seen:'seen',
+    ids:{ client:'rClient', type:'rType', carrier:'rCarrier',
+      pad:'scanpad', icon:'spIcon', big:'spBig', code:'spCode', hint:'spHint',
+      list:'rList', empty:'rEmpty', count:'rCount' },
+    padDefault:'Scan tracking' },
+  outbound:{ direction:'Outbound', session:'outSession', seen:'outSeen',
+    ids:{ client:'oClient', type:'oType', carrier:'oCarrier',
+      pad:'oScanpad', icon:'oIcon', big:'oBig', code:'oCode', hint:'oHint',
+      list:'oList', empty:'oEmpty', count:'oCount' },
+    padDefault:'Scan tracking' },
+};
+function mode(){ return MODES[S.view] || MODES.receiving; }
+function curSession(){ return S[mode().session]; }
+function curSeen(){ return S[mode().seen]; }
+
+/* ---------- helpers ---------- */
+const $=id=>document.getElementById(id);
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1900);}
+function buzz(pattern){ if(navigator.vibrate) navigator.vibrate(pattern); }
+let AC=null;
+function beep(type){
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    const seq = type==='ok'?[[880,0,.09]] : type==='dup'?[[660,0,.07],[660,.12,.07]] : [[200,0,.22]];
+    seq.forEach(([f,t,d])=>{const o=AC.createOscillator(),g=AC.createGain();
+      o.frequency.value=f;o.connect(g);g.connect(AC.destination);
+      const s=AC.currentTime+t;g.gain.setValueAtTime(.001,s);g.gain.exponentialRampToValueAtTime(.25,s+.01);
+      g.gain.exponentialRampToValueAtTime(.001,s+d);o.start(s);o.stop(s+d+.02);});
+  }catch(e){}
+}
+function feedback(kind){
+  if(kind==='ok'){buzz(40);beep('ok');}
+  else if(kind==='dup'){buzz([40,60,40]);beep('dup');}
+  else {buzz(200);beep('err');}
+}
+
+/* ---------- scan classifier ---------- */
+const RX_LOC=/^(R[A-Z]|F)\d{4}$/i;         // RA0101, RB0304, F0101
+// Container plate. Matches the bare code AND the full URL the QR carries,
+// which is why it has to be tested BEFORE the others: an unrecognised URL
+// would otherwise be classified as a tracking number.
+const RX_BOX=/FRC[-_]?(\d{1,9})/i;
+const RX_FNSKU=/^X00[A-Z0-9]{7}$/i;         // FNSKU
+// Canonical plate from anything scanned or typed: FRC-000847, frc-847,
+// FRC847, or https://apps.fr-logistics.net/c/FRC-000847-A3F9C2
+function boxCode(code){
+  const m=String(code||'').match(RX_BOX);
+  return m ? 'FRC-'+m[1].padStart(6,'0') : null;
+}
+
+function classify(code){
+  if(RX_BOX.test(code)) return 'container';
+  if(RX_LOC.test(code)) return 'location';
+  if(RX_FNSKU.test(code)) return 'fnsku';
+  if(/^\d{12,14}$/.test(code)) return 'upc';
+  return 'tracking';
+}
+
+/* ---------- navigation ---------- */
+function go(view){
+  S.view=view;
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  $('v-'+view).classList.add('active');
+  const bar=$('topbar');
+  // Reset both footers every time; each view turns on only the one it needs.
+  $('foot').hidden=true; $('palFoot').hidden=true; $('fbaFoot').hidden=true;
+  $('cntFoot').hidden=true; $('cntLocFoot').hidden=true;
+  $('bxFoot').hidden=true; $('bxSealedFoot').hidden=true;
+  if(view==='home'){bar.classList.remove('has-back');$('title').textContent='FR Mobile';detachCapture();}
+  else{bar.classList.add('has-back');}
+  if(view==='receiving'){$('title').textContent='Receiving';$('foot').hidden=false;attachCapture();refreshList();}
+  if(view==='outbound'){$('title').textContent='Outbound';$('foot').hidden=false;attachCapture();refreshList();}
+  if(view==='locations'){$('title').textContent='Locations';attachCapture();initLocations();}
+  if(view==='inventory'){$('title').textContent='Inventory';attachCapture();initInventory();}
+  if(view==='pallets'){$('title').textContent='Pallets';attachCapture();initPallets();}
+  if(view==='fba'){$('title').textContent='FBA Count';attachCapture();initFba();}
+  if(view==='count'){$('title').textContent='Stock Count';attachCapture();initCount();}
+  if(view==='boxes'){$('title').textContent='Boxes';attachCapture();initBoxes();}
+  $('main').scrollTop=0;
+}
+
+/* ---------- capture engine (keystroke trigger, no keyboard) ----------
+   The handheld trigger types the code + Enter into the focused field.
+   We keep an off-screen input focused so the OS keyboard never opens
+   (inputmode=none), and read the buffer on Enter. */
+let capBuf='', capTimer=null, capAttached=false;
+function attachCapture(){
+  capAttached=true;
+  focusCap();
+  const p=$('scanpad'); if(p) p.addEventListener('click',onPadTap);
+  const op=$('oScanpad'); if(op) op.addEventListener('click',onPadTap);
+  const lp=$('lScanpad'); if(lp) lp.addEventListener('click',onPadTap);
+  const ip=$('iScanpad'); if(ip) ip.addEventListener('click',onPadTap);
+  const pp=$('pScanpad'); if(pp) pp.addEventListener('click',onPadTap);
+  const fp=$('fScanpad'); if(fp) fp.addEventListener('click',onPadTap);
+  const cp=$('cScanpad'); if(cp) cp.addEventListener('click',onPadTap);
+  const cp2=$('cScanpad2'); if(cp2) cp2.addEventListener('click',onPadTap);
+  const bp=$('bScanpad'); if(bp) bp.addEventListener('click',onPadTap);
+  const bp2=$('bScanpad2'); if(bp2) bp2.addEventListener('click',onPadTap);
+  document.addEventListener('keydown',onKey,true);
+}
+function detachCapture(){
+  capAttached=false;
+  document.removeEventListener('keydown',onKey,true);
+  const p=$('scanpad'); if(p) p.removeEventListener('click',onPadTap);
+  const op=$('oScanpad'); if(op) op.removeEventListener('click',onPadTap);
+  const lp=$('lScanpad'); if(lp) lp.removeEventListener('click',onPadTap);
+  const ip=$('iScanpad'); if(ip) ip.removeEventListener('click',onPadTap);
+  const pp=$('pScanpad'); if(pp) pp.removeEventListener('click',onPadTap);
+  const fp=$('fScanpad'); if(fp) fp.removeEventListener('click',onPadTap);
+  const cp=$('cScanpad'); if(cp) cp.removeEventListener('click',onPadTap);
+  const cp2=$('cScanpad2'); if(cp2) cp2.removeEventListener('click',onPadTap);
+  const bp=$('bScanpad'); if(bp) bp.removeEventListener('click',onPadTap);
+  const bp2=$('bScanpad2'); if(bp2) bp2.removeEventListener('click',onPadTap);
+}
+function focusCap(){ if(!capAttached)return; const c=$('capture'); if(document.activeElement!==c) c.focus({preventScroll:true}); }
+function isFormField(el){ return el && (el.tagName==='SELECT' || (el.tagName==='INPUT' && el.id!=='capture')); }
+
+function onKey(e){
+  // ignore when the user is in a real select/input
+  if(isFormField(document.activeElement)) return;
+  if(e.key==='Enter'){
+    const code=capBuf.trim();
+    if(code){ if(S.view==='locations') lookupScan(code); else if(S.view==='inventory') inventoryScan(code); else if(S.view==='pallets') palletScan(code); else if(S.view==='fba') fbaScan(code); else if(S.view==='count') countScan(code); else if(S.view==='boxes') boxScan(code); else commitScan(code); }
+    capBuf=''; e.preventDefault(); return;
+  }
+  if(e.key.length===1){ capBuf+=e.key; clearTimeout(capTimer); capTimer=setTimeout(()=>{capBuf='';},120); }
+}
+function onPadTap(){ /* placeholder: camera flow lives on the 📷 button */ focusCap(); }
+
+/* ---------- scan logic (shared by receiving + outbound) ---------- */
+function commitScan(code){
+  const M=mode(), ids=M.ids, seen=curSeen(), session=curSession();
+  const kind=classify(code);
+  if(kind!=='tracking' && kind!=='upc' && kind!=='fnsku'){
+    setPad('err','That is a location','Scan the package tracking, not the location',code);
+    feedback('err'); return;
+  }
+  if(seen.has(code)){
+    setPad('dup','Already scanned','This tracking is already in the session',code);
+    feedback('dup'); toast('Duplicate: already scanned'); return;
+  }
+  const client=$(ids.client).value;
+  if(!client){ setPad('err','No client selected','Pick a client before scanning',''); feedback('err'); toast('Pick a client first'); return; }
+  const rec={tracking:code, client, client_id:$(ids.client).selectedOptions[0].dataset.id||null,
+    type:$(ids.type).value, carrier:$(ids.carrier).value, direction:M.direction,
+    at:new Date(), rowId:null, saving:true};
+  seen.add(code); session.unshift(rec);
+  setPad('ok', M.direction==='Outbound'?'Dispatched':'Received','',code); feedback('ok'); refreshList();
+  saveRow(rec);
+}
+
+async function saveRow(rec){
+  try{
+    const res=await fetch(`${API_BASE}/frm-receive`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        tracking:rec.tracking, client:rec.client, client_id:rec.client_id||null,
+        type:rec.type, carrier:rec.carrier, direction:rec.direction||'Inbound', operator:S.operator||''
+      })
+    });
+    if(res.status===200){ const j=await res.json(); rec.rowId=j.id; rec.saving=false; refreshList(); return; }
+    if(res.status===409){ rec.error='Duplicate in DB'; rec.saving=false; refreshList(); toast('⚠ Already in system: '+rec.tracking.slice(-8)); return; }
+    const j=await res.json().catch(()=>({})); throw new Error(j.error||('HTTP '+res.status));
+  }catch(err){
+    rec.error='Not saved'; rec.saving=false;
+    toast('⚠ '+rec.tracking.slice(-8)+': not saved'); refreshList();
+  }
+}
+
+function setPad(state,big,hint,code){
+  const ids=mode().ids;
+  const p=$(ids.pad); if(!p) return;
+  p.className='scanpad'+(state?(' '+state):'');
+  $(ids.big).textContent=big;
+  $(ids.code).textContent=code||'';
+  $(ids.hint).textContent=hint||'Pull the trigger to scan. 📷 adds a photo to the last package.';
+  $(ids.icon).textContent = state==='ok'?'✓' : state==='dup'?'!' : state==='err'?'✕' : '▣';
+  if(state==='ok'||state==='dup'){ clearTimeout(p._t); p._t=setTimeout(()=>{ if($(ids.pad)) setPad('','Scan tracking','',''); },1400); }
+}
+
+/* Operating mode of a client, straight from the client record (fr_clients
+   .receiving_mode, served by clients-list). 'inventory' = we keep their stock,
+   so the packing slip photo matters. 'receipt_only' = we just log the package,
+   no inventory control, and the tracking is all that is needed.
+   Never hardcode a client here: if it depends on the client, it lives in the
+   client record. */
+function receivingModeFor(r){
+  if(!r) return 'inventory';
+  const c = S.clients.find(x => (r.client_id && x.id===r.client_id))
+         || S.clients.find(x => x.label===r.client);
+  return (c && c.receivingMode) || 'inventory';
+}
+
+/* True when this package should carry a photo of its Amazon packing slip and
+   does not have one yet. Inbound only; Overstock (removals) and RMA are the
+   two types that come with the slip — and only for clients whose stock we
+   actually manage. For receipt_only clients there is no SKU library to map the
+   FNSKU against, so the photo would be friction with no payoff. */
+function needsSlipPhoto(r){
+  if(!r || r.removed || r.saving) return false;
+  if((r.direction||'Inbound')==='Outbound') return false;
+  if(r.photos) return false;
+  if(receivingModeFor(r)==='receipt_only') return false;
+  const t=(r.type||'').toLowerCase();
+  return t.indexOf('overstock')!==-1 || t.indexOf('rma')!==-1 || t.indexOf('return')!==-1;
+}
+
+function refreshList(){
+  const ids=mode().ids, session=curSession();
+  const ul=$(ids.list), n=session.length;
+  $(ids.count).textContent=n;
+  $(ids.empty).style.display=n?'none':'block';
+  ul.innerHTML='';
+  session.slice(0,40).forEach((r,i)=>{
+    const li=document.createElement('li');
+    if(r.removed) li.className='gone';
+    const photoTag = r.photos ? ` 📷${r.photos>1?r.photos:''}` : '';
+    // Overstock and RMA arrive with an Amazon packing slip that carries the
+    // FNSKU, the quantity and the RA number. That slip is the only place that
+    // data exists, and photographing it is what feeds the automatic reading —
+    // so the row nags until there is a photo.
+    const wantsSlip = needsSlipPhoto(r);
+    const slipTag = wantsSlip ? ' 📷 needed' : '';
+    const badge = r.saving?'saving…' : r.error?('⚠ '+r.error) : (r.type.replace(/^(Inbound|Outbound) /,'').replace(/[()]/g,'')+photoTag+slipTag);
+    li.innerHTML=`<span class="code">${r.tracking}</span><span class="badge">${badge}</span>`;
+    // Only once the row exists in the database, and never for outbound: an
+    // outbound box already wears the carrier label and a second barcode on the
+    // same box is how a sorter misreads it.
+    if(r.rowId && !r.removed && (r.direction||'Inbound')!=='Outbound'){
+      const pb=document.createElement('button');
+      pb.className='btn ghost';
+      pb.textContent='🖨';
+      pb.style.cssText='flex:0 0 auto;padding:.15rem .5rem;font-size:.95rem;min-height:0;margin-left:.4rem';
+      pb.onclick=(e)=>{ e.stopPropagation(); queuePrint('inbound_label',{ref_id:r.rowId}, r.tracking.slice(-8)); };
+      li.appendChild(pb);
+    }
+    if(r.photos && r.photoUrls && r.photoUrls.length){
+      li.querySelector('.badge').style.cssText='color:var(--teal-d);font-weight:700';
+      li.querySelector('.badge').onclick=(e)=>{ e.stopPropagation(); viewPhotos(r); };
+    } else if(wantsSlip){
+      li.querySelector('.badge').style.cssText='color:#b45309;font-weight:700';
+    }
+    if(!r.removed){
+      const b=document.createElement('button');b.className='undo';b.textContent='↺';b.title='Undo';
+      b.onclick=()=>undo(r);li.appendChild(b);
+    }
+    ul.appendChild(li);
+  });
+}
+
+async function undo(rec){
+  // Resolve which session/seen this record belongs to (by its direction)
+  const isOut = rec.direction==='Outbound';
+  const seen = isOut ? S.outSeen : S.seen;
+  const getSession = () => isOut ? S.outSession : S.session;
+  rec.removed=true; seen.delete(rec.tracking); refreshList();
+  if(rec.saving){
+    for(let i=0;i<20 && rec.saving;i++){ await new Promise(r=>setTimeout(r,100)); }
+  }
+  if(rec.rowId){
+    try{
+      const res=await fetch(`${API_BASE}/shipments-proxy?tracking=${encodeURIComponent(rec.tracking)}`,{method:'DELETE'});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      toast('Removed: '+rec.tracking.slice(-8));
+    }catch(err){
+      rec.removed=false; seen.add(rec.tracking); refreshList();
+      toast('⚠ Could not delete — try again');
+      return;
+    }
+  }else{
+    toast('Undone: '+rec.tracking.slice(-8));
+  }
+  setTimeout(()=>{ if(isOut) S.outSession=S.outSession.filter(x=>x!==rec); else S.session=S.session.filter(x=>x!==rec); refreshList(); },400);
+}
+
+/* Simple full-screen photo viewer for a scanned package. */
+function viewPhotos(rec){
+  const urls=rec.photoUrls||[];
+  if(!urls.length){ toast('No photo for this package yet'); return; }
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(12,42,62,.96);z-index:200;display:flex;flex-direction:column;padding:14px;overflow-y:auto';
+  ov.innerHTML=`<div style="color:#fff;display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <b style="font-family:ui-monospace,monospace;font-size:14px">${rec.tracking}</b>
+      <button id="pvClose" style="border:0;background:rgba(255,255,255,.15);color:#fff;width:40px;height:40px;border-radius:10px;font-size:22px">×</button>
+    </div>`+
+    urls.map((u,i)=>`<img src="${u}" alt="Photo ${i+1}" style="width:100%;border-radius:12px;margin-bottom:12px" />`).join('');
+  document.body.appendChild(ov);
+  ov.querySelector('#pvClose').onclick=()=>{ ov.remove(); focusCap(); };
+}
+
+/* ---------- package photo (native camera -> shipment-photos-proxy) ----------
+   Not a scanner: this documents the package. The photo attaches to the most
+   recent scanned tracking via the existing shipment-photos-proxy function. */
+function takePhoto(){
+  // Which package does this photo belong to? The most recent non-removed scan.
+  const target=curSession().find(r=>!r.removed);
+  if(!target){ toast('Scan a package first, then add its photo'); return; }
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*'; inp.capture='environment';
+  inp.style.display='none'; document.body.appendChild(inp);
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; inp.remove();
+    if(!file){ focusCap(); return; }
+    toast('Uploading photo…');
+    try{
+      const dataUrl=await compressImage(file, 1600, 0.72);
+      const res=await fetch(`${API_BASE}/shipment-photos-proxy`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({tracking:target.tracking, photo_data_urls:[dataUrl], attach:true})
+      });
+      if(!res.ok){ const j=await res.json().catch(()=>({})); throw new Error(j.error||('HTTP '+res.status)); }
+      const j=await res.json();
+      target.photos=(target.photos||0)+ (j.photo_urls?j.photo_urls.length:1);
+      target.photoUrls=(target.photoUrls||[]).concat(j.photo_urls||[]);
+      feedback('ok'); toast('Photo added to '+target.tracking.slice(-8));
+      refreshList();
+      // Read the Amazon packing slip out of the photo we just stored, so the
+      // FNSKU / qty / RA# never has to be typed. Fire and FORGET on purpose:
+      // the photo and the inbound row are already saved, so the operator moves
+      // on to the next box while this runs. A failure here costs nothing.
+      askSlipExtract(target.tracking, (j.photo_urls||[])[0], target.type);
+    }catch(err){
+      feedback('err'); toast('Photo failed: '+(err.message||'try again'));
+    }
+    focusCap();
+  };
+  inp.click();
+}
+
+/* Fire-and-forget call to slip-extract. Never awaited, never surfaced as an
+   error to the operator: this is enrichment, not part of receiving. */
+function askSlipExtract(tracking, photoUrl, type){
+  if(!tracking || !photoUrl) return;
+  // Only Overstock and RMA arrive with an Amazon packing slip. In the first
+  // live batch 10 of 14 calls were photos of FBA inbound shipments that carry
+  // no slip at all: the reading was correctly classified as no_slip, but it was
+  // a paid call for nothing. Gate on the same rule the 📷 reminder uses.
+  const t=(type||'').toLowerCase();
+  const carriesSlip = t.indexOf('overstock')!==-1 || t.indexOf('rma')!==-1 || t.indexOf('return')!==-1;
+  if(!carriesSlip) return;
+  try{
+    fetch(`${API_BASE}/slip-extract`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({tracking, photo_url:photoUrl})
+    }).catch(()=>{});
+  }catch(_){ /* nothing to do: the photo is already saved */ }
+}
+
+/* Downscale + compress to keep uploads small (AS01P is 13MP). */
+function compressImage(file, maxDim, quality){
+  return new Promise((resolve,reject)=>{
+    const img=new Image(); const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      let {width:w,height:h}=img;
+      if(Math.max(w,h)>maxDim){ const s=maxDim/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL('image/jpeg',quality));
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('bad image')); };
+    img.src=url;
+  });
+}
+
+/* ========================== LOCATIONS (read-only lookup) ==========================
+   Reads the occupancy-data function (mirror of SkuVault). Never writes.
+   Location scan -> what's stored + occupancy. Product scan -> where it is. */
+const OCC={ loaded:false, loading:false, detail:{}, locations:{}, byLoc:{}, aliasCache:{}, skuClient:{}, syncedAt:null };
+
+function initLocations(){
+  setLPad('','Scan a location or product','','');
+  $('lResult').innerHTML='';
+  if(!OCC.loaded && !OCC.loading) loadOccupancy();
+  else updateSyncInfo();
+}
+
+async function loadOccupancy(){
+  OCC.loading=true;
+  $('syncInfo').textContent='Loading inventory…';
+  try{
+    const res=await fetch(`${API_BASE}/occupancy-data`);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const d=await res.json();
+    OCC.detail=d.detail||{};               // { location_code: [ {sku,qty,cuft}, ... ] }
+    OCC.locations={};                      // { location_code: {occupancy_pct, zone, ...} }
+    let lastSync=null;
+    (d.locations||[]).forEach(l=>{
+      l.occupancy_pct = l.occupancy_pct!=null ? parseFloat(l.occupancy_pct) : null;
+      OCC.locations[l.location_code]=l;
+      if(l.synced_at && (!lastSync || l.synced_at>lastSync)) lastSync=l.synced_at;
+    });
+    // Build reverse index: sku -> [ {loc, qty} ]
+    OCC.byLoc={};
+    Object.entries(OCC.detail).forEach(([loc,items])=>{
+      items.forEach(it=>{ (OCC.byLoc[it.sku]||(OCC.byLoc[it.sku]=[])).push({loc,qty:it.qty}); });
+    });
+    OCC.syncedAt=lastSync||d.generated_at||null;
+    OCC.loaded=true;
+    // Load SKU -> client map (best-effort; blank if it fails)
+    try{
+      const cr=await fetch(`${API_BASE}/frm-sku-clients`);
+      if(cr.ok){ const cj=await cr.json(); OCC.skuClient=cj.map||{}; }
+    }catch(e){ OCC.skuClient={}; }
+    updateSyncInfo();
+  }catch(err){
+    $('syncInfo').textContent='Could not load inventory';
+    toast('Could not load inventory data');
+  }
+  OCC.loading=false;
+}
+
+function updateSyncInfo(){
+  // The occupancy payload reflects the last SkuVault sync stored in Supabase.
+  const when = OCC.syncedAt ? timeAgo(new Date(OCC.syncedAt)) : '—';
+  $('syncInfo').textContent = `Inventory as of ${when}`;
+}
+function timeAgo(d){
+  const s=Math.floor((Date.now()-d.getTime())/1000);
+  if(s<60) return 'just now';
+  if(s<3600) return Math.floor(s/60)+' min ago';
+  if(s<86400) return Math.floor(s/3600)+' h ago';
+  return d.toLocaleDateString()+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+}
+
+/* Refresh: triggers the SkuVault sync (slow), then reloads occupancy. */
+async function refreshFromSkuVault(){
+  const btn=$('syncBtn');
+  if(btn.classList.contains('busy')) return;
+  btn.classList.add('busy'); btn.textContent='↻ Syncing…';
+  $('syncInfo').textContent='Refreshing from SkuVault — this can take a minute…';
+  try{
+    const res=await fetch(`${API_BASE}/inventory-locations-sync`);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    OCC.loaded=false;
+    await loadOccupancy();
+    toast('Inventory refreshed');
+  }catch(err){
+    $('syncInfo').textContent='Refresh failed — showing last data';
+    toast('Refresh failed');
+    updateSyncInfo();
+  }
+  btn.classList.remove('busy'); btn.textContent='↻ Refresh';
+}
+
+/* Resolve FNSKU/UPC/alias to primary SKU via wh_sku_aliases (cached per code). */
+async function resolveSku(code){
+  if(OCC.byLoc[code]) return code;              // already a primary SKU we have stock for
+  if(OCC.aliasCache[code]!==undefined) return OCC.aliasCache[code]||code;
+  try{
+    const res=await fetch(`${API_BASE}/frm-alias?code=${encodeURIComponent(code)}`);
+    if(res.ok){ const j=await res.json(); OCC.aliasCache[code]=j.primary_sku; return j.primary_sku||code; }
+  }catch(e){}
+  OCC.aliasCache[code]=null;
+  return code;
+}
+
+async function lookupScan(code){
+  const kind=classify(code);
+  if(!OCC.loaded){ setLPad('err','Inventory not loaded','Tap Refresh to load',code); feedback('err'); return; }
+  if(kind==='location'){
+    showLocation(code.toUpperCase());
+  }else{
+    setLPad('','Looking up…','',code);
+    // Try to resolve via alias first (FNSKU -> primary SKU), then flexible match.
+    const resolved=await resolveSku(code);
+    showProduct(code, resolved);
+  }
+}
+
+/* Flexible product search: match the scanned code (and any alias) exactly OR
+   as a substring of an inventory SKU. Returns [{sku,loc,qty}]. */
+function findStock(scanned, resolved){
+  const needles=[scanned];
+  if(resolved && resolved!==scanned) needles.push(resolved);
+  const up=needles.map(n=>n.toUpperCase());
+  const hits=[]; // {sku, loc, qty}
+  Object.entries(OCC.byLoc).forEach(([sku,locs])=>{
+    const S=sku.toUpperCase();
+    const match = up.some(n=> S===n || S.includes(n));
+    if(match) locs.forEach(l=>hits.push({sku, loc:l.loc, qty:l.qty}));
+  });
+  return hits;
+}
+
+function occClass(p){ return p>=90?'high':p>=60?'mid':'low'; }
+
+function showLocation(loc){
+  const meta=OCC.locations[loc];
+  const items=OCC.detail[loc]||[];
+  if(!meta && !items.length){
+    setLPad('err','Unknown location','Not in the current inventory snapshot',loc);
+    feedback('err'); $('lResult').innerHTML=''; return;
+  }
+  setLPad('ok','Location found','',loc); feedback('ok');
+  const pct = meta&&meta.occupancy_pct!=null ? Math.round(meta.occupancy_pct*10)/10 : null;
+  const zone = meta&&meta.zone ? meta.zone : '';
+  const rows = items.length
+    ? items.map(it=>`<li><div style="flex:1"><div class="sku">${it.sku}</div><div class="cli">${clientForSku(it.sku)}</div></div><span class="qty">×${it.qty}</span></li>`).join('')
+    : `<div class="lc-empty">Empty — nothing stored here</div>`;
+  $('lResult').innerHTML=`
+    <div class="lcard">
+      <div class="lc-head">
+        <div><div class="lc-code">📍 ${loc}</div><div class="lc-sub">${zone}${meta&&meta.position_type?(' · '+meta.position_type):''}</div></div>
+        ${zone?`<span class="lc-zone">${zone}</span>`:''}
+      </div>
+      ${pct!=null?`<div class="occ"><div class="bar"><div class="fill ${occClass(pct)}" style="width:${Math.min(pct,100)}%"></div></div>
+        <div class="lbl"><span>Occupancy</span><span>${pct}%</span></div></div>`:''}
+      <ul class="lc-list">${rows}</ul>
+    </div>`;
+}
+
+function showProduct(scanned, resolved){
+  const hits=findStock(scanned, resolved);
+  if(!hits.length){
+    setLPad('dup','Not found in stock','No location has this item right now',scanned);
+    feedback('dup');
+    $('lResult').innerHTML=`<div class="lcard"><div class="lc-head"><div><div class="lc-code">📦 ${scanned}</div>
+      <div class="lc-sub">${resolved!==scanned?('→ '+resolved+' · '):''}not currently stored</div></div></div>
+      <div class="lc-empty">No stock in any location (per last sync)</div></div>`;
+    return;
+  }
+  setLPad('ok','Product found','',scanned); feedback('ok');
+  // Group by SKU (a flexible match can hit more than one SKU)
+  const bySku={};
+  hits.forEach(h=>{ (bySku[h.sku]||(bySku[h.sku]=[])).push(h); });
+  const total=hits.reduce((s,h)=>s+h.qty,0);
+  const cards=Object.entries(bySku).map(([sku,locs])=>{
+    const rows=locs.sort((a,b)=>b.qty-a.qty).map(l=>{
+      const m=OCC.locations[l.loc]; const pct=m&&m.occupancy_pct!=null?Math.round(m.occupancy_pct)+'%':'';
+      return `<li><div style="flex:1"><div class="sku">📍 ${l.loc}</div><div class="cli">${m&&m.zone?m.zone:''}${pct?(' · '+pct+' full'):''}</div></div><span class="qty">×${l.qty}</span></li>`;
+    }).join('');
+    const sub=clientForSku(sku);
+    return `<div class="lcard">
+      <div class="lc-head"><div><div class="lc-code">📦 ${sku}</div>
+        <div class="lc-sub">${sub||''}</div></div></div>
+      <ul class="lc-list">${rows}</ul>
+    </div>`;
+  }).join('');
+  const totalCard = Object.keys(bySku).length>1
+    ? `<div class="lcard"><div class="lc-total"><span>Total (${Object.keys(bySku).length} SKUs matched "${scanned}")</span><span>${total} units</span></div></div>`
+    : '';
+  $('lResult').innerHTML=cards+totalCard;
+}
+
+function clientForSku(sku){
+  return OCC.skuClient[sku] || '';
+}
+
+function setLPad(state,big,hint,code){
+  const p=$('lScanpad');
+  p.className='scanpad'+(state?(' '+state):'');
+  $('lBig').textContent=big;
+  $('lCode').textContent=code||'';
+  $('lHint').textContent=hint||"Location (RA0101) shows contents. Product (FNSKU) shows where it is.";
+  $('lIcon').textContent = state==='ok'?'✓' : state==='dup'?'!' : state==='err'?'✕' : '▣';
+  if(state==='ok'){ clearTimeout(p._t); p._t=setTimeout(()=>{ const el=$('lScanpad'); if(el){el.className='scanpad';$('lIcon').textContent='▣';$('lBig').textContent='Scan a location or product';$('lCode').textContent='';} },1600); }
+}
+
+/* ========================== INVENTORY (read-only, stock by client) ==========================
+   Reuses the same OCC data loaded by Locations: byLoc (sku->locations), skuClient
+   (sku->client), locations (metadata). Never writes. Two ways in: pick a client
+   from the list, or scan a product to jump to its owner's stock. */
+function initInventory(){
+  $('invResult').innerHTML='';
+  $('iHint').textContent='Pick a client above, or scan any product to see its owner\'s stock.';
+  if(!OCC.loaded && !OCC.loading){ loadOccupancy().then(fillClientDropdown); }
+  else { fillClientDropdown(); updateInvSyncInfo(); }
+}
+
+function updateInvSyncInfo(){
+  const when = OCC.syncedAt ? timeAgo(new Date(OCC.syncedAt)) : '—';
+  $('invSyncInfo').textContent = `Inventory as of ${when}`;
+}
+
+/* Build the client dropdown from SKUs that actually have stock. */
+function fillClientDropdown(){
+  updateInvSyncInfo();
+  // client -> {skus:Set, units:number}
+  const agg={};
+  Object.entries(OCC.byLoc).forEach(([sku,locs])=>{
+    const client=OCC.skuClient[sku]||'Unassigned';
+    const units=locs.reduce((s,l)=>s+l.qty,0);
+    if(units<=0) return;
+    (agg[client]||(agg[client]={skus:new Set(),units:0}));
+    agg[client].skus.add(sku); agg[client].units+=units;
+  });
+  const clients=Object.entries(agg).sort((a,b)=>b[1].units-a[1].units);
+  const sel=$('invClient');
+  sel.innerHTML='<option value="">— Select client —</option>'+
+    clients.map(([c,v])=>`<option value="${c.replace(/"/g,'&quot;')}">${c} (${v.units} units)</option>`).join('');
+}
+
+/* Scan a product -> show THAT product: client, total qty, and its locations. */
+async function inventoryScan(code){
+  if(!OCC.loaded){ $('iHint').textContent='Inventory not loaded — tap Refresh.'; feedback('err'); return; }
+  const sku=await resolveSku(code);
+  const hits=findStock(code, sku);
+  if(!hits.length){
+    feedback('dup');
+    $('invResult').innerHTML=`<div class="lcard"><div class="lc-head"><div>
+      <div class="lc-code">📦 ${code}</div><div class="lc-sub">not currently stored</div></div></div>
+      <div class="lc-empty">No stock in any location (per last sync)</div></div>`;
+    $('iHint').textContent='No stock found for '+code;
+    return;
+  }
+  feedback('ok');
+  $('invClient').value='';
+  showProductStock(code, hits);
+}
+
+/* Show one scanned product: header (client), then its locations + quantities. */
+function showProductStock(scanned, hits){
+  // hits may span more than one matched SKU; group by SKU, each with its locations.
+  const bySku={};
+  hits.forEach(h=>{ (bySku[h.sku]||(bySku[h.sku]=[])).push(h); });
+  const cards=Object.entries(bySku).map(([sku,locs])=>{
+    const client=OCC.skuClient[sku]||'Unassigned';
+    const total=locs.reduce((s,l)=>s+l.qty,0);
+    const rows=locs.sort((a,b)=>b.qty-a.qty).map(l=>{
+      const m=OCC.locations[l.loc]; const zone=m&&m.zone?m.zone:''; const pct=m&&m.occupancy_pct!=null?Math.round(m.occupancy_pct)+'%':'';
+      return `<li><div style="flex:1"><div class="sku">📍 ${l.loc}</div><div class="cli">${zone}${pct?(' · '+pct+' full'):''}</div></div><span class="qty">×${l.qty}</span></li>`;
+    }).join('');
+    return `<div class="lcard">
+      <div class="lc-head">
+        <div><div class="lc-code">📦 ${sku}</div><div class="lc-sub">${client}</div></div>
+        <span class="lc-zone">${total} units</span>
+      </div>
+      <ul class="lc-list">${rows}</ul>
+    </div>`;
+  }).join('');
+  $('invResult').innerHTML=cards;
+  $('iHint').textContent='Scanned '+scanned;
+}
+
+function showClientStock(client, highlightSku){
+  if(!client){ $('invResult').innerHTML=''; return; }
+  // Gather all SKUs of this client that have stock, grouped BY LOCATION.
+  const byLocation={}; // loc -> [ {sku, qty} ]
+  let totalUnits=0, skuSet=new Set();
+  Object.entries(OCC.byLoc).forEach(([sku,locs])=>{
+    if((OCC.skuClient[sku]||'Unassigned')!==client) return;
+    locs.forEach(l=>{
+      if(l.qty<=0) return;
+      (byLocation[l.loc]||(byLocation[l.loc]=[])).push({sku,qty:l.qty});
+      totalUnits+=l.qty; skuSet.add(sku);
+    });
+  });
+  const locs=Object.keys(byLocation).sort();
+  if(!locs.length){ $('invResult').innerHTML=`<div class="lcard"><div class="lc-empty">No stock for ${client}</div></div>`; return; }
+
+  const cards=locs.map(loc=>{
+    const meta=OCC.locations[loc];
+    const zone=meta&&meta.zone?meta.zone:'';
+    const pct=meta&&meta.occupancy_pct!=null?Math.round(meta.occupancy_pct)+'%':'';
+    const items=byLocation[loc].sort((a,b)=>b.qty-a.qty).map(it=>{
+      const hl = highlightSku && it.sku===highlightSku ? ' style="background:#e7f6ef;border-radius:8px;padding:6px 8px;margin:0 -8px"' : '';
+      return `<li${hl}><div style="flex:1"><div class="sku">${it.sku}</div></div><span class="qty">×${it.qty}</span></li>`;
+    }).join('');
+    return `<div class="lcard">
+      <div class="lc-head">
+        <div><div class="lc-code">📍 ${loc}</div><div class="lc-sub">${zone}${pct?(' · '+pct+' full'):''}</div></div>
+      </div>
+      <ul class="lc-list">${items}</ul>
+    </div>`;
+  }).join('');
+
+  const header=`<div class="lcard" style="background:var(--navy);color:#fff">
+    <div class="lc-head" style="margin:0"><div>
+      <div class="lc-code" style="color:#fff">${client}</div>
+      <div class="lc-sub" style="color:#bcd">${skuSet.size} SKUs · ${totalUnits} units · ${locs.length} locations</div>
+    </div></div></div>`;
+  $('invResult').innerHTML=header+cards;
+  $('iHint').textContent='Showing stock for '+client;
+}
+
+/* ========================== PALLETS (returns pallet builder) ==========================
+   Writes to pallets / pallet_packages via anon key (same as pallets.html — those
+   tables have public RLS). Shares data with the desktop app. */
+const PAL_URL='https://rijbschnchjiuggrhfrx.supabase.co';
+// Same anon key pallets.html uses — those tables have public RLS.
+const PAL_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpamJzY2huY2hqaXVnZ3JoZnJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMTQwOTQsImV4cCI6MjA4ODg5MDA5NH0.s3T4CStjWqOvz7qDpYtjt0yVJ0iyOMAKKwxkADSEs4s';
+const PAL={ current:null };
+
+async function palFetch(method, path, body){
+  const res=await fetch(PAL_URL+path,{
+    method,
+    headers:{ 'apikey':PAL_KEY, 'Authorization':'Bearer '+PAL_KEY, 'Content-Type':'application/json',
+      'Prefer': method==='POST'?'return=representation,resolution=merge-duplicates':'' },
+    body: body?JSON.stringify(body):undefined
+  });
+  if(!res.ok){ throw new Error(await res.text()); }
+  const t=await res.text(); return t?JSON.parse(t):[];
+}
+
+function palGenId(){
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  const rnd=Math.random().toString(16).slice(2,6).toUpperCase();
+  return `FRP-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${rnd}`;
+}
+
+function initPallets(){
+  // fill client dropdown (reuse the roster already loaded)
+  const sel=$('palClient');
+  if(sel && S.clients.length && sel.options.length<=1){
+    sel.innerHTML='<option value="">— Select client —</option>'+
+      S.clients.map(c=>`<option value="${c.label.replace(/"/g,'&quot;')}">${c.label}</option>`).join('');
+  }
+  if(PAL.current) showActivePallet(); else showPalletHome();
+}
+
+function showPalletHome(){
+  $('palNoPallet').hidden=false; $('palActive').hidden=true; $('palFoot').hidden=true;
+  refreshOpenPallets();
+}
+function showActivePallet(){
+  $('palNoPallet').hidden=true; $('palActive').hidden=false; $('palFoot').hidden=false;
+  renderActivePallet();
+}
+
+async function refreshOpenPallets(){
+  const ul=$('palOpenList'), empty=$('palOpenEmpty');
+  ul.innerHTML=''; empty.style.display='block'; empty.textContent='Loading…';
+  try{
+    const rows=await palFetch('GET', `/rest/v1/pallets?app_source=eq.pallets&status=neq.FULL&order=updated_at.desc&limit=50`);
+    if(!rows.length){ empty.textContent='No open pallets.'; return; }
+    empty.style.display='none';
+    rows.forEach(r=>{
+      const li=document.createElement('li');
+      const n=(r.packages||[]).length;
+      li.innerHTML=`<div style="flex:1"><div class="sku">${r.pallet_id}</div><div class="cli">${r.client||'—'} · ${r.status||'OPEN'}</div></div><span class="qty">${n}</span>`;
+      li.style.cursor='pointer';
+      li.onclick=()=>loadPallet(r);
+      ul.appendChild(li);
+    });
+  }catch(e){ empty.textContent='Could not load pallets.'; }
+}
+
+function loadPallet(r){
+  PAL.current={ palletId:r.pallet_id, client:r.client||'', palletSize:r.pallet_size||'',
+    status:r.status||'OPEN', packages:r.packages||[], createdAt:r.created_at,
+    fullAt:r.full_at, wrappedAt:r.wrapped_at };
+  showActivePallet();
+}
+
+async function createPallet(){
+  const client=$('palClient').value.trim();
+  if(!client){ toast('Pick a client first'); return; }
+  PAL.current={ palletId:palGenId(), client, palletSize:$('palSize').value,
+    status:'OPEN', packages:[], createdAt:new Date().toISOString(), fullAt:null, wrappedAt:null };
+  try{ await savePallet(); showActivePallet(); toast('Pallet created'); }
+  catch(e){ toast('Could not create pallet'); }
+}
+
+async function savePallet(){
+  const p=PAL.current;
+  await palFetch('POST', `/rest/v1/pallets?on_conflict=pallet_id`, {
+    pallet_id:p.palletId, client:p.client||'', pallet_size:p.palletSize||'',
+    status:p.status||'OPEN', packages:p.packages||[],
+    full_at:p.fullAt||null, wrapped_at:p.wrappedAt||null,
+    updated_at:new Date().toISOString(), app_source:'pallets'
+  });
+}
+
+function setPPad(state,big,hint,code){
+  const p=$('pScanpad'); if(!p) return;
+  p.className='scanpad'+(state?(' '+state):'');
+  $('pBig').textContent=big; $('pCode').textContent=code||'';
+  $('pHint').textContent=hint||'Pull the trigger to add a package to this pallet.';
+  $('pIcon').textContent = state==='ok'?'✓' : state==='dup'?'!' : state==='err'?'✕' : '▣';
+  if(state==='ok'||state==='dup'){ clearTimeout(p._t); p._t=setTimeout(()=>{ if($('pScanpad')) setPPad('','Scan package tracking','',''); },1400); }
+}
+
+async function palletScan(code){
+  if(!PAL.current){ setPPad('err','No active pallet','Create or load a pallet first',code); feedback('err'); return; }
+  // Guard: a Pallet ID is not a package tracking
+  if(/^FRP-/i.test(code)){ setPPad('err','That is a Pallet ID','Scan the carrier label, not the pallet',code); feedback('err'); return; }
+  // Already in this pallet?
+  if((PAL.current.packages||[]).some(x=>x.tracking===code)){
+    setPPad('dup','Already on this pallet','',code); feedback('dup'); return;
+  }
+  setPPad('','Checking…','',code);
+  try{
+    // Already on another pallet?
+    const exists=await palFetch('GET', `/rest/v1/pallet_packages?tracking=eq.${encodeURIComponent(code)}&limit=1`);
+    if(exists && exists.length){
+      setPPad('dup','On another pallet',`Already on ${exists[0].pallet_id}`,code); feedback('dup');
+      toast('Already on pallet '+exists[0].pallet_id); return;
+    }
+    const pkg={tracking:code, addedAt:new Date().toISOString(), notes:''};
+    PAL.current.packages.push(pkg);
+    await savePallet();
+    await palFetch('POST', `/rest/v1/pallet_packages?on_conflict=tracking`, {tracking:code, pallet_id:PAL.current.palletId, notes:''});
+    setPPad('ok','Added',''+code, code); feedback('ok');
+    renderActivePallet();
+  }catch(e){
+    // rollback local add
+    PAL.current.packages=(PAL.current.packages||[]).filter(x=>x.tracking!==code);
+    setPPad('err','Not added','Try again',code); feedback('err');
+  }
+}
+
+async function removePackage(trk){
+  if(!PAL.current) return;
+  const prev=PAL.current.packages.slice();
+  PAL.current.packages=PAL.current.packages.filter(x=>x.tracking!==trk);
+  renderActivePallet();
+  try{
+    await savePallet();
+    await palFetch('DELETE', `/rest/v1/pallet_packages?tracking=eq.${encodeURIComponent(trk)}`);
+    toast('Removed: '+trk.slice(-8));
+  }catch(e){ PAL.current.packages=prev; renderActivePallet(); toast('Could not remove'); }
+}
+
+function renderActivePallet(){
+  const p=PAL.current; if(!p) return;
+  $('palId').textContent=p.palletId;
+  $('palMeta').textContent=`${p.client||'—'} · ${p.palletSize||''} · ${p.status||'OPEN'}`;
+  const pkgs=p.packages||[];
+  $('palCount').textContent=pkgs.length;
+  const ul=$('palPkgList'), empty=$('palPkgEmpty');
+  empty.style.display=pkgs.length?'none':'block';
+  ul.innerHTML='';
+  pkgs.slice().reverse().slice(0,60).forEach(pk=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="code">${pk.tracking}</span><span class="badge">${timeAgo(new Date(pk.addedAt))}</span>`;
+    const b=document.createElement('button');b.className='undo';b.textContent='↺';b.title='Remove';
+    b.onclick=()=>removePackage(pk.tracking);li.appendChild(b);
+    ul.appendChild(li);
+  });
+}
+
+async function palMarkStatus(newStatus){
+  if(!PAL.current) return;
+  PAL.current.status=newStatus;
+  if(newStatus==='FULL') PAL.current.fullAt=new Date().toISOString();
+  if(newStatus==='WRAPPED / READY FOR PICKUP') PAL.current.wrappedAt=new Date().toISOString();
+  try{ await savePallet(); renderActivePallet(); toast('Status: '+newStatus); }
+  catch(e){ toast('Could not update status'); }
+}
+
+function closePallet(){
+  // "Close" here = stop working on it (it stays saved). Go back to pallet home.
+  PAL.current=null;
+  showPalletHome();
+}
+
+/* ============================================================
+   FBA COUNT — Send to Amazon manifest, Client-Managed flow
+   Writes through /frm-fba (service key, RLS-safe).
+   What gets counted here is what goes in the client's manifest:
+     · Box of one item  -> case pack: units/box, how many boxes, one measured box
+     · Loose units      -> quantity only; shipping boxes are decided when packing
+   ============================================================ */
+const FBA={ current:null, lines:[], pending:null, lineType:'case', busy:false };
+
+async function fbaApi(method, action, payload){
+  const url = method==='GET'
+    ? `${API_BASE}/frm-fba?action=${action}&${new URLSearchParams(payload||{})}`
+    : `${API_BASE}/frm-fba`;
+  const res = await fetch(url, method==='GET' ? {} : {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action, ...(payload||{})})
+  });
+  const j = await res.json().catch(()=>({}));
+  if(!res.ok){ const e=new Error(j.message||j.error||('HTTP '+res.status)); e.status=res.status; e.payload=j; throw e; }
+  return j;
+}
+
+function initFba(){
+  const sel=$('fbaClient');
+  if(sel && S.clients.length && sel.options.length<=1){
+    sel.innerHTML='<option value="">— Select client —</option>'+
+      S.clients.map(c=>`<option value="${c.label.replace(/"/g,'&quot;')}" data-id="${c.id}">${c.label}</option>`).join('');
+  }
+  if(FBA.current) showFbaActive(); else showFbaHome();
+}
+
+function showFbaHome(){
+  $('fbaNoShip').hidden=false; $('fbaActive').hidden=true; $('fbaFoot').hidden=true;
+  hideDeclare();
+  refreshOpenCounts();
+}
+function showFbaActive(){
+  $('fbaNoShip').hidden=true; $('fbaActive').hidden=false; $('fbaFoot').hidden=false;
+  renderFbaLines();
+}
+
+async function refreshOpenCounts(){
+  const ul=$('fbaOpenList'), empty=$('fbaOpenEmpty');
+  ul.innerHTML=''; empty.style.display='block'; empty.textContent='Loading…';
+  try{
+    const j=await fbaApi('GET','shipments');
+    const rows=j.shipments||[];
+    if(!rows.length){ empty.textContent='No open counts.'; return; }
+    empty.style.display='none';
+    rows.forEach(r=>{
+      const li=document.createElement('li');
+      const cli=(r.client&&(r.client.company||r.client.name))||'—';
+      li.innerHTML=`<div style="flex:1"><div class="sku">${r.reference}</div><div class="cli">${cli} · ${r.status}</div></div><span class="qty">›</span>`;
+      li.style.cursor='pointer';
+      li.onclick=()=>loadFbaShipment(r);
+      ul.appendChild(li);
+    });
+  }catch(e){ empty.textContent='Could not load counts.'; }
+}
+
+async function createFbaCount(){
+  const sel=$('fbaClient');
+  const client=sel.value.trim();
+  const client_id=sel.selectedOptions[0] && sel.selectedOptions[0].dataset.id;
+  const reference=$('fbaRef').value.trim();
+  if(!client_id){ toast('Pick a client first'); return; }
+  if(!reference){ toast('Give the count a reference'); return; }
+  try{
+    const j=await fbaApi('POST','create_shipment',{client_id, reference, created_by:S.operator||''});
+    FBA.current={...j.shipment, clientLabel:client};
+    FBA.lines=[]; $('fbaRef').value='';
+    showFbaActive(); toast('Count started'); setTimeout(focusCap,60);
+  }catch(e){ toast('Could not start: '+e.message); }
+}
+
+async function loadFbaShipment(r){
+  FBA.current={...r, clientLabel:(r.client&&(r.client.company||r.client.name))||''};
+  showFbaActive();
+  await reloadFbaLines();
+  setTimeout(focusCap,60);
+}
+
+async function reloadFbaLines(){
+  try{
+    const j=await fbaApi('GET','lines',{shipment_id:FBA.current.id});
+    FBA.lines=j.lines||[];
+    FBA.summary=j.summary||null;
+    renderFbaLines();
+  }catch(e){ toast('Could not load lines'); }
+}
+
+function setFPad(state,big,hint,code){
+  const p=$('fScanpad'); if(!p) return;
+  p.className='scanpad'+(state?(' '+state):'');
+  $('fBig').textContent=big; $('fCode').textContent=code||'';
+  $('fHint').textContent=hint||'Pull the trigger on the FNSKU. Then declare box or loose.';
+  $('fIcon').textContent = state==='ok'?'✓' : state==='dup'?'!' : state==='err'?'✕' : '▣';
+  if(state==='ok'){ clearTimeout(p._t); p._t=setTimeout(()=>{ if($('fScanpad')) setFPad('','Scan a product','',''); },1400); }
+}
+
+/* ---------- scan -> resolve -> declare ---------- */
+async function fbaScan(code){
+  if(!FBA.current){ setFPad('err','No active count','Start or open a count first',code); feedback('err'); return; }
+  if(classify(code)==='location'){ setFPad('err','That is a location','Scan the product barcode',code); feedback('err'); return; }
+  setFPad('','Looking up…','',code);
+  try{
+    const j=await fbaApi('GET','resolve_code',{code, shipment_id:FBA.current.id});
+    openDeclare(code, j);
+    feedback(j.mapped?'ok':'dup');
+    setFPad(j.mapped?'ok':'dup', j.mapped?'Found':'Not in the map', j.mapped?'':'Confirm the merchant SKU', code);
+  }catch(e){
+    setFPad('err','Lookup failed','Try again',code); feedback('err');
+  }
+}
+
+function openDeclare(code, resolved){
+  FBA.pending={ code, msku:resolved.msku||'', source:resolved.source||null,
+                mapped:!!resolved.mapped, suggestions:resolved.suggestions||[] };
+  $('fbaDeclare').hidden=false;
+  $('fbaMsku').textContent=resolved.msku||'—';
+  $('fbaScanned').textContent='Scanned '+code;
+  const src=$('fbaSrc');
+  src.className='fba-src '+(resolved.source||'manual');
+  src.textContent = resolved.source==='map' ? 'MAP'
+                  : resolved.source==='scanned_sku' ? 'SKU'
+                  : resolved.source==='memory' ? 'REMEMBERED' : 'MANUAL';
+  // A remembered SKU came from a person, not from SkuVault. Show who and when,
+  // so a wrong one gets caught here instead of riding along every future scan.
+  if(resolved.source==='memory'){
+    const who=resolved.confirmed_by||'someone';
+    const when=resolved.confirmed_at
+      ? new Date(resolved.confirmed_at).toLocaleDateString(undefined,{month:'short',day:'numeric'})
+      : 'earlier';
+    $('fbaScanned').textContent=`Scanned ${code} · confirmed by ${who} on ${when}`;
+  }
+
+  const un=$('fbaUnmapped');
+  un.hidden = !!resolved.mapped;
+  if(!resolved.mapped){
+    $('fbaManualMsku').value='';
+    const box=$('fbaSugg'); box.innerHTML='';
+    (resolved.suggestions||[]).forEach(s=>{
+      const b=document.createElement('button');
+      b.textContent=s;
+      b.onclick=()=>{ $('fbaManualMsku').value=s; $('fbaMsku').textContent=s; setTimeout(focusCap,60); };
+      box.appendChild(b);
+    });
+    $('fbaUnmappedMsg').textContent = (resolved.suggestions||[]).length
+      ? 'Not in the FNSKU map. Pick one below or type the merchant SKU.'
+      : 'Not in the FNSKU map. Type the merchant SKU to count it anyway.';
+  }
+
+  setLineType('case');
+  ['fbaUpb','fbaBoxes','fbaL','fbaW','fbaH','fbaWt','fbaQty'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
+  updateCaseTotal();
+  $('fbaDeclare').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function hideDeclare(){ FBA.pending=null; const d=$('fbaDeclare'); if(d) d.hidden=true; }
+
+function setLineType(t){
+  FBA.lineType=t;
+  $('fbaTypeCase').classList.toggle('on', t==='case');
+  $('fbaTypeLoose').classList.toggle('on', t==='loose');
+  $('fbaCaseFields').hidden = t!=='case';
+  $('fbaLooseFields').hidden = t!=='loose';
+}
+
+function updateCaseTotal(){
+  const upb=parseInt($('fbaUpb').value,10), boxes=parseInt($('fbaBoxes').value,10);
+  $('fbaCaseTotal').textContent = (upb>0 && boxes>0)
+    ? `${upb} × ${boxes} = ${upb*boxes} units`
+    : 'Units per box × boxes = what Amazon receives.';
+}
+
+async function fbaAddLine(){
+  if(!FBA.pending || FBA.busy) return;
+  const p=FBA.pending;
+  let msku=p.msku, confirm_unmapped=false;
+  if(!p.mapped){
+    msku=$('fbaManualMsku').value.trim();
+    if(!msku){ toast('Enter the merchant SKU'); return; }
+    confirm_unmapped=true;
+  }
+
+  const payload={ shipment_id:FBA.current.id, code:p.code, msku, confirm_unmapped,
+                  line_type:FBA.lineType, counted_by:S.operator||'' };
+
+  if(FBA.lineType==='case'){
+    const upb=parseInt($('fbaUpb').value,10), boxes=parseInt($('fbaBoxes').value,10);
+    if(!(upb>0)){ toast('Units per box?'); return; }
+    if(!(boxes>0)){ toast('How many boxes?'); return; }
+    payload.units_per_box=upb; payload.boxes=boxes;
+    const dims={length_in:$('fbaL').value, width_in:$('fbaW').value,
+                height_in:$('fbaH').value, weight_lb:$('fbaWt').value};
+    for(const k in dims){ const v=parseFloat(dims[k]); if(v>0) payload[k]=v; }
+  }else{
+    const qty=parseInt($('fbaQty').value,10);
+    if(!(qty>0)){ toast('How many loose units?'); return; }
+    payload.quantity=qty;
+  }
+
+  FBA.busy=true; $('fbaAddBtn').disabled=true;
+  try{
+    const j=await fbaApi('POST','add_line',payload);
+    hideDeclare();
+    if(j.merged) toast(`+${j.added} loose · ${msku} now ${j.line.quantity}`);
+    else toast('Line added');
+    if(j.warning){ toast(j.warning); }
+    await reloadFbaLines();
+    setFPad('ok','Line added','',p.code);
+    feedback('ok');
+  }catch(e){
+    toast('Not added: '+e.message);
+    feedback('err');
+  }finally{
+    FBA.busy=false; $('fbaAddBtn').disabled=false; setTimeout(focusCap,80);
+  }
+}
+
+async function deleteFbaLine(id){
+  const prev=FBA.lines.slice();
+  FBA.lines=FBA.lines.filter(l=>l.id!==id); renderFbaLines();
+  try{ await fbaApi('POST','delete_line',{line_id:id}); toast('Line removed'); await reloadFbaLines(); }
+  catch(e){ FBA.lines=prev; renderFbaLines(); toast('Could not remove'); }
+}
+
+function renderFbaLines(){
+  const c=FBA.current; if(!c) return;
+  $('fbaRefLbl').textContent=c.reference||'—';
+  $('fbaMeta').textContent=`${c.clientLabel||'—'} · ${c.status||'counting'}`;
+
+  const lines=FBA.lines||[];
+  const units=lines.reduce((a,l)=>a+(l.quantity||0),0);
+  const boxes=lines.reduce((a,l)=>a+(l.boxes||0),0);
+  $('fbaUnits').textContent=units;
+
+  const warn=$('fbaWarn');
+  const warnings=(FBA.summary&&FBA.summary.warnings)||[];
+  warn.hidden=!warnings.length;
+  warn.innerHTML=warnings.map(w=>`<div class="warnbox">⚠ ${w}</div>`).join('');
+
+  const ul=$('fbaLineList'), empty=$('fbaLineEmpty');
+  empty.style.display=lines.length?'none':'block';
+  ul.innerHTML='';
+  lines.forEach(l=>{
+    const li=document.createElement('li'); li.className='fba';
+    const dims=(l.length_in&&l.width_in&&l.height_in)
+      ? ` · ${l.length_in}×${l.width_in}×${l.height_in} in${l.weight_lb?' · '+l.weight_lb+' lb':''}` : '';
+    const detail = l.line_type==='case'
+      ? `${l.units_per_box} × ${l.boxes} box${l.boxes>1?'es':''} = ${l.quantity}${dims}`
+      : `loose · ${l.quantity} units`;
+    const flag = l.msku_source==='manual' ? ' <span class="fba-src manual">manual</span>'
+               : l.msku_source==='memory' ? ' <span class="fba-src memory">remembered</span>' : '';
+    li.innerHTML=`<div class="lineinfo"><div class="l1">${l.msku}${flag}</div><div class="l2">${detail}</div></div>`;
+    const b=document.createElement('button'); b.className='undo'; b.textContent='↺'; b.title='Remove';
+    b.onclick=()=>deleteFbaLine(l.id); li.appendChild(b);
+    ul.appendChild(li);
+  });
+
+  if(lines.length){
+    const t=document.createElement('li');
+    t.style.cssText='background:transparent;border:0;justify-content:space-between;font-weight:700';
+    t.innerHTML=`<span>${lines.length} line${lines.length>1?'s':''} · ${boxes} box${boxes===1?'':'es'}</span><span>${units} units</span>`;
+    ul.appendChild(t);
+  }
+}
+
+async function closeFbaCount(){
+  if(!FBA.current) return;
+  if(!confirm('Close this count? The manifest gets built in the portal.')) return;
+  try{
+    await fbaApi('POST','close_counting',{shipment_id:FBA.current.id});
+    toast('Count closed — build the manifest in the portal');
+    FBA.current=null; FBA.lines=[]; FBA.summary=null;
+    showFbaHome();
+  }catch(e){
+    if(e.status===409){
+      await reloadFbaLines();
+      toast(e.payload&&e.payload.message ? e.payload.message : 'Fix the flagged SKUs first');
+    } else toast('Could not close: '+e.message);
+  }
+}
+
+
+/* ============================================================
+   STOCK COUNT — blind physical / cycle count
+   Writes through /frm-count (service key, RLS-safe).
+
+   The count is BLIND on purpose: the expected quantity never comes down to
+   this screen while the count is open, and the server refuses to send it.
+   Someone who sees "48" before counting will count 48. That is not a UI
+   nicety — it is the whole reason the count is worth anything.
+
+   SkuVault is never written to from here. This module produces the variance;
+   a human applies the adjustment in SkuVault afterwards, so the WMS keeps
+   owning inventory and the adjustment carries a real user and timestamp.
+   ============================================================ */
+const CNT={ current:null, loc:null, lines:[], locs:[], pending:null, busy:false };
+
+async function cntApi(method, action, payload){
+  const url = method==='GET'
+    ? `${API_BASE}/frm-count?action=${action}&${new URLSearchParams(payload||{})}`
+    : `${API_BASE}/frm-count`;
+  const res = await fetch(url, method==='GET' ? {} : {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action, ...(payload||{})})
+  });
+  const j = await res.json().catch(()=>({}));
+  if(!res.ok){ const e=new Error(j.message||j.error||('HTTP '+res.status)); e.status=res.status; e.payload=j; e.code=j.error; throw e; }
+  return j;
+}
+
+function initCount(){
+  const sel=$('cntClient');
+  if(sel && S.clients.length && sel.options.length<=1){
+    sel.innerHTML='<option value="">— Select client —</option>'+
+      S.clients.map(c=>`<option value="${c.label.replace(/"/g,'&quot;')}" data-id="${c.id}">${c.label}</option>`).join('');
+  }
+  if(CNT.current) showCountActive(); else showCountHome();
+}
+
+function showCountHome(){
+  $('cntNoCount').hidden=false; $('cntActive').hidden=true;
+  $('cntFoot').hidden=true; $('cntLocFoot').hidden=true;
+  CNT.loc=null; CNT.lines=[]; hideCntDeclare();
+  refreshOpenCounts();
+}
+function showCountActive(){
+  $('cntNoCount').hidden=true; $('cntActive').hidden=false;
+  if(CNT.loc){ $('cntWalk').hidden=true; $('cntInLoc').hidden=false; $('cntFoot').hidden=true; $('cntLocFoot').hidden=false; }
+  else { $('cntWalk').hidden=false; $('cntInLoc').hidden=true; $('cntFoot').hidden=false; $('cntLocFoot').hidden=true; }
+  renderCountHeader();
+}
+
+/* ---------- start / resume ---------- */
+
+async function cntPreflight(){
+  const sel=$('cntClient'), box=$('cntPre');
+  const id=sel.selectedOptions[0] && sel.selectedOptions[0].dataset.id;
+  if(!id){ box.hidden=true; return; }
+  box.hidden=false; box.textContent='Checking stock on file…';
+  try{
+    const j=await cntApi('GET','preflight',{client_id:id});
+    if(j.live_count){
+      box.textContent=`${j.live_count.reference} is still ${j.live_count.status}. Open it below instead of starting a new one.`;
+      return;
+    }
+    // Deliberately shows ROWS and LOCATIONS, never units: unit totals are the
+    // number the counter must not see.
+    let t=`${j.rows} SKU-location rows across ${j.locations} locations.`;
+    if(j.stale) t+=` ⚠ The SkuVault mirror is ${j.snapshot_age_min} min old — refresh it in Locations first.`;
+    else if(j.snapshot_age_min!=null) t+=` Synced ${j.snapshot_age_min} min ago.`;
+    box.textContent=t;
+    if(!$('cntRef').value.trim()){
+      const d=new Date();
+      const initials=(sel.value||'').split(/\s+/).map(w=>w[0]||'').join('').slice(0,3).toUpperCase();
+      $('cntRef').value=`${initials}-${['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][d.getMonth()]}-${d.getFullYear()}`;
+    }
+  }catch(e){ box.textContent='Could not read the stock on file.'; }
+}
+
+async function refreshOpenCounts(){
+  const ul=$('cntOpenList'), empty=$('cntOpenEmpty');
+  ul.innerHTML=''; empty.style.display='block'; empty.textContent='Loading…';
+  try{
+    const j=await cntApi('GET','counts',{status:'live'});
+    const rows=j.counts||[];
+    if(!rows.length){ empty.textContent='No counts in progress.'; return; }
+    empty.style.display='none';
+    rows.forEach(r=>{
+      const li=document.createElement('li');
+      const prog=`${r.locations_counted||0}/${r.locations_total||0} locations`;
+      li.innerHTML=`<div style="flex:1"><div class="sku">${r.reference}</div><div class="cli">${r.client} · ${r.status} · ${prog}</div></div><span class="qty">›</span>`;
+      li.style.cursor='pointer';
+      li.onclick=()=>loadCount(r.count_id);
+      ul.appendChild(li);
+    });
+  }catch(e){ empty.textContent='Could not load counts.'; }
+}
+
+async function createCount(confirmStale){
+  const sel=$('cntClient');
+  const client_id=sel.selectedOptions[0] && sel.selectedOptions[0].dataset.id;
+  const reference=$('cntRef').value.trim();
+  if(!client_id){ toast('Pick a client first'); return; }
+  if(!reference){ toast('Give the count a reference'); return; }
+  try{
+    const j=await cntApi('POST','create_count',{client_id, reference, started_by:S.operator||'', confirm_stale:!!confirmStale});
+    $('cntRef').value=''; $('cntPre').hidden=true;
+    toast(`Snapshot frozen · ${j.locations} locations`);
+    await loadCount(j.count.id);
+  }catch(e){
+    if(e.code==='STALE_SNAPSHOT'){
+      if(confirm(`${e.message}\n\nCount against this picture anyway?`)) return createCount(true);
+      return;
+    }
+    if(e.code==='COUNT_ALREADY_LIVE' && e.payload && e.payload.count){
+      toast(e.message); return loadCount(e.payload.count.id);
+    }
+    toast(e.message||'Could not start the count');
+  }
+}
+
+async function loadCount(countId){
+  try{
+    const j=await cntApi('GET','count',{count_id:countId});
+    CNT.current=j.count; CNT.locs=j.locations||[]; CNT.loc=null; CNT.lines=[];
+    showCountActive(); renderLocList(); setTimeout(focusCap,60);
+  }catch(e){ toast('Could not open that count'); }
+}
+
+function renderCountHeader(){
+  if(!CNT.current) return;
+  $('cntRefLbl').textContent=CNT.current.reference;
+  $('cntMeta').textContent=`${CNT.current.client} · blind count`;
+  const done=CNT.locs.filter(l=>l.status==='counted'||l.status==='recount').length;
+  $('cntProg').textContent=`${done}/${CNT.locs.length}`;
+  $('cntWalkCnt').textContent=`${CNT.locs.length-done} left`;
+}
+
+function renderLocList(){
+  const ul=$('cntLocList'), empty=$('cntLocEmpty');
+  ul.innerHTML='';
+  if(!CNT.locs.length){ empty.style.display='block'; empty.textContent='No locations in this count.'; return; }
+  empty.style.display='none';
+  const rank={counting:0,pending:1,recount:2,counted:3};
+  [...CNT.locs].sort((a,b)=>(rank[a.status]-rank[b.status])||a.location_code.localeCompare(b.location_code))
+    .forEach(l=>{
+      const done=l.status==='counted'||l.status==='recount';
+      const mark=done?'✓':(l.status==='counting'?'…':'○');
+      const extra=l.in_scope===false?' · extra':'';
+      const sub=done?`${l.counted_lines||0} SKUs · ${l.counted_units||0} units${extra}`
+                    :(l.status==='counting'?`in progress · ${l.counted_units||0} units`:'not counted yet'+extra);
+      const li=document.createElement('li');
+      li.innerHTML=`<div style="flex:1"><div class="sku">${mark} ${l.location_code}</div><div class="cli">${sub}</div></div><span class="qty">›</span>`;
+      li.style.cursor='pointer';
+      li.style.opacity=done?'.55':'1';
+      li.onclick=()=>openLocation(l.location_code);
+      ul.appendChild(li);
+    });
+  renderCountHeader();
+}
+
+/* ---------- walking a location ---------- */
+
+async function openLocation(code, silent){
+  if(!CNT.current) return;
+  const known=CNT.locs.find(l=>l.location_code===code);
+  if(known && (known.status==='counted'||known.status==='recount')){
+    if(!confirm(`${code} is already closed with ${known.counted_units||0} units.\n\nReopen it as a RECOUNT? The first pass stays on record.`)) return;
+    try{ await cntApi('POST','recount_location',{count_id:CNT.current.id, location_code:code, operator:S.operator||''}); }
+    catch(e){ toast(e.message||'Could not reopen'); return; }
+  } else {
+    try{
+      const j=await cntApi('POST','start_location',{count_id:CNT.current.id, location_code:code, operator:S.operator||''});
+      if(j.added){
+        CNT.locs.push({...j.location, counted_lines:0, counted_units:0});
+        toast(j.known_location ? `${code} added — not in the snapshot` : `${code} is not a known location — added anyway`);
+      }
+    }catch(e){ toast(e.message||'Could not open that location'); feedback('err'); return; }
+  }
+  CNT.loc=CNT.locs.find(l=>l.location_code===code)||{location_code:code,status:'counting',pass:1};
+  CNT.loc.status='counting';
+  await reloadLocLines();
+  showCountActive();
+  setCPad2('','Scan a product','',''); hideCntDeclare();
+  if(!silent) feedback('ok');
+  setTimeout(focusCap,60);
+}
+
+async function reloadLocLines(){
+  if(!CNT.current||!CNT.loc){ CNT.lines=[]; return; }
+  try{
+    const j=await cntApi('GET','lines',{count_id:CNT.current.id, location_code:CNT.loc.location_code});
+    CNT.lines=j.lines||[];
+  }catch(e){ CNT.lines=[]; }
+  renderLocLines();
+}
+
+function renderLocLines(){
+  const ul=$('cntLineList'), empty=$('cntLineEmpty');
+  ul.innerHTML='';
+  const units=CNT.lines.reduce((n,l)=>n+(Number(l.qty)||0),0);
+  const skus=new Set(CNT.lines.map(l=>l.sku)).size;
+  $('cntLocCode').textContent=CNT.loc?CNT.loc.location_code:'—';
+  $('cntLocSub').textContent=`${skus} SKU${skus===1?'':'s'}${CNT.loc&&CNT.loc.pass>1?` · recount (pass ${CNT.loc.pass})`:''}`;
+  $('cntLocTotal').textContent=units;
+  if(!CNT.lines.length){ empty.style.display='block'; return; }
+  empty.style.display='none';
+  CNT.lines.forEach(l=>{
+    const li=document.createElement('li');
+    const src=l.sku_source==='manual'?' · typed':'';
+    li.innerHTML=`<div style="flex:1"><div class="sku">${l.sku}</div><div class="cli">${l.code_scanned||'—'}${src}</div></div><span class="qty">${l.qty}</span>`;
+    li.style.cursor='pointer';
+    li.onclick=()=>voidLine(l);
+    ul.appendChild(li);
+  });
+}
+
+async function voidLine(l){
+  if(!confirm(`Remove ${l.qty} × ${l.sku} from ${l.location_code}?`)) return;
+  try{
+    await cntApi('POST','void_line',{line_id:l.id, voided_by:S.operator||''});
+    await reloadLocLines(); await refreshLocSummary();
+    toast('Line removed');
+  }catch(e){ toast(e.message||'Could not remove'); }
+}
+
+async function closeLocation(){
+  if(!CNT.current||!CNT.loc) return;
+  const units=CNT.lines.reduce((n,l)=>n+(Number(l.qty)||0),0);
+  if(!CNT.lines.length && !confirm(`${CNT.loc.location_code} is EMPTY — nothing counted.\n\nClose it as empty? It will report as missing if the system expected stock here.`)) return;
+  try{
+    await cntApi('POST','close_location',{count_id:CNT.current.id, location_code:CNT.loc.location_code, operator:S.operator||''});
+    toast(`${CNT.loc.location_code} done · ${units} units`);
+    CNT.loc=null; CNT.lines=[];
+    await refreshLocSummary(); showCountActive(); renderLocList();
+    setCPad('','Scan a location','',''); setTimeout(focusCap,60);
+  }catch(e){ toast(e.message||'Could not close the location'); }
+}
+
+async function refreshLocSummary(){
+  if(!CNT.current) return;
+  try{
+    const j=await cntApi('GET','count',{count_id:CNT.current.id});
+    CNT.current=j.count; CNT.locs=j.locations||[];
+    if(CNT.loc){ const f=CNT.locs.find(l=>l.location_code===CNT.loc.location_code); if(f) CNT.loc={...f,status:'counting'}; }
+    renderCountHeader();
+  }catch(e){ /* progress refresh is cosmetic */ }
+}
+
+/* ---------- scanning ---------- */
+
+async function countScan(code){
+  if(!CNT.current){ toast('Open a count first'); feedback('err'); return; }
+
+  if(classify(code)==='location'){
+    const target=code.toUpperCase();
+    if(CNT.loc && CNT.loc.location_code===target){ toast('Already in '+target); return; }
+    if(CNT.loc){
+      const units=CNT.lines.reduce((n,l)=>n+(Number(l.qty)||0),0);
+      if(CNT.lines.length){
+        if(!confirm(`Close ${CNT.loc.location_code} with ${units} units and move to ${target}?`)) return;
+        await closeLocationSilently();
+      } else {
+        CNT.loc=null;   // nothing counted here, nothing to lose
+      }
+    }
+    return openLocation(target);
+  }
+
+  if(!CNT.loc){
+    setCPad('err','Scan a location first','Open the shelf before scanning products',code);
+    feedback('err'); return;
+  }
+
+  setCPad2('','Looking up…','',code);
+  try{
+    const j=await cntApi('GET','resolve_code',{code, count_id:CNT.current.id});
+    openCntDeclare(code, j);
+    feedback(j.mapped?'ok':'dup');
+    setCPad2(j.mapped?'ok':'dup', j.mapped?'Found':'Not in the map', j.mapped?'How many?':'Confirm the SKU', code);
+  }catch(e){ setCPad2('err','Lookup failed','Try again',code); feedback('err'); }
+}
+
+async function closeLocationSilently(){
+  try{ await cntApi('POST','close_location',{count_id:CNT.current.id, location_code:CNT.loc.location_code, operator:S.operator||''}); }
+  catch(e){ /* the move is still valid; the location stays open for later */ }
+  CNT.loc=null; CNT.lines=[];
+  await refreshLocSummary();
+}
+
+function openCntDeclare(code, resolved){
+  CNT.pending={ code, sku:resolved.sku||'', source:resolved.source||null,
+                mapped:!!resolved.mapped, suggestions:resolved.suggestions||[] };
+  $('cntDeclare').hidden=false;
+  $('cntSku').textContent=resolved.sku||'—';
+  $('cntScanned').textContent='Scanned '+code;
+  const src=$('cntSrc');
+  src.className='fba-src '+(resolved.source||'manual');
+  src.textContent = resolved.source==='map' ? 'MAP'
+                  : resolved.source==='scanned_sku' ? 'SKU'
+                  : resolved.source==='memory' ? 'REMEMBERED' : 'MANUAL';
+  if(resolved.source==='memory'){
+    const who=resolved.confirmed_by||'someone';
+    const when=resolved.confirmed_at
+      ? new Date(resolved.confirmed_at).toLocaleDateString(undefined,{month:'short',day:'numeric'})
+      : 'earlier';
+    $('cntScanned').textContent=`Scanned ${code} · confirmed by ${who} on ${when}`;
+  }
+
+  const un=$('cntUnmapped');
+  un.hidden=!!resolved.mapped;
+  if(!resolved.mapped){
+    $('cntManualSku').value='';
+    const box=$('cntSugg'); box.innerHTML='';
+    (resolved.suggestions||[]).forEach(s=>{
+      const b=document.createElement('button');
+      b.textContent=s;
+      b.onclick=()=>{ $('cntManualSku').value=s; $('cntSku').textContent=s; setTimeout(focusCap,60); };
+      box.appendChild(b);
+    });
+    $('cntUnmappedMsg').textContent=(resolved.suggestions||[]).length
+      ? 'Not in the FNSKU map. Pick one below or type the SKU.'
+      : 'Not in the FNSKU map. Type the SKU to count it anyway.';
+  }
+
+  $('cntQty').value='';
+  const q=$('cntQuick'); q.innerHTML='';
+  [1,2,5,10,12,24].forEach(n=>{
+    const b=document.createElement('button');
+    b.textContent=n;
+    b.onclick=()=>{ $('cntQty').value=String(n); };
+    q.appendChild(b);
+  });
+  $('cntDeclare').scrollIntoView({behavior:'smooth', block:'nearest'});
+  setTimeout(()=>{ const el=$('cntQty'); if(el) el.focus(); },80);
+}
+
+function hideCntDeclare(){ CNT.pending=null; const d=$('cntDeclare'); if(d) d.hidden=true; }
+
+async function cntAddLine(){
+  if(!CNT.pending || CNT.busy) return;
+  const p=CNT.pending;
+  let sku=p.sku, source=p.source;
+  if(!p.mapped){
+    sku=$('cntManualSku').value.trim();
+    if(!sku){ toast('Enter the SKU'); return; }
+    source='manual';
+  }
+  const qty=parseInt($('cntQty').value,10);
+  if(!(qty>0)){ toast('How many units?'); return; }
+
+  CNT.busy=true; $('cntAddBtn').disabled=true;
+  try{
+    // line_uid makes the write idempotent: a retry on flaky warehouse wifi
+    // lands once, not twice. Double-counting is the failure nobody notices.
+    const uid=`${CNT.loc.location_code}-${p.code}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
+    const j=await cntApi('POST','add_line',{
+      count_id:CNT.current.id, location_code:CNT.loc.location_code,
+      code:p.code, sku, qty, sku_source:source, counted_by:S.operator||'', line_uid:uid
+    });
+    hideCntDeclare();
+    await reloadLocLines();
+    setCPad2('ok','Counted',`${qty} × ${sku}`,p.code);
+    feedback(j.duplicate?'dup':'ok');
+    if(j.duplicate) toast('That scan was already recorded');
+    setTimeout(focusCap,60);
+  }catch(e){
+    if(e.code==='LOCATION_CLOSED'){ toast(e.message); CNT.loc=null; showCountActive(); renderLocList(); }
+    else toast(e.message||'Could not add the line');
+    feedback('err');
+  }finally{ CNT.busy=false; $('cntAddBtn').disabled=false; }
+}
+
+/* ---------- finishing ---------- */
+
+async function finishCount(confirmPartial){
+  if(!CNT.current) return;
+  if(CNT.loc){ toast('Close the open location first'); return; }
+  if(!confirmPartial && !confirm(`Finish ${CNT.current.reference}?\n\nCapture closes and the variance opens in the portal. You can still reopen a location for a recount.`)) return;
+  try{
+    await cntApi('POST','finish_count',{count_id:CNT.current.id, by:S.operator||'', confirm_partial:!!confirmPartial});
+    toast('Count finished — review it in the portal');
+    CNT.current=null; CNT.locs=[]; CNT.lines=[];
+    showCountHome();
+  }catch(e){
+    if(e.code==='LOCATIONS_PENDING'){
+      const list=(e.payload&&e.payload.pending)||[];
+      const shown=list.slice(0,8).join(', ')+(list.length>8?`, +${list.length-8} more`:'');
+      if(confirm(`${e.message}\n\n${shown}\n\nThose will be reported as NOT COUNTED, not as missing stock. Finish anyway?`))
+        return finishCount(true);
+      return;
+    }
+    toast(e.message||'Could not finish the count');
+  }
+}
+
+/* ---------- scanpad helpers (mirror setPad/setFPad) ---------- */
+function setCPad(state,big,hint,code){
+  const p=$('cScanpad'); if(!p) return;
+  p.className='scanpad'+(state?' '+state:'');
+  $('cIcon').textContent = state==='ok'?'✓':state==='err'?'✕':state==='dup'?'!':'▣';
+  $('cBig').textContent=big; $('cCode').textContent=code||'';
+  $('cHint').textContent=hint||'Pull the trigger on the shelf label (RA0101) to open it.';
+}
+function setCPad2(state,big,hint,code){
+  const p=$('cScanpad2'); if(!p) return;
+  p.className='scanpad'+(state?' '+state:'');
+  $('c2Icon').textContent = state==='ok'?'✓':state==='err'?'✕':state==='dup'?'!':'▣';
+  $('c2Big').textContent=big; $('c2Code').textContent=code||'';
+  $('c2Hint').textContent=hint||'Scan every product in this location. Scan the next shelf label when done.';
+}
+
+
+/* ============================================================
+   BOXES — container / license-plate layer
+   Writes through /frm-containers (service key, RLS-safe).
+
+   ONE RULE RUNS THIS SCREEN, and it is the opposite of Stock Count:
+   scanning a SKU here SETS its quantity in the box, it does not add to it.
+   Packing is not counting. In Stock Count a second scan of the same SKU is a
+   second handful of stock; here it is a correction of the first. If it added,
+   a double trigger-pull would silently inflate a box — and that error then
+   travels inside a printed label that people believe.
+
+   SkuVault still owns quantity. Nothing here writes to it.
+   ============================================================ */
+const BX={ current:null, lines:[], loc:null, locBoxes:[], pending:null, busy:false,
+           publicUrl:null, plan:null, locations:null };
+
+async function bxApi(method, action, payload){
+  const url = method==='GET'
+    ? `${API_BASE}/frm-containers?action=${action}&${new URLSearchParams(payload||{})}`
+    : `${API_BASE}/frm-containers`;
+  const res = await fetch(url, method==='GET' ? {} : {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action, ...(payload||{})})
+  });
+  const j = await res.json().catch(()=>({}));
+  if(!res.ok){ const e=new Error(j.message||j.error||('HTTP '+res.status)); e.code=j.error; e.payload=j; throw e; }
+  return j;
+}
+
+function initBoxes(){
+  loadLocations();
+  const sel=$('bxClient');
+  if(sel && S.clients.length && sel.options.length<=1){
+    sel.innerHTML='<option value="">— Select client —</option>'+
+      S.clients.map(c=>`<option value="${c.label.replace(/"/g,'&quot;')}" data-id="${c.id}">${c.label}</option>`).join('');
+  }
+  if(BX.current) showBoxOpen(); else showBoxHome();
+}
+
+// 153 shelf codes, loaded once. Enough to stop a typo from inventing a shelf.
+async function loadLocations(){
+  if(BX.locations) return BX.locations;
+  try{
+    const j=await bxApi('GET','locations',{});
+    BX.locations=j.locations||[];
+    const dl=$('bxLocOptions');
+    if(dl) dl.innerHTML=BX.locations.map(c=>`<option value="${c}">`).join('');
+  }catch(e){ BX.locations=[]; }
+  return BX.locations;
+}
+
+async function loadShelfPlan(loc){
+  const card=$('bxPlanCard'), ul=$('bxPlanList'), empty=$('bxPlanEmpty');
+  card.hidden=false; ul.innerHTML=''; empty.style.display='none';
+  const sel=$('bxClient');
+  try{
+    const j=await bxApi('GET','location_plan',{location_code:loc, client:(sel&&sel.value)||''});
+    BX.plan=j;
+    if(!j.known_location){
+      empty.style.display='block';
+      empty.textContent=`${loc} is not a shelf in this warehouse.`;
+      $('bxPlanTotal').textContent='—'; $('bxPlanAge').textContent='';
+      return;
+    }
+    $('bxPlanTotal').textContent=j.totals.pending;
+    // Say how old the mirror is rather than passing 2h-old numbers off as live.
+    const mins=j.synced_at ? Math.round((Date.now()-new Date(j.synced_at))/60000) : null;
+    $('bxPlanAge').textContent = mins==null ? ''
+      : `SkuVault as of ${mins} min ago · ${j.totals.done} of ${j.totals.skus} SKUs fully boxed`;
+
+    const pend=(j.lines||[]).filter(l=>l.qty_pending>0 || l.state==='OVER_BOXED');
+    if(!pend.length){ empty.style.display='block'; empty.textContent='Nothing pending on this shelf.'; return; }
+    pend.slice(0,40).forEach(l=>{
+      const li=document.createElement('li');
+      const over=l.state==='OVER_BOXED';
+      li.innerHTML=`<div style="flex:1"><div class="sku">${l.sku}</div>`+
+        `<div class="cli">${over?`⚠ boxed ${l.qty_boxed} of ${l.qty_wms}`:`${l.qty_boxed} boxed of ${l.qty_wms}`}</div></div>`+
+        `<span class="qty">${over?'+'+(l.qty_boxed-l.qty_wms):l.qty_pending}</span>`;
+      ul.appendChild(li);
+    });
+  }catch(e){ empty.style.display='block'; empty.textContent='Could not load the shelf plan.'; }
+}
+
+function showBoxHome(){
+  $('bxPlanCard').hidden=true;
+  $('bxHome').hidden=false; $('bxOpen').hidden=true;
+  $('bxFoot').hidden=true; $('bxSealedFoot').hidden=true;
+  BX.current=null; BX.lines=[]; hideBxDeclare();
+  setBPad('','Scan a shelf or a box','','');
+  setTimeout(focusCap,60);
+}
+
+function showBoxOpen(){
+  $('bxHome').hidden=true; $('bxOpen').hidden=false;
+  const sealed = BX.current && BX.current.status!=='building' && BX.current.status!=='open';
+  $('bxFoot').hidden=sealed; $('bxSealedFoot').hidden=!sealed;
+  $('bScanpad2').style.display=sealed?'none':'';
+  const msg=$('bxSealedMsg');
+  if(sealed){
+    msg.hidden=false;
+    msg.textContent = BX.current.status==='consumed'
+      ? 'This plate was consumed. Plates are never reused — build a new box.'
+      : 'Sealed. Contents are locked. Open the box to change what is inside.';
+  } else msg.hidden=true;
+  renderBxHeader(); renderBxLines();
+}
+
+function renderBxHeader(){
+  const c=BX.current; if(!c) return;
+  $('bxCode').textContent=c.code;
+  const bits=[c.client||'—', c.location_code||'no shelf', c.status];
+  $('bxMeta').textContent=bits.join(' · ');
+  $('bxUnits').textContent=BX.lines.reduce((n,l)=>n+(Number(l.qty)||0),0);
+}
+
+/* ---------- shelf view ---------- */
+
+async function openShelf(loc){
+  BX.loc=loc;
+  $('bxLoc').value=loc;
+  const card=$('bxLocCard'), ul=$('bxLocList'), empty=$('bxLocEmpty');
+  card.hidden=false; ul.innerHTML=''; empty.style.display='block'; empty.textContent='Loading…';
+  try{
+    const j=await bxApi('GET','at_location',{location_code:loc});
+    BX.locBoxes=j.containers||[];
+    $('bxLocTitle').textContent=loc;
+    $('bxLocUnits').textContent=j.units||0;
+    loadShelfPlan(loc);
+    if(!BX.locBoxes.length){ empty.textContent='No boxes on this shelf yet.'; return; }
+    empty.style.display='none';
+    BX.locBoxes.forEach(b=>{
+      const li=document.createElement('li');
+      const mark=b.status==='sealed'?'✓':b.status==='open'?'◍':'…';
+      li.innerHTML=`<div style="flex:1"><div class="sku">${mark} ${b.code}</div>`+
+                   `<div class="cli">${b.skus} SKU${b.skus===1?'':'s'} · ${b.units} units · ${b.status}</div></div>`+
+                   `<span class="qty">›</span>`;
+      li.style.cursor='pointer';
+      li.onclick=()=>loadBox(b.code);
+      ul.appendChild(li);
+    });
+  }catch(e){ empty.textContent='Could not load this shelf.'; }
+}
+
+/* ---------- box lifecycle ---------- */
+
+async function newBox(){
+  const sel=$('bxClient');
+  const client_id=sel.selectedOptions[0] && sel.selectedOptions[0].dataset.id;
+  const loc=($('bxLoc').value||'').trim().toUpperCase();
+  if(!client_id){ toast('Pick a client first'); return; }
+  if(!loc){ toast('Scan or type the shelf'); return; }
+  try{
+    const j=await bxApi('POST','create',{client_id, location_code:loc, actor:S.operator||''});
+    BX.current=j.container; BX.lines=[]; BX.publicUrl=j.public_url||null;
+    toast(`${j.container.code} created`);
+    showBoxOpen(); feedback('ok'); setTimeout(focusCap,60);
+  }catch(e){
+    if(e.code==='UNKNOWN_LOCATION'){ toast(e.message); setBPad('err','Unknown shelf',e.message,loc); }
+    else toast(e.message||'Could not create the box');
+    feedback('err');
+  }
+}
+
+async function loadBox(code){
+  try{
+    const j=await bxApi('GET','container',{code});
+    BX.current=j.container; BX.lines=j.lines||[]; BX.publicUrl=j.public_url||null;
+    showBoxOpen(); setBPad2('','Scan a product','',''); hideBxDeclare();
+    setTimeout(focusCap,60);
+  }catch(e){ toast('Could not open that box'); feedback('err'); }
+}
+
+async function reloadBox(){
+  if(!BX.current) return;
+  try{
+    const j=await bxApi('GET','container',{code:BX.current.code});
+    BX.current=j.container; BX.lines=j.lines||[]; BX.publicUrl=j.public_url||BX.publicUrl;
+  }catch(e){ /* keep what we have */ }
+  renderBxHeader(); renderBxLines();
+}
+
+function renderBxLines(){
+  const ul=$('bxLineList'), empty=$('bxLineEmpty');
+  ul.innerHTML='';
+  const live=BX.lines.filter(l=>Number(l.qty)>0);
+  if(!live.length){ empty.style.display='block'; return; }
+  empty.style.display='none';
+  const editable = BX.current && (BX.current.status==='building'||BX.current.status==='open');
+  live.forEach(l=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<div style="flex:1"><div class="sku">${l.sku}</div></div><span class="qty">${l.qty}</span>`;
+    if(editable){ li.style.cursor='pointer'; li.onclick=()=>removeLine(l); }
+    ul.appendChild(li);
+  });
+}
+
+async function removeLine(l){
+  if(!confirm(`Remove ${l.sku} from ${BX.current.code}?`)) return;
+  try{
+    await bxApi('POST','remove_line',{code:BX.current.code, sku:l.sku, actor:S.operator||''});
+    await reloadBox(); toast('Removed');
+  }catch(e){ toast(e.message||'Could not remove'); }
+}
+
+async function sealBox(){
+  if(!BX.current) return;
+  const units=BX.lines.reduce((n,l)=>n+(Number(l.qty)||0),0);
+  const skus=BX.lines.filter(l=>Number(l.qty)>0).length;
+  if(!confirm(`Seal ${BX.current.code} with ${skus} SKU(s) / ${units} units?\n\nContents lock. You can still move it, and you can open it later if you need to pick from it.`)) return;
+  try{
+    const j=await bxApi('POST','seal',{code:BX.current.code, actor:S.operator||''});
+    BX.current=j.container;
+    await reloadBox();
+    showBoxOpen(); feedback('ok');
+
+    // Told at the moment the operator is deciding whether to start another box.
+    const sh=j.shelf;
+    if(sh){
+      if(sh.over_boxed && sh.over_boxed.length){
+        alert('Heads up on '+sh.location_code+':\n\n'+
+          sh.over_boxed.map(o=>`${o.sku}: ${o.boxed} boxed, SkuVault has ${o.wms}`).join('\n')+
+          '\n\nWorth a look before you move on.');
+      } else if(sh.pending_units>0){
+        toast(`${sh.location_code}: ${sh.pending_units} units still loose in ${sh.pending_skus} SKUs`);
+      } else {
+        toast(`${sh.location_code} fully boxed ✓`);
+      }
+    }
+    // Sealing is the moment the plate becomes meaningful: contents are locked,
+    // so a label printed now cannot be outrun by a change. Offer it right here
+    // instead of hoping somebody remembers to go and print it later.
+    if(confirm(`${BX.current.code} sealed.\n\nPrint its 4x6 label now?`)) queueLabel();
+  }catch(e){
+    if(e.code==='EMPTY_BOX'){ toast(e.message); feedback('err'); return; }
+    toast(e.message||'Could not seal'); feedback('err');
+  }
+}
+
+async function reopenBox(){
+  if(!BX.current) return;
+  if(!confirm(`Open ${BX.current.code}?\n\nThis records that its contents stopped being trustworthy from now on.`)) return;
+  try{
+    const j=await bxApi('POST','open',{code:BX.current.code, actor:S.operator||''});
+    BX.current=j.container; BX.lines=j.lines||[];
+    showBoxOpen(); toast('Box open — contents can be edited');
+  }catch(e){ toast(e.message||'Could not open'); }
+}
+
+async function moveBox(loc){
+  if(!BX.current) return;
+  try{
+    const j=await bxApi('POST','move',{code:BX.current.code, location_code:loc, actor:S.operator||''});
+    BX.current=j.container;
+    renderBxHeader();
+    toast(j.unchanged ? `Already on ${loc}` : `Moved to ${loc}`);
+    feedback('ok');
+  }catch(e){ toast(e.message||'Could not move'); feedback('err'); }
+}
+
+/* ---------- scanning ---------- */
+
+async function boxScan(code){
+  const plate=boxCode(code);
+
+  // A box plate always wins: scanning one jumps straight into that box, from
+  // anywhere in this screen.
+  if(plate){
+    if(BX.current && BX.current.code===plate){ toast('Already in '+plate); return; }
+    setBPad('','Opening…','',plate);
+    return loadBox(plate);
+  }
+
+  if(classify(code)==='location'){
+    const loc=code.toUpperCase();
+    // Inside an open box, a shelf scan MOVES the box. That is the whole point
+    // of a plate: you carry the carton, scan where you put it, done.
+    if(BX.current && ['building','open','sealed'].includes(BX.current.status)){
+      if(confirm(`Move ${BX.current.code} to ${loc}?`)) return moveBox(loc);
+      return;
+    }
+    setBPad('ok',loc,'Shelf opened',loc);
+    feedback('ok');
+    return openShelf(loc);
+  }
+
+  // Anything else is a product, and only makes sense inside an editable box.
+  if(!BX.current){
+    setBPad('err','Open a box first','Scan a shelf or a box QR',code);
+    feedback('err'); return;
+  }
+  if(!['building','open'].includes(BX.current.status)){
+    setBPad2('err','Box is sealed','Open it before changing contents',code);
+    feedback('err'); return;
+  }
+
+  setBPad2('','Looking up…','',code);
+  try{
+    const j=await bxApi('GET','resolve_sku',{code});
+    openBxDeclare(code, j);
+    feedback(j.mapped?'ok':'dup');
+    setBPad2(j.mapped?'ok':'dup', j.mapped?'Found':'Not in the map',
+             j.mapped?'How many in this box?':'Confirm the SKU', code);
+  }catch(e){ setBPad2('err','Lookup failed','Try again',code); feedback('err'); }
+}
+
+function openBxDeclare(code, resolved){
+  BX.pending={ code, sku:resolved.sku||'', source:resolved.source||null,
+               mapped:!!resolved.mapped, suggestions:resolved.suggestions||[],
+               skuClient:resolved.sku_client||null };
+  $('bxDeclare').hidden=false;
+  $('bxSku').textContent=resolved.sku||'—';
+  $('bxScanned').textContent='Scanned '+code;
+  const src=$('bxSrc');
+  src.className='fba-src '+(resolved.source||'manual');
+  src.textContent = resolved.source==='map' ? 'MAP'
+                  : resolved.source==='scanned_sku' ? 'SKU'
+                  : resolved.source==='memory' ? 'REMEMBERED' : 'MANUAL';
+
+  const un=$('bxUnmapped');
+  un.hidden=!!resolved.mapped;
+  if(!resolved.mapped){
+    $('bxManualSku').value='';
+    const box=$('bxSugg'); box.innerHTML='';
+    (resolved.suggestions||[]).forEach(s=>{
+      const b=document.createElement('button');
+      b.textContent=s;
+      b.onclick=()=>{ $('bxManualSku').value=s; $('bxSku').textContent=s; };
+      box.appendChild(b);
+    });
+    $('bxUnmappedMsg').textContent=(resolved.suggestions||[]).length
+      ? 'Not in the FNSKU map. Pick one below or type the SKU.'
+      : 'Not in the FNSKU map. Type the SKU to put it in the box.';
+  }
+
+  // If the SKU is already in this box, say so out loud. The field REPLACES the
+  // quantity, and an operator who expects it to add would otherwise wipe a
+  // count without noticing.
+  const already=BX.lines.find(l=>l.sku===(resolved.sku||''));
+  const warn=$('bxReplaceMsg');
+  if(already && Number(already.qty)>0){
+    warn.hidden=false;
+    warn.textContent=`This box already lists ${already.qty} of ${already.sku}. Entering a number REPLACES it — type the box total, not what you just added.`;
+    $('bxQty').value=String(already.qty);
+  } else { warn.hidden=true; $('bxQty').value=''; }
+
+  const q=$('bxQuick'); q.innerHTML='';
+  [1,6,12,24,36,48].forEach(n=>{
+    const b=document.createElement('button');
+    b.textContent=n;
+    b.onclick=()=>{ $('bxQty').value=String(n); };
+    q.appendChild(b);
+  });
+  // The one packing error nobody catches downstream. A wrong quantity turns up
+  // at the next count; a SKU packed into the wrong client's box gets shipped to
+  // the wrong client. 56 of 63 shelves hold a single client, so this is rarely
+  // a false alarm — but it warns, it does not block, because the 7 mixed
+  // shelves are real.
+  const cw=$('bxClientMsg');
+  const boxClient=(BX.current&&BX.current.client)||'';
+  if(resolved.sku_client && boxClient && resolved.sku_client!==boxClient){
+    cw.hidden=false;
+    cw.textContent=`⚠ ${resolved.sku} belongs to ${resolved.sku_client}, not ${boxClient}. Only add it if you are sure.`;
+  } else cw.hidden=true;
+
+  $('bxCtx').textContent='';
+  $('bxDeclare').scrollIntoView({behavior:'smooth', block:'nearest'});
+  setTimeout(()=>{ const el=$('bxQty'); if(el){ el.focus(); el.select(); } },80);
+}
+
+function hideBxDeclare(){ BX.pending=null; const d=$('bxDeclare'); if(d) d.hidden=true; }
+
+async function bxSetLine(){
+  if(!BX.pending || BX.busy) return;
+  const p=BX.pending;
+  let sku=p.sku, source=p.source;
+  if(!p.mapped){
+    sku=$('bxManualSku').value.trim();
+    if(!sku){ toast('Enter the SKU'); return; }
+    source='manual';
+  }
+  const qty=parseInt($('bxQty').value,10);
+  if(!(qty>=0)){ toast('How many units?'); return; }
+
+  BX.busy=true; $('bxAddBtn').disabled=true;
+  try{
+    let r;
+    try{
+      r=await bxApi('POST','set_line',{
+        code:BX.current.code, sku, qty, actor:S.operator||'', code_scanned:p.code
+      });
+    }catch(e){
+      // A string nobody recognises does not silently become inventory. This is
+      // the Milano lesson: three scanned codes that were not SKUs left 36 units
+      // physically in the warehouse and invisible to SkuVault.
+      if(e.code==='UNKNOWN_SKU'){
+        if(!confirm(`"${sku}" is not a SKU we know.\n\nPut it in the box anyway? It will be flagged for review.`)){
+          BX.busy=false; $('bxAddBtn').disabled=false; return;
+        }
+        r=await bxApi('POST','set_line',{
+          code:BX.current.code, sku, qty, actor:S.operator||'', code_scanned:p.code,
+          confirm_unknown_sku:true
+        });
+      } else throw e;
+    }
+
+    hideBxDeclare();
+    await reloadBox();
+
+    // Verification without anchoring: the number was committed first, the
+    // comparison comes after.
+    const c=r&&r.context;
+    if(c){
+      const left=(c.qty_wms||0)-(c.qty_boxed||0);
+      const msg = c.state==='OVER_BOXED'
+        ? `⚠ ${c.qty_boxed} boxed vs ${c.qty_wms} SkuVault has here`
+        : left>0 ? `${c.qty_boxed} boxed · ${left} still loose here`
+        : `${c.qty_boxed} boxed · shelf complete for this SKU`;
+      setBPad2(c.state==='OVER_BOXED'?'dup':'ok', `${qty} × ${sku}`.slice(0,40), msg, p.code);
+      if(c.state==='OVER_BOXED') toast(msg);
+    } else {
+      setBPad2('ok','In the box',`${qty} × ${sku}`,p.code);
+    }
+    if(BX.loc) loadShelfPlan(BX.loc);
+    feedback('ok');
+    setTimeout(focusCap,60);
+  }catch(e){
+    if(e.code==='STATUS_BLOCKED'){ toast(e.message); await reloadBox(); showBoxOpen(); }
+    else toast(e.message||'Could not set the line');
+    feedback('err');
+  }finally{ BX.busy=false; $('bxAddBtn').disabled=false; }
+}
+
+// The label lives on the public page, which is also what the QR points at —
+// one place that renders it, so the printed label and the page a customer
+// scans can never drift apart.
+// Queue it — do NOT try to print from here. The MUNBYN speaks raw TSPL over
+// TCP 9100, so Android's print stack cannot see it at all. The tab on the
+// warehouse PC drains the queue. Queuing also means Joe never has to walk to
+// the printer to start a job.
+// One entry point for every label this app prints. The queue lives in
+// frm-print; nothing here talks to the printer directly, because the MUNBYN
+// speaks raw TSPL over TCP and no browser can reach it.
+async function queuePrint(kind, payload, label){
+  try{
+    const res=await fetch(`${API_BASE}/frm-print`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'queue_print', kind, actor:S.operator||'', copies:1, ...(payload||{})})
+    });
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(j.message||j.error||('HTTP '+res.status));
+    toast(`${label||j.code||'Label'} sent to the printer`);
+    feedback('ok');
+    return j;
+  }catch(e){ toast(e.message||'Could not queue the label'); feedback('err'); }
+}
+
+async function queueLabel(){
+  if(!BX.current){ toast('No box open'); return; }
+  return queuePrint('container_label', {code:BX.current.code}, BX.current.code);
+}
+
+// Kept for the office: opens the label page so it can be printed by hand or
+// checked on screen.
+function openLabelPage(){
+  if(!BX.publicUrl){ toast('No label URL for this box'); return; }
+  window.open(BX.publicUrl, '_blank');
+}
+
+/* ---------- scanpad helpers ---------- */
+function setBPad(state,big,hint,code){
+  const p=$('bScanpad'); if(!p) return;
+  p.className='scanpad'+(state?' '+state:'');
+  $('bIcon').textContent = state==='ok'?'✓':state==='err'?'✕':state==='dup'?'!':'▣';
+  $('bBig').textContent=big; $('bCode').textContent=code||'';
+  $('bHint').textContent=hint||'Shelf label (RA0301) to see its boxes, or a box QR to open it.';
+}
+function setBPad2(state,big,hint,code){
+  const p=$('bScanpad2'); if(!p) return;
+  p.className='scanpad'+(state?' '+state:'');
+  $('b2Icon').textContent = state==='ok'?'✓':state==='err'?'✕':state==='dup'?'!':'▣';
+  $('b2Big').textContent=big; $('b2Code').textContent=code||'';
+  $('b2Hint').textContent=hint||'Scan every product going into this box.';
+}
+
+/* ---------- clients (via Netlify function, same as other apps) ---------- */
+async function loadClients(){
+  try{
+    const res=await fetch(`${API_BASE}/clients-list`);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    const rows=Array.isArray(data)?data:(data.clients||data.data||[]);
+    // Exclude internal + inactive; display/match by company (canonical), fallback to name
+    S.clients=rows
+      .filter(c=>c.active!==false && c.type!=='Internal' && (c.status||'')!=='Internal')
+      .map(c=>({label:(c.company&&c.company.trim())||c.name, id:c.id,
+                receivingMode:(c.flags&&c.flags.receiving_mode)||c.receiving_mode||'inventory'}))
+      .filter(c=>c.label)
+      .sort((a,b)=>a.label.localeCompare(b.label));
+    // de-dup labels (two contacts, same company)
+    const seen=new Set(); S.clients=S.clients.filter(c=>{const k=c.label.toLowerCase(); if(seen.has(k))return false; seen.add(k); return true;});
+    const opts='<option value="">— Select client —</option>'+
+      S.clients.map(c=>`<option value="${c.label.replace(/"/g,'&quot;')}" data-id="${c.id}">${c.label}</option>`).join('');
+    const rc=$('rClient'); if(rc) rc.innerHTML=opts;
+    const oc=$('oClient'); if(oc) oc.innerHTML=opts;
+    const cc=$('cntClient'); if(cc) cc.innerHTML=opts;
+    const bc=$('bxClient'); if(bc) bc.innerHTML=opts;
+  }catch(err){
+    const rc=$('rClient'); if(rc) rc.innerHTML='<option value="">Error loading clients</option>';
+    const oc=$('oClient'); if(oc) oc.innerHTML='<option value="">Error loading clients</option>';
+    toast('Could not load clients');
+  }
+}
+
+/* ---------- login gate (PIN local, sin sesión Supabase) ---------- */
+const APP_PIN='frlogistics2024';
+function doLogin(){
+  const op=$('opname').value.trim();
+  const pin=$('pin').value;
+  if(!op){ $('loginErr').textContent='Enter your name'; return; }
+  if(pin!==APP_PIN){ $('loginErr').textContent='Wrong PIN'; $('pin').value=''; return; }
+  S.operator=op;
+  localStorage.setItem('frm_op',op);
+  localStorage.setItem('frm_ok','1');
+  enterApp();
+}
+function enterApp(){
+  $('gate').style.display='none'; $('app').hidden=false;
+  $('opBadge').textContent=S.operator; $('helloName').textContent=S.operator;
+  loadClients(); go('home');
+}
+
+/* ---------- wire up ---------- */
+document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
+document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{ location.href=b.dataset.open; });
+document.querySelectorAll('[data-soon]').forEach(b=>b.onclick=()=>toast('Module coming soon'));
+$('backBtn').onclick=()=>go('home');
+$('finishBtn').onclick=()=>{ if(confirm('Finish this session?')) go('home'); };
+$('camBtn').onclick=takePhoto;
+$('syncBtn').onclick=refreshFromSkuVault;
+$('invSyncBtn').onclick=()=>refreshFromSkuVault().then(fillClientDropdown);
+$('invClient').onchange=e=>{ showClientStock(e.target.value, null); setTimeout(focusCap,60); };
+$('palCreateBtn').onclick=createPallet;
+$('palCloseBtn').onclick=closePallet;
+$('palFullBtn').onclick=()=>palMarkStatus('FULL');
+$('palWrapBtn').onclick=()=>palMarkStatus('WRAPPED / READY FOR PICKUP');
+['palClient','palSize'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('change',()=>setTimeout(focusCap,60)); });
+$('fbaCreateBtn').onclick=createFbaCount;
+$('fbaCloseBtn').onclick=closeFbaCount;
+$('fbaBackBtn').onclick=()=>{ FBA.current=null; FBA.lines=[]; FBA.summary=null; showFbaHome(); };
+$('fbaTypeCase').onclick=()=>{ setLineType('case'); setTimeout(focusCap,60); };
+$('fbaTypeLoose').onclick=()=>{ setLineType('loose'); setTimeout(focusCap,60); };
+$('fbaAddBtn').onclick=fbaAddLine;
+$('fbaCancelBtn').onclick=()=>{ hideDeclare(); setFPad('','Scan a product','',''); setTimeout(focusCap,60); };
+['fbaUpb','fbaBoxes'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input',updateCaseTotal); });
+$('cntCreateBtn').onclick=()=>createCount(false);
+$('cntClient').onchange=()=>{ cntPreflight(); setTimeout(focusCap,60); };
+$('cntFinishBtn').onclick=()=>finishCount(false);
+$('cntLeaveBtn').onclick=()=>{ CNT.current=null; CNT.locs=[]; CNT.lines=[]; CNT.loc=null; showCountHome(); };
+$('cntCloseLocBtn').onclick=closeLocation;
+$('cntBackLocBtn').onclick=()=>{ CNT.loc=null; CNT.lines=[]; hideCntDeclare(); showCountActive(); renderLocList(); setTimeout(focusCap,60); };
+$('cntAddBtn').onclick=cntAddLine;
+$('cntCancelBtn').onclick=()=>{ hideCntDeclare(); setCPad2('','Scan a product','',''); setTimeout(focusCap,60); };
+$('cntQty').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); cntAddLine(); } });
+$('bxNewBtn').onclick=newBox;
+$('bxClient').onchange=()=>setTimeout(focusCap,60);
+$('bxSealBtn').onclick=sealBox;
+$('bxReopenBtn').onclick=reopenBox;
+$('bxLeaveBtn').onclick=showBoxHome;
+$('bxBackBtn').onclick=showBoxHome;
+$('bxLabelBtn').onclick=()=>queueLabel();
+$('palLabelBtn').onclick=()=>{
+  // The pallets module keeps the printed code, not the row uuid — frm-print
+  // resolves one from the other.
+  const code=(typeof PAL!=='undefined'&&PAL.current)?PAL.current.palletId:null;
+  if(!code){ toast('No pallet open'); return; }
+  queuePrint('pallet_label',{code}, code);
+};
+$('bxAddBtn').onclick=bxSetLine;
+$('bxCancelBtn').onclick=()=>{ hideBxDeclare(); setBPad2('','Scan a product','',''); setTimeout(focusCap,60); };
+$('bxQty').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); bxSetLine(); } });
+$('bxLoc').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); const v=($('bxLoc').value||'').trim().toUpperCase(); if(v) openShelf(v); } });
+$('loginBtn').onclick=doLogin;
+$('pin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+// keep capture focused when tapping anywhere neutral in a scanning view
+document.addEventListener('click',e=>{ if((S.view==='receiving'||S.view==='outbound'||S.view==='locations'||S.view==='inventory'||S.view==='pallets'||S.view==='fba'||S.view==='count'||S.view==='boxes') && !isFormField(e.target) && e.target.tagName!=='BUTTON') focusCap(); });
+// refocus capture after using a select
+['rClient','rType','rCarrier','oClient','oType','oCarrier'].forEach(id=>{ document.addEventListener('change',e=>{ if(e.target.id===id) setTimeout(focusCap,60); }); });
+
+/* reanudar operador si ya pasó el PIN en este dispositivo */
+(function(){
+  const saved=localStorage.getItem('frm_op'); if(saved) $('opname').value=saved;
+  if(saved && localStorage.getItem('frm_ok')==='1'){ S.operator=saved; enterApp(); }
+})();
+</script>
+</body>
+</html>
