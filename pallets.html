@@ -1,1801 +1,493 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>FR-Logistics • Returns Pallet Builder (No WMS)</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0B2545">
+<title>Pallets — FR-Logistics</title>
+<!--
+  Pallets — standalone module.
 
-  <style>
-    :root{
-      --bg:#f6f7fb;
-      --card:#ffffff;
-      --line: rgba(15,23,42,.12);
-      --text:#0f172a;
-      --muted:#475569;
+  Replaces the Pallets section of fr-mobile.html, which talked DIRECTLY to
+  Supabase with the anon key hard-coded in the page. That key was readable by
+  anyone with "view source", and the pallets / pallet_packages tables carried a
+  FOR ALL TO public policy plus DELETE and TRUNCATE grants to anon. Every write
+  now goes through frm-pallets.js on the service key; nothing sensitive ships
+  to the browser.
 
-      --fr-green:#1fa463;
-      --fr-teal:#16a3b5;
+  Session is shared with FR Mobile via localStorage (frm_op / frm_ok).
+-->
+<style>
+  :root{
+    --navy:#0B2545; --teal:#1C7293; --amber:#F4A261; --red:#B4232C; --green:#15803D;
+    --line:#E2E8F0; --bg:#F1F5F9; --muted:#64748B; --ink:#0F172A;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       color:var(--ink);background:var(--bg);padding-bottom:40px}
 
-      --ok:#16a34a;
-      --bad:#ef4444;
-      --warn:#f59e0b;
+  .top{background:var(--navy);color:#fff;padding:13px 16px;display:flex;
+       align-items:center;gap:12px;position:sticky;top:0;z-index:20}
+  .top h1{font-size:17px;margin:0;font-weight:600;flex:1}
+  .top a.back{color:#fff;text-decoration:none;font-size:20px;line-height:1;opacity:.85}
+  .who{background:rgba(255,255,255,.15);border-radius:14px;padding:4px 11px;font-size:12px}
 
-      --radius:16px;
-      --shadow: 0 18px 40px rgba(2,6,23,.10);
-    }
+  main{max-width:640px;margin:0 auto;padding:14px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+  .card h2{margin:0 0 12px;font-size:15px;font-weight:600}
 
-    *{box-sizing:border-box}
-    body{
-      margin:0;
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;
-      background:
-        radial-gradient(900px 520px at 18% 6%, rgba(31,164,99,.12), transparent 60%),
-        radial-gradient(900px 520px at 82% 6%, rgba(22,163,181,.10), transparent 60%),
-        var(--bg);
-      color:var(--text);
-      min-height:100vh;
-      display:flex;
-      flex-direction:column;
-    }
+  .field{margin-bottom:12px}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+        color:var(--muted);margin-bottom:5px;font-weight:600}
+  input,select{width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;
+               font-size:16px;font-family:inherit;background:#fff;color:var(--ink)}
+  input:focus,select:focus{outline:2px solid var(--teal);outline-offset:-1px}
 
-    header{
-      padding:14px 18px;
-      border-bottom:1px solid var(--line);
-      background:rgba(255,255,255,.82);
-      position:sticky; top:0;
-      backdrop-filter: blur(10px);
-      z-index: 5;
-    }
-    .headRow{
-      max-width:1500px;
-      margin:0 auto;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-    }
-    .brand{display:flex; align-items:center; gap:12px;}
-    .brand img{
-      height:34px; width:auto;
-      border-radius:12px;
-      border:1px solid var(--line);
-      background:#fff;
-      padding:6px;
-    }
-    header h1{margin:0; font-size:15px; font-weight:950; letter-spacing:.2px}
-    header .sub{margin-top:4px; color:var(--muted); font-size:12px}
+  .btn{display:block;width:100%;padding:13px;border:0;border-radius:8px;background:var(--navy);
+       color:#fff;font-size:15px;font-weight:600;font-family:inherit;cursor:pointer}
+  .btn.go{background:var(--teal)}
+  .btn.ghost{background:#fff;color:var(--navy);border:1px solid var(--line)}
+  .btn.amber{background:var(--amber);color:var(--navy)}
+  .btn:disabled{opacity:.5}
+  .row{display:flex;gap:9px}
+  .row .btn{flex:1}
 
-    .wrap{
-      max-width:1500px;
-      width:100%;
-      margin:0 auto;
-      padding:16px;
-      flex:1;
-    }
+  ul.list{list-style:none;margin:0;padding:0}
+  ul.list li{display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--line)}
+  ul.list li:last-child{border-bottom:0}
+  .l1{font-weight:600;font-size:14px;word-break:break-all}
+  .l2{font-size:12px;color:var(--muted)}
+  .qty{font-weight:700;font-size:17px;color:var(--navy);white-space:nowrap}
+  .empty{text-align:center;color:var(--muted);font-size:13px;padding:14px 0}
+  .code{font-family:Consolas,monospace;font-size:13px;word-break:break-all;flex:1}
+  .badge{font-size:11px;color:var(--muted);white-space:nowrap}
 
-    /* 3 columns: Builder | Contents/Lookup | Open Pallets list */
-    .grid{
-      display:grid;
-      grid-template-columns: 1.05fr .95fr .75fr;
-      gap:14px;
-      align-items:start;
-    }
+  .hero{background:var(--navy);color:#fff;border-radius:10px;padding:14px;margin-bottom:12px;
+        display:flex;align-items:center;gap:12px}
+  .hero .ref{font-size:15px;font-weight:600;font-family:Consolas,monospace;word-break:break-all}
+  .hero .sub{font-size:12px;color:#B9CCE0;margin-top:2px}
+  .hero .big{margin-left:auto;font-size:26px;font-weight:700;line-height:1}
+  .hero .biglbl{font-size:10px;color:#B9CCE0;text-transform:uppercase;text-align:right}
 
-    .card{
-      background:var(--card);
-      border:1px solid var(--line);
-      border-radius:var(--radius);
-      padding:14px;
-      box-shadow:var(--shadow);
-    }
-    .card h2{margin:0 0 10px; font-size:14px}
-    .card h3{margin:12px 0 8px; font-size:13px; color:#334155}
+  .scanpad{background:#fff;border:2px dashed var(--line);border-radius:10px;padding:22px 14px;
+           text-align:center;margin-bottom:12px;cursor:text}
+  .scanpad.ok{border-color:var(--green);background:#F0FDF4}
+  .scanpad.err{border-color:var(--red);background:#FEF2F2}
+  .scanpad.dup{border-color:var(--amber);background:#FFF7ED}
+  .scanpad .icon{font-size:26px;line-height:1}
+  .scanpad .big{font-size:17px;font-weight:600;margin-top:7px}
+  .scanpad .c{font-family:Consolas,monospace;font-size:13px;color:var(--muted);margin-top:5px;word-break:break-all}
+  .scanpad .hint{font-size:12px;color:var(--muted);margin-top:6px}
+  #cap{position:absolute;left:-9999px;opacity:0;height:1px;width:1px}
 
-    label{
-      display:block;
-      font-size:12px;
-      color:var(--muted);
-      margin:10px 0 6px;
-    }
-    input, select, textarea{
-      width:100%;
-      background:#fff;
-      color:var(--text);
-      border:1px solid rgba(15,23,42,.18);
-      border-radius:12px;
-      padding:10px 10px;
-      outline:none;
-    }
-    input:focus, select:focus, textarea:focus{
-      border-color: rgba(31,164,99,.55);
-      box-shadow: 0 0 0 3px rgba(31,164,99,.14);
-    }
-    textarea{min-height:70px; resize:vertical}
+  .pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px}
+  .pill.OPEN{background:#DCFCE7;color:#166534}
+  .pill.FULL{background:#FEF3C7;color:#92400E}
+  .pill.WRAPPED{background:#DBEAFE;color:#1E40AF}
+  .undo{background:none;border:0;color:var(--muted);font-size:18px;padding:0 5px;cursor:pointer}
 
-    .row{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
-    .row3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;}
-
-    .btns{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;}
-    button{
-      border:1px solid rgba(15,23,42,.14);
-      border-radius:12px;
-      padding:10px 12px;
-      background:rgba(2,6,23,.04);
-      color:var(--text);
-      cursor:pointer;
-      font-weight:950;
-    }
-    button.primary{
-      background: linear-gradient(135deg, rgba(31,164,99,.16), rgba(22,163,181,.10));
-      border-color: rgba(31,164,99,.40);
-    }
-    button.danger{
-      background:rgba(239,68,68,.08);
-      border-color:rgba(239,68,68,.40);
-      color:#7f1d1d;
-    }
-    button.warn{
-      background:rgba(245,158,11,.12);
-      border-color:rgba(245,158,11,.45);
-      color:#7a4b00;
-    }
-    button.small{
-      padding:7px 10px;
-      border-radius:10px;
-      font-size:12px;
-      font-weight:950;
-    }
-
-    .mono{
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    }
-
-    .status{
-      margin-top:10px;
-      font-size:12px;
-      padding:9px 10px;
-      border-radius:12px;
-      border:1px solid rgba(15,23,42,.12);
-      background: rgba(2,6,23,.02);
-    }
-    .status.ok{border-color:rgba(22,163,74,.40); background:rgba(22,163,74,.07); color:#14532d; font-weight:900}
-    .status.bad{border-color:rgba(239,68,68,.55); background:rgba(239,68,68,.08); color:#7f1d1d; font-weight:950}
-    .status.warn{border-color:rgba(245,158,11,.55); background:rgba(245,158,11,.10); color:#7a4b00; font-weight:950}
-
-    .pill{
-      display:inline-block;
-      padding:3px 8px;
-      border-radius:999px;
-      font-weight:950;
-      white-space:nowrap;
-      border:1px solid rgba(31,164,99,.35);
-      background:rgba(31,164,99,.10);
-      color:#0f5132;
-    }
-    .pill.gray{
-      border-color:rgba(15,23,42,.18);
-      background:rgba(2,6,23,.03);
-      color:#334155;
-    }
-    .pill.warn{
-      border-color:rgba(245,158,11,.45);
-      background:rgba(245,158,11,.12);
-      color:#7a4b00;
-    }
-
-    table{width:100%; border-collapse:collapse; margin-top:10px; font-size:12px;}
-    th, td{padding:8px 8px; border-bottom:1px solid rgba(15,23,42,.10); text-align:left; vertical-align:top}
-    th{
-      color:#0f172a; font-weight:950;
-      background:rgba(2,6,23,.03);
-      position:sticky; top:0;
-      z-index:1;
-    }
-    .tableWrap{
-      max-height:320px;
-      overflow:auto;
-      border:1px solid rgba(15,23,42,.12);
-      border-radius:12px;
-    }
-
-    .small{font-size:12px; color:var(--muted)}
-    .kpiRow{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px}
-    .kpi{
-      border:1px solid rgba(15,23,42,.12);
-      background:rgba(2,6,23,.02);
-      border-radius:14px;
-      padding:10px 12px;
-      min-width:160px;
-    }
-    .kpi b{display:block; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.35px}
-    .kpi span{display:block; font-size:18px; font-weight:950; margin-top:4px}
-
-    /* Open pallets list */
-    .list{
-      border:1px solid rgba(15,23,42,.12);
-      border-radius:12px;
-      overflow:hidden;
-    }
-    .listHead{
-      background:rgba(2,6,23,.03);
-      padding:10px 10px;
-      font-weight:950;
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:10px;
-    }
-    .listBody{
-      max-height:520px;
-      overflow:auto;
-      background:#fff;
-    }
-    .palletItem{
-      border-top:1px solid rgba(15,23,42,.08);
-      padding:10px 10px;
-      display:grid;
-      grid-template-columns: 1fr;
-      gap:6px;
-    }
-    .palletTop{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:10px;
-    }
-    .palletId{
-      font-weight:950;
-      font-size:12px;
-    }
-    .palletMeta{
-      color:var(--muted);
-      font-size:12px;
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-    }
-    .palletActions{
-      display:flex;
-      gap:8px;
-      flex-wrap:wrap;
-      margin-top:4px;
-    }
-
-    /* Modal */
-    dialog{border:none; border-radius:16px; padding:0; background:transparent;}
-    .modal{
-      width:min(980px, 96vw);
-      background:#fff;
-      border:1px solid rgba(15,23,42,.12);
-      border-radius:16px; overflow:hidden;
-      box-shadow:var(--shadow);
-    }
-    .modalHead{
-      display:flex; justify-content:space-between; align-items:center;
-      padding:12px 14px; border-bottom:1px solid rgba(15,23,42,.10);
-      background:rgba(2,6,23,.02);
-    }
-    .modalHead b{font-size:13px}
-    .modalBody{padding:14px}
-    .modalBtns{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;}
-
-    /* Label 4x6 */
-    .label{
-      width:4in; height:6in;
-      background:#fff; color:#000;
-      border:1px solid #ddd;
-      padding:0.15in;
-      box-sizing:border-box;
-      border-radius:10px;
-      display:flex;
-      flex-direction:column;
-      gap:10px;
-      overflow:hidden;
-    }
-    .label .title{
-      font-size:16px; font-weight:950;
-      display:flex; justify-content:space-between; align-items:center;
-      gap:10px;
-    }
-    .label .pallet{
-      font-size:24px;
-      font-weight:950;
-      letter-spacing:.2px;
-      word-break:break-all;
-    }
-    .label .meta{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap:6px 12px;
-      font-size:14px
-    }
-    .label .meta div b{
-      display:block;
-      font-size:11px;
-      color:#444;
-      margin-bottom:2px;
-      font-weight:950;
-      text-transform:uppercase;
-      letter-spacing:.4px
-    }
-    .label .client{font-size:18px; font-weight:950}
-    .label .stat{font-size:16px; font-weight:950}
-    .label .qrWrap{
-      margin-top:auto;
-      display:flex;
-      justify-content:center;
-      align-items:center;
-      padding-top:6px;
-    }
-    /* Make QR BIG + high contrast to scan reliably */
-    .qrBox{
-      width: 260px;
-      height: 260px;
-      padding: 10px;
-      background:#fff;
-      border: 2px solid #000;
-      border-radius: 12px;
-      display:flex;
-      justify-content:center;
-      align-items:center;
-    }
-    .label .qrHint{font-size:10px; color:#666; text-align:center; margin-top:6px}
-
-    /* ✅ PRINT FIXES (Rollo 4x6) */
-    @page{ size: 4in 6in; margin: 0; }
-    @media print{
-      html, body{
-        margin:0 !important; padding:0 !important;
-        height:auto !important; overflow:visible !important;
-        background:#fff !important;
-      }
-      header, .wrap, .modalHead, .modalBtns, .modalBody .tools, footer{
-        display:none !important;
-      }
-      dialog{
-        display:block !important;
-        position:static !important;
-        margin:0 !important;
-        padding:0 !important;
-        overflow:visible !important;
-      }
-      .modal{
-        border:none !important;
-        border-radius:0 !important;
-        box-shadow:none !important;
-        background:transparent !important;
-        width:auto !important;
-      }
-      .modalBody{padding:0 !important;}
-      .label{
-        width:4in !important;
-        height:6in !important;
-        padding:0.10in !important;
-        border:none !important;
-        border-radius:0 !important;
-        overflow:hidden !important;
-      }
-      .label .qrHint{ display:none !important; }
-      .qrBox{ border:2px solid #000 !important; }
-    }
-
-    footer{
-      border-top:1px solid var(--line);
-      background:rgba(255,255,255,.72);
-      padding:12px 18px;
-    }
-    .footRow{
-      max-width:1500px;
-      margin:0 auto;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-    }
-    .liam{
-      height:46px; width:auto;
-      display:block;
-      border-radius:12px;
-      border:1px solid rgba(15,23,42,.10);
-      background:#fff;
-      padding:6px;
-    }
-
-    /* Responsive — iPhone & iPad */
-    @media (max-width: 1024px) {
-      .grid { grid-template-columns: 1fr 1fr; }
-      .wrap { padding: 12px; }
-    }
-    @media (max-width: 768px) {
-      .grid { grid-template-columns: 1fr; gap: 12px; }
-      .row, .row3 { grid-template-columns: 1fr !important; }
-      .wrap { padding: 10px; }
-      header { padding: 10px 12px !important; }
-      .headRow { flex-wrap: wrap; gap: 10px; }
-      .btns { width: 100%; }
-      .btns button { flex: 1 1 auto; min-height: 44px; }
-      .card { padding: 12px; }
-      input, select, textarea, button { font-size: 16px !important; min-height: 40px; }
-      table { font-size: 13px; }
-      table th, table td { padding: 6px 4px !important; }
-    }
-
-    /* ─── BARCODE SCANNER ─────────────────────────────── */
-    .scan-input-group {
-      position: relative;
-      display: flex;
-      gap: 6px;
-      align-items: stretch;
-    }
-    .scan-input-group input {
-      flex: 1;
-      min-width: 0;
-    }
-    .scan-btn {
-      flex-shrink: 0;
-      background: var(--accent, #16a34a);
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      padding: 0 14px;
-      font-size: 18px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 50px;
-      min-height: 40px;
-      transition: opacity 0.15s, transform 0.1s;
-    }
-    .scan-btn:hover { opacity: 0.9; }
-    .scan-btn:active { transform: scale(0.96); }
-    .scan-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-    .scanner-modal {
-      position: fixed;
-      inset: 0;
-      background: #000;
-      z-index: 9999;
-      display: none;
-      flex-direction: column;
-    }
-    .scanner-modal.open { display: flex; }
-    .scanner-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 18px;
-      background: rgba(0,0,0,0.85);
-      color: #fff;
-      flex-shrink: 0;
-      gap: 12px;
-    }
-    .scanner-title {
-      font-size: 14px;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-    }
-    .scanner-close {
-      background: rgba(255,255,255,0.15);
-      border: none;
-      color: #fff;
-      width: 36px; height: 36px;
-      border-radius: 50%;
-      font-size: 18px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .scanner-video-wrap {
-      flex: 1;
-      position: relative;
-      overflow: hidden;
-      background: #000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .scanner-video-wrap video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    .scanner-overlay {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .scanner-frame {
-      width: 86%;
-      max-width: 380px;
-      height: 200px;
-      border: 2px solid #00ffae;
-      border-radius: 16px;
-      box-shadow: 0 0 0 9999px rgba(0,0,0,0.40);
-      position: relative;
-    }
-    .scanner-frame::before {
-      content: '';
-      position: absolute;
-      left: 8%;
-      right: 8%;
-      top: 50%;
-      height: 2px;
-      background: #00ffae;
-      box-shadow: 0 0 8px #00ffae;
-      animation: scan-line 1.6s ease-in-out infinite;
-    }
-    @keyframes scan-line {
-      0%, 100% { transform: translateY(-80px); opacity: 0.3; }
-      50% { transform: translateY(80px); opacity: 1; }
-    }
-    .scanner-hint {
-      position: absolute;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      color: #fff;
-      background: rgba(0,0,0,0.7);
-      padding: 8px 16px;
-      border-radius: 24px;
-      font-size: 12px;
-      font-family: 'DM Mono', monospace;
-      letter-spacing: 0.05em;
-      white-space: nowrap;
-    }
-    .scanner-controls {
-      padding: 14px 18px 22px;
-      background: rgba(0,0,0,0.85);
-      display: flex;
-      gap: 10px;
-      flex-shrink: 0;
-      flex-wrap: wrap;
-    }
-    .scanner-btn {
-      flex: 1;
-      min-width: 100px;
-      min-height: 44px;
-      background: rgba(255,255,255,0.12);
-      color: #fff;
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 10px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      padding: 8px 12px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-    }
-    .scanner-btn.active {
-      background: #00ffae;
-      color: #000;
-      border-color: #00ffae;
-    }
-    .scanner-status {
-      padding: 8px 18px;
-      background: rgba(0,0,0,0.7);
-      color: #fff;
-      font-size: 12px;
-      font-family: 'DM Mono', monospace;
-      text-align: center;
-      flex-shrink: 0;
-      min-height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .scanner-status.success { background: #16a34a; }
-    .scanner-status.error { background: #b91c1c; }
-    .scanner-recent {
-      max-height: 90px;
-      overflow-y: auto;
-      background: rgba(0,0,0,0.85);
-      color: #fff;
-      font-family: 'DM Mono', monospace;
-      font-size: 11px;
-      padding: 0 18px;
-    }
-    .scanner-recent:not(:empty) { padding: 8px 18px; }
-    .scanner-recent-item {
-      display: flex;
-      justify-content: space-between;
-      padding: 3px 0;
-      border-bottom: 1px solid rgba(255,255,255,0.1);
-    }
-    .scanner-recent-item:last-child { border-bottom: none; }
-    .scanner-recent-item.ok { color: #00ffae; }
-    .scanner-recent-item.dup { color: #fbbf24; }
-    .scanner-recent-item.err { color: #fca5a5; }
-  </style>
+  #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(90px);
+         background:var(--navy);color:#fff;padding:11px 18px;border-radius:22px;font-size:14px;
+         max-width:88vw;text-align:center;transition:transform .22s;z-index:60;pointer-events:none}
+  #toast.up{transform:translateX(-50%) translateY(0)}
+  [hidden]{display:none !important}
+</style>
 </head>
-
 <body>
-<header>
-  <div class="headRow">
-    <div class="brand">
-      <img src="fr_logo.png" alt="FR-Logistics Logo" onerror="this.style.display='none'">
+
+<div class="top">
+  <a class="back" href="/fr-mobile.html" title="Back">‹</a>
+  <h1>Pallets</h1>
+  <span class="who" id="who" hidden></span>
+</div>
+
+<main>
+  <section id="vGate">
+    <div class="card">
+      <h2>Who is building?</h2>
+      <div class="field">
+        <label for="opname">Your name</label>
+        <input id="opname" type="text" placeholder="e.g. Joe Raymond" autocomplete="name">
+      </div>
+      <button class="btn go" id="gateBtn">Start</button>
+    </div>
+  </section>
+
+  <section id="vHome" hidden>
+    <div class="card">
+      <h2>New pallet</h2>
+      <div class="field">
+        <label for="pClient">Client</label>
+        <select id="pClient"><option value="">— Select client —</option></select>
+      </div>
+      <div class="field">
+        <label for="pSize">Pallet size</label>
+        <select id="pSize">
+          <option value="48x40">48 × 40</option>
+          <option value="48x48">48 × 48</option>
+          <option value="42x42">42 × 42</option>
+          <option value="Custom">Custom</option>
+        </select>
+      </div>
+      <button class="btn go" id="createBtn">+ Create pallet</button>
+    </div>
+
+    <div class="card">
+      <h2>Open pallets</h2>
+      <ul class="list" id="openList"></ul>
+      <div class="empty" id="openEmpty">Loading…</div>
+    </div>
+  </section>
+
+  <section id="vPallet" hidden>
+    <div class="hero">
+      <div style="min-width:0">
+        <div class="ref" id="hId">—</div>
+        <div class="sub" id="hSub">—</div>
+      </div>
       <div>
-        <h1>Returns Pallet Builder (No WMS)</h1>
-        <div class="sub">Scan packages → Add to pallet → Mark FULL/WRAPPED → Print 4x6 Pallet ID QR label</div>
+        <div class="big" id="hCount">0</div>
+        <div class="biglbl">packages</div>
       </div>
     </div>
-    <div class="small"><b>CLIENTS WITHOUT WMS</b> PALLET ID • <b>QR:</b> REGISTER </div>
-  </div>
-</header>
 
-<div class="wrap">
-  <div class="grid">
+    <div class="scanpad" id="pad">
+      <div class="icon" id="padIcon">▣</div>
+      <div class="big" id="padBig">Scan package tracking</div>
+      <div class="c" id="padCode"></div>
+      <div class="hint" id="padHint">Pull the trigger on the carrier label.</div>
+    </div>
+    <input id="cap" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
 
-    <!-- COLUMN 1: PALLET BUILDER -->
     <div class="card">
-      <h2>Create / Work on a Pallet</h2>
-
-      <div class="row3">
-        <div>
-          <label>Client (fixed per pallet)</label>
-          <input id="client" placeholder="Type client name (example: Customer ABC)" />
-          <div class="small">Tip: Keep client fixed for that pallet.</div>
-        </div>
-        <div>
-          <label>Pallet Size</label>
-          <select id="palletSize">
-            <option value='40x48x60'>40x48x60 inches</option>
-            <option value='40x48x70'>40x48x70 inches</option>
-            <option value='Other'>Other</option>
-          </select>
-        </div>
-        <div>
-          <label>Pallet ID</label>
-          <input id="palletId" class="mono" placeholder="Click Generate" readonly />
-          <div class="btns" style="margin-top:8px">
-            <button class="primary" id="genPalletBtn">Generate</button>
-            <button id="saveMetaBtn">Save client/size</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="kpiRow">
-        <div class="kpi"><b>Status</b><span id="kStatus">OPEN</span></div>
-        <div class="kpi"><b>Packages on pallet</b><span id="kCount">0</span></div>
-        <div class="kpi"><b>Created</b><span id="kCreated">—</span></div>
-        <div class="kpi"><b>Last scan</b><span id="kLastScan">—</span></div>
-      </div>
-
-      <h3>Scan / Add package to this pallet</h3>
-      <label>Package Tracking (USB scanner or camera)</label>
-      <div class="scan-input-group">
-        <input id="pkgTracking" class="mono" placeholder="Scan tracking and press Enter" autocomplete="off" />
-        <button type="button" class="scan-btn" id="pkgTrackingScanBtn" aria-label="Open camera scanner" title="Open camera scanner">📷</button>
-      </div>
-
-      <label>Notes (optional)</label>
-      <textarea id="pkgNotes" placeholder="Example: damaged box, missing item, etc. (optional)"></textarea>
-
-      <div class="btns">
-        <button class="primary" id="addPkgBtn">Add to pallet</button>
-        <button class="warn" id="markFullBtn">Mark pallet FULL</button>
-        <button class="primary" id="wrapReadyBtn">Mark WRAPPED / READY</button>
-        <button id="printLabelBtn">Label / Print</button>
-      </div>
-
-      <div id="leftStatus" class="status">Generate a pallet ID to start scanning.</div>
-
-      <div class="small" style="margin-top:10px;">
-        Rules:
-        <span class="pill gray">No duplicates</span>
-        <span class="pill gray">Tracking can belong to only one pallet</span>
-        <span class="pill warn">If already registered → alert</span>
-      </div>
+      <h2>Packages</h2>
+      <ul class="list" id="pkgList"></ul>
+      <div class="empty" id="pkgEmpty">No packages yet.</div>
     </div>
 
-    <!-- COLUMN 2: CONTENTS + LOOKUP -->
     <div class="card">
-      <h2>Pallet Contents + Lookup</h2>
-
-      <div class="row">
-        <div>
-          <label>Load pallet by Pallet ID (scan QR)</label>
-          <div class="scan-input-group">
-            <input id="lookupPalletId" class="mono" placeholder="Paste/scan Pallet ID and Enter" />
-            <button type="button" class="scan-btn" id="lookupPalletIdScanBtn" aria-label="Open camera scanner" title="Open camera scanner">📷</button>
-          </div>
-        </div>
-        <div style="display:flex; align-items:end;">
-          <button class="primary" id="lookupPalletBtn" style="width:100%;">Load Pallet</button>
-        </div>
+      <h2>Status</h2>
+      <div class="row" style="margin-bottom:9px">
+        <button class="btn amber" id="fullBtn">Mark FULL</button>
+        <button class="btn go" id="wrapBtn">Wrapped / ready</button>
       </div>
-
-      <div class="row">
-        <div>
-          <label>Find pallet by Package Tracking</label>
-          <div class="scan-input-group">
-            <input id="lookupTracking" class="mono" placeholder="Scan tracking and Enter" />
-            <button type="button" class="scan-btn" id="lookupTrackingScanBtn" aria-label="Open camera scanner" title="Open camera scanner">📷</button>
-          </div>
-        </div>
-        <div style="display:flex; align-items:end;">
-          <button class="primary" id="lookupTrackingBtn" style="width:100%;">Find</button>
-        </div>
-      </div>
-
-      <div id="lookupResult"></div>
-
-      <h3>Packages on current pallet</h3>
-      <div class="tableWrap">
-        <table id="pkgTbl">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Tracking</th>
-              <th>Added</th>
-              <th>Notes</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-
-      <div class="btns">
-        <button class="primary" id="exportPalletCsvBtn">Export Pallet CSV</button>
-        <button class="primary" id="exportAllCsvBtn">Export ALL Pallets CSV</button>
-        <button class="danger" id="wipeAllBtn" title="Deletes ALL pallets and mappings on this PC">Wipe ALL local data</button>
-      </div>
-
-      <div class="small" id="rightSummary"></div>
+      <div class="l2" id="statusHint">A pallet must have packages before it can be closed.</div>
     </div>
 
-    <!-- COLUMN 3: OPEN PALLETS LIST (NOT FULL) -->
-    <div class="card">
-      <h2>Open Pallets (Not FULL)</h2>
+    <button class="btn ghost" id="backBtn">← All pallets</button>
+  </section>
+</main>
 
-      <div class="row">
-        <div>
-          <label>Search (Client or Pallet ID)</label>
-          <input id="openSearch" placeholder="Type to filter..." />
-        </div>
-        <div style="display:flex; align-items:end;">
-          <button id="refreshOpenBtn" class="primary" style="width:100%;">Refresh</button>
-        </div>
-      </div>
-
-      <div class="list">
-        <div class="listHead">
-          <span>Available pallets</span>
-          <span class="pill gray" id="openCount">0</span>
-        </div>
-        <div class="listBody" id="openList"></div>
-      </div>
-
-      <div class="small" style="margin-top:10px;">
-        These are pallets with status <b>OPEN</b> or <b>WRAPPED / READY</b>. Pallets marked <b>FULL</b> are hidden.
-      </div>
-    </div>
-
-  </div>
-</div>
-
-<!-- Label modal -->
-<dialog id="labelDlg">
-  <div class="modal">
-    <div class="modalHead">
-      <b>4x6 Pallet Label (QR = Pallet ID)</b>
-      <button id="closeDlg">Close</button>
-    </div>
-    <div class="modalBody">
-      <div class="row tools">
-        <div>
-          <label>Pallet ID to print</label>
-          <input id="labelPalletId" class="mono" placeholder="Paste pallet ID and press Enter" />
-          <div class="small">QR is short (Pallet ID only) to guarantee scan reliability.</div>
-        </div>
-        <div>
-          <label>QR Text (what scanners read)</label>
-          <textarea id="qrPayloadPreview" class="mono" readonly></textarea>
-        </div>
-      </div>
-
-      <div style="margin-top:12px; display:flex; justify-content:center;">
-        <div class="label">
-          <div class="title">
-            <span style="font-weight:950;">FR-Logistics • RETURNS PALLET</span>
-            <span class="pill">QR</span>
-          </div>
-
-          <div class="pallet mono" id="L_pallet">—</div>
-
-          <div class="meta">
-            <div><b>Client</b><div class="client" id="L_client">—</div></div>
-            <div><b>Status</b><div class="stat" id="L_status">—</div></div>
-            <div><b>Created</b><div id="L_created">—</div></div>
-            <div><b>Packages</b><div id="L_count">—</div></div>
-            <div style="grid-column:1 / span 2;"><b>Pallet Size</b><div id="L_size">—</div></div>
-          </div>
-
-          <div class="qrWrap">
-            <div>
-              <div class="qrBox"><div id="qr"></div></div>
-              <div class="qrHint">Scan QR to capture Pallet ID</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="modalBtns tools">
-        <button class="primary" id="printBtn">Print 4x6</button>
-      </div>
-    </div>
-  </div>
-</dialog>
-
-<footer>
-  <div class="footRow">
-    <div class="small"><b>Welcome to FR-Logistics</b> • Returns pallets (no WMS) • Local PC storage</div>
-    <img class="liam" src="liam.png" alt="Liam" onerror="this.style.display='none'">
-  </div>
-</footer>
-
-<!-- QR library (CDN) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<div id="toast"></div>
 
 <script>
-  /************************
-   * IndexedDB schema
-   * pallets: key = palletId
-   * mapTracking: key = tracking, value = palletId
-   ************************/
-  const DB_NAME = "fr_returns_pallets_db";
-  const $ = (id)=>document.getElementById(id);
-
-  /***********************
-   * Supabase Config
-   ***********************/
-  const SUPA_URL = "https://rijbschnchjiuggrhfrx.supabase.co";
-  const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpamJzY2huY2hqaXVnZ3JoZnJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMTQwOTQsImV4cCI6MjA4ODg5MDA5NH0.s3T4CStjWqOvz7qDpYtjt0yVJ0iyOMAKKwxkADSEs4s";
-
-  async function sbFetch(method, path, body){
-    const res = await fetch(SUPA_URL + path, {
-      method,
-      headers: {
-        "apikey": SUPA_KEY,
-        "Authorization": "Bearer " + SUPA_KEY,
-        "Content-Type": "application/json",
-        "Prefer": method === "POST" ? "return=representation,resolution=merge-duplicates" : ""
-      },
-      body: body ? JSON.stringify(body) : undefined
-    });
-    if(!res.ok){ const err = await res.text(); throw new Error(err); }
-    const text = await res.text();
-    return text ? JSON.parse(text) : [];
-  }
-
-  async function openDB(){ /* no-op */ }
-
-  function nowISO(){ return new Date().toISOString(); }
-  function fmtDateTime(iso){
-    const d = new Date(iso);
-    const mm = String(d.getMonth()+1).padStart(2,"0");
-    const dd = String(d.getDate()).padStart(2,"0");
-    const yy = d.getFullYear();
-    let h = d.getHours();
-    const m = String(d.getMinutes()).padStart(2,"0");
-    const ampm = h>=12 ? "PM":"AM";
-    h = h%12; if(h===0) h=12;
-    return `${mm}/${dd}/${yy} ${h}:${m} ${ampm}`;
-  }
-
-  function setStatus(el, msg, kind=""){
-    const box = $(el);
-    box.textContent = msg;
-    box.className = "status" + (kind ? " " + kind : "");
-  }
-
-  function genPalletId(){
-    const d = new Date();
-    const y = d.getFullYear(), mo = String(d.getMonth()+1).padStart(2,"0"),
-          da = String(d.getDate()).padStart(2,"0"), hh = String(d.getHours()).padStart(2,"0"),
-          mi = String(d.getMinutes()).padStart(2,"0"), ss = String(d.getSeconds()).padStart(2,"0");
-    const rnd = Math.random().toString(16).slice(2,6).toUpperCase();
-    return `FRP-${y}${mo}${da}-${hh}${mi}${ss}-${rnd}`;
-  }
-
-  let currentPallet = null;
-
-  async function savePalletToDB(pallet){
-    const rec = {
-      pallet_id: pallet.palletId, client: pallet.client||"", pallet_size: pallet.palletSize||"",
-      status: pallet.status||"OPEN", packages: pallet.packages||[],
-      full_at: pallet.fullAt||null, wrapped_at: pallet.wrappedAt||null,
-      updated_at: nowISO(), app_source: "pallets"
-    };
-    await sbFetch("POST", `/rest/v1/pallets?on_conflict=pallet_id`, rec);
-  }
-
-  async function getPalletFromDB(palletId){
-    const data = await sbFetch("GET", `/rest/v1/pallets?pallet_id=eq.${encodeURIComponent(palletId)}&limit=1`);
-    if(!data||data.length===0) return null;
-    const r = data[0];
-    return { palletId:r.pallet_id, client:r.client, palletSize:r.pallet_size, status:r.status,
-              packages:r.packages||[], createdAt:r.created_at, fullAt:r.full_at, wrappedAt:r.wrapped_at,
-              lastScanAt:(r.packages||[]).length ? r.packages[r.packages.length-1].addedAt : null };
-  }
-
-  async function getAllPalletsFromDB(){
-    const data = await sbFetch("GET", `/rest/v1/pallets?app_source=eq.pallets&order=created_at.desc&limit=500`);
-    return (data||[]).map(r=>{ return { palletId:r.pallet_id, client:r.client, palletSize:r.pallet_size,
-      status:r.status, packages:r.packages||[], createdAt:r.created_at, fullAt:r.full_at,
-      wrappedAt:r.wrapped_at, lastScanAt:(r.packages||[]).length?r.packages[r.packages.length-1].addedAt:null }; });
-  }
-
-  async function checkTrackingExists(trk){
-    const data = await sbFetch("GET", `/rest/v1/pallet_packages?tracking=eq.${encodeURIComponent(trk)}&limit=1`);
-    return data&&data.length>0 ? data[0] : null;
-  }
-
-  async function put(store, obj){ await savePalletToDB(obj); }
-  async function get(store, key){ if(store==="pallets") return await getPalletFromDB(key); return null; }
-  async function add(store, obj){
-    if(store==="tracking_to_pallet")
-      await sbFetch("POST", `/rest/v1/pallet_packages?on_conflict=tracking`, {tracking:obj.tracking, pallet_id:obj.palletId, notes:""});
-  }
-  async function del(store, key){
-    if(store==="tracking_to_pallet")
-      await sbFetch("DELETE", `/rest/v1/pallet_packages?tracking=eq.${encodeURIComponent(key)}`);
-  }
-  async function getAll(store){ if(store==="pallets") return await getAllPalletsFromDB(); return []; }
-  async function clear(store){
-    if(!confirm("DELETE ALL pallet data from cloud? Cannot be undone.")) return;
-    await sbFetch("DELETE", `/rest/v1/pallets?app_source=eq.pallets&id=neq.00000000-0000-0000-0000-000000000000`);
-    await sbFetch("DELETE", `/rest/v1/pallet_packages?id=neq.00000000-0000-0000-0000-000000000000`);
-  }
-
-  function updateKPIs(){
-    if(!currentPallet){
-      $("kStatus").textContent="—"; $("kCount").textContent="0";
-      $("kCreated").textContent="—"; $("kLastScan").textContent="—";
-      $("rightSummary").textContent="";
-      $("pkgTbl").querySelector("tbody").innerHTML=""; return;
-    }
-    $("kStatus").textContent=currentPallet.status||"OPEN";
-    $("kCount").textContent=String(currentPallet.packages?.length||0);
-    $("kCreated").textContent=currentPallet.createdAt?fmtDateTime(currentPallet.createdAt):"—";
-    $("kLastScan").textContent=currentPallet.lastScanAt?fmtDateTime(currentPallet.lastScanAt):"—";
-    $("rightSummary").textContent=`Loaded pallet: ${currentPallet.palletId} • Client: ${currentPallet.client||"—"}`;
-  }
-
-  function renderPackageTable(){
-    const tb=$("pkgTbl").querySelector("tbody");
-    tb.innerHTML="";
-    if(!currentPallet?.packages?.length) return;
-    currentPallet.packages.forEach((p,idx)=>{
-      const tr=document.createElement("tr");
-      tr.innerHTML=`<td>${idx+1}</td><td class="mono">${p.tracking}</td><td>${p.addedAt?fmtDateTime(p.addedAt):""}</td><td>${p.notes||""}</td><td><button data-del="${p.tracking}" class="danger small">Remove</button></td>`;
-      tb.appendChild(tr);
-    });
-    tb.querySelectorAll("button[data-del]").forEach(btn=>{
-      btn.addEventListener("click",async()=>{ await removeTrackingFromCurrent(btn.getAttribute("data-del")); });
-    });
-  }
-
-  async function saveCurrentPallet(){ if(!currentPallet) return; await put("pallets",currentPallet); await refreshOpenPallets(); }
-
-  async function loadPallet(palletId){
-    const p=await get("pallets",palletId);
-    if(!p){ $("lookupResult").innerHTML=`<div class="status bad">NO PALLET FOUND</div>`; return null; }
-    currentPallet=p;
-    $("palletId").value=currentPallet.palletId;
-    $("client").value=currentPallet.client||"";
-    $("palletSize").value=currentPallet.palletSize||"40x48x60";
-    setStatus("leftStatus","Pallet loaded. Ready to scan packages.","ok");
-    $("lookupResult").innerHTML=`<div class="status ok">Loaded pallet: <span class="mono">${currentPallet.palletId}</span></div>`;
-    updateKPIs(); renderPackageTable(); return p;
-  }
-
-  async function ensureCurrentPallet(){
-    if(!currentPallet){ setStatus("leftStatus","Generate or load a pallet first.","bad"); return false; }
-    const client=$("client").value.trim();
-    if(!client){ setStatus("leftStatus","Client is required for this pallet.","bad"); return false; }
-    currentPallet.client=client; currentPallet.palletSize=$("palletSize").value; return true;
-  }
-
-  async function addTrackingToCurrent(){
-    const ok=await ensureCurrentPallet(); if(!ok) return;
-    const trk=$("pkgTracking").value.trim();
-    if(!trk){ setStatus("leftStatus","Scan a package tracking number.","bad"); return; }
-    // Guard — a Pallet ID is not a package tracking
-    if(/^FRP-/i.test(trk)){
-      setStatus("leftStatus","That looks like a Pallet ID (FRP-...), not a package tracking. Scan the carrier label.","bad");
-      $("pkgTracking").value = "";
-      $("pkgTracking").focus();
-      return;
-    }
-    const mapped=await checkTrackingExists(trk);
-    if(mapped){ setStatus("leftStatus",`Tracking already registered on pallet ${mapped.pallet_id}`,"bad"); return; }
-    if((currentPallet.packages||[]).some(x=>x.tracking===trk)){ setStatus("leftStatus","Tracking already in this pallet.","bad"); return; }
-    const pkg={tracking:trk,addedAt:nowISO(),notes:$("pkgNotes").value.trim()};
-    currentPallet.packages=currentPallet.packages||[];
-    currentPallet.packages.push(pkg);
-    currentPallet.lastScanAt=nowISO();
-    try{
-      await saveCurrentPallet();
-      await add("tracking_to_pallet",{tracking:trk,palletId:currentPallet.palletId,createdAt:nowISO()});
-      setStatus("leftStatus","Package added to pallet.","ok");
-      $("pkgTracking").value=""; $("pkgNotes").value=""; $("pkgTracking").focus();
-      updateKPIs(); renderPackageTable();
-    }catch(e){ setStatus("leftStatus","Error: "+e.message,"bad"); }
-  }
-
-  async function removeTrackingFromCurrent(trk){
-    if(!currentPallet) return;
-    currentPallet.packages=(currentPallet.packages||[]).filter(x=>x.tracking!==trk);
-    currentPallet.lastScanAt=nowISO();
-    await saveCurrentPallet();
-    await del("tracking_to_pallet",trk);
-    setStatus("leftStatus","Package removed from pallet.","warn");
-    updateKPIs(); renderPackageTable();
-  }
-
-  async function markStatus(newStatus){
-    const ok=await ensureCurrentPallet(); if(!ok) return;
-    currentPallet.status=newStatus;
-    if(newStatus==="FULL") currentPallet.fullAt=nowISO();
-    if(newStatus==="WRAPPED / READY FOR PICKUP") currentPallet.wrappedAt=nowISO();
-    await saveCurrentPallet();
-    setStatus("leftStatus",`Pallet status updated: ${newStatus}`,"ok");
-    updateKPIs();
-  }
-
-    async function refreshOpenPallets(){
-    const all = await getAll(STORE_PALLETS);
-    const q = ($("openSearch").value || "").trim().toLowerCase();
-
-    let open = all.filter(p => isNotFull(p.status || "OPEN"));
-    open.sort((a,b)=> new Date(b.createdAt||0) - new Date(a.createdAt||0));
-
-    if(q){
-      open = open.filter(p =>
-        (p.palletId||"").toLowerCase().includes(q) ||
-        (p.client||"").toLowerCase().includes(q)
-      );
-    }
-
-    $("openCount").textContent = String(open.length);
-
-    const root = $("openList");
-    root.innerHTML = "";
-
-    if(open.length === 0){
-      root.innerHTML = `<div class="palletItem"><div class="small">No open pallets.</div></div>`;
-      return;
-    }
-
-    for(const p of open){
-      const div = document.createElement("div");
-      div.className = "palletItem";
-
-      const count = (p.packages||[]).length;
-      const created = p.createdAt ? fmtDateTime(p.createdAt) : "—";
-      const stat = p.status || "OPEN";
-
-      div.innerHTML = `
-        <div class="palletTop">
-          <div class="palletId mono">${p.palletId}</div>
-          <span class="pill gray">${stat}</span>
-        </div>
-        <div class="palletMeta">
-          <span><b>Client:</b> ${p.client || "—"}</span>
-          <span><b>Pkgs:</b> ${count}</span>
-        </div>
-        <div class="palletMeta">
-          <span><b>Created:</b> ${created}</span>
-        </div>
-        <div class="palletActions">
-          <button class="primary small" data-load="${p.palletId}">Load</button>
-          <button class="small" data-label="${p.palletId}">Label</button>
-          <button class="warn small" data-csv="${p.palletId}">CSV</button>
-          <button class="warn small" data-full="${p.palletId}">Mark FULL</button>
-        </div>
-      `;
-      root.appendChild(div);
-    }
-
-    root.querySelectorAll("button[data-load]").forEach(b=>{
-      b.addEventListener("click", async ()=>{
-        const id = b.getAttribute("data-load");
-        await loadPallet(id);
-        $("pkgTracking").focus();
-      });
-    });
-
-    root.querySelectorAll("button[data-label]").forEach(b=>{
-      b.addEventListener("click", async ()=>{
-        const id = b.getAttribute("data-label");
-        await openLabel(id);
-      });
-    });
-
-    root.querySelectorAll("button[data-csv]").forEach(b=>{
-      b.addEventListener("click", async ()=>{
-        const id = b.getAttribute("data-csv");
-        await exportPalletCSVById(id);
-      });
-    });
-
-    root.querySelectorAll("button[data-full]").forEach(b=>{
-      b.addEventListener("click", async ()=>{
-        const id = b.getAttribute("data-full");
-        const p = await get(STORE_PALLETS, id);
-        if(!p) return;
-        p.status = "FULL";
-        p.fullAt = nowISO();
-        await put(STORE_PALLETS, p);
-
-        if(currentPallet && currentPallet.palletId === id){
-          currentPallet.status = "FULL";
-          currentPallet.fullAt = p.fullAt;
-          updateKPIs();
-        }
-        await refreshOpenPallets();
-      });
-    });
-  }
-
-  /************************
-   * ✅ CSV EXPORT
-   * - Export current pallet
-   * - Export all pallets (each package = one row)
-   ************************/
-  function csvEscape(v){
-    const s = String(v ?? "");
-    return `"${s.replaceAll('"','""')}"`;
-  }
-
-  function buildPalletRows(p){
-    const rows = [];
-    const base = {
-      palletId: p.palletId,
-      client: p.client || "",
-      palletSize: p.palletSize || "",
-      status: p.status || "",
-      createdAt: p.createdAt || "",
-      fullAt: p.fullAt || "",
-      wrappedAt: p.wrappedAt || "",
-    };
-
-    const pkgs = p.packages || [];
-    if(pkgs.length === 0){
-      rows.push({
-        ...base,
-        packageTracking: "",
-        packageAddedAt: "",
-        packageNotes: ""
-      });
-      return rows;
-    }
-
-    for(const x of pkgs){
-      rows.push({
-        ...base,
-        packageTracking: x.tracking,
-        packageAddedAt: x.addedAt || "",
-        packageNotes: x.notes || ""
-      });
-    }
-    return rows;
-  }
-
-  function downloadCSV(filename, header, rowObjs){
-    const cols = header;
-    const lines = [];
-    lines.push(cols.map(csvEscape).join(","));
-    for(const r of rowObjs){
-      lines.push(cols.map(c => csvEscape(r[c])).join(","));
-    }
-    const csv = lines.join("\n");
-    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    a.click();
-  }
-
-  async function exportPalletCSV(){
-    if(!currentPallet){
-      alert("No pallet loaded.");
-      return;
-    }
-    await exportPalletCSVById(currentPallet.palletId);
-  }
-
-  async function exportPalletCSVById(palletId){
-    const p = await get(STORE_PALLETS, palletId);
-    if(!p){
-      alert("Pallet not found.");
-      return;
-    }
-    const header = [
-      "palletId","client","palletSize","status","createdAt","fullAt","wrappedAt",
-      "packageTracking","packageAddedAt","packageNotes"
-    ];
-    const rows = buildPalletRows(p);
-    const safeId = palletId.replaceAll(":", "-");
-    downloadCSV(`Pallet_${safeId}.csv`, header, rows);
-  }
-
-  async function exportAllPalletsCSV(){
-    const all = await getAll(STORE_PALLETS);
-    all.sort((a,b)=> new Date(a.createdAt||0) - new Date(b.createdAt||0));
-    const header = [
-      "palletId","client","palletSize","status","createdAt","fullAt","wrappedAt",
-      "packageTracking","packageAddedAt","packageNotes"
-    ];
-    const rows = [];
-    for(const p of all){
-      rows.push(...buildPalletRows(p));
-    }
-    const name = `All_Pallets_${new Date().toISOString().slice(0,10)}.csv`;
-    downloadCSV(name, header, rows);
-  }
-
-  
-const STORE_PALLETS = "pallets";
-const STORE_TRACKING = "tracking_to_pallet";
-
-function isNotFull(status){
-  return status !== "FULL";
-}
-
-async function lookupTracking(){
-  const trk = $("lookupTracking").value.trim();
-  if(!trk) return;
-  // ── Smart routing — if a Pallet ID QR was scanned by mistake, redirect ──
-  if(/^FRP-/i.test(trk)){
-    $("lookupResult").innerHTML = `<div class="status warn">Scanned a Pallet ID, not a tracking. Loading pallet <span class="mono">${trk}</span>…</div>`;
-    $("lookupPalletId").value = trk;
-    $("lookupTracking").value = "";
-    await loadPallet(trk);
-    return;
-  }
-  try {
-    const data = await sbFetch("GET", `/rest/v1/pallet_packages?tracking=eq.${encodeURIComponent(trk)}&limit=1`);
-    if(!data || data.length === 0){
-      $("lookupResult").innerHTML = `<div class="status bad">Tracking not found in any pallet.</div>`;
-      return;
-    }
-    const palletId = data[0].pallet_id;
-    $("lookupResult").innerHTML = `<div class="status ok">Found on pallet: <span class="mono">${palletId}</span></div>`;
-    await loadPallet(palletId);
-  } catch(e) {
-    $("lookupResult").innerHTML = `<div class="status bad">Error: ${e.message}</div>`;
-  }
-}
-
-async function wipeAll(){
-  await clear(STORE_PALLETS);
-  currentPallet = null;
-  updateKPIs();
-  await refreshOpenPallets();
-  setStatus("leftStatus", "All data wiped.", "warn");
-}
-
-async function openLabel(palletId){
-  const p = await get(STORE_PALLETS, palletId);
-  if(!p){ alert("Pallet not found: " + palletId); return; }
-  
-  // Fill label fields
-  $("labelPalletId").value = p.palletId;
-  $("L_pallet").textContent = p.palletId;
-  $("L_client").textContent = p.client || "—";
-  $("L_status").textContent = p.status || "OPEN";
-  $("L_created").textContent = p.createdAt ? fmtDateTime(p.createdAt) : "—";
-  $("L_count").textContent = String((p.packages||[]).length);
-  $("L_size").textContent = p.palletSize || "—";
-  $("qrPayloadPreview").value = p.palletId;
-
-  // Generate QR code
-  const qrEl = $("qr");
-  qrEl.innerHTML = "";
-  new QRCode(qrEl, {
-    text: p.palletId,
-    width: 240,
-    height: 240,
-    colorDark: "#000000",
-    colorLight: "#ffffff",
-    correctLevel: QRCode.CorrectLevel.H
-  });
-
-  $("labelDlg").showModal();
-}
-
-
-(async function init(){
-    await openDB();
-
-    $("genPalletBtn").addEventListener("click", async ()=>{
-      const id = genPalletId();
-      const pallet = {
-        palletId: id,
-        client: $("client").value.trim(),
-        palletSize: $("palletSize").value,
-        createdAt: nowISO(),
-        status: "OPEN",
-        packages: []
-      };
-      currentPallet = pallet;
-      $("palletId").value = id;
-      await put(STORE_PALLETS, pallet);
-      setStatus("leftStatus","Pallet created. Ready to scan packages.", "ok");
-      updateKPIs();
-      renderPackageTable();
-      await refreshOpenPallets();
-      $("pkgTracking").focus();
-    });
-
-    $("saveMetaBtn").addEventListener("click", async ()=>{
-      const ok = await ensureCurrentPallet();
-      if(!ok) return;
-      await saveCurrentPallet();
-      setStatus("leftStatus","Client/size saved.", "ok");
-    });
-
-    $("addPkgBtn").addEventListener("click", addTrackingToCurrent);
-    $("pkgTracking").addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); addTrackingToCurrent(); }});
-
-    $("markFullBtn").addEventListener("click", ()=>markStatus("FULL"));
-    $("wrapReadyBtn").addEventListener("click", ()=>markStatus("WRAPPED / READY FOR PICKUP"));
-
-    $("printLabelBtn").addEventListener("click", async ()=>{
-      if(!currentPallet){
-        setStatus("leftStatus","No pallet loaded.", "bad");
-        return;
-      }
-      await openLabel(currentPallet.palletId);
-    });
-
-    $("lookupPalletBtn").addEventListener("click", async ()=>{
-      const id = $("lookupPalletId").value.trim();
-      await loadPallet(id);
-      await refreshOpenPallets();
-    });
-    $("lookupPalletId").addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); $("lookupPalletBtn").click(); }});
-
-    $("lookupTrackingBtn").addEventListener("click", lookupTracking);
-    $("lookupTracking").addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); lookupTracking(); }});
-
-    $("exportPalletCsvBtn").addEventListener("click", exportPalletCSV);
-    $("exportAllCsvBtn").addEventListener("click", exportAllPalletsCSV);
-
-    $("wipeAllBtn").addEventListener("click", wipeAll);
-
-    // Open pallet list controls
-    $("refreshOpenBtn").addEventListener("click", refreshOpenPallets);
-    $("openSearch").addEventListener("input", refreshOpenPallets);
-
-    // Label modal
-    $("closeDlg").addEventListener("click", ()=> $("labelDlg").close());
-    $("labelPalletId").addEventListener("keydown", async (e)=>{
-      if(e.key==="Enter"){
-        e.preventDefault();
-        const pid = $("labelPalletId").value.trim();
-        if(pid) await openLabel(pid);
-      }
-    });
-    $("printBtn").addEventListener("click", ()=> window.print());
-    $("labelDlg").addEventListener("close", ()=>{ $("labelPalletId").value=""; });
-
-    // Initial state
-    setStatus("leftStatus","Generate a pallet ID to start scanning.", "");
-    updateKPIs();
-    await refreshOpenPallets();
-  })();
-
-  // Expose handlers for the camera scanner module
-  window.addTrackingToCurrent = addTrackingToCurrent;
-  window.lookupTracking = lookupTracking;
-</script>
-
-<!-- ═══════════════════════════════════════════════════════════════
-     CAMERA BARCODE SCANNER · POC v1
-     Library: ZXing-js (loaded from CDN, no build required)
-     Supports: Code 128 (UPS/FedEx/DHL), Code 39, ITF (USPS),
-               QR, DataMatrix (Amazon FBA), EAN-13, UPC-A
-     ═══════════════════════════════════════════════════════════════ -->
-
-<div class="scanner-modal" id="scannerModal" role="dialog" aria-label="Camera barcode scanner">
-  <div class="scanner-header">
-    <div class="scanner-title">📷 Camera Scanner</div>
-    <button type="button" class="scanner-close" id="scannerCloseBtn" aria-label="Close scanner">✕</button>
-  </div>
-  <div class="scanner-video-wrap">
-    <video id="scannerVideo" playsinline muted autoplay></video>
-    <div class="scanner-overlay">
-      <div class="scanner-frame"></div>
-    </div>
-    <div class="scanner-hint" id="scannerHint">Align barcode inside the frame</div>
-  </div>
-  <div class="scanner-status" id="scannerStatus">Initializing camera…</div>
-  <div class="scanner-recent" id="scannerRecent"></div>
-  <div class="scanner-controls">
-    <button type="button" class="scanner-btn" id="scannerTorchBtn">🔦 Torch</button>
-    <button type="button" class="scanner-btn" id="scannerContinuousBtn">🔁 Continuous</button>
-    <button type="button" class="scanner-btn" id="scannerDoneBtn">✓ Done</button>
-  </div>
-</div>
-
-<script src="https://unpkg.com/@zxing/browser@0.1.5"></script>
-<script>
+"use strict";
 (function(){
-  'use strict';
 
-  // ── State ─────────────────────────────────────────────────────
-  let codeReader = null;
-  let currentStream = null;
-  let currentTrack = null;
-  let targetInputId = null;       // which input to fill
-  let targetCallback = null;       // function to call after fill (e.g. addTrackingToCurrent)
-  let continuousMode = false;
-  let torchOn = false;
-  let lastScannedCode = null;
-  let lastScannedAt = 0;
-  const DEBOUNCE_MS = 1500;        // ignore same code within this window
+const API = 'https://apps.fr-logistics.net/.netlify/functions';
+const $   = (id) => document.getElementById(id);
+const WRAPPED = 'WRAPPED / READY FOR PICKUP';
 
-  // ── DOM ───────────────────────────────────────────────────────
-  const modal     = document.getElementById('scannerModal');
-  const video     = document.getElementById('scannerVideo');
-  const statusEl  = document.getElementById('scannerStatus');
-  const hintEl    = document.getElementById('scannerHint');
-  const recentEl  = document.getElementById('scannerRecent');
-  const closeBtn  = document.getElementById('scannerCloseBtn');
-  const doneBtn   = document.getElementById('scannerDoneBtn');
-  const torchBtn  = document.getElementById('scannerTorchBtn');
-  const contBtn   = document.getElementById('scannerContinuousBtn');
+const S = { operator:null, clients:[] };
+const P = { current:null, busy:false };
 
-  // ── Helpers ───────────────────────────────────────────────────
-  function setStatus(text, kind){
-    statusEl.textContent = text;
-    statusEl.className = 'scanner-status' + (kind ? ' ' + kind : '');
-  }
+/* ── plumbing ──────────────────────────────────────────────────────── */
 
-  function beep(){
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.frequency.value = 1200;
-      gain.gain.setValueAtTime(0.18, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.12);
-      setTimeout(() => ctx.close(), 200);
-    } catch(e){ /* silent */ }
-  }
+function toast(msg, ms){
+  const t = $('toast');
+  t.textContent = msg; t.classList.add('up');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('up'), ms || 2600);
+}
 
-  function buzz(ms){
-    try { if(navigator.vibrate) navigator.vibrate(ms || 80); } catch(e){}
-  }
-
-  function addRecent(code, kind){
-    const item = document.createElement('div');
-    item.className = 'scanner-recent-item ' + (kind || 'ok');
-    const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    item.innerHTML = '<span>' + code + '</span><span>' + t + '</span>';
-    recentEl.insertBefore(item, recentEl.firstChild);
-    while(recentEl.children.length > 8) recentEl.removeChild(recentEl.lastChild);
-  }
-
-  // ── Scanner controls (returned by decodeFromConstraints) ─────
-  let scanControls = null;
-
-  // ── Camera control ───────────────────────────────────────────
-  async function startCamera(){
-    // The library exposes window.ZXingBrowser (with embedded ZXing core types)
-    const Z = window.ZXingBrowser;
-    if(!Z || !Z.BrowserMultiFormatReader){
-      setStatus('❌ Scanner library not loaded. Check connection and refresh.', 'error');
-      hintEl.textContent = 'window.ZXingBrowser = ' + (typeof window.ZXingBrowser);
-      return false;
-    }
-
-    try {
-      // ── Hints ───────────────────────────────────────────────
-      // @zxing/browser re-exports DecodeHintType and BarcodeFormat from @zxing/library
-      const DecodeHintType = Z.DecodeHintType;
-      const BarcodeFormat  = Z.BarcodeFormat;
-      const hints = new Map();
-      if(DecodeHintType && BarcodeFormat){
-        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-          BarcodeFormat.CODE_128,    // UPS, FedEx, DHL, Amazon FBA
-          BarcodeFormat.CODE_39,     // FedEx Ground (older)
-          BarcodeFormat.ITF,         // USPS Intelligent Mail (Interleaved 2 of 5)
-          BarcodeFormat.QR_CODE,     // FR-Logistics pallets, generic
-          BarcodeFormat.DATA_MATRIX, // Amazon FBA secondary, Maersk
-          BarcodeFormat.EAN_13,
-          BarcodeFormat.UPC_A,
-          BarcodeFormat.PDF_417,     // Some carriers' 2D
-          BarcodeFormat.CODABAR
-        ]);
-        hints.set(DecodeHintType.TRY_HARDER, true);
-        // Allow Code 128 to use the full character set including the
-        // special "FNC" codes UPS embeds in its tracking labels.
-        hints.set(DecodeHintType.ASSUME_CODE_39_CHECK_DIGIT, false);
-      }
-
-      // 100ms between decode attempts (was 200ms) — better for hard-to-read
-      // labels like dense UPS Code 128. Tradeoff: more CPU on the phone.
-      codeReader = new Z.BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 100 });
-
-      // ── Camera constraints — high res, back camera, continuous focus ──
-      const constraints = {
-        audio: false,
-        video: {
-          facingMode: { ideal: 'environment' },
-          width:  { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { ideal: 30 }
-        }
-      };
-
-      setStatus('Requesting camera…', '');
-      hintEl.textContent = 'Initializing camera…';
-
-      // ── decodeFromConstraints handles getUserMedia + decode loop internally ──
-      scanControls = await codeReader.decodeFromConstraints(constraints, video, (result, err, controls) => {
-        if(result){
-          handleScanResult(result.getText());
-        }
-        // err is a NotFoundException2 every frame without a code — silent.
-      });
-
-      // After decodeFromConstraints, the video stream is on video.srcObject
-      currentStream = video.srcObject;
-      currentTrack  = currentStream ? currentStream.getVideoTracks()[0] : null;
-
-      // Show actual capture resolution
-      if(currentTrack){
-        const settings = currentTrack.getSettings ? currentTrack.getSettings() : {};
-        hintEl.textContent = (settings.width || '?') + '×' + (settings.height || '?') +
-                             ' · Fill the frame · Hold steady';
-        // Torch availability
-        const caps = currentTrack.getCapabilities ? currentTrack.getCapabilities() : {};
-        torchBtn.style.display = caps.torch ? 'inline-flex' : 'none';
-
-        // ── ZOOM — helps UPS Code 128 a lot ──
-        // Many iPhone/iPad back cameras support a zoom range like 1.0–8.0.
-        // We apply a moderate 1.5x by default so dense codes look bigger to ZXing.
-        if(caps.zoom){
-          try {
-            const targetZoom = Math.min(1.8, caps.zoom.max || 1.8);
-            if(targetZoom > (caps.zoom.min || 1) + 0.1){
-              await currentTrack.applyConstraints({ advanced: [{ zoom: targetZoom }] });
-            }
-          } catch(e){ /* zoom not applicable, fine */ }
-        }
-      }
-
-      setStatus('Ready — point at barcode', '');
-
-      // ── Adaptive hint — if 4s pass without detection, suggest tweaks ──
-      // Clear any previous timer first
-      if(window.__scanHintTimer) clearTimeout(window.__scanHintTimer);
-      window.__scanHintTimer = setTimeout(() => {
-        if(modal.classList.contains('open') && !lastScannedCode){
-          hintEl.textContent = '💡 Hard label? Get closer · turn on 🔦 Torch · hold steady';
-        }
-      }, 4000);
-
-      return true;
-    } catch(e){
-      console.error('Camera/scanner error:', e);
-      let msg;
-      if(e.name === 'NotAllowedError') msg = '❌ Camera permission denied. Enable it in Settings → Safari → Camera.';
-      else if(e.name === 'NotFoundError') msg = '❌ No camera available on this device.';
-      else if(e.name === 'NotReadableError') msg = '❌ Camera is in use by another app.';
-      else if(e.name === 'OverconstrainedError') msg = '❌ Camera does not support requested resolution. Retrying…';
-      else msg = '❌ ' + (e.name || 'Error') + ': ' + (e.message || 'unknown');
-      setStatus(msg, 'error');
-
-      // Try fallback with minimal constraints
-      if(e.name === 'OverconstrainedError'){
-        try {
-          scanControls = await codeReader.decodeFromConstraints(
-            { audio:false, video:{ facingMode:'environment' } },
-            video,
-            (result) => { if(result) handleScanResult(result.getText()); }
-          );
-          currentStream = video.srcObject;
-          currentTrack  = currentStream ? currentStream.getVideoTracks()[0] : null;
-          setStatus('Ready (fallback mode)', '');
-          hintEl.textContent = 'Fallback resolution · Fill the frame';
-          return true;
-        } catch(e2){
-          setStatus('❌ Camera unavailable: ' + e2.name, 'error');
-        }
-      }
-      return false;
-    }
-  }
-
-  function stopCamera(){
-    try { if(window.__scanHintTimer){ clearTimeout(window.__scanHintTimer); window.__scanHintTimer = null; } } catch(e){}
-    try { if(scanControls && typeof scanControls.stop === 'function') scanControls.stop(); } catch(e){}
-    try { if(currentStream) currentStream.getTracks().forEach(t => t.stop()); } catch(e){}
-    scanControls = null;
-    codeReader = null;
-    currentStream = null;
-    currentTrack = null;
-    torchOn = false;
-    torchBtn.classList.remove('active');
-    video.srcObject = null;
-  }
-
-  async function toggleTorch(){
-    if(!currentTrack) return;
-    try {
-      await currentTrack.applyConstraints({ advanced: [{ torch: !torchOn }] });
-      torchOn = !torchOn;
-      torchBtn.classList.toggle('active', torchOn);
-    } catch(e){
-      setStatus('Torch not supported on this device', 'error');
-      setTimeout(() => setStatus('Ready — point at barcode', ''), 1500);
-    }
-  }
-
-  // ── Scan handling ────────────────────────────────────────────
-  function handleScanResult(code){
-    const now = Date.now();
-    // Debounce — ignore same code if scanned again within DEBOUNCE_MS
-    if(code === lastScannedCode && (now - lastScannedAt) < DEBOUNCE_MS) return;
-    lastScannedCode = code;
-    lastScannedAt = now;
-
-    // Visual + haptic feedback
-    beep();
-    buzz(80);
-    setStatus('✓ ' + code, 'success');
-
-    // Fill target input
-    const input = document.getElementById(targetInputId);
-    if(input){
-      input.value = code;
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-
-    // Run callback (typically addTrackingToCurrent or lookupTracking)
-    let resultKind = 'ok';
-    if(typeof targetCallback === 'function'){
-      try {
-        const ret = targetCallback();
-        // If callback returns a promise, hook into it for feedback
-        if(ret && typeof ret.then === 'function'){
-          ret.then(r => {
-            // Result feedback shown by app's setStatus inside; we mirror here
-            addRecent(code, 'ok');
-          }).catch(e => {
-            addRecent(code, 'err');
-          });
-        } else {
-          addRecent(code, 'ok');
-        }
-      } catch(e){
-        addRecent(code, 'err');
-      }
-    } else {
-      addRecent(code, 'ok');
-    }
-
-    if(continuousMode){
-      // Stay open, reset status after a beat
-      setTimeout(() => {
-        if(modal.classList.contains('open')){
-          setStatus('Ready — point at next barcode', '');
-        }
-      }, 1200);
-    } else {
-      // Auto-close after a beat
-      setTimeout(() => closeScanner(), 600);
-    }
-  }
-
-  // ── Open / close ─────────────────────────────────────────────
-  async function openScanner(opts){
-    targetInputId = opts.inputId;
-    targetCallback = opts.onScan || null;
-    continuousMode = !!opts.continuous;
-    contBtn.classList.toggle('active', continuousMode);
-    lastScannedCode = null;
-    lastScannedAt = 0;
-    recentEl.innerHTML = '';
-    modal.classList.add('open');
-    document.body.style.overflow = 'hidden';
-    const ok = await startCamera();
-    if(!ok){
-      // Leave open so user sees the error; close button works
-    }
-  }
-
-  function closeScanner(){
-    stopCamera();
-    modal.classList.remove('open');
-    document.body.style.overflow = '';
-    // Return focus to the input so USB scanner / keyboard works again
-    const input = document.getElementById(targetInputId);
-    if(input) input.focus();
-  }
-
-  // ── Wire up buttons ──────────────────────────────────────────
-  closeBtn.addEventListener('click', closeScanner);
-  doneBtn.addEventListener('click', closeScanner);
-  torchBtn.addEventListener('click', toggleTorch);
-  contBtn.addEventListener('click', () => {
-    continuousMode = !continuousMode;
-    contBtn.classList.toggle('active', continuousMode);
-    hintEl.textContent = continuousMode
-      ? 'Continuous mode — scans stay open'
-      : 'Align barcode inside the frame';
-  });
-
-  // Hardware back button / Esc
-  document.addEventListener('keydown', (e) => {
-    if(e.key === 'Escape' && modal.classList.contains('open')) closeScanner();
-  });
-
-  // ── Bind to inputs in pallets.html ────────────────────────────
-  function bindScanButton(btnId, inputId, callback, defaultContinuous){
-    const btn = document.getElementById(btnId);
-    if(!btn) return;
-    btn.addEventListener('click', () => {
-      openScanner({
-        inputId: inputId,
-        onScan: callback,
-        continuous: defaultContinuous
-      });
+/** Text first, then parse — an HTML error page must not become a parse error. */
+async function api(method, action, data){
+  const url = method === 'GET'
+    ? API + '/frm-pallets?action=' + encodeURIComponent(action) + '&' + new URLSearchParams(data || {})
+    : API + '/frm-pallets';
+  let r;
+  try{
+    r = await fetch(url, method === 'GET' ? {} : {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action, ...(data || {}) })
     });
+  }catch(netErr){
+    throw new Error('No connection');
+  }
+  const text = await r.text();
+  let j = {};
+  try { j = text ? JSON.parse(text) : {}; }
+  catch { throw new Error('Server error (HTTP ' + r.status + ')'); }
+  if(!r.ok || j.ok === false) throw Object.assign(new Error(j.message || j.error || ('HTTP ' + r.status)), {payload:j});
+  return j;
+}
+
+function feedback(kind){
+  try{ if(navigator.vibrate) navigator.vibrate(kind === 'ok' ? 40 : kind === 'err' ? [60,50,60] : 25); }catch(_){}
+}
+function show(v){ ['vGate','vHome','vPallet'].forEach(x => { $(x).hidden = (x !== v); }); }
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function timeAgo(d){
+  const m = Math.floor((Date.now() - d.getTime()) / 60000);
+  if(m < 1) return 'just now';
+  if(m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60);
+  if(h < 24) return h + 'h ago';
+  return Math.floor(h / 24) + 'd ago';
+}
+
+/* ── sign in ───────────────────────────────────────────────────────── */
+
+function signIn(name){
+  const op = String(name || '').trim();
+  if(!op){ toast('Type your name'); return; }
+  S.operator = op;
+  localStorage.setItem('frm_op', op);
+  localStorage.setItem('frm_ok', '1');
+  $('who').textContent = op; $('who').hidden = false;
+  goHome();
+}
+
+/* ── clients ───────────────────────────────────────────────────────── */
+
+async function loadClients(){
+  try{
+    const r = await fetch(API + '/clients-list');
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const rows = Array.isArray(data) ? data : (data.clients || data.data || []);
+    const list = rows
+      .filter(c => c.active !== false && c.type !== 'Internal' && (c.status || '') !== 'Internal')
+      .map(c => ({ label:(c.company && c.company.trim()) || c.name }))
+      .filter(c => c.label)
+      .sort((a,b) => a.label.localeCompare(b.label));
+    const seen = new Set();
+    S.clients = list.filter(c => {
+      const k = c.label.toLowerCase();
+      if(seen.has(k)) return false;
+      seen.add(k); return true;
+    });
+    // The pallets table stores the client as text, not an id — keep it that way
+    // so the 16 existing pallets stay readable.
+    $('pClient').innerHTML = '<option value="">— Select client —</option>' +
+      S.clients.map(c => `<option value="${esc(c.label)}">${esc(c.label)}</option>`).join('');
+  }catch(e){ toast('Could not load clients'); }
+}
+
+/* ── home ──────────────────────────────────────────────────────────── */
+
+function goHome(){
+  P.current = null;
+  show('vHome');
+  refreshOpenPallets();
+}
+
+async function refreshOpenPallets(){
+  const ul = $('openList'), empty = $('openEmpty');
+  ul.innerHTML = ''; empty.style.display = 'block'; empty.textContent = 'Loading…';
+  try{
+    const j = await api('GET', 'open');
+    const rows = j.pallets || [];
+    if(!rows.length){ empty.textContent = 'No open pallets.'; return; }
+    empty.style.display = 'none';
+    rows.forEach(r => {
+      const li = document.createElement('li');
+      li.style.cursor = 'pointer';
+      li.innerHTML = `<div style="flex:1;min-width:0">
+          <div class="l1">${esc(r.pallet_id)}</div>
+          <div class="l2">${esc(r.client || '—')} · ${esc(r.pallet_size || '—')}</div>
+        </div><span class="qty">${r.count}</span>`;
+      li.onclick = () => openPallet(r.pallet_id);
+      ul.appendChild(li);
+    });
+  }catch(e){ empty.textContent = 'Could not load pallets: ' + e.message; }
+}
+
+async function createPallet(){
+  const client = $('pClient').value.trim();
+  if(!client){ toast('Pick a client first'); return; }
+  const btn = $('createBtn'); btn.disabled = true;
+  try{
+    const j = await api('POST', 'create', { client, pallet_size:$('pSize').value });
+    P.current = j.pallet;
+    show('vPallet'); render();
+    setTimeout(focusCap, 80);
+    toast('Pallet created');
+  }catch(e){ toast('Could not create: ' + e.message); }
+  finally{ btn.disabled = false; }
+}
+
+/* ── active pallet ─────────────────────────────────────────────────── */
+
+async function openPallet(palletId){
+  try{
+    const j = await api('GET', 'pallet', { pallet_id:palletId });
+    P.current = j.pallet;
+    show('vPallet'); render();
+    setPad('', 'Scan package tracking', '', '');
+    setTimeout(focusCap, 80);
+  }catch(e){ toast('Could not open: ' + e.message); }
+}
+
+function render(){
+  const p = P.current; if(!p) return;
+  const pkgs = p.packages || [];
+  const status = p.status || 'OPEN';
+
+  $('hId').textContent = p.pallet_id;
+  $('hSub').textContent = `${p.client || '—'} · ${p.pallet_size || '—'} · ${status}`;
+  $('hCount').textContent = pkgs.length;
+
+  const ul = $('pkgList'), empty = $('pkgEmpty');
+  empty.style.display = pkgs.length ? 'none' : 'block';
+  ul.innerHTML = '';
+  // Newest first, capped: a 400-package pallet must not render 400 rows on a phone.
+  pkgs.slice().reverse().slice(0, 60).forEach(pk => {
+    const li = document.createElement('li');
+    const when = pk.addedAt ? timeAgo(new Date(pk.addedAt)) : '';
+    li.innerHTML = `<span class="code">${esc(pk.tracking)}</span><span class="badge">${esc(when)}</span>`;
+    if(status !== WRAPPED){
+      const b = document.createElement('button');
+      b.className = 'undo'; b.textContent = '↺'; b.title = 'Remove';
+      b.onclick = () => removePackage(pk.tracking);
+      li.appendChild(b);
+    }
+    ul.appendChild(li);
+  });
+  if(pkgs.length > 60){
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="l2">…and ${pkgs.length - 60} more</span>`;
+    ul.appendChild(li);
   }
 
-  // Wait for the app's IIFE to finish (so addTrackingToCurrent is defined)
-  function bindWhenReady(){
-    // pkgTracking → continuous mode by default (operator scans many in a row)
-    bindScanButton('pkgTrackingScanBtn', 'pkgTracking', () => {
-      // Call the existing handler
-      if(typeof window.addTrackingToCurrent === 'function'){
-        return window.addTrackingToCurrent();
-      } else {
-        // Fallback: simulate the click on Add button
-        const btn = document.getElementById('addPkgBtn');
-        if(btn) btn.click();
-      }
-    }, true);  // continuous = true for batch scanning
+  const wrapped = (status === WRAPPED);
+  const empty0 = !pkgs.length;
+  $('fullBtn').disabled = wrapped || empty0;
+  $('wrapBtn').disabled = wrapped || empty0;
+  $('statusHint').textContent = wrapped
+    ? 'This pallet is wrapped and ready for pickup. It can no longer be edited.'
+    : empty0 ? 'A pallet must have packages before it can be closed.'
+    : status === 'FULL' ? 'Marked FULL. Wrap it when it goes out.'
+    : 'Scan packages, then mark FULL or wrapped.';
+}
 
-    // lookupTracking → single shot (one lookup = one result)
-    bindScanButton('lookupTrackingScanBtn', 'lookupTracking', () => {
-      if(typeof window.lookupTracking === 'function'){
-        return window.lookupTracking();
-      } else {
-        const btn = document.getElementById('lookupTrackingBtn');
-        if(btn) btn.click();
-      }
-    }, false);
+/* ── scanning ──────────────────────────────────────────────────────── */
 
-    // lookupPalletId → single shot (scan the Pallet QR to load it)
-    bindScanButton('lookupPalletIdScanBtn', 'lookupPalletId', () => {
-      const btn = document.getElementById('lookupPalletBtn');
-      if(btn) btn.click();
-    }, false);
+function focusCap(){ const c = $('cap'); if(c && !$('vPallet').hidden) c.focus(); }
+
+function setPad(kind, big, hint, code){
+  const p = $('pad');
+  p.className = 'scanpad' + (kind ? ' ' + kind : '');
+  $('padIcon').textContent = kind === 'ok' ? '✓' : kind === 'dup' ? '!' : kind === 'err' ? '✕' : '▣';
+  $('padBig').textContent = big;
+  $('padHint').textContent = hint || 'Pull the trigger on the carrier label.';
+  $('padCode').textContent = code || '';
+  if(kind === 'ok' || kind === 'dup'){
+    clearTimeout(setPad._t);
+    setPad._t = setTimeout(() => setPad('', 'Scan package tracking', '', ''), 1500);
+  }
+}
+
+async function onScan(raw){
+  const code = String(raw || '').trim().toUpperCase();
+  if(!code || P.busy) return;
+  if(!P.current){ setPad('err','No active pallet','Open a pallet first',code); feedback('err'); return; }
+  if(/^FRP-/.test(code)){
+    setPad('err','That is a Pallet ID','Scan the carrier label instead',code); feedback('err'); return;
+  }
+  if((P.current.packages || []).some(x => x.tracking === code)){
+    setPad('dup','Already on this pallet','',code); feedback('dup'); return;
   }
 
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', bindWhenReady);
-  } else {
-    bindWhenReady();
+  P.busy = true;
+  setPad('', 'Checking…', '', code);
+  try{
+    const j = await api('POST', 'add_package', { pallet_id:P.current.pallet_id, tracking:code });
+    P.current = j.pallet;
+    render();
+    setPad('ok', 'Added', j.count + ' on this pallet', code);
+    feedback('ok');
+  }catch(e){
+    const pl = e.payload || {};
+    if(pl.error === 'ON_ANOTHER_PALLET'){
+      setPad('dup','On another pallet', pl.pallet_id, code); feedback('dup');
+      toast('Already on ' + pl.pallet_id, 3500);
+    }else if(pl.error === 'ALREADY_HERE'){
+      setPad('dup','Already on this pallet','',code); feedback('dup');
+    }else{
+      setPad('err','Not added', e.message, code); feedback('err');
+    }
+  }finally{
+    P.busy = false;
+    setTimeout(focusCap, 80);
   }
+}
+
+async function removePackage(trk){
+  if(!P.current || P.busy) return;
+  if(!confirm('Remove ' + trk + ' from this pallet?')) return;
+  P.busy = true;
+  try{
+    const j = await api('POST', 'remove_package', { pallet_id:P.current.pallet_id, tracking:trk });
+    P.current = j.pallet;
+    render();
+    toast('Removed ' + trk.slice(-8));
+  }catch(e){ toast('Could not remove: ' + e.message); }
+  finally{ P.busy = false; setTimeout(focusCap, 60); }
+}
+
+async function setStatus(status, label){
+  if(!P.current) return;
+  if(!confirm(label + ' — ' + P.current.pallet_id + '?')) return;
+  try{
+    const j = await api('POST', 'set_status', { pallet_id:P.current.pallet_id, status });
+    P.current = j.pallet;
+    render();
+    toast('Status: ' + (j.pallet.status || status));
+  }catch(e){ toast('Could not update: ' + e.message); }
+}
+
+/* ── wiring ────────────────────────────────────────────────────────── */
+
+$('gateBtn').onclick  = () => signIn($('opname').value);
+$('opname').onkeydown = (e) => { if(e.key === 'Enter') signIn($('opname').value); };
+$('createBtn').onclick = createPallet;
+$('backBtn').onclick   = goHome;
+$('pad').onclick       = focusCap;
+$('fullBtn').onclick   = () => setStatus('FULL', 'Mark FULL');
+$('wrapBtn').onclick   = () => setStatus('WRAPPED', 'Mark wrapped and ready for pickup');
+
+$('cap').addEventListener('keydown', (e) => {
+  if(e.key !== 'Enter') return;
+  e.preventDefault();
+  const v = $('cap').value;
+  $('cap').value = '';
+  onScan(v);
+});
+document.addEventListener('click', (e) => {
+  if($('vPallet').hidden) return;
+  const t = e.target;
+  if(t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'BUTTON')) return;
+  setTimeout(focusCap, 40);
+});
+
+/* ── boot ──────────────────────────────────────────────────────────── */
+
+loadClients();
+const saved = localStorage.getItem('frm_op');
+if(saved) $('opname').value = saved;
+if(saved && localStorage.getItem('frm_ok') === '1'){
+  S.operator = saved;
+  $('who').textContent = saved; $('who').hidden = false;
+  goHome();
+}else{
+  show('vGate');
+}
+
 })();
 </script>
 </body>
