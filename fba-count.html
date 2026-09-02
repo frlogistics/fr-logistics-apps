@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0B2545">
+<title>FBA Count — FR-Logistics</title>
+<!--
+  FBA Count — standalone module.
+
+  Replaces the FBA section that lived inside fr-mobile.html. It is a separate
+  page ON PURPOSE: fr-mobile.html declares 129 functions in one global scope,
+  and two of them were called refreshOpenCounts — the Stock Count one silently
+  overwrote the FBA one, so the open-counts list never rendered. Own page, own
+  scope, that class of bug cannot happen again.
+
+  Shares the operator session with FR Mobile via localStorage (frm_op/frm_ok),
+  so signing in on either one carries over.
+
+  Backend: frm-fba.js (count) + frm-fba-manifest.js (documents). No new env vars.
+-->
+<style>
+  :root{
+    --navy:#0B2545; --teal:#1C7293; --amber:#F4A261; --red:#B4232C; --green:#15803D;
+    --line:#E2E8F0; --bg:#F1F5F9; --muted:#64748B; --ink:#0F172A;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       color:var(--ink);background:var(--bg);padding-bottom:40px}
+
+  .top{background:var(--navy);color:#fff;padding:13px 16px;display:flex;
+       align-items:center;gap:12px;position:sticky;top:0;z-index:20}
+  .top h1{font-size:17px;margin:0;font-weight:600;flex:1}
+  .top a.back{color:#fff;text-decoration:none;font-size:20px;line-height:1;opacity:.85}
+  .who{background:rgba(255,255,255,.15);border-radius:14px;padding:4px 11px;font-size:12px}
+
+  main{max-width:640px;margin:0 auto;padding:14px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+  .card h2{margin:0 0 12px;font-size:15px;font-weight:600}
+
+  .field{margin-bottom:12px}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+        color:var(--muted);margin-bottom:5px;font-weight:600}
+  input,select{width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;
+               font-size:16px;font-family:inherit;background:#fff;color:var(--ink)}
+  input:focus,select:focus{outline:2px solid var(--teal);outline-offset:-1px}
+
+  .btn{display:block;width:100%;padding:13px;border:0;border-radius:8px;background:var(--navy);
+       color:#fff;font-size:15px;font-weight:600;font-family:inherit;cursor:pointer}
+  .btn.go{background:var(--teal)}
+  .btn.ghost{background:#fff;color:var(--navy);border:1px solid var(--line)}
+  .btn.danger{background:var(--red)}
+  .btn:disabled{opacity:.5}
+  .row{display:flex;gap:9px}
+  .row .btn{flex:1}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .row4{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+  .row4 input{padding:11px 7px;text-align:center;font-size:15px}
+
+  ul.list{list-style:none;margin:0;padding:0}
+  ul.list li{display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--line)}
+  ul.list li:last-child{border-bottom:0}
+  .l1{font-weight:600;font-size:14px;word-break:break-word}
+  .l2{font-size:12px;color:var(--muted)}
+  .qty{font-weight:700;font-size:17px;color:var(--navy);white-space:nowrap}
+  .empty{text-align:center;color:var(--muted);font-size:13px;padding:14px 0}
+
+  .hero{background:var(--navy);color:#fff;border-radius:10px;padding:14px;margin-bottom:12px;
+        display:flex;align-items:center;gap:12px}
+  .hero .ref{font-size:16px;font-weight:600}
+  .hero .sub{font-size:12px;color:#B9CCE0;margin-top:2px}
+  .hero .big{margin-left:auto;font-size:26px;font-weight:700;line-height:1}
+  .hero .biglbl{font-size:10px;color:#B9CCE0;text-transform:uppercase;text-align:right}
+
+  .scanpad{background:#fff;border:2px dashed var(--line);border-radius:10px;padding:22px 14px;
+           text-align:center;margin-bottom:12px;cursor:text}
+  .scanpad.ok{border-color:var(--green);background:#F0FDF4}
+  .scanpad.err{border-color:var(--red);background:#FEF2F2}
+  .scanpad.warn{border-color:var(--amber);background:#FFF7ED}
+  .scanpad .icon{font-size:26px;line-height:1}
+  .scanpad .big{font-size:17px;font-weight:600;margin-top:7px}
+  .scanpad .code{font-family:Consolas,monospace;font-size:13px;color:var(--muted);margin-top:5px;word-break:break-all}
+  .scanpad .hint{font-size:12px;color:var(--muted);margin-top:6px}
+  #cap{position:absolute;left:-9999px;opacity:0;height:1px;width:1px}
+
+  .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:13px}
+  .seg button{flex:1;padding:11px;border:0;background:#fff;font-size:14px;font-weight:600;
+              font-family:inherit;color:var(--muted);cursor:pointer}
+  .seg button.on{background:var(--teal);color:#fff}
+
+  .tag{font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;letter-spacing:.04em}
+  .tag.map{background:#DCFCE7;color:#166534}
+  .tag.scanned_sku{background:#DBEAFE;color:#1E40AF}
+  .tag.memory{background:#FEF3C7;color:#92400E}
+  .tag.manual{background:#F1F5F9;color:var(--muted)}
+  .pill{font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;background:#F1F5F9;color:var(--muted)}
+  .pill.case{background:#DBEAFE;color:#1E40AF}
+  .pill.loose{background:#FEF3C7;color:#92400E}
+
+  .warn{background:#FFF7ED;border-left:3px solid var(--amber);padding:10px 12px;
+        border-radius:0 6px 6px 0;font-size:13px;margin-bottom:10px}
+  .sugg{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .sugg button{background:#fff;border:1px solid var(--teal);color:var(--teal);border-radius:14px;
+               padding:6px 12px;font-size:13px;font-family:inherit;cursor:pointer}
+  .x{background:none;border:0;color:var(--muted);font-size:20px;padding:0 4px;cursor:pointer;line-height:1}
+
+  #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(90px);
+         background:var(--navy);color:#fff;padding:11px 18px;border-radius:22px;font-size:14px;
+         max-width:88vw;text-align:center;transition:transform .22s;z-index:60;pointer-events:none}
+  #toast.up{transform:translateX(-50%) translateY(0)}
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <a class="back" href="/fr-mobile.html" title="Back">‹</a>
+  <h1>FBA Count</h1>
+  <span class="who" id="who" hidden></span>
+</div>
+
+<main>
+  <!-- ── sign in ─────────────────────────────────────────────────────── -->
+  <section id="vGate">
+    <div class="card">
+      <h2>Who is counting?</h2>
+      <div class="field">
+        <label for="opname">Your name</label>
+        <input id="opname" type="text" placeholder="e.g. Joe Raymond" autocomplete="name">
+      </div>
+      <button class="btn go" id="gateBtn">Start</button>
+    </div>
+  </section>
+
+  <!-- ── home: create or open ────────────────────────────────────────── -->
+  <section id="vHome" hidden>
+    <div class="card">
+      <h2>Start a count</h2>
+      <div class="field">
+        <label for="cClient">Client</label>
+        <select id="cClient"><option value="">— Select client —</option></select>
+      </div>
+      <div class="field">
+        <label for="cRef">Reference</label>
+        <input id="cRef" type="text" placeholder="e.g. YOB-002-Sep2026" autocomplete="off">
+      </div>
+      <button class="btn go" id="createBtn">+ New count</button>
+    </div>
+
+    <div class="card">
+      <h2>Open counts</h2>
+      <ul class="list" id="openList"></ul>
+      <div class="empty" id="openEmpty">Loading…</div>
+    </div>
+  </section>
+
+  <!-- ── active count ────────────────────────────────────────────────── -->
+  <section id="vCount" hidden>
+    <div class="hero">
+      <div style="min-width:0">
+        <div class="ref" id="hRef">—</div>
+        <div class="sub" id="hSub">—</div>
+      </div>
+      <div>
+        <div class="big" id="hUnits">0</div>
+        <div class="biglbl">units</div>
+      </div>
+    </div>
+
+    <div id="warnBox"></div>
+
+    <div class="scanpad" id="pad">
+      <div class="icon" id="padIcon">▣</div>
+      <div class="big" id="padBig">Scan a product</div>
+      <div class="code" id="padCode"></div>
+      <div class="hint" id="padHint">Pull the trigger on the FNSKU, then declare box or loose.</div>
+    </div>
+    <input id="cap" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+
+    <!-- declaration -->
+    <div class="card" id="declare" hidden>
+      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px">
+        <div style="flex:1;min-width:0">
+          <div class="l1" id="dMsku">—</div>
+          <div class="l2" id="dScanned">—</div>
+        </div>
+        <span class="tag map" id="dSrc">MAP</span>
+      </div>
+
+      <div id="dUnmapped" hidden>
+        <div class="warn" id="dUnmappedMsg">Not in the FNSKU map. Pick the merchant SKU or type it.</div>
+        <div class="field">
+          <label for="dManual">Merchant SKU</label>
+          <input id="dManual" type="text" placeholder="Type the MSKU" autocomplete="off">
+        </div>
+        <div class="sugg" id="dSugg"></div>
+      </div>
+
+      <div class="seg">
+        <button id="tCase" class="on">Box of one item</button>
+        <button id="tLoose">Loose units</button>
+      </div>
+
+      <div id="caseFields">
+        <div class="row2">
+          <div class="field">
+            <label for="dUpb">Units per box</label>
+            <input id="dUpb" type="text" inputmode="numeric" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="dBoxes">How many boxes</label>
+            <input id="dBoxes" type="text" inputmode="numeric" autocomplete="off">
+          </div>
+        </div>
+        <div class="field">
+          <label>Measure ONE box — the rest are assumed identical</label>
+          <div class="row4">
+            <input id="dL" type="text" inputmode="decimal" placeholder="L in" autocomplete="off">
+            <input id="dW" type="text" inputmode="decimal" placeholder="W in" autocomplete="off">
+            <input id="dH" type="text" inputmode="decimal" placeholder="H in" autocomplete="off">
+            <input id="dWt" type="text" inputmode="decimal" placeholder="lb" autocomplete="off">
+          </div>
+        </div>
+        <div class="l2" id="caseTotal" style="margin:-4px 0 12px">—</div>
+      </div>
+
+      <div id="looseFields" hidden>
+        <div class="field">
+          <label for="dQty">Loose units</label>
+          <input id="dQty" type="text" inputmode="numeric" autocomplete="off">
+        </div>
+        <div class="l2" style="margin:-6px 0 12px">
+          Adds to this SKU's loose line. Shipping boxes get decided when packing.
+        </div>
+      </div>
+
+      <div class="row">
+        <button class="btn ghost" id="cancelBtn" style="flex:0 0 38%">Cancel</button>
+        <button class="btn" id="addBtn">Add line</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Counted lines</h2>
+      <ul class="list" id="lineList"></ul>
+      <div class="empty" id="lineEmpty">No lines yet. Scan the first product.</div>
+    </div>
+
+    <div class="card">
+      <h2>Documents</h2>
+      <div class="row" style="margin-bottom:9px">
+        <button class="btn ghost" id="manifestBtn">Manifest</button>
+        <button class="btn ghost" id="packlistBtn">Pack list</button>
+      </div>
+      <button class="btn go" id="closeBtn">Close counting</button>
+      <div class="l2" style="margin-top:9px" id="closeHint">
+        Closing moves the count to <strong>packing</strong>. Lines stay editable.
+      </div>
+    </div>
+
+    <button class="btn ghost" id="backBtn" style="margin-top:4px">← All counts</button>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+(function(){
+
+const API   = 'https://apps.fr-logistics.net/.netlify/functions';
+const $     = (id) => document.getElementById(id);
+const MAX_LINES_PER_MSKU = 4;   // Amazon: 3 case configs + 1 loose
+
+const S = { operator:null, clients:[] };
+const C = { shipment:null, lines:[], summary:null, pending:null, lineType:'case', busy:false };
+
+/* ── plumbing ──────────────────────────────────────────────────────── */
+
+function toast(msg, ms){
+  const t = $('toast');
+  t.textContent = msg; t.classList.add('up');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>t.classList.remove('up'), ms || 2600);
+}
+
+/**
+ * Reads the body as text FIRST, then parses. A bare res.json() on an HTML
+ * error page throws a parse error and hides the real status.
+ */
+async function api(method, action, payload){
+  const url = method === 'GET'
+    ? API + '/frm-fba?action=' + encodeURIComponent(action) + '&' + new URLSearchParams(payload || {})
+    : API + '/frm-fba';
+  const res = await fetch(url, method === 'GET' ? {} : {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ action, ...(payload || {}) })
+  });
+  const text = await res.text();
+  let j = {};
+  try { j = text ? JSON.parse(text) : {}; }
+  catch { throw Object.assign(new Error('Server returned a non-JSON response (HTTP ' + res.status + ')'), {status:res.status}); }
+  if(!res.ok) throw Object.assign(new Error(j.message || j.error || ('HTTP ' + res.status)), {status:res.status, payload:j});
+  return j;
+}
+
+function feedback(kind){
+  try{
+    if(navigator.vibrate) navigator.vibrate(kind === 'ok' ? 40 : kind === 'err' ? [60,50,60] : 25);
+  }catch(_){}
+}
+
+function show(view){
+  ['vGate','vHome','vCount'].forEach(v => { $(v).hidden = (v !== view); });
+}
+
+/* ── sign in ───────────────────────────────────────────────────────── */
+
+function signIn(name){
+  const op = String(name || '').trim();
+  if(!op){ toast('Type your name'); return; }
+  S.operator = op;
+  localStorage.setItem('frm_op', op);
+  localStorage.setItem('frm_ok', '1');
+  $('who').textContent = op; $('who').hidden = false;
+  goHome();
+}
+
+/* ── clients ───────────────────────────────────────────────────────── */
+
+async function loadClients(){
+  try{
+    const res = await fetch(API + '/clients-list');
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const rows = Array.isArray(data) ? data : (data.clients || data.data || []);
+    // Same filter as FR Mobile: no internal, no inactive; company is canonical.
+    const list = rows
+      .filter(c => c.active !== false && c.type !== 'Internal' && (c.status || '') !== 'Internal')
+      .map(c => ({ label:(c.company && c.company.trim()) || c.name, id:c.id }))
+      .filter(c => c.label)
+      .sort((a,b) => a.label.localeCompare(b.label));
+    const seen = new Set();
+    S.clients = list.filter(c => {
+      const k = c.label.toLowerCase();
+      if(seen.has(k)) return false;
+      seen.add(k); return true;
+    });
+    const sel = $('cClient');
+    sel.innerHTML = '<option value="">— Select client —</option>' +
+      S.clients.map(c => `<option value="${c.id}">${escapeHtml(c.label)}</option>`).join('');
+  }catch(e){
+    toast('Could not load clients');
+  }
+}
+
+function escapeHtml(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ── home ──────────────────────────────────────────────────────────── */
+
+function goHome(){
+  C.shipment = null; C.lines = []; C.summary = null; C.pending = null;
+  show('vHome');
+  refreshOpenCounts();
+}
+
+/**
+ * The only function with this name on the page. In fr-mobile.html a second
+ * declaration overwrote this one and the list silently stayed empty.
+ */
+async function refreshOpenCounts(){
+  const ul = $('openList'), empty = $('openEmpty');
+  ul.innerHTML = ''; empty.style.display = 'block'; empty.textContent = 'Loading…';
+  try{
+    const j = await api('GET', 'shipments');
+    const rows = j.shipments || [];
+    if(!rows.length){ empty.textContent = 'No open counts.'; return; }
+    empty.style.display = 'none';
+    rows.forEach(r => {
+      const cli = (r.client && (r.client.company || r.client.name)) || '—';
+      const li = document.createElement('li');
+      li.style.cursor = 'pointer';
+      li.innerHTML = `<div style="flex:1;min-width:0">
+          <div class="l1">${escapeHtml(r.reference)}</div>
+          <div class="l2">${escapeHtml(cli)} · ${escapeHtml(r.status)}</div>
+        </div><span class="qty">›</span>`;
+      li.onclick = () => openCount(r);
+      ul.appendChild(li);
+    });
+  }catch(e){
+    empty.textContent = 'Could not load counts: ' + e.message;
+  }
+}
+
+async function createCount(){
+  const sel = $('cClient');
+  const client_id = sel.value;
+  const label = sel.selectedOptions[0] ? sel.selectedOptions[0].textContent : '';
+  const reference = $('cRef').value.trim();
+  if(!client_id){ toast('Pick a client first'); return; }
+  if(!reference){ toast('Give the count a reference'); return; }
+  const btn = $('createBtn'); btn.disabled = true;
+  try{
+    const j = await api('POST', 'create_shipment', { client_id, reference, created_by:S.operator || '' });
+    $('cRef').value = '';
+    openCount({ ...j.shipment, client:{ name:label } });
+    toast('Count started');
+  }catch(e){
+    // The unique index on (client_id, reference) surfaces here as a 409.
+    toast(/duplicate|unique|409/i.test(e.message)
+      ? 'That reference already exists for this client'
+      : 'Could not start: ' + e.message);
+  }finally{ btn.disabled = false; }
+}
+
+/* ── active count ──────────────────────────────────────────────────── */
+
+async function openCount(row){
+  C.shipment = row;
+  C.shipment.clientLabel = (row.client && (row.client.company || row.client.name)) || '';
+  show('vCount');
+  hideDeclare();
+  await reloadLines();
+  setTimeout(focusCap, 80);
+}
+
+async function reloadLines(){
+  try{
+    const j = await api('GET', 'lines', { shipment_id:C.shipment.id });
+    C.lines = j.lines || [];
+    C.summary = j.summary || null;
+  }catch(e){
+    toast('Could not load lines');
+  }
+  renderLines();
+}
+
+function renderLines(){
+  const c = C.shipment; if(!c) return;
+  $('hRef').textContent = c.reference || '—';
+  $('hSub').textContent = (c.clientLabel || '—') + ' · ' + (c.status || 'counting');
+
+  const lines = C.lines || [];
+  $('hUnits').textContent = lines.reduce((a,l) => a + (l.quantity || 0), 0);
+
+  // Warnings come from the server summary; recomputed locally only as a fallback
+  // so the operator still sees the Amazon ceiling if the summary is missing.
+  let warnings = (C.summary && C.summary.warnings) || [];
+  if(!C.summary){
+    const per = {};
+    lines.forEach(l => { per[l.msku] = (per[l.msku] || 0) + 1; });
+    warnings = Object.keys(per).filter(k => per[k] > MAX_LINES_PER_MSKU)
+      .map(k => `${k}: ${per[k]} packing lines — Amazon accepts at most ${MAX_LINES_PER_MSKU}.`);
+  }
+  $('warnBox').innerHTML = warnings.map(w => `<div class="warn">⚠ ${escapeHtml(w)}</div>`).join('');
+
+  const ul = $('lineList'), empty = $('lineEmpty');
+  empty.style.display = lines.length ? 'none' : 'block';
+  ul.innerHTML = '';
+  lines.forEach(l => {
+    const li = document.createElement('li');
+    const pack = l.line_type === 'case'
+      ? `${l.units_per_box} × ${l.boxes} boxes`
+      : 'loose';
+    const dims = (l.line_type === 'case' && l.length_in)
+      ? ` · ${l.length_in}×${l.width_in}×${l.height_in} in, ${l.weight_lb} lb`
+      : '';
+    li.innerHTML = `<div style="flex:1;min-width:0">
+        <div class="l1">${escapeHtml(l.msku)} <span class="pill ${l.line_type}">${l.line_type}</span></div>
+        <div class="l2">${escapeHtml(l.fnsku || 'no FNSKU')} · ${pack}${dims}</div>
+      </div>
+      <span class="qty">${l.quantity}</span>`;
+    const x = document.createElement('button');
+    x.className = 'x'; x.textContent = '×'; x.title = 'Remove line';
+    x.onclick = (ev) => { ev.stopPropagation(); removeLine(l.id, l.msku); };
+    li.appendChild(x);
+    ul.appendChild(li);
+  });
+
+  const packing = (c.status === 'packing');
+  $('closeBtn').textContent = packing ? 'Counting closed' : 'Close counting';
+  $('closeBtn').disabled = packing;
+  $('closeHint').innerHTML = packing
+    ? 'This count is in <strong>packing</strong>. Generate the manifest and the pack list above.'
+    : 'Closing moves the count to <strong>packing</strong>. Lines stay editable.';
+}
+
+/* ── scanning ──────────────────────────────────────────────────────── */
+
+function focusCap(){ const c = $('cap'); if(c && !$('vCount').hidden) c.focus(); }
+
+function setPad(kind, big, hint, code){
+  $('pad').className = 'scanpad' + (kind ? ' ' + kind : '');
+  $('padIcon').textContent = kind === 'ok' ? '✓' : kind === 'err' ? '✕' : kind === 'warn' ? '!' : '▣';
+  $('padBig').textContent = big;
+  $('padHint').textContent = hint || '';
+  $('padCode').textContent = code || '';
+}
+
+/** Location codes look like RA0301 / F0102 — a product scan is never one. */
+function looksLikeLocation(code){
+  return /^(R[AB]\d{2,4}|F\d{2,4}|GENERAL)$/i.test(String(code).trim());
+}
+
+async function onScan(code){
+  code = String(code || '').trim();
+  if(!code) return;
+  if(!C.shipment){ setPad('err','No active count','Open a count first',code); feedback('err'); return; }
+  if(looksLikeLocation(code)){
+    setPad('err','That is a location','Scan the product barcode',code); feedback('err'); return;
+  }
+  setPad('', 'Looking up…', '', code);
+  try{
+    const j = await api('GET', 'resolve_code', { code, shipment_id:C.shipment.id });
+    openDeclare(code, j);
+    feedback(j.mapped ? 'ok' : 'warn');
+    setPad(j.mapped ? 'ok' : 'warn',
+           j.mapped ? 'Found' : 'Not in the map',
+           j.mapped ? '' : 'Confirm the merchant SKU', code);
+  }catch(e){
+    setPad('err','Lookup failed', e.message, code); feedback('err');
+  }
+}
+
+function openDeclare(code, r){
+  C.pending = { code, msku:r.msku || '', source:r.source || null,
+                mapped:!!r.mapped, suggestions:r.suggestions || [] };
+  $('declare').hidden = false;
+  $('dMsku').textContent = r.msku || '—';
+  $('dScanned').textContent = 'Scanned ' + code;
+
+  const src = $('dSrc');
+  src.className = 'tag ' + (r.source || 'manual');
+  src.textContent = r.source === 'map' ? 'MAP'
+                  : r.source === 'scanned_sku' ? 'SKU'
+                  : r.source === 'memory' ? 'REMEMBERED' : 'MANUAL';
+
+  // A remembered SKU came from a person, not from the map. Showing who and when
+  // is what lets a wrong one get caught here instead of riding along forever.
+  if(r.source === 'memory'){
+    const who = r.confirmed_by || 'someone';
+    const when = r.confirmed_at
+      ? new Date(r.confirmed_at).toLocaleDateString(undefined, {month:'short', day:'numeric'})
+      : 'earlier';
+    $('dScanned').textContent = `Scanned ${code} · confirmed by ${who} on ${when}`;
+  }
+
+  $('dUnmapped').hidden = !!r.mapped;
+  if(!r.mapped){
+    $('dManual').value = '';
+    const box = $('dSugg'); box.innerHTML = '';
+    (r.suggestions || []).forEach(s => {
+      const b = document.createElement('button');
+      b.textContent = s;
+      b.onclick = () => { $('dManual').value = s; $('dMsku').textContent = s; setTimeout(focusCap, 60); };
+      box.appendChild(b);
+    });
+  }
+
+  setType('case');
+  ['dUpb','dBoxes','dL','dW','dH','dWt','dQty'].forEach(id => { $(id).value = ''; });
+  updateCaseTotal();
+}
+
+function hideDeclare(){ $('declare').hidden = true; C.pending = null; }
+
+function setType(t){
+  C.lineType = t;
+  $('tCase').classList.toggle('on', t === 'case');
+  $('tLoose').classList.toggle('on', t === 'loose');
+  $('caseFields').hidden = (t !== 'case');
+  $('looseFields').hidden = (t !== 'loose');
+}
+
+function updateCaseTotal(){
+  const upb = parseInt($('dUpb').value, 10), boxes = parseInt($('dBoxes').value, 10);
+  $('caseTotal').textContent = (upb > 0 && boxes > 0)
+    ? `${upb} × ${boxes} = ${upb * boxes} units`
+    : '—';
+}
+
+async function addLine(){
+  if(!C.pending || C.busy) return;
+  const p = C.pending;
+  let msku = p.msku, confirm_unmapped = false;
+  if(!p.mapped){
+    msku = $('dManual').value.trim();
+    if(!msku){ toast('Enter the merchant SKU'); return; }
+    confirm_unmapped = true;
+  }
+
+  const payload = { shipment_id:C.shipment.id, code:p.code, msku, confirm_unmapped,
+                    line_type:C.lineType, counted_by:S.operator || '' };
+
+  if(C.lineType === 'case'){
+    const upb = parseInt($('dUpb').value, 10), boxes = parseInt($('dBoxes').value, 10);
+    if(!(upb > 0)){ toast('Units per box?'); return; }
+    if(!(boxes > 0)){ toast('How many boxes?'); return; }
+    payload.units_per_box = upb; payload.boxes = boxes;
+    const dims = { length_in:$('dL').value, width_in:$('dW').value,
+                   height_in:$('dH').value, weight_lb:$('dWt').value };
+    for(const k in dims){ const v = parseFloat(dims[k]); if(v > 0) payload[k] = v; }
+  }else{
+    const qty = parseInt($('dQty').value, 10);
+    if(!(qty > 0)){ toast('How many loose units?'); return; }
+    payload.quantity = qty;
+  }
+
+  C.busy = true; $('addBtn').disabled = true;
+  try{
+    const j = await api('POST', 'add_line', payload);
+    hideDeclare();
+    toast(j.merged ? `+${j.added} loose · ${msku} now ${j.line.quantity}` : 'Line added');
+    if(j.warning) setTimeout(() => toast(j.warning, 4000), 2700);
+    await reloadLines();
+    setPad('ok', 'Line added', '', p.code);
+    feedback('ok');
+  }catch(e){
+    toast('Not added: ' + e.message);
+    feedback('err');
+  }finally{
+    C.busy = false; $('addBtn').disabled = false; setTimeout(focusCap, 80);
+  }
+}
+
+/** Optimistic remove, rolled back if the server refuses. */
+async function removeLine(id, msku){
+  if(!confirm('Remove ' + msku + '?')) return;
+  const prev = C.lines.slice();
+  C.lines = C.lines.filter(l => l.id !== id);
+  renderLines();
+  try{
+    await api('POST', 'delete_line', { line_id:id });
+    toast('Line removed');
+    await reloadLines();
+  }catch(e){
+    C.lines = prev; renderLines();
+    toast('Could not remove: ' + e.message);
+  }
+}
+
+async function closeCounting(){
+  if(!C.shipment) return;
+  if(!C.lines.length){ toast('Nothing counted yet'); return; }
+  if(!confirm('Close counting for ' + C.shipment.reference + '?')) return;
+  const btn = $('closeBtn'); btn.disabled = true;
+  try{
+    const j = await api('POST', 'close_counting', { shipment_id:C.shipment.id });
+    C.shipment = { ...C.shipment, ...(j.shipment || {}), clientLabel:C.shipment.clientLabel };
+    C.summary = j.summary || C.summary;
+    renderLines();
+    toast('Counting closed — generate the manifest');
+  }catch(e){
+    // 409 carries the summary explaining exactly which SKUs block the close.
+    const s = e.payload && e.payload.summary;
+    if(s && s.warnings && s.warnings.length){
+      C.summary = s; renderLines();
+      toast(s.warnings[0], 5000);
+    }else{
+      toast('Could not close: ' + e.message);
+    }
+  }finally{ renderLines(); }
+}
+
+const docUrl = (action) =>
+  API + '/frm-fba-manifest?' + (action ? 'action=' + action + '&' : '') +
+  'shipment_id=' + encodeURIComponent(C.shipment.id);
+
+/* ── wiring ────────────────────────────────────────────────────────── */
+
+$('gateBtn').onclick   = () => signIn($('opname').value);
+$('opname').onkeydown  = (e) => { if(e.key === 'Enter') signIn($('opname').value); };
+$('createBtn').onclick = createCount;
+$('backBtn').onclick   = goHome;
+$('addBtn').onclick    = addLine;
+$('cancelBtn').onclick = () => { hideDeclare(); setTimeout(focusCap, 60); };
+$('pad').onclick       = focusCap;
+$('tCase').onclick     = () => { setType('case'); };
+$('tLoose').onclick    = () => { setType('loose'); };
+$('dUpb').oninput      = updateCaseTotal;
+$('dBoxes').oninput    = updateCaseTotal;
+$('closeBtn').onclick  = closeCounting;
+$('manifestBtn').onclick = () => { if(C.shipment) window.open(docUrl(''), '_blank'); };
+$('packlistBtn').onclick = () => { if(C.shipment) window.location.href = docUrl('packlist'); };
+
+// Scanners type fast and end with Enter. The hidden input catches the burst.
+$('cap').addEventListener('keydown', (e) => {
+  if(e.key !== 'Enter') return;
+  e.preventDefault();
+  const v = $('cap').value;
+  $('cap').value = '';
+  onScan(v);
+});
+// Keep focus on the capture field unless the operator is typing in a real one.
+document.addEventListener('click', (e) => {
+  if($('vCount').hidden) return;
+  const t = e.target;
+  if(t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'BUTTON')) return;
+  setTimeout(focusCap, 40);
+});
+
+/* ── boot ──────────────────────────────────────────────────────────── */
+
+loadClients();
+const saved = localStorage.getItem('frm_op');
+if(saved) $('opname').value = saved;
+if(saved && localStorage.getItem('frm_ok') === '1'){
+  S.operator = saved;
+  $('who').textContent = saved; $('who').hidden = false;
+  goHome();
+}else{
+  show('vGate');
+}
+
+})();
+</script>
+</body>
+</html>
