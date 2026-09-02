@@ -208,14 +208,16 @@ exports.handler = async (event) => {
     }
     try {
       // Load all clients once, to resolve client_id -> name.
-      const clientsRes = await sbFetch('fr_clients?select=id,name');
+      const clientsRes = await sbFetch('fr_clients?select=id,name,company');
       if (!clientsRes.ok) {
         const t = await clientsRes.text();
         return { statusCode: 502, headers, body: JSON.stringify({ error: 'Clients lookup failed', detail: t }) };
       }
       const clients = await clientsRes.json();
       const clientById = {};
-      clients.forEach((c) => { clientById[c.id] = c.name; });
+      // Identity rule: company (Company/Brand) is the canonical label;
+      // the contact name is only a fallback when company is empty.
+      clients.forEach((c) => { clientById[c.id] = (c.company && c.company.trim()) || c.name; });
 
       let query =
         'client_orders?select=id,client_id,order_number,status,recipient_name,recipient_phone,' +
