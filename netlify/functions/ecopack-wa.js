@@ -18,7 +18,8 @@ const SB = () => ({
 async function getClient(displayName) {
   const encoded = encodeURIComponent(displayName);
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/fr_clients?or=(name.ilike.${encoded},store_name.ilike.${encoded})&limit=1`,
+    // Identity rule: match on company first, then store_name, then contact name.
+    `${SUPABASE_URL}/rest/v1/fr_clients?or=(company.ilike.${encoded},store_name.ilike.${encoded},name.ilike.${encoded})&limit=1`,
     { headers: SB() }
   );
   if (!res.ok) return null;
