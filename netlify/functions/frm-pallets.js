@@ -26,7 +26,12 @@ const ALLOWED_ORIGINS = [
   'https://www.fr-logistics.net',
 ];
 
-const STATUSES = ['OPEN', 'FULL', 'WRAPPED'];
+// Los valores reales que ya existen en la tabla. 'WRAPPED / READY FOR PICKUP'
+// es el string que el modulo viejo escribio en 2 pallets: se respeta tal cual
+// en vez de "normalizarlo", porque renombrarlo huerfanaria esos registros.
+const WRAPPED = 'WRAPPED / READY FOR PICKUP';
+const STATUSES = ['OPEN', 'FULL', WRAPPED];
+const CLOSED = ['FULL', WRAPPED];
 const SIZES = ['48x40', '48x48', '42x42', 'Custom', ''];
 const MAX_PACKAGES = 400;
 
@@ -99,8 +104,12 @@ async function getPallet(palletId) {
 /* ------------------------------------------------------------ acciones */
 
 async function actionOpen() {
+  // El modulo viejo filtraba status!=FULL, asi que los pallets envueltos nunca
+  // salian de "abiertos" — 2 llevan ahi desde junio. Un pallet abierto es el que
+  // esta OPEN (o sin estado, por filas viejas).
   const rows = await sb(
-    'pallets?app_source=eq.pallets&status=neq.FULL&order=updated_at.desc&limit=50'
+    'pallets?app_source=eq.pallets&or=(status.eq.OPEN,status.is.null)'
+    + '&order=updated_at.desc&limit=50'
   );
   return {
     ok: true,
@@ -155,7 +164,7 @@ async function actionAddPackage(b) {
 
   const pallet = await getPallet(id);
   if (!pallet) return { ok: false, error: 'NOT_FOUND' };
-  if (pallet.status === 'WRAPPED')
+  if (pallet.status === WRAPPED)
     return { ok: false, error: 'WRAPPED', message: 'This pallet is already wrapped.' };
 
   const packages = pallet.packages || [];
@@ -196,7 +205,7 @@ async function actionRemovePackage(b) {
 
   const pallet = await getPallet(id);
   if (!pallet) return { ok: false, error: 'NOT_FOUND' };
-  if (pallet.status === 'WRAPPED')
+  if (pallet.status === WRAPPED)
     return { ok: false, error: 'WRAPPED', message: 'This pallet is already wrapped.' };
 
   const packages = (pallet.packages || []).filter((p) => p.tracking !== trk);
@@ -216,7 +225,9 @@ async function actionRemovePackage(b) {
 
 async function actionSetStatus(b) {
   const id = cleanPalletId(b.pallet_id);
-  const status = String(b.status || '').toUpperCase();
+  const raw = String(b.status || '').trim().toUpperCase();
+  // 'WRAPPED' a secas se acepta y se traduce al valor canonico de la tabla.
+  const status = (raw === 'WRAPPED') ? WRAPPED : raw;
   if (!id) return { ok: false, error: 'BAD_PALLET_ID' };
   if (!STATUSES.includes(status)) return { ok: false, error: 'BAD_STATUS', allowed: STATUSES };
 
@@ -227,7 +238,7 @@ async function actionSetStatus(b) {
 
   const patch = { status, updated_at: new Date().toISOString() };
   if (status === 'FULL' && !pallet.full_at) patch.full_at = new Date().toISOString();
-  if (status === 'WRAPPED') {
+  if (status === WRAPPED) {
     patch.wrapped_at = new Date().toISOString();
     if (!pallet.full_at) patch.full_at = patch.wrapped_at;
   }
@@ -277,4 +288,4 @@ exports.handler = async (event) => {
   }
 };
 
-module.exports.__test = { cleanTracking, cleanPalletId, genPalletId, STATUSES, SIZES, MAX_PACKAGES };
+module.exports.__test = { cleanTracking, cleanPalletId, genPalletId, STATUSES, CLOSED, WRAPPED, SIZES, MAX_PACKAGES };
