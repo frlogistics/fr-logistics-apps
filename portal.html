@@ -1,0 +1,2064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>FR-Logistics · Apps Portal</title>
+<link rel="manifest" href="/manifest.json"/>
+<meta name="theme-color" content="#1e3a5f"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>h
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="FR-Logistics"/>
+<link rel="apple-touch-icon" href="https://fr-logistics.net/wp-content/uploads/2024/03/favicon-196x196.png"/>
+<meta name="description" content="FR-Logistics Miami — Operations Portal"/>
+<meta name="robots" content="noindex,nofollow"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&family=DM+Mono&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#f4f6f9;--card:#fff;--border:#e2e8f0;--text:#1a202c;--muted:#718096;--accent:#1fa463;--danger:#e53e3e;--wa:#25d366;--shadow:0 2px 8px rgba(0,0,0,.08)}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+#loginOverlay{position:fixed;inset:0;background:linear-gradient(135deg,#0f172a,#1e3a5f);display:flex;align-items:center;justify-content:center;z-index:1000}
+.loginBox{background:#fff;border-radius:20px;padding:48px 40px;width:380px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.loginLogo{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;margin-bottom:6px}
+.loginSub{color:#718096;font-size:13px;margin-bottom:32px}
+.loginInput{width:100%;padding:12px 16px;border:2px solid #e2e8f0;border-radius:10px;font-size:15px;outline:none;transition:border .2s;margin-bottom:16px;font-family:inherit}
+.loginInput:focus{border-color:#1fa463}
+.loginBtn{width:100%;padding:13px;background:#1fa463;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit}
+.loginBtn:hover{background:#17a358}
+.loginErr{color:#e53e3e;font-size:13px;margin-top:10px;display:none}
+#app{display:none}
+.topBar{background:#fff;border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100;box-shadow:var(--shadow)}
+.topLogo{font-family:'Syne',sans-serif;font-size:16px;font-weight:800}
+.signOutBtn{background:none;border:1px solid var(--border);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;color:var(--muted);font-family:inherit}
+.signOutBtn:hover{border-color:var(--danger);color:var(--danger)}
+.navTabs{max-width:1400px;margin:0 auto;padding:16px 24px 0;display:flex;gap:8px;flex-wrap:wrap}
+.navTab{background:rgba(0,0,0,.04);border:1px solid var(--border);border-radius:10px;padding:8px 18px;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;font-family:inherit}
+.navTab:hover{background:rgba(31,164,99,.08);border-color:rgba(31,164,99,.35);color:var(--text)}
+.navTab.active{background:rgba(31,164,99,.12);border-color:rgba(31,164,99,.5);color:var(--accent)}
+main{max-width:1400px;margin:0 auto;padding:24px}
+section{display:none}
+section.active{display:block}
+.sectionTitle{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;margin-bottom:16px}
+.appGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:12px}
+.appCard{position:relative;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all .2s;text-align:center;text-decoration:none;display:block;color:var(--text)}
+.appBadge{position:absolute;top:8px;right:8px;min-width:22px;height:22px;padding:0 6px;border-radius:11px;font-size:12px;font-weight:700;line-height:22px;color:#fff;background:#6b7280;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.appBadge.ok{background:#1fa463}
+.appBadge.warn{background:#f59e0b}
+.appBadge.late{background:#dc2626;animation:badgePulse 1.6s ease-in-out infinite}
+@keyframes badgePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+.appCard:hover{border-color:var(--accent);box-shadow:0 4px 16px rgba(31,164,99,.15);transform:translateY(-2px)}
+.appIcon{font-size:30px;margin-bottom:10px}
+.appName{font-weight:600;font-size:13px;line-height:1.3}
+.appDesc{font-size:11px;color:var(--muted);margin-top:4px}
+.waHeader{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+.waTitle{font-family:'Syne',sans-serif;font-size:18px;font-weight:800}
+.waBtn{background:rgba(37,211,102,.12);border:1px solid rgba(37,211,102,.35);border-radius:10px;padding:9px 18px;color:var(--wa);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}
+.waBtn:hover{background:rgba(37,211,102,.22)}
+.waBtn.primary{background:var(--wa);color:#000;border-color:var(--wa)}
+.btnRow{display:flex;gap:8px;flex-wrap:wrap}
+.kpiStrip{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+.kpiCard{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 20px;flex:1;min-width:130px}
+.kpiLabel{font-size:12px;color:var(--muted);margin-bottom:4px}
+.kpiVal{font-family:'Syne',sans-serif;font-size:24px;font-weight:800}
+.tableWrap{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:750px}
+thead{background:#f8fafc}
+th{padding:11px 14px;text-align:left;font-weight:600;color:var(--muted);white-space:nowrap;border-bottom:1px solid var(--border)}
+td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#f8fafc}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.badge.active{background:#dcfce7;color:#16a34a}
+.badge.inactive{background:#fee2e2;color:#dc2626}
+.badge.pending,.badge.onboarding{background:#fef9c3;color:#854d0e}
+.actionBtn{background:none;border:1px solid var(--border);border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;margin:0 2px;font-family:inherit;transition:all .2s}
+.actionBtn:hover{border-color:var(--accent);color:var(--accent)}
+.actionBtn.danger:hover{border-color:var(--danger);color:var(--danger)}
+.emptyMsg{text-align:center;padding:40px;color:var(--muted)}
+.searchRow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.searchInput{padding:9px 14px;border:1px solid var(--border);border-radius:9px;font-size:13px;outline:none;width:220px;font-family:inherit}
+.searchInput:focus{border-color:var(--accent)}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto}
+.modal.open{display:flex}
+.modalBox{background:#fff;border-radius:16px;padding:32px;width:100%;max-width:620px;box-shadow:0 20px 60px rgba(0,0,0,.2);margin:auto}
+.modalTitle{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;margin-bottom:24px}
+.formGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:540px){.formGrid{grid-template-columns:1fr}}
+.formField{display:flex;flex-direction:column;gap:5px}
+.formField.full{grid-column:1/-1}
+.formField label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.formField input,.formField select,.formField textarea{padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-size:14px;font-family:inherit;outline:none;transition:border .2s;background:#fff}
+.formField input:focus,.formField select:focus,.formField textarea:focus{border-color:var(--accent)}
+.multiSelect{border:1px solid var(--border);border-radius:9px;background:#fff;overflow:hidden}
+.multiSelect label{display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:9px 12px;border-bottom:1px solid var(--border);transition:background .15s}
+.multiSelect label:last-child{border-bottom:none}
+.multiSelect label:hover{background:#f0fdf4}
+.multiSelect input[type=checkbox]{width:15px;height:15px;accent-color:var(--wa);cursor:pointer;flex-shrink:0}
+.checkLabel{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500}
+.checkLabel input{width:16px;height:16px;accent-color:var(--wa);cursor:pointer}
+.modalFooter{display:flex;gap:8px;justify-content:flex-end;margin-top:24px;padding-top:16px;border-top:1px solid var(--border)}
+.btnPrimary{background:var(--accent);color:#fff;border:none;border-radius:9px;padding:10px 22px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+.btnPrimary:hover{background:#17a358}
+.btnPrimary:disabled{background:#a0aec0;cursor:not-allowed}
+.btnSecondary{background:none;border:1px solid var(--border);border-radius:9px;padding:10px 22px;font-size:14px;cursor:pointer;color:var(--muted);font-family:inherit}
+.btnSecondary:hover{border-color:var(--text);color:var(--text)}
+.templatePreview{background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;font-size:13px;color:#166534;margin-top:8px;min-height:60px;line-height:1.6}
+.varRow{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.varRow label{font-size:12px;color:var(--muted);min-width:100px;flex-shrink:0}
+.varRow input{flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;font-family:inherit;outline:none}
+.varRow input:focus{border-color:var(--accent)}
+.dashFrame{width:100%;height:calc(100vh - 145px);border:none;border-radius:14px;background:var(--card);box-shadow:var(--shadow)}
+.inboxWrap{display:flex;gap:16px;height:calc(100vh - 160px)}
+.inboxList{flex:0 0 340px;background:var(--card);border:1px solid var(--border);border-radius:14px;overflow-y:auto;display:flex;flex-direction:column}
+.inboxThread{flex:1;background:var(--card);border:1px solid var(--border);border-radius:14px;display:flex;flex-direction:column}
+.inboxHeader{padding:14px 16px;border-bottom:1px solid var(--border);font-weight:600;font-size:13px;color:var(--muted);display:flex;align-items:center;justify-content:space-between}
+.inboxItem{padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;display:flex;gap:10px;align-items:flex-start}
+.inboxItem:hover{background:#f8fafc}
+.inboxItem.active{background:#f0fdf4;border-left:3px solid var(--accent)}
+.inboxItem.unread .inboxFrom{font-weight:700}
+.inboxAvatar{width:36px;height:36px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0}
+.inboxFrom{font-size:13px;font-weight:600;margin-bottom:2px}
+.inboxPreview{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+.inboxTime{font-size:11px;color:var(--muted);margin-left:auto;white-space:nowrap}
+.inboxUnreadDot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:4px}
+.threadMsgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+.bubble{max-width:70%;padding:10px 14px;border-radius:14px;font-size:13px;line-height:1.5}
+.bubble.in{background:#f0fdf4;border:1px solid #86efac;align-self:flex-start;border-bottom-left-radius:4px}
+.bubble.out{background:var(--accent);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+.bubbleTime{font-size:10px;opacity:.65;margin-top:4px;display:block}
+.replyBar{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:flex-end}
+.replyInput{flex:1;padding:12px 16px;border:1px solid var(--border);border-radius:10px;font-size:15px;line-height:1.45;font-family:inherit;outline:none;resize:vertical;min-height:88px;max-height:220px}
+.replyInput:focus{border-color:var(--accent)}
+.replyBtn{background:var(--wa);color:#000;border:none;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.replyBtn:disabled{background:#a0aec0;color:#fff;cursor:not-allowed}
+.threadEmpty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;text-align:center;padding:40px}
+@media(max-width:700px){.inboxWrap{flex-direction:column;height:auto}.inboxList{flex:none;height:240px}.inboxThread{height:400px}}
+
+/* ═══════════════════════════════════════════════════
+   FR-LOGISTICS PORTAL · RESPONSIVE + PWA PATCH v1.0
+   ═══════════════════════════════════════════════════ */
+
+/* ── Global text wrap fixes ─────────────────────── */
+.appName,.appDesc{overflow-wrap:anywhere;word-break:break-word}
+.appDesc{white-space:normal!important;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+td,th{overflow-wrap:anywhere}
+td:nth-child(2),td:nth-child(3),td:nth-child(5){white-space:normal;word-break:break-word;min-width:80px}
+td:nth-child(4){white-space:nowrap;font-size:12px}
+
+/* ── PWA safe area for iPhone notch ─────────────── */
+@media(display-mode:standalone){
+  body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+  .topBar{padding-top:calc(8px + env(safe-area-inset-top))}
+}
+
+/* ── Tablet 768–1023px ───────────────────────────── */
+@media(max-width:1023px){
+  .navTabsWrapper{position:relative}
+  .navTabsWrapper::after{content:'';position:absolute;right:0;top:0;bottom:3px;width:36px;background:linear-gradient(to right,transparent,var(--bg));pointer-events:none;z-index:2}
+  .navTabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-wrap:nowrap!important;padding-bottom:3px}
+  .navTabs::-webkit-scrollbar{display:none}
+  .navTab{white-space:nowrap;flex-shrink:0;font-size:13px}
+  .appGrid{grid-template-columns:repeat(2,1fr)!important;gap:14px}
+  .kpiStrip{flex-wrap:wrap}
+  .kpiCard{min-width:calc(50% - 6px);flex:1 1 calc(50% - 6px)}
+  .tableWrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{min-width:700px}
+  .topBar{padding:0 16px}
+  main{padding:16px}
+}
+
+/* ── Mobile ≤767px ────────────────────────────────── */
+@media(max-width:767px){
+  .topBar{height:52px;padding:0 14px;gap:8px}
+  .topLogo{font-size:13px}
+  #clientCountTop{display:none}
+  .navTabsWrapper{position:relative}
+  .navTabsWrapper::after{content:'';position:absolute;right:0;top:0;bottom:3px;width:40px;background:linear-gradient(to right,transparent,var(--bg));pointer-events:none;z-index:2}
+  .navTabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-wrap:nowrap!important;padding:10px 14px 0;gap:4px}
+  .navTabs::-webkit-scrollbar{display:none}
+  .navTab{font-size:12px;padding:7px 12px;white-space:nowrap;flex-shrink:0}
+  main{padding:12px 14px}
+  .appGrid{grid-template-columns:1fr!important;gap:10px}
+  .appCard{display:flex!important;flex-direction:row;align-items:center;gap:14px;text-align:left;padding:14px 16px}
+  .appIcon{font-size:26px;margin-bottom:0;flex-shrink:0}
+  .appName{font-size:14px}
+  .appDesc{font-size:12px;-webkit-line-clamp:2}
+  .inboxWrap{flex-direction:column!important;height:auto!important;gap:10px}
+  .inboxList{flex:none!important;height:180px;border-radius:12px;overflow-y:auto}
+  .inboxThread{height:calc(100vh - 380px);min-height:320px;border-radius:12px}
+  .inboxPreview{max-width:160px}
+  .kpiStrip{display:grid!important;grid-template-columns:1fr 1fr;gap:8px}
+  .kpiCard{min-width:unset;flex:unset;padding:12px 14px}
+  .kpiVal{font-size:22px}
+  .tableWrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px}
+  table{min-width:600px}
+  .clientCardList{display:flex!important;flex-direction:column;gap:10px;margin-top:4px}
+  .clientCardList .cCard{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px}
+  .clientCardList .cCard-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+  .clientCardList .cCard-name{font-weight:700;font-size:14px;color:#1e3a5f;word-break:break-word}
+  .clientCardList .cCard-co{font-size:12px;color:var(--muted);margin-top:2px}
+  .clientCardList .cCard-meta{display:flex;flex-wrap:wrap;gap:6px;font-size:11px;margin-bottom:10px}
+  .clientCardList .cCard-wa{color:#25d366;font-weight:600;display:flex;align-items:center;gap:3px}
+  .clientCardList .cCard-pill{background:#eff6ff;color:#1e40af;padding:2px 8px;border-radius:4px}
+  .clientCardList .cCard-btns{display:flex;gap:8px;border-top:1px solid var(--border);padding-top:10px}
+  .clientCardList .cCard-btn{flex:1;font-size:12px;padding:7px;border-radius:8px;border:1px solid var(--border);background:#f8fafc;color:#1e3a5f;cursor:pointer;text-align:center;font-family:inherit}
+  .clientCardList .cCard-btn.p{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .modal{padding:0!important;align-items:flex-end!important}
+  .modalBox{border-radius:20px 20px 0 0!important;max-width:100%!important;max-height:88vh;overflow-y:auto;padding:24px 20px}
+  .formGrid{grid-template-columns:1fr!important}
+  .modalFooter{flex-direction:column-reverse}
+  .btnPrimary,.btnSecondary{width:100%;text-align:center}
+  .searchInput{width:100%!important;min-width:unset!important}
+  .searchRow{flex-direction:column;align-items:stretch}
+  .searchRow .waBtn{width:100%}
+  .replyBar{position:sticky;bottom:0;background:#fff;z-index:10}
+  .pickupCard,.pickupItem{flex-direction:column!important}
+  .waHeader{flex-direction:column;align-items:flex-start;gap:10px;padding:12px 0}
+  .waTitle{font-size:17px}
+  .btnRow{width:100%;flex-wrap:wrap}
+  .btnRow .waBtn{flex:1;justify-content:center}
+  .dashFrame{height:calc(100vh - 120px)}
+}
+
+/* ── Small mobile ≤390px ──────────────────────────── */
+@media(max-width:390px){
+  .navTab{font-size:11px;padding:6px 10px}
+  .kpiVal{font-size:20px}
+  .waTitle{font-size:15px}
+}
+
+/* ── In-App Viewer ── */
+#appViewer{padding-top:env(safe-area-inset-top)}
+#appViewerBar{padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
+@media(max-width:767px){
+  #appViewerBar{height:48px}
+  #appViewerBar button{padding:6px 12px;font-size:14px}
+  #appViewerExternal{display:none}
+}
+@media(display-mode:standalone){#appViewerExternal{display:none}}
+</style>
+</head>
+<body>
+
+<div id="loginOverlay">
+  <div class="loginBox">
+    <div class="loginLogo">FR-Logistics</div>
+    <div class="loginSub">Enter your password to access the operations dashboard</div>
+    <input class="loginInput" type="password" id="pwInput" placeholder="PASSWORD" onkeydown="if(event.key==='Enter')doLogin()"/>
+    <button class="loginBtn" onclick="doLogin()">Access Portal</button>
+    <div class="loginErr" id="loginErr">Incorrect password. Try again.</div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="topBar">
+    <div class="topLogo">FR-Logistics · Apps Portal</div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <span id="clientCountTop" style="font-size:13px;color:var(--muted)"></span>
+      <button class="signOutBtn" onclick="signOut()">Sign out</button>
+    </div>
+  </div>
+  <div class="navTabsWrapper"><div class="navTabs">
+    <button class="navTab active" onclick="switchTab('Apps',this)">📦 Apps</button>
+    <button class="navTab" onclick="switchTab('Whatsapp',this)">💬 WhatsApp Inbox</button>
+    <button class="navTab" onclick="switchTab('Clients',this)">👥 Clients</button>
+    <button class="navTab" onclick="switchTab('Dashboard',this)">📊 Dashboard</button>
+    <button class="navTab" onclick="switchTab('Pickups',this)">📅 EcoPack+ Pickups</button>
+  </div></div>
+  <main>
+    <section id="tabApps" class="active">
+      <div class="sectionTitle">Operations Apps — click to open</div>
+      <div class="appGrid" id="appGrid"></div>
+    </section>
+    <section id="tabWhatsapp">
+      <div class="waHeader">
+        <div class="waTitle">💬 WhatsApp Inbox</div>
+        <div class="btnRow">
+          <button class="waBtn" onclick="loadMessages()">↻ Refresh</button>
+          <button class="waBtn primary" onclick="openSendModal()">+ New Message</button>
+        </div>
+      </div>
+      <div class="inboxWrap">
+        <div class="inboxList">
+          <div class="inboxHeader"><span>Conversations</span><span id="inboxCount" style="font-size:12px">—</span></div>
+          <div id="inboxListBody"><div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">Loading...</div></div>
+        </div>
+        <div class="inboxThread" id="inboxThread">
+          <div class="inboxHeader" id="threadHeader" style="display:none">
+            <div>
+              <div id="threadName" style="font-size:14px;font-weight:700"></div>
+              <div id="threadPhone" style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace"></div>
+            </div>
+            <button class="waBtn" style="padding:5px 12px;font-size:12px" onclick="replyWithTemplate()">Use Template</button>
+          </div>
+          <div class="threadEmpty" id="threadEmpty">
+            <div>
+              <div style="font-size:36px;margin-bottom:12px">💬</div>
+              <div style="font-weight:600;margin-bottom:6px">Select a conversation</div>
+              <div style="font-size:13px">Messages from clients via<br><strong>+1 305-240-3172</strong></div>
+            </div>
+          </div>
+          <div class="threadMsgs" id="threadMsgs" style="display:none"></div>
+          <div class="replyBar" id="replyBar" style="display:none">
+            <textarea class="replyInput" id="replyText" placeholder="Type a reply... (only within 24h of last client message)" rows="3" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendReply()}"></textarea>
+            <input type="file" id="replyFile" style="display:none" accept="image/*,application/pdf,audio/*,video/mp4" onchange="onAttachPick(this)"/>
+            <button class="replyBtn" id="attachBtn" onclick="document.getElementById('replyFile').click()" title="Adjuntar archivo" style="background:transparent;border:1px solid var(--border);color:inherit">📎</button>
+            <button class="replyBtn" id="replyBtn" onclick="sendReply()">Send ↑</button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section id="tabClients" class="">
+      <div class="waHeader">
+        <div class="waTitle">👥 WA Clients</div>
+        <div class="searchRow">
+          <input class="searchInput" type="text" id="clientSearch" placeholder="Search name, company, WA..." oninput="filterClients(this.value)"/>
+          <button class="waBtn" onclick="loadClients()">↻ Reload</button>
+          <button class="waBtn primary" onclick="openClientModal('new')">+ New Client</button>
+        </div>
+      </div>
+      <div class="kpiStrip">
+        <div class="kpiCard"><div class="kpiLabel">Total Clients</div><div class="kpiVal" id="kpiTotal">—</div></div>
+        <div class="kpiCard"><div class="kpiLabel">WA Enabled</div><div class="kpiVal" id="kpiWA">—</div></div>
+        <div class="kpiCard"><div class="kpiLabel">Active</div><div class="kpiVal" id="kpiActive">—</div></div>
+        <div class="kpiCard"><div class="kpiLabel">Notifications On</div><div class="kpiVal" id="kpiNotif">—</div></div>
+      </div>
+      <div class="tableWrap">
+        <table>
+          <thead><tr><th>#</th><th>Name</th><th>Company</th><th>WA Number</th><th>Services</th><th>Notif.</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="clientTableBody"><tr><td colspan="8" class="emptyMsg">Loading clients from Supabase...</td></tr></tbody>
+        </table>
+      </div>
+      <div class="clientCardList" id="clientCardList" style="display:none;flex-direction:column;gap:10px;margin-top:4px"></div>
+    </section>
+    <section id="tabPickups">
+      <div class="waHeader">
+        <div class="waTitle">📅 EcoPack+ Pickups</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div style="display:flex;gap:4px">
+            <button class="navTab active" id="pickupFilterPending" onclick="setPickupFilter('pending',this)" style="padding:6px 14px;font-size:12px">Upcoming</button>
+            <button class="navTab" id="pickupFilterHistory" onclick="setPickupFilter('history',this)" style="padding:6px 14px;font-size:12px">History</button>
+          </div>
+          <button class="waBtn" onclick="loadPickups()">↻ Reload</button>
+        </div>
+      </div>
+      <div class="kpiStrip">
+        <div class="kpiCard"><div class="kpiLabel">Scheduled</div><div class="kpiVal" id="pkpScheduled">—</div></div>
+        <div class="kpiCard"><div class="kpiLabel">Confirmed</div><div class="kpiVal" id="pkpConfirmed">—</div></div>
+        <div class="kpiCard"><div class="kpiLabel">Completed Today</div><div class="kpiVal" id="pkpCompleted">—</div></div>
+        <div class="kpiCard"><div class="kpiLabel">Total Packages</div><div class="kpiVal" id="pkpPackages">—</div></div>
+      </div>
+      <div id="pickupList" style="display:flex;flex-direction:column;gap:10px"></div>
+    </section>
+    <section id="tabDashboard">
+      <div class="waHeader">
+        <div class="waTitle">📊 ShipStation KPI Dashboard</div>
+        <button class="waBtn" onclick="reloadDash()">↻ Reload</button>
+      </div>
+      <iframe id="dashFrame" class="dashFrame" src="" title="ShipStation KPI Dashboard"></iframe>
+    </section>
+  </main>
+</div>
+
+<!-- CLIENT MODAL -->
+<div class="modal" id="clientModal">
+  <div class="modalBox">
+    <div class="modalTitle" id="clientModalTitle">New Client</div>
+    <div class="formGrid">
+      <div class="formField"><label>Contact Name *</label><input id="cm_name" placeholder="Full name"/></div>
+      <div class="formField"><label>Company / Brand</label><input id="cm_company" placeholder="Company name"/></div>
+      <div class="formField"><label>ShipStation Store ID</label><input id="cm_storeId" placeholder="SS-XXX" style="font-family:'DM Mono',monospace"/></div>
+      <div class="formField"><label>SS Store Name</label><input id="cm_storeName" placeholder="Store name"/></div>
+      <div class="formField"><label>Country</label>
+        <select id="cm_country"><option value="US">US</option><option value="MX">MX</option><option value="CO">CO</option><option value="AR">AR</option><option value="PE">PE</option><option value="CL">CL</option><option value="BR">BR</option><option value="EC">EC</option><option value="OTHER">OTHER</option></select>
+      </div>
+      <div class="formField"><label>Preferred Language</label>
+        <select id="cm_lang"><option value="EN">English</option><option value="ES">Español</option></select>
+      </div>
+      <div class="formField"><label>Client Type</label>
+        <select id="cm_type"><option value="Business">Business</option><option value="Individual">Individual</option><option value="Brand">Brand</option></select>
+      </div>
+      <div class="formField"><label>Status</label>
+        <select id="cm_status"><option value="Active">Active</option><option value="Inactive">Inactive</option><option value="Pending">Pending</option><option value="Onboarding">Onboarding</option></select>
+      </div>
+      <div class="formField"><label>WhatsApp Number</label><input id="cm_waNumber" placeholder="17865551234" style="font-family:'DM Mono',monospace"/></div>
+      <div class="formField"><label>Email</label><input id="cm_email" type="email" placeholder="email@example.com"/></div>
+      <div class="formField"><label>Additional Phone</label><input id="cm_phone" placeholder="+1 305 000 0000"/></div>
+      <div class="formField"><label>WA Consent</label>
+        <select id="cm_waConsent"><option value="Pending">Pending</option><option value="Yes">Yes</option><option value="No">No</option></select>
+      </div>
+      <div class="formField full">
+        <label>Services Contracted</label>
+        <div class="multiSelect">
+          <label><input type="checkbox" name="svc" value="FBA Prep"/> FBA Prep</label>
+          <label><input type="checkbox" name="svc" value="FBM / DTC Fulfillment"/> FBM / DTC Fulfillment</label>
+          <label><input type="checkbox" name="svc" value="Kitting &amp; Bundling"/> Kitting &amp; Bundling</label>
+          <label><input type="checkbox" name="svc" value="Storage"/> Storage</label>
+          <label><input type="checkbox" name="svc" value="Walmart DSV"/> Walmart DSV</label>
+          <label><input type="checkbox" name="svc" value="EcoPack+"/> EcoPack+</label>
+          <label><input type="checkbox" name="svc" value="Dropship"/> Dropship</label>
+          <label><input type="checkbox" name="svc" value="Cross-Docking"/> Cross-Docking</label>
+          <label><input type="checkbox" name="svc" value="Returns / Reverse Logistics"/> Returns / Reverse Logistics</label>
+        </div>
+      </div>
+      <div class="formField full"><label>Notes</label><textarea id="cm_notes" rows="2" placeholder="Optional notes..."></textarea></div>
+      <div class="formField full">
+        <label class="checkLabel"><input type="checkbox" id="cm_waNotif"/> Enable WhatsApp Notifications (daily summary &amp; order updates)</label>
+      </div>
+
+      <div class="formField full" style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px">
+        <div style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">💰 Billing Configuration</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="formField" style="margin:0">
+            <label>Billing Source</label>
+            <select id="cm_billingSource">
+              <option value="ss_cf1">ShipStation — Custom Field 1</option>
+              <option value="ss_store">ShipStation — Store Name</option>
+              <option value="portal">Portal Only (Drop-Ship / EcoPack+)</option>
+            </select>
+          </div>
+          <div class="formField" style="margin:0">
+            <label>SS Custom Field 1 Tag</label>
+            <input id="cm_ssCustomField1" placeholder="e.g. MXS Overseas Ltd"/>
+          </div>
+          <div class="formField" style="margin:0">
+            <label>Shipping Markup %</label>
+            <input id="cm_shippingMarkup" type="number" min="0" max="100" step="1" placeholder="10"/>
+          </div>
+          <div class="formField" style="margin:0">
+            <label>Min. Monthly Billing ($)</label>
+            <input id="cm_mmb" type="number" min="0" step="50" placeholder="0"/>
+          </div>
+        </div>
+        <div style="margin-top:10px">
+          <label class="checkLabel"><input type="checkbox" id="cm_wmsIntegration"/> WMS Integration Active (direct ShipStation store)</label>
+        </div>
+      </div>
+    </div>
+    <div class="modalFooter">
+      <button class="btnSecondary" onclick="closeClientModal()">Cancel</button>
+      <button class="btnPrimary" id="saveClientBtn" onclick="saveClientModal()">Save Client</button>
+    </div>
+  </div>
+</div>
+
+<!-- SEND MESSAGE MODAL -->
+<div class="modal" id="sendModal">
+  <div class="modalBox">
+    <div class="modalTitle">Send WhatsApp Message</div>
+    <div class="formGrid">
+      <div class="formField full"><label>Client</label>
+        <select id="sm_client" onchange="onClientSelect()"><option value="">— Select client —</option></select>
+      </div>
+      <div class="formField full"><label>WA Number (with country code)</label>
+        <input id="sm_to" placeholder="17865551234" style="font-family:'DM Mono',monospace"/>
+      </div>
+      <div class="formField full"><label>Template</label>
+        <select id="sm_template" onchange="updatePreview()">
+          <option value="">— Select template —</option>
+          <option value="order_received">Order Received</option>
+          <option value="tracking_update">Tracking Update</option>
+          <option value="payment_link">Payment Link</option>
+          <option value="daily_summary">Daily Summary</option>
+          <option value="ecopack_package_received">EcoPack+ Package Received</option>
+          <option value="ecopack_multi_package">EcoPack+ Multi Package</option>
+          <option value="ecopack_pickup_scheduled">EcoPack+ Pickup Scheduled</option>
+        </select>
+      </div>
+      <div class="formField full"><label>Message Variables</label><div id="sm_vars"></div></div>
+      <div class="formField full"><label>Preview</label>
+        <div class="templatePreview" id="sm_preview">Select a template to preview...</div>
+      </div>
+    </div>
+    <div class="modalFooter">
+      <button class="btnSecondary" onclick="closeSendModal()">Cancel</button>
+      <button class="btnPrimary" id="sendMsgBtn" onclick="sendWAMessage()">Send Message</button>
+    </div>
+  </div>
+</div>
+
+<!-- ECOPACK+ PICKUP MODAL -->
+<div class="modal" id="pickupModal">
+  <div class="modalBox">
+    <div class="modalTitle">📅 Schedule EcoPack+ Pickup</div>
+    <div id="pickupClientInfo" style="background:rgba(31,164,99,.08);border:1px solid rgba(31,164,99,.3);border-radius:10px;padding:12px 14px;margin-bottom:18px;font-size:13px"></div>
+    <div class="formGrid">
+      <div class="formField"><label>Pickup Date</label><input type="date" id="pm_date"/></div>
+      <div class="formField"><label>Pickup Time</label>
+        <select id="pm_time">
+          <option value="9:00 AM">9:00 AM</option>
+          <option value="10:00 AM" selected>10:00 AM</option>
+          <option value="11:00 AM">11:00 AM</option>
+          <option value="12:00 PM">12:00 PM</option>
+          <option value="1:00 PM">1:00 PM</option>
+          <option value="2:00 PM">2:00 PM</option>
+          <option value="3:00 PM">3:00 PM</option>
+          <option value="4:00 PM">4:00 PM</option>
+          <option value="5:00 PM">5:00 PM</option>
+        </select>
+      </div>
+      <div class="formField full">
+        <label>Packages Pending Pickup</label>
+        <div id="pm_pending" data-count="0" style="padding:10px 12px;background:#f0fdf4;border:1px solid #86efac;border-radius:9px;font-size:14px;font-weight:600;color:#166534">Loading...</div>
+      </div>
+    </div>
+    <div class="modalFooter">
+      <button class="btnSecondary" onclick="closePickupModal()">Cancel</button>
+      <button class="btnPrimary" id="schedulePickupBtn" onclick="submitPickup()">📅 Schedule &amp; Send WA</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const PW='frlogistics2024';
+// ═══════════════════════════════════════════════════════════════════════════
+// APPS array for portal.html — UPDATED 2026-04-20
+// ═══════════════════════════════════════════════════════════════════════════
+// CONVENTION: KEEP THIS ARRAY ALPHABETICAL BY `name` FIELD.
+// Every time an app is added, removed, or renamed, re-sort alphabetically.
+// ═══════════════════════════════════════════════════════════════════════════
+const APPS=[
+  {icon:'🧾',name:'Billing Generator',desc:'Auto-billing from ShipStation + export QBO CSV',url:'billing.html'},
+  {icon:'📁',name:'Client Documents',desc:'Collateral linked from the onboarding email',url:'client-docs.html'},
+  {icon:'🤝',name:'Client Onboarding',desc:'Generate & send onboarding package',url:'onboarding.html'},
+  {icon:'🎯',name:'CRM Scorecard',desc:'Live pipeline · quotes, leads, next actions',url:'crm-board.html'},
+  {icon:'📦',name:'Client Orders',desc:'Review and export client orders to ShipStation CSV',url:'warehouse-orders.html',badge:'pendingOrders'},
+  {icon:'📸',name:'Content Studio',desc:'Instagram posts with AI',url:'content-studio.html'},
+  {icon:'📚',name:'Docs Library',desc:'Manuales y documentación interna',url:'docs.html'},
+  {icon:'📬',name:'Dropshipments',desc:'Automated email-to-label pipeline',url:'dropshipments.html'},
+  {icon:'📧',name:'Email Ops',desc:'Email operations dashboard',url:'email-ops.html'},
+  {icon:'📦',name:'Inbound / Outbound',desc:'Receiving & shipping tracker',url:'Inbound_Outbound.html'},
+  {icon:'🚦',name:'Operations Dashboard',desc:'KPIs · SLA · profitability · inventory · ops',url:'dashboard.html'},
+  {icon:'🏗️',name:'Pallets',desc:'Pallet management',url:'pallets.html'},
+ {icon:'💰',name:'Quote Builder',desc:'Logistics rate quotes',url:'FR_Logistics_Quote_System_v3.html'},
+  {icon:'📝',name:'Services Log',desc:'Capture warehouse services per client',url:'services-log.html'},
+  {icon:'🔗',name:'Shopify Runbook',desc:'Shopify + ShipStation + SKUVault',url:'shopify_integration_runbook.html'},
+  {icon:'🔢',name:'Stock Count',desc:'Blind physical counts · variance vs SkuVault',url:'count.html'},
+  {icon:'⬆️',name:'Push to SkuVault',desc:'Apply a finished count to SkuVault by API',url:'skuvault_push.html'},
+  {icon:'📐',name:'Volume Calculator',desc:'Box & pallet calculator',url:'FR_Logistics_Volume_Calculator.html'},
+  {icon:'📲',name:'WA Lead Capture',desc:'Capture & forward WhatsApp leads to sales',url:'wa-lead-capture.html'},
+];
+const TPLS={
+  order_received:{text:'Hi {{1}}, we received your shipment at FR-Logistics Miami. Order #{{2}}. We will keep you updated every step of the way.',vars:['Client Name','Order Number']},
+  tracking_update:{text:'Hi {{1}}, your order #{{2}} has been processed. Tracking number: {{3}} with {{4}}.',vars:['Client Name','Order Number','Tracking Number','Carrier']},
+  payment_link:{text:'Hi {{1}}, your FR-Logistics invoice for ${{2}} is ready. Pay here: {{3}}. Thank you!',vars:['Client Name','Amount','Payment Link']},
+  daily_summary:{text:'Hi {{1}}, daily summary {{2}} — Inbound: {{3}} packages. Outbound: {{4}} shipments. Questions? info@fr-logistics.net',vars:['Client Name','Date','Inbound Count','Outbound Count']},
+  ecopack_package_received:{text:'Hi {{1}}, we received a package for you at FR-Logistics! Come pick it up at your convenience. Reply PICKUP to schedule or HOURS for availability.',vars:['Client Name']},
+  ecopack_multi_package:{text:'Hi {{1}}, you now have {{2}} packages waiting at FR-Logistics. Reply PICKUP to consolidate and schedule collection.',vars:['Client Name','Package Count']},
+  ecopack_pickup_scheduled:{text:'Hi {{1}}, your EcoPack+ pickup is scheduled for {{2}} at {{3}}. You have {{4}} packages ready. Reply CONFIRM to confirm.',vars:['Client Name','Date','Time','Package Count']}
+};
+let clients=[],filtered=[],editId=null;
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+function doLogin(){
+  const v=document.getElementById('pwInput').value;
+  const e=document.getElementById('loginErr');
+  if(v===PW){document.getElementById('loginOverlay').style.display='none';document.getElementById('app').style.display='block';e.style.display='none';init();}
+  else{e.style.display='block';document.getElementById('pwInput').value='';document.getElementById('pwInput').focus();}
+}
+function signOut(){document.getElementById('loginOverlay').style.display='flex';document.getElementById('app').style.display='none';document.getElementById('pwInput').value='';}
+function init(){renderApps();loadClients();loadMessages();loadPendingBadge();setInterval(loadPendingBadge,60000);}
+
+function switchTab(name,btn){
+  document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.navTab').forEach(b=>b.classList.remove('active'));
+  const el=document.getElementById('tab'+name);
+  if(el)el.classList.add('active');
+  if(btn)btn.classList.add('active');
+  if(name==='Dashboard'){const fr=document.getElementById('dashFrame');if(!fr.src||fr.src===window.location.href||fr.src==='about:blank'){fr.src='dashboard.html';}}
+  if(name==='Pickups'&&allPickups.length===0)loadPickups();
+}
+
+function renderApps(){
+  document.getElementById('appGrid').innerHTML=APPS.map(a=>`<div class="appCard" onclick="openApp('${a.url}','${a.name}')">${a.badge?`<span class="appBadge" id="badge-${a.badge}" style="display:none"></span>`:''}<div class="appIcon">${a.icon}</div><div class="appName">${a.name}</div><div class="appDesc">${a.desc}</div></div>`).join('');
+}
+
+// ── Pending client orders badge ─────────────────────────────────────────────
+// Reads the same endpoint the Client Orders app uses. No new function.
+// Age is measured in BUSINESS hours (Mon-Fri 9:00-17:00 ET) so orders that
+// land overnight don't paint the badge red before anyone is at the warehouse.
+const BIZ_START=9, BIZ_END=17;
+const ET_FMT=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',weekday:'short',hour:'numeric',hour12:false});
+
+function isBizMoment(d){
+  const p={};ET_FMT.formatToParts(d).forEach(x=>{p[x.type]=x.value;});
+  if(p.weekday==='Sat'||p.weekday==='Sun')return false;
+  let h=parseInt(p.hour,10);if(h===24)h=0;
+  return h>=BIZ_START&&h<BIZ_END;
+}
+
+function bizHoursSince(iso){
+  const start=new Date(iso).getTime(),now=Date.now();
+  if(!start||start>=now)return 0;
+  const STEP=15*60*1000;
+  const from=Math.max(start,now-30*24*3600*1000); // cap the walk at 30 days
+  let ms=0;
+  for(let t=from;t<now;t+=STEP){if(isBizMoment(new Date(t)))ms+=STEP;}
+  return ms/3600000;
+}
+
+function fmtAge(h){
+  if(h<1)return Math.round(h*60)+' min';
+  if(h<8)return h.toFixed(1)+' h';
+  return Math.round(h/8)+' business day(s)';
+}
+
+function loadPendingBadge(){
+  const el=document.getElementById('badge-pendingOrders');
+  if(!el)return;
+  fetch('/.netlify/functions/portal-warehouse-orders?action=list&status=pending')
+    .then(r=>r.ok?r.json():Promise.reject(new Error('HTTP '+r.status)))
+    .then(d=>{
+      const orders=(d&&d.orders)||[];
+      const n=orders.length;
+      if(!n){el.style.display='none';return;}
+      const oldest=orders.reduce((a,o)=>{
+        const t=new Date(o.created_at).getTime();
+        return (!a||t<a)?t:a;
+      },null);
+      const age=bizHoursSince(new Date(oldest).toISOString());
+      el.className='appBadge '+(age>=4?'late':age>=2?'warn':'ok');
+      el.textContent=n>99?'99+':String(n);
+      el.title=n+' order(s) awaiting export · oldest: '+fmtAge(age)+' of business time';
+      el.style.display='block';
+    })
+    .catch(()=>{el.style.display='none';});
+}
+function openApp(url,name){
+  const v=document.getElementById('appViewer');
+  document.getElementById('appViewerTitle').textContent=name;
+  document.getElementById('appViewerExternal').href=url;
+  document.getElementById('appViewerFrame').src=url;
+  v.style.display='flex';
+  history.pushState({appViewer:true},'',location.pathname+'#app='+encodeURIComponent(url));
+}
+function closeApp(){
+  document.getElementById('appViewer').style.display='none';
+  document.getElementById('appViewerFrame').src='about:blank';
+  loadPendingBadge();
+  if(location.hash.includes('app='))history.back();
+}
+window.addEventListener('popstate',function(){
+  const v=document.getElementById('appViewer');
+  if(v&&v.style.display==='flex'){v.style.display='none';document.getElementById('appViewerFrame').src='about:blank';}
+});
+function reloadDash(){document.getElementById('dashFrame').src='dashboard.html?t='+Date.now();}
+
+function loadClients(){
+  const tb=document.getElementById('clientTableBody');
+  tb.innerHTML='<tr><td colspan="8" class="emptyMsg">Loading from Supabase...</td></tr>';
+  fetch('/.netlify/functions/wa-clients').then(r=>r.json()).then(data=>{
+    if(!Array.isArray(data)){tb.innerHTML='<tr><td colspan="8" class="emptyMsg">Error: '+esc(data.error||JSON.stringify(data))+'</td></tr>';return;}
+    clients=data;filtered=[...data];renderTable(filtered);renderKpis(clients);fillClientSelect(clients);
+    const ct=document.getElementById('clientCountTop');if(ct)ct.textContent=clients.length+' clients';
+  }).catch(e=>{tb.innerHTML='<tr><td colspan="8" class="emptyMsg">⚠️ Error: '+esc(e.message)+'</td></tr>';});
+}
+
+function renderTable(list){
+  const tb=document.getElementById('clientTableBody');
+  if(!list.length){tb.innerHTML='<tr><td colspan="8" class="emptyMsg">No clients found.</td></tr>';return;}
+  tb.innerHTML=list.map((c,i)=>{
+    const wa=c.wa_number||'';
+    const st=(c.status||'Active').toLowerCase();
+    const svcs=Array.isArray(c.services)?c.services.map(s=>s.replace(/"/g,'').trim()):[];
+    const svcsHtml=svcs.length?svcs.slice(0,2).map(s=>`<span style="background:#e2e8f0;border-radius:4px;padding:1px 6px;font-size:11px;display:inline-block;margin:1px">${esc(s)}</span>`).join('')+(svcs.length>2?` <span style="font-size:11px;color:var(--muted)">+${svcs.length-2}</span>`:''):'<span style="color:var(--border)">—</span>';
+    const hasEco=svcs.includes('EcoPack+');
+    return`<tr>
+      <td style="color:var(--muted);font-size:12px">${i+1}</td>
+      <td><strong>${esc(c.name||'—')}</strong></td>
+      <td style="color:var(--muted)">${esc(c.company||'—')}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:12px">${wa||'<span style="color:var(--border)">—</span>'}</td>
+      <td>${svcsHtml}</td>
+      <td style="text-align:center;font-size:15px">${c.wa_notifications?'✅':'○'}</td>
+      <td><span class="badge ${st}">${c.status||'Active'}</span></td>
+      <td>
+        <button class="actionBtn" title="Edit" onclick="openClientModal('edit','${c.id}')">✎</button>
+        <button class="actionBtn" title="Send WA" style="color:var(--wa);border-color:rgba(37,211,102,.4)" onclick="openSendToClient('${c.id}')">💬</button>
+        ${hasEco?`<button class="actionBtn" title="Schedule EcoPack+ Pickup" style="color:#1fa463;border-color:rgba(31,164,99,.4)" onclick="openPickupModal('${c.id}')">📅</button>`:''}
+        <button class="actionBtn danger" title="Delete" onclick="delClient('${c.id}','${esc(c.name||'')}')">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderKpis(list){
+  document.getElementById('kpiTotal').textContent=list.length;
+  document.getElementById('kpiWA').textContent=list.filter(c=>c.wa_number).length;
+  document.getElementById('kpiActive').textContent=list.filter(c=>(c.status||'Active').toLowerCase()==='active').length;
+  document.getElementById('kpiNotif').textContent=list.filter(c=>c.wa_notifications).length;
+}
+function filterClients(q){
+  const s=q.toLowerCase();
+  filtered=q?clients.filter(c=>(c.name||'').toLowerCase().includes(s)||(c.company||'').toLowerCase().includes(s)||(c.wa_number||'').includes(s)):[...clients];
+  renderTable(filtered);
+}
+function fillClientSelect(list){
+  const sel=document.getElementById('sm_client');
+  sel.innerHTML='<option value="">— Select client —</option>'+list.map(c=>`<option value="${c.id}" data-wa="${esc(c.wa_number||'')}" data-name="${esc(c.name||'')}">${esc(c.name)}${c.company?' — '+esc(c.company):''}</option>`).join('');
+}
+
+function openClientModal(mode,id){
+  editId=null;
+  ['name','company','storeId','storeName','waNumber','email','phone','notes'].forEach(f=>{const el=document.getElementById('cm_'+f);if(el)el.value='';});
+  document.getElementById('cm_country').value='US';document.getElementById('cm_lang').value='EN';document.getElementById('cm_type').value='Business';document.getElementById('cm_status').value='Active';document.getElementById('cm_waConsent').value='Pending';document.getElementById('cm_waNotif').checked=false;
+  document.querySelectorAll('[name=svc]').forEach(cb=>cb.checked=false);
+  document.getElementById('clientModalTitle').textContent=mode==='edit'?'Edit Client':'New Client';
+  if(mode==='edit'&&id){
+    const c=clients.find(x=>x.id===id);
+    if(c){
+      editId=id;
+      document.getElementById('cm_name').value=c.name||'';document.getElementById('cm_company').value=c.company||'';document.getElementById('cm_storeId').value=c.store_id||'';document.getElementById('cm_storeName').value=c.store_name||'';document.getElementById('cm_waNumber').value=c.wa_number||'';document.getElementById('cm_email').value=c.email||'';document.getElementById('cm_phone').value=c.phone||'';document.getElementById('cm_country').value=c.country||'US';document.getElementById('cm_lang').value=c.lang||'EN';document.getElementById('cm_type').value=c.type||'Business';document.getElementById('cm_status').value=c.status||'Active';document.getElementById('cm_waConsent').value=c.wa_consent||'Pending';document.getElementById('cm_waNotif').checked=c.wa_notifications||false;document.getElementById('cm_notes').value=c.notes||'';
+      // Billing config fields
+      document.getElementById('cm_billingSource').value=c.billing_source||'ss_cf1';
+      document.getElementById('cm_ssCustomField1').value=c.ss_custom_field_1||'';
+      document.getElementById('cm_shippingMarkup').value=c.shipping_markup??10;
+      document.getElementById('cm_mmb').value=c.mmb||0;
+      document.getElementById('cm_wmsIntegration').checked=c.wms_integration||false;
+      const svcs=Array.isArray(c.services)?c.services.map(s=>s.replace(/"/g,'').trim()):(c.services?String(c.services).split(',').map(s=>s.trim()):[]);
+      document.querySelectorAll('[name=svc]').forEach(cb=>{cb.checked=svcs.includes(cb.value);});
+    }
+  }
+  document.getElementById('clientModal').classList.add('open');
+  setTimeout(()=>document.getElementById('cm_name').focus(),80);
+}
+function closeClientModal(){document.getElementById('clientModal').classList.remove('open');editId=null;}
+function saveClientModal(){
+  const name=document.getElementById('cm_name').value.trim();
+  if(!name){alert('Contact Name is required');return;}
+  const services=Array.from(document.querySelectorAll('[name=svc]:checked')).map(cb=>cb.value);
+  const payload={name,
+      company:document.getElementById('cm_company').value.trim(),
+      store_id:document.getElementById('cm_storeId').value.trim(),
+      store_name:document.getElementById('cm_storeName').value.trim(),
+      country:document.getElementById('cm_country').value,
+      lang:document.getElementById('cm_lang').value,
+      type:document.getElementById('cm_type').value,
+      wa_number:document.getElementById('cm_waNumber').value.trim(),
+      email:document.getElementById('cm_email').value.trim(),
+      phone:document.getElementById('cm_phone').value.trim(),
+      status:document.getElementById('cm_status').value,
+      active:true,
+      wa_consent:document.getElementById('cm_waConsent').value,
+      wa_notifications:document.getElementById('cm_waNotif').checked,
+      services,
+      notes:document.getElementById('cm_notes').value.trim(),
+      // Billing config — propagates to all apps
+      billing_source:document.getElementById('cm_billingSource').value,
+      ss_custom_field_1:document.getElementById('cm_ssCustomField1').value.trim(),
+      shipping_markup:parseFloat(document.getElementById('cm_shippingMarkup').value)||10,
+      mmb:parseFloat(document.getElementById('cm_mmb').value)||0,
+      wms_integration:document.getElementById('cm_wmsIntegration').checked,
+    };
+  if(editId)payload.id=editId;
+  const btn=document.getElementById('saveClientBtn');btn.textContent='Saving...';btn.disabled=true;
+  fetch('/.netlify/functions/wa-clients',{method:editId?'PATCH':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json()).then(res=>{if(res.error)throw new Error(res.error);closeClientModal();loadClients();}).catch(e=>alert('Error saving: '+e.message)).finally(()=>{btn.textContent='Save Client';btn.disabled=false;});
+}
+function delClient(id,name){
+  if(!confirm('Delete "'+name+'"?\nThis cannot be undone.'))return;
+  fetch('/.netlify/functions/wa-clients',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(()=>loadClients()).catch(e=>alert('Error: '+e.message));
+}
+
+function openSendModal(){document.getElementById('sm_client').value='';document.getElementById('sm_to').value='';document.getElementById('sm_template').value='';document.getElementById('sm_vars').innerHTML='';document.getElementById('sm_preview').textContent='Select a template to preview...';document.getElementById('sendModal').classList.add('open');}
+function openSendToClient(id){openSendModal();const sel=document.getElementById('sm_client');const opt=Array.from(sel.options).find(o=>o.value===id);if(opt){sel.value=id;onClientSelect();}}
+function closeSendModal(){document.getElementById('sendModal').classList.remove('open');}
+function onClientSelect(){const sel=document.getElementById('sm_client');const opt=sel.options[sel.selectedIndex];if(opt&&opt.value)document.getElementById('sm_to').value=opt.dataset.wa||'';}
+function updatePreview(){
+  const t=document.getElementById('sm_template').value;const tpl=TPLS[t];const vd=document.getElementById('sm_vars');const pv=document.getElementById('sm_preview');
+  if(!tpl){vd.innerHTML='';pv.textContent='Select a template to preview...';return;}
+  const cn=document.getElementById('sm_client').options[document.getElementById('sm_client').selectedIndex]?.dataset?.name||'';
+  vd.innerHTML=tpl.vars.map((v,i)=>`<div class="varRow"><label>{{${i+1}}} ${v}</label><input id="sv${i}" placeholder="${v}" value="${i===0&&cn?esc(cn):''}" oninput="refreshPreview()"/></div>`).join('');
+  refreshPreview();
+}
+function refreshPreview(){
+  const t=document.getElementById('sm_template').value;const tpl=TPLS[t];if(!tpl)return;
+  let tx=tpl.text;tpl.vars.forEach((_,i)=>{const v=document.getElementById('sv'+i)?.value||'{{' +(i+1)+'}}';tx=tx.replace('{{' +(i+1)+'}}',v);});
+  document.getElementById('sm_preview').textContent=tx;
+}
+function sendWAMessage(){
+  const to=document.getElementById('sm_to').value.trim().replace(/\D/g,'');const t=document.getElementById('sm_template').value;
+  if(!to){alert('WA Number is required');return;}if(!t){alert('Select a template');return;}
+  const tpl=TPLS[t];const params=tpl.vars.map((_,i)=>document.getElementById('sv'+i)?.value||'');
+  const keys={order_received:['clientName','orderNumber'],tracking_update:['clientName','orderNumber','trackingNumber','carrier'],payment_link:['clientName','amount','link'],daily_summary:['clientName','dateLabel','inbound','outbound'],ecopack_package_received:['clientName'],ecopack_multi_package:['clientName','packageCount'],ecopack_pickup_scheduled:['clientName','date','time','packageCount']};
+  const data={};(keys[t]||[]).forEach((k,i)=>data[k]=params[i]||'');
+  const btn=document.getElementById('sendMsgBtn');btn.textContent='Sending...';btn.disabled=true;
+  fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:t,to,data})}).then(r=>r.json()).then(res=>{if(res.messages?.[0]?.message_status==='accepted'||res.messaging_product){alert('✅ Message sent!');closeSendModal();}else alert('Response: '+JSON.stringify(res));}).catch(e=>alert('Error: '+e.message)).finally(()=>{btn.textContent='Send Message';btn.disabled=false;});
+}
+
+// ── [NEW 2026-07-31] Normalizacion de telefono en el inbox ───────────
+// Antes se agrupaba por la cadena cruda, asi que un mismo contacto salia como
+// dos chats: "7867757331" (saliente, sin el 1) y "17867757331" (entrante, como
+// lo manda Meta). Misma logica que wa-messages.js.
+function normPhone(raw){
+  let d=String(raw||'').replace(/\D/g,'');
+  if(!d)return '';
+  if(d.length===12&&d.startsWith('11'))d=d.slice(1);
+  if(d.length===10&&/^[2-9]/.test(d))d='1'+d;
+  return d;
+}
+// El titulo del chat salia del PRIMER mensaje que cayera en el hilo: por eso
+// una conversacion se titulaba con la pregunta completa del cliente y otra
+// decia "Liam". Preferimos el nombre de perfil de WhatsApp de un entrante.
+function bestName(msgs,phone){
+  const ok=n=>n&&n!==phone&&n.length<=40&&!/^liam/i.test(n)&&!/^\d+$/.test(n);
+  const inb=msgs.filter(m=>m.direction==='inbound').map(m=>m.clientName).find(ok);
+  if(inb)return inb;
+  return msgs.map(m=>m.clientName).find(ok)||phone;
+}
+// Si el mensaje trae mediaPath pintamos la imagen (o audio/enlace). El
+// endpoint firma la URL del bucket privado por 1 hora y redirige.
+function mediaHtml(m){
+  if(!m||!m.mediaPath)return '';
+  const src='/.netlify/functions/wa-messages?action=media&path='+encodeURIComponent(m.mediaPath);
+  const mime=m.mimeType||'';
+  if(mime.indexOf('image/')===0)return '<a href="'+src+'" target="_blank" rel="noopener"><img src="'+src+'" alt="imagen" style="max-width:240px;max-height:280px;border-radius:10px;display:block;margin-bottom:6px;cursor:zoom-in"></a>';
+  if(mime.indexOf('audio/')===0)return '<audio controls src="'+src+'" style="max-width:240px;display:block;margin-bottom:6px"></audio>';
+  return '<a href="'+src+'" target="_blank" rel="noopener" style="display:inline-block;margin-bottom:6px;text-decoration:underline">&#128206; Abrir archivo</a>';
+}
+// Etiqueta amigable para la lista lateral: "[image]" no le dice nada a nadie.
+function previewText(m){
+  const t=((m&&m.text)||'').trim();
+  const map={'[image]':'\uD83D\uDCF7 Imagen','[audio]':'\uD83C\uDFA4 Audio','[document]':'\uD83D\uDCCE Documento','[video]':'\uD83C\uDFAC Video','[sticker]':'\uD83C\uDFF7 Sticker','[reaction]':'\uD83D\uDC4D Reaccion'};
+  return map[t.toLowerCase()]||t;
+}
+// Con la imagen ya pintada, el marcador "[image]" sobra.
+function bodyTxt(m){
+  const t=m.text||'';
+  if(m.mediaPath&&/^\[[a-z]+\]$/i.test(t.trim()))return '';
+  return esc(t);
+}
+
+let allMessages=[],activePhone=null;
+window._portalState={get activePhone(){return activePhone;},set activePhone(v){activePhone=v;}};
+function loadMessages(){
+  const lb=document.getElementById('inboxListBody');if(lb)lb.innerHTML='<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">Loading...</div>';
+  fetch('/.netlify/functions/wa-messages').then(r=>r.json()).then(data=>{allMessages=Array.isArray(data)?data:[];renderInboxList();if(activePhone)openThread(activePhone,document.getElementById('threadName')?.textContent||activePhone);}).catch(()=>{allMessages=[];renderInboxList();});
+}
+window.loadMessages=loadMessages;
+function renderInboxList(){
+  const lb=document.getElementById('inboxListBody');const ce=document.getElementById('inboxCount');
+  const threads={};
+  allMessages.forEach(m=>{const phone=normPhone(m.direction==='inbound'?m.from:m.to);if(!phone)return;if(!threads[phone]){threads[phone]={phone,clientName:'',msgs:[],unread:0};}threads[phone].msgs.push(m);if(m.direction==='inbound'&&!m.read)threads[phone].unread++;});
+  Object.values(threads).forEach(t=>{t.clientName=bestName(t.msgs,t.phone);});
+  const sorted=Object.values(threads).sort((a,b)=>{const la=Math.max.apply(null,a.msgs.map(m=>m.timestamp||0));const lb2=Math.max.apply(null,b.msgs.map(m=>m.timestamp||0));return lb2-la;});
+  if(ce)ce.textContent=sorted.length+' chat'+(sorted.length!==1?'s':'');
+  if(!sorted.length){lb.innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px"><div style="font-size:28px;margin-bottom:10px">📭</div>No messages yet.<br>Send a template to get started.</div>`;return;}
+  lb.innerHTML=sorted.map(t=>{const last=t.msgs.reduce((acc,m)=>(m.timestamp||0)>(acc?.timestamp||0)?m:acc,null)||t.msgs[0];const ts=last?.timestamp?fmtTime(last.timestamp):'';const pvRaw=previewText(last);const preview=pvRaw.substring(0,40)+(pvRaw.length>40?'…':'');const initials=(t.clientName||'?').split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();const isActive=t.phone===activePhone;const hasUnread=t.unread>0;return`<div class="inboxItem${isActive?' active':''}${hasUnread?' unread':''}" onclick="openThread('${esc(t.phone)}','${esc(t.clientName)}')"><div class="inboxAvatar">${initials}</div><div style="flex:1;min-width:0"><div class="inboxFrom">${esc(t.clientName||t.phone)}</div><div class="inboxPreview">${esc(preview||'—')}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="inboxTime">${ts}</div>${hasUnread?`<div class="inboxUnreadDot"></div>`:''}</div></div>`;}).join('');
+}
+function openThread(phone,name){
+  activePhone=phone;window._activePhone=phone;renderInboxList();
+  const hdr=document.getElementById('threadHeader');const empty=document.getElementById('threadEmpty');const msgs=document.getElementById('threadMsgs');const bar=document.getElementById('replyBar');
+  if(hdr)hdr.style.display='flex';if(empty)empty.style.display='none';if(msgs)msgs.style.display='flex';if(bar)bar.style.display='flex';
+  document.getElementById('threadPhone').textContent='+'+normPhone(phone);
+  const np=normPhone(phone);const thread=allMessages.filter(m=>normPhone(m.from)===np||normPhone(m.to)===np).sort((a,b)=>a.timestamp-b.timestamp);
+  document.getElementById('threadName').textContent=thread.length?bestName(thread,np):(name||np);
+  thread.filter(m=>m.direction==='inbound'&&!m.read).forEach(m=>{fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'mark_read',id:m.id})}).catch(()=>{});m.read=true;});
+  msgs.innerHTML=thread.map(m=>{const dir=m.direction==='inbound'?'in':'out';const time=m.timestamp?new Date(m.timestamp*1000).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';return`<div class="bubble ${dir}">${mediaHtml(m)}${bodyTxt(m)}<span class="bubbleTime">${time}${dir==='out'?' · Sent ✓':''}</span></div>`;}).join('');
+  msgs.scrollTop=msgs.scrollHeight;
+}
+window.openThread=openThread;
+function sendReply(){
+  const phone=activePhone||window._activePhone;if(!phone){alert('No conversation selected');return;}
+  const input=document.getElementById('replyText');const btn=document.getElementById('replyBtn');const text=input.value.trim();if(!text)return;
+  btn.disabled=true;btn.textContent='...';const clientName=document.getElementById('threadName').textContent;
+  fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'reply',to:phone,text,clientName})}).then(r=>r.json()).then(res=>{if(res.error&&!res.messaging_product&&!res.messages){alert('Error: '+(res.error?.message||JSON.stringify(res)));}else{input.value='';fetch('/.netlify/functions/wa-messages').then(r=>r.json()).then(data=>{allMessages=Array.isArray(data)?data:[];renderInboxList();openThread(phone,clientName);});}}).catch(e=>alert('Error: '+e.message)).finally(()=>{btn.disabled=false;btn.textContent='Send ↑';});
+}
+window.sendReply=sendReply;
+
+// ── [NEW 2026-07-31] Enviar archivos desde el inbox ──────────────────
+// El archivo se manda en base64 dentro del JSON. Netlify corta los payloads
+// alrededor de 6 MB y base64 infla ~33%, por eso el tope de 4 MB.
+const ATTACH_MAX=4*1024*1024;
+function onAttachPick(input){
+  const f=input.files&&input.files[0];
+  if(!f)return;
+  if(f.size>ATTACH_MAX){alert('El archivo pesa '+(f.size/1048576).toFixed(1)+' MB. El maximo es 4 MB.');input.value='';return;}
+  const phone=activePhone||window._activePhone;
+  if(!phone){alert('Selecciona una conversacion primero');input.value='';return;}
+  const caption=(document.getElementById('replyText').value||'').trim();
+  const label=f.name.length>28?f.name.slice(0,25)+'...':f.name;
+  if(!confirm('Enviar "'+label+'"'+(caption?' con el texto escrito como pie de foto?':'?')))
+    {input.value='';return;}
+  const btn=document.getElementById('attachBtn');btn.disabled=true;btn.textContent='...';
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const b64=String(rd.result).split(',')[1]||'';
+    fetch('/.netlify/functions/wa-messages',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'send_media',to:phone,base64:b64,mimeType:f.type||'application/octet-stream',
+        filename:f.name,caption:caption||null,clientName:document.getElementById('threadName').textContent})})
+    .then(r=>r.json().then(j=>({ok:r.ok,j})))
+    .then(({ok,j})=>{
+      if(!ok){alert(j.message||('No se pudo enviar: '+JSON.stringify(j.detail||j.error||j)));return;}
+      document.getElementById('replyText').value='';
+      return fetch('/.netlify/functions/wa-messages').then(r=>r.json()).then(data=>{
+        allMessages=Array.isArray(data)?data:[];renderInboxList();openThread(phone);});
+    })
+    .catch(e=>alert('Error: '+e.message))
+    .finally(()=>{btn.disabled=false;btn.textContent='📎';input.value='';});
+  };
+  rd.onerror=()=>{alert('No se pudo leer el archivo');btn.disabled=false;btn.textContent='📎';input.value='';};
+  rd.readAsDataURL(f);
+}
+window.onAttachPick=onAttachPick;
+function replyWithTemplate(){
+  if(!activePhone&&!window._activePhone)return;openSendModal();
+  const phone=activePhone||window._activePhone;document.getElementById('sm_to').value=phone;
+  const sel=document.getElementById('sm_client');const opt=Array.from(sel.options).find(o=>(o.dataset.wa||'').replace(/\D/g,'')=== phone.replace(/\D/g,''));if(opt)sel.value=opt.value;
+}
+window.replyWithTemplate=replyWithTemplate;
+setInterval(()=>{const ws=document.getElementById('tabWhatsapp');if(ws&&ws.classList.contains('active')){const phone=activePhone||window._activePhone;const name=document.getElementById('threadName')?.textContent;fetch('/.netlify/functions/wa-messages').then(r=>r.json()).then(data=>{allMessages=Array.isArray(data)?data:[];renderInboxList();if(phone)openThread(phone,name||phone);}).catch(()=>{}); }},30000);
+function fmtTime(ts){const d=new Date(ts*1000);const now=new Date();const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());const dDay=new Date(d.getFullYear(),d.getMonth(),d.getDate());if(dDay.getTime()===today.getTime())return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}
+
+// ── ECOPACK+ PICKUP MODAL ────────────────────────────────────────
+let pickupClientId=null;
+async function openPickupModal(clientId){
+  pickupClientId=clientId;const c=clients.find(x=>x.id===clientId);if(!c)return;
+  const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);
+  document.getElementById('pm_date').value=tomorrow.toISOString().split('T')[0];
+  document.getElementById('pm_time').value='10:00 AM';
+  const displayName=c.store_name||c.company||c.name;
+  document.getElementById('pickupClientInfo').innerHTML=`<div style="font-weight:600;margin-bottom:4px">♻️ ${esc(c.name||displayName)}</div><div style="color:var(--muted);font-size:12px">WA: ${esc(c.wa_number||'—')}${c.company?' &nbsp;·&nbsp; '+esc(c.company):''} &nbsp;·&nbsp; Consent: <strong>${esc(c.wa_consent||'Pending')}</strong></div>`;
+  const pe=document.getElementById('pm_pending');pe.textContent='Counting packages...';pe.dataset.count='0';
+  document.getElementById('pickupModal').classList.add('open');
+  try{
+    const res=await fetch(`/.netlify/functions/ecopack-wa?action=pending&client_name=${encodeURIComponent(displayName)}`);
+    const data=await res.json();const count=data.count||0;pe.dataset.count=String(count);
+    if(count===0){pe.textContent='⚠️ No pending packages found';pe.style.background='#fef9c3';pe.style.borderColor='#fde047';pe.style.color='#854d0e';}
+    else{pe.textContent=`${count} package${count!==1?'s':''} waiting for pickup`;pe.style.background='#f0fdf4';pe.style.borderColor='#86efac';pe.style.color='#166534';}
+  }catch(e){document.getElementById('pm_pending').textContent='Could not count packages — proceed manually';}
+}
+function closePickupModal(){document.getElementById('pickupModal').classList.remove('open');pickupClientId=null;}
+async function submitPickup(){
+  const c=clients.find(x=>x.id===pickupClientId);if(!c)return;
+  const date=document.getElementById('pm_date').value;const time=document.getElementById('pm_time').value;
+  const pe=document.getElementById('pm_pending');const count=parseInt(pe.dataset.count||'0');
+  if(!date){alert('Select a pickup date');return;}
+  if(!c.wa_number){alert('This client has no WhatsApp number registered');return;}
+  if(c.wa_consent!=='Yes'){alert('Client WA consent is not confirmed.\nUpdate consent to "Yes" in client settings first.');return;}
+  const btn=document.getElementById('schedulePickupBtn');btn.textContent='Scheduling...';btn.disabled=true;
+  const displayName=c.store_name||c.company||c.name;
+  const dateFormatted=new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  try{
+    const res=await fetch('/.netlify/functions/ecopack-wa?action=schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:c.id,client_name:displayName,wa_number:c.wa_number,pending_count:count,scheduled_date:dateFormatted,scheduled_time:time,lang:c.lang||'EN'})});
+    const data=await res.json();if(data.error)throw new Error(data.error);
+    alert(`✅ Pickup scheduled!\n\n📅 ${dateFormatted} at ${time}\n📦 ${count} package${count!==1?'s':''}\n💬 WA sent to ${c.wa_number}`);
+    closePickupModal();
+  }catch(e){alert('Error scheduling pickup: '+e.message);}
+  finally{btn.textContent='📅 Schedule & Send WA';btn.disabled=false;}
+}
+
+// ── ECOPACK+ PICKUPS TAB ─────────────────────────────────────────
+let allPickups=[],pickupFilter='pending';
+function setPickupFilter(filter,btn){pickupFilter=filter;document.querySelectorAll('#pickupFilterPending, #pickupFilterHistory').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderPickups();}
+async function loadPickups(){
+  document.getElementById('pickupList').innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">Loading pickups...</div>`;
+  try{const res=await fetch('/.netlify/functions/ecopack?action=pickups');const data=await res.json();allPickups=Array.isArray(data)?data:[];renderPickups();renderPickupKpis();}
+  catch(e){document.getElementById('pickupList').innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">⚠️ Error: ${esc(e.message)}</div>`;}
+}
+function renderPickupKpis(){
+  const today=new Date().toISOString().split('T')[0];
+  document.getElementById('pkpScheduled').textContent=allPickups.filter(p=>p.status==='scheduled').length;
+  document.getElementById('pkpConfirmed').textContent=allPickups.filter(p=>p.status==='confirmed').length;
+  document.getElementById('pkpCompleted').textContent=allPickups.filter(p=>p.status==='completed'&&(p.completed_at||'').startsWith(today)).length;
+  document.getElementById('pkpPackages').textContent=allPickups.filter(p=>p.status!=='cancelled').reduce((s,p)=>s+(p.package_count||0),0);
+}
+function renderPickups(){
+  const list=document.getElementById('pickupList');const isHistory=pickupFilter==='history';
+  const filtered=allPickups.filter(p=>isHistory?['completed','cancelled'].includes(p.status):['scheduled','confirmed'].includes(p.status)).sort((a,b)=>{if(!isHistory)return(a.scheduled_date||'').localeCompare(b.scheduled_date||'');return new Date(b.completed_at||b.created_at)-new Date(a.completed_at||a.created_at);});
+  if(!filtered.length){list.innerHTML=`<div style="text-align:center;padding:60px;color:var(--muted);font-size:14px"><div style="font-size:36px;margin-bottom:12px">📭</div><div>${isHistory?'No pickup history yet.':'No upcoming pickups scheduled.'}</div></div>`;return;}
+  const sc={scheduled:'background:#fef9c3;color:#854d0e;border-color:#fde047',confirmed:'background:#dcfce7;color:#16a34a;border-color:#86efac',completed:'background:#dbeafe;color:#1d4ed8;border-color:#93c5fd',cancelled:'background:#fee2e2;color:#dc2626;border-color:#fca5a5'};
+  list.innerHTML=filtered.map(p=>{
+    const ss=sc[p.status]||'';const sl=p.status.charAt(0).toUpperCase()+p.status.slice(1);
+    const cd=p.created_at?new Date(p.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
+    const ab=[];
+    if(p.status==='scheduled'||p.status==='confirmed')ab.push(`<button class="actionBtn" style="color:#16a34a;border-color:rgba(22,163,74,.4)" onclick="updatePickupStatus('${p.id}','completed')">✓ Complete</button>`);
+    if(p.status==='scheduled')ab.push(`<button class="actionBtn" style="color:#1d4ed8;border-color:rgba(29,78,216,.4)" onclick="updatePickupStatus('${p.id}','confirmed')">✓ Confirm</button>`);
+    if(p.status!=='cancelled'&&p.status!=='completed')ab.push(`<button class="actionBtn danger" onclick="updatePickupStatus('${p.id}','cancelled')">✕ Cancel</button>`);
+    return`<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px 20px"><div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px"><div style="flex:1;min-width:200px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:800">${esc(p.client_name||'—')}</div><span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid;${ss}">${sl}</span></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px"><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Pickup Date</div><div style="font-size:13px;font-weight:600">📅 ${esc(p.pickup_date||'—')}</div></div><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Time</div><div style="font-size:13px;font-weight:600">🕐 ${esc(p.pickup_time||'—')}</div></div><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Packages</div><div style="font-size:13px;font-weight:600">📦 ${p.package_count||0} pkg${(p.package_count||0)!==1?'s':''}</div></div><div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">WhatsApp</div><div style="font-size:12px;font-family:'DM Mono',monospace;color:var(--muted)">${esc(p.wa_number||'—')}</div></div>${p.status==='completed'?`<div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Completed</div><div style="font-size:12px;color:var(--muted)">${p.completed_at?new Date(p.completed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—'}</div></div>`:''}<div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:2px">Scheduled on</div><div style="font-size:12px;color:var(--muted)">${cd}</div></div></div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">${ab.join('')}</div></div></div>`;
+  }).join('');
+}
+
+async function updatePickupStatus(id,status){
+  const msgs={completed:'Mark this pickup as completed? This will reset the package counter.',confirmed:'Mark this pickup as confirmed?',cancelled:'Cancel this pickup?'};
+  if(!confirm(msgs[status]))return;
+  try{
+    const actionMap={confirmed:'confirm',completed:'complete',cancelled:'cancel'};
+    const res=await fetch('/.netlify/functions/ecopack',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:actionMap[status]||status,id})});
+    const data=await res.json();if(data.error)throw new Error(data.error);
+    if(status==='completed'){const pickup=allPickups.find(p=>p.id===id);if(pickup?.client_id){await fetch('/.netlify/functions/wa-clients',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:pickup.client_id,daily_inbound:0,daily_outbound:0})});}}
+    await loadPickups();
+  }catch(e){alert('Error updating pickup: '+e.message);}
+}
+</script>
+
+<!-- ── In-App Viewer ── -->
+<div id="appViewer" style="display:none;position:fixed;inset:0;z-index:200;flex-direction:column;background:#f4f6f9">
+  <div id="appViewerBar" style="background:#1e3a5f;color:#fff;padding:0 16px;height:52px;display:flex;align-items:center;gap:12px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.3)">
+    <button onclick="closeApp()" style="background:rgba(255,255,255,.15);border:none;border-radius:8px;color:#fff;font-size:15px;font-weight:600;padding:7px 14px;cursor:pointer;font-family:inherit;flex-shrink:0;display:flex;align-items:center;gap:5px">← Back</button>
+    <span id="appViewerTitle" style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <a id="appViewerExternal" href="#" target="_blank" rel="noopener" style="background:rgba(255,255,255,.15);border-radius:8px;color:#fff;font-size:13px;padding:7px 12px;text-decoration:none;flex-shrink:0">↗ New tab</a>
+  </div>
+  <iframe id="appViewerFrame" src="about:blank" style="flex:1;border:none;width:100%;height:100%;background:#fff" allowfullscreen></iframe>
+</div>
+
+<script>
+/* ── PWA: Service Worker ── */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('/sw.js',{scope:'/'})
+      .then(r=>{ console.log('[FR-Portal] SW registered',r.scope); setInterval(()=>r.update(),30*60*1000); })
+      .catch(e=>console.warn('[FR-Portal] SW failed',e));
+  });
+}
+
+/* ── Mobile card view for WA Clients ── */
+function renderClientCards(list){
+  const el=document.getElementById('clientCardList');
+  if(!el)return;
+  if(!list||!list.length){el.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">No clients found</div>';return;}
+  el.innerHTML=list.map(c=>{
+    const svcs=Array.isArray(c.services)?c.services:(c.services||'').toString().split(',').filter(Boolean);
+    const st=(c.status||'Active');
+    const stC=st==='Active'?'#22c55e':st==='Inactive'?'#ef4444':'#f59e0b';
+    const pills=svcs.slice(0,3).map(s=>`<span class="cCard-pill">${esc(s.replace(/"/g,'').trim())}</span>`).join('');
+    const wa=c.wa_number||'';
+    const hasEco=svcs.some(s=>s.includes('EcoPack'));
+    return`<div class="cCard">
+      <div class="cCard-top">
+        <div><div class="cCard-name">${esc(c.name||'—')}</div><div class="cCard-co">${esc(c.company||'')}</div></div>
+        <span style="background:${stC}22;color:${stC};font-size:10px;padding:3px 8px;border-radius:6px;font-weight:700">${st}</span>
+      </div>
+      <div class="cCard-meta">
+        ${wa?`<div class="cCard-wa">● ${esc(wa)}</div>`:'<span style="color:var(--muted);font-size:11px">No WA</span>'}
+        ${pills}${svcs.length>3?`<span style="color:var(--muted);font-size:10px">+${svcs.length-3}</span>`:''}
+      </div>
+      <div class="cCard-btns">
+        <button class="cCard-btn" onclick="openSendToClient&&openSendToClient('${c.id||''}')">💬 WA</button>
+        ${hasEco?`<button class="cCard-btn" style="color:#1fa463" onclick="openPickupModal&&openPickupModal('${c.id||''}')">📅 Pickup</button>`:''}
+        <button class="cCard-btn p" onclick="openClientModal('edit','${c.id||''}')">✏ Edit</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* Show table on desktop, cards on mobile — toggle both */
+function syncClientView(list){
+  const isMobile=window.innerWidth<=767;
+  const tbl=document.querySelector('#tabClients .tableWrap');
+  const cards=document.getElementById('clientCardList');
+  if(!tbl||!cards)return;
+  tbl.style.display=isMobile?'none':'';
+  cards.style.display=isMobile?'flex':'none';
+  if(isMobile&&list)renderClientCards(list);
+}
+window.addEventListener('resize',()=>syncClientView(typeof filtered!=='undefined'?filtered:null));
+
+/* Hook into renderTable to also update card view */
+const _origRenderTable=window.renderTable;
+if(typeof _origRenderTable==='function'){
+  window.renderTable=function(list,...args){
+    _origRenderTable.apply(this,[list,...args]);
+    syncClientView(list);
+  };
+}
+document.addEventListener('DOMContentLoaded',()=>syncClientView(null));
+</script>
+
+
+<!-- ════ WhatsApp Inbox Desktop Notifications ════ -->
+<script id="waNotifModule">
+(function() {
+  'use strict';
+  const POLL_MS = 60000;
+  const STORAGE_KEY = 'wa_last_seen_msgid';
+  const BANNER_ID = 'waNotifBanner';
+  let pollTimer = null, isPolling = false;
+
+  function isOnInboxTab() {
+    const t = document.getElementById('tabWhatsapp');
+    return t && t.classList && t.classList.contains('active');
+  }
+
+  function injectBanner() {
+    if (document.getElementById(BANNER_ID)) return;
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted' || Notification.permission === 'denied') return;
+    if (localStorage.getItem('wa_notif_dismissed') === '1') return;
+    const host = document.getElementById('tabWhatsapp');
+    if (!host) return;
+    const banner = document.createElement('div');
+    banner.id = BANNER_ID;
+    banner.style.cssText = 'padding:14px 16px;margin:0 0 16px;border:1px solid #25D366;border-radius:10px;background:#E7F9EE;display:flex;align-items:center;gap:12px;font:14px/1.4 system-ui,sans-serif';
+    banner.innerHTML = '<span style="font-size:22px">🔔</span><div style="flex:1"><strong>Enable desktop notifications</strong><br><span style="color:#374151">Get alerts when clients message via WhatsApp.</span></div><button id="waNotifEnable" style="background:#25D366;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:600;cursor:pointer">Enable</button><button id="waNotifDismiss" style="background:transparent;border:none;color:#6b7280;cursor:pointer;font-size:18px;padding:4px 8px">×</button>';
+    host.insertBefore(banner, host.firstChild);
+    document.getElementById('waNotifEnable').onclick = enableNotifications;
+    document.getElementById('waNotifDismiss').onclick = () => {
+      localStorage.setItem('wa_notif_dismissed', '1');
+      banner.remove();
+    };
+  }
+
+  async function enableNotifications() {
+    try {
+      const perm = await Notification.requestPermission();
+      const b = document.getElementById(BANNER_ID);
+      if (b) b.remove();
+      if (perm !== 'granted') return;
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        const reg = await navigator.serviceWorker.ready;
+        const existing = await reg.pushManager.getSubscription();
+        if (existing) { await registerSub(existing); }
+        else {
+          const kr = await fetch('/.netlify/functions/wa-push-vapid-key');
+          const { publicKey } = await kr.json();
+          if (publicKey) {
+            const sub = await reg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(publicKey)
+            });
+            await registerSub(sub);
+          }
+        }
+      }
+      new Notification('FR-Logistics', {
+        body: 'Desktop notifications enabled ✓',
+        icon: 'https://fr-logistics.net/wp-content/uploads/2024/03/favicon-196x196.png'
+      });
+    } catch (err) { console.error('[wa-notif]', err); }
+  }
+
+  async function registerSub(sub) {
+    await fetch('/.netlify/functions/wa-push-subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subscription: sub.toJSON ? sub.toJSON() : sub,
+        userAgent: navigator.userAgent
+      })
+    });
+  }
+
+  function urlBase64ToUint8Array(b64) {
+    const pad = '='.repeat((4 - b64.length % 4) % 4);
+    const s = (b64 + pad).replace(/-/g,'+').replace(/_/g,'/');
+    const raw = atob(s);
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+  }
+
+  async function pollInbox() {
+    if (isPolling) return;
+    isPolling = true;
+    try {
+      const r = await fetch('/.netlify/functions/wa-messages?limit=20');
+      if (!r.ok) return;
+      const msgs = await r.json();
+      if (!Array.isArray(msgs) || !msgs.length) return;
+      const lastSeen = localStorage.getItem(STORAGE_KEY);
+      const newest = msgs[0];
+      if (!lastSeen) { localStorage.setItem(STORAGE_KEY, newest.id); return; }
+      const newOnes = [];
+      for (const m of msgs) { if (m.id === lastSeen) break; newOnes.push(m); }
+      if (newOnes.length) {
+        if (Notification.permission === 'granted') {
+          const reg = await navigator.serviceWorker?.getRegistration();
+          const sub = await reg?.pushManager?.getSubscription();
+          if (!sub) {
+            const f = newOnes[0];
+            new Notification(f.clientName || f.from, {
+              body: (f.text || '').slice(0, 140),
+              tag: 'wa-inbox-' + f.id,
+              icon: 'https://fr-logistics.net/wp-content/uploads/2024/03/favicon-196x196.png'
+            });
+          }
+        }
+        localStorage.setItem(STORAGE_KEY, newest.id);
+        if (typeof loadMessages === 'function') { try { loadMessages(); } catch(_){} }
+      }
+    } catch(_) {
+    } finally { isPolling = false; }
+  }
+
+  function startPolling() {
+    stopPolling();
+    pollInbox();
+    pollTimer = setInterval(pollInbox, POLL_MS);
+  }
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopPolling();
+    else if (isOnInboxTab()) startPolling();
+  });
+
+  function onTabChange() {
+    if (isOnInboxTab()) {
+      injectBanner();
+      if (!document.hidden) startPolling();
+    } else {
+      stopPolling();
+    }
+  }
+
+  // Hook into switchTab clicks
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[onclick*="switchTab"]');
+    if (btn) setTimeout(onTabChange, 80);
+  });
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', onTabChange);
+  } else {
+    onTabChange();
+  }
+})();
+</script>
+   <!-- ════════════════════════════════════════════════════════════════════════
+     WHATSAPP INBOX — Search + Lead Enrichment + Quote button (3 capas)
+     Pega este bloque COMPLETO justo antes de </body>, después del
+     <script id="waNotifModule">. No toca el código existente: lo envuelve.
+════════════════════════════════════════════════════════════════════════ -->
+<script id="waInboxEnhance">
+(function(){
+  'use strict';
+
+  const ENRICH_API = '/.netlify/functions/wa-inbox-enrich';
+  const QUOTE_APP  = 'FR_Logistics_Quote_System_v3.html';
+
+  let leadMap = {};          // normPhone -> { name, email, service, status, lead_id, ... }
+  let searchTerm = '';
+  let deepResults = null;    // results from server-side deep search (or null)
+
+  const normP = p => String(p||'').replace(/\D/g,'');
+  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  const STATUS_BADGE = {
+    sent_to_sales: {t:'Sales',  bg:'#dbeafe', c:'#1d4ed8'},
+    qualifying:    {t:'Qualifying', bg:'#fef9c3', c:'#854d0e'},
+    new:           {t:'New',    bg:'#dcfce7', c:'#16a34a'},
+    won:           {t:'Won',    bg:'#dcfce7', c:'#15803d'},
+    lost:          {t:'Lost',   bg:'#fee2e2', c:'#dc2626'},
+  };
+
+  // ── Fetch the phone->lead map once, refresh periodically ──────────────────
+  async function loadLeadMap(){
+    try{
+      const r = await fetch(`${ENRICH_API}?enrich=phones`);
+      if(r.ok){ leadMap = await r.json() || {}; }
+    }catch(_){ /* non-fatal — inbox still works without enrichment */ }
+  }
+
+  // Look up a thread's lead context by its phone.
+  function leadFor(phone){ return leadMap[normP(phone)] || null; }
+
+  // ── Inject the search box into the inbox header (once) ────────────────────
+  function injectSearchBox(){
+    const header = document.querySelector('#tabWhatsapp .inboxList .inboxHeader');
+    if(!header || document.getElementById('inboxSearchWrap')) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'inboxSearchWrap';
+    wrap.style.cssText = 'padding:10px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--card);z-index:2';
+    wrap.innerHTML =
+      '<div style="position:relative">' +
+        '<input id="inboxSearch" type="text" placeholder="🔎 Search name, phone or email…" ' +
+          'style="width:100%;padding:8px 30px 8px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;outline:none" ' +
+          'oninput="window._inboxSearch(this.value)"/>' +
+        '<span id="inboxSearchClear" onclick="window._inboxSearchClear()" ' +
+          'style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--muted);font-size:16px">✕</span>' +
+      '</div>' +
+      '<div id="inboxSearchHint" style="font-size:11px;color:var(--muted);margin-top:6px;display:none"></div>';
+    // place it right AFTER the "Conversations / count" header row
+    header.insertAdjacentElement('afterend', wrap);
+  }
+
+  // ── Search handlers ───────────────────────────────────────────────────────
+  let deepTimer = null;
+  window._inboxSearch = function(v){
+    searchTerm = (v||'').trim().toLowerCase();
+    document.getElementById('inboxSearchClear').style.display = searchTerm ? 'block' : 'none';
+    deepResults = null;
+    if(typeof window.renderInboxList === 'function') window.renderInboxList();
+
+    // If nothing matched locally and term is meaningful, do a deep DB search.
+    clearTimeout(deepTimer);
+    const hint = document.getElementById('inboxSearchHint');
+    if(searchTerm.length >= 2){
+      const localCount = countLocalMatches();
+      if(localCount === 0){
+        hint.style.display='block';
+        hint.textContent='Searching all history…';
+        deepTimer = setTimeout(runDeepSearch, 350);
+      } else {
+        hint.style.display='none';
+      }
+    } else {
+      hint.style.display='none';
+    }
+  };
+  window._inboxSearchClear = function(){
+    const i=document.getElementById('inboxSearch'); if(i) i.value='';
+    window._inboxSearch('');
+  };
+
+  function countLocalMatches(){
+    const all = window.allMessages || [];
+    const phones = new Set();
+    all.forEach(m=>{ phones.add(normP(m.direction==='inbound'?m.from:m.to)); });
+    let n=0;
+    phones.forEach(p=>{ if(matchesThread(p)) n++; });
+    return n;
+  }
+
+  async function runDeepSearch(){
+    const hint = document.getElementById('inboxSearchHint');
+    try{
+      const r = await fetch(`${ENRICH_API}?search=${encodeURIComponent(searchTerm)}`);
+      deepResults = r.ok ? await r.json() : [];
+      if(typeof window.renderInboxList === 'function') window.renderInboxList();
+      hint.textContent = deepResults.length
+        ? `${deepResults.length} result${deepResults.length!==1?'s':''} from full history`
+        : 'No matches in history';
+      hint.style.display = 'block';
+    }catch(_){ hint.style.display='none'; }
+  }
+
+  // Does a thread (by phone) match the current search term?
+  function matchesThread(phone){
+    if(!searchTerm) return true;
+    const np = normP(phone);
+    const termDigits = normP(searchTerm);
+    // phone match only when the search term actually contains digits
+    if(termDigits.length >= 3 && np.includes(termDigits)) return true;
+    const lead = leadMap[np];
+    const hay = [
+      lead?.name, lead?.email, lead?.service,
+      threadDisplayName(phone)
+    ].filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(searchTerm);
+  }
+
+  // Real display name: prefer lead name over the generic "Liam" stored in msgs.
+  function threadDisplayName(phone){
+    const lead = leadFor(phone);
+    if(lead && lead.name) return lead.name;
+    const all = window.allMessages || [];
+    const m = all.find(x => normP(x.from)===normP(phone) || normP(x.to)===normP(phone));
+    return (m && m.clientName) || phone;
+  }
+  window._inboxThreadName = threadDisplayName;
+
+  // ── Wrap renderInboxList to (a) filter by search (b) enrich names+badges ──
+  function wrapRenderInbox(){
+    const orig = window.renderInboxList;
+    if(typeof orig !== 'function' || orig.__enhanced) return;
+
+    window.renderInboxList = function(){
+      // If a deep search is active, render those results instead.
+      if(searchTerm && deepResults){
+        renderDeepResults();
+        return;
+      }
+      orig.apply(this, arguments);          // let the original build the list
+      if(searchTerm) applySearchFilter();   // hide non-matching rows
+      enrichRenderedList();                 // swap names, add badges
+    };
+    window.renderInboxList.__enhanced = true;
+  }
+
+  // Hide rows whose phone doesn't match the search (operates on rendered DOM).
+  function applySearchFilter(){
+    const lb = document.getElementById('inboxListBody');
+    if(!lb) return;
+    let shown=0;
+    lb.querySelectorAll('.inboxItem').forEach(row=>{
+      const oc = row.getAttribute('onclick')||'';
+      const m = oc.match(/openThread\('([^']*)'/);
+      const phone = m ? m[1] : '';
+      const ok = matchesThread(phone);
+      row.style.display = ok ? '' : 'none';
+      if(ok) shown++;
+    });
+    const ce = document.getElementById('inboxCount');
+    if(ce && searchTerm) ce.textContent = shown + ' match' + (shown!==1?'es':'');
+  }
+
+  // Replace generic names with lead names and append a status badge.
+  function enrichRenderedList(){
+    const lb = document.getElementById('inboxListBody');
+    if(!lb) return;
+    lb.querySelectorAll('.inboxItem').forEach(row=>{
+      const oc = row.getAttribute('onclick')||'';
+      const m = oc.match(/openThread\('([^']*)'/);
+      const phone = m ? m[1] : '';
+      const lead = leadFor(phone);
+      if(!lead) return;
+      const fromEl = row.querySelector('.inboxFrom');
+      if(fromEl && lead.name){
+        // only override the generic agent name, keep real captured names
+        const cur = fromEl.textContent.trim().toLowerCase();
+        if(cur==='liam' || cur===normP(phone) || cur===phone || cur.startsWith('+')) {
+          fromEl.textContent = lead.name;
+        }
+        if(!fromEl.querySelector('.leadBadge')){
+          const b = STATUS_BADGE[lead.status];
+          if(b){
+            const span=document.createElement('span');
+            span.className='leadBadge';
+            span.style.cssText=`margin-left:6px;font-size:9px;font-weight:700;padding:1px 6px;border-radius:5px;background:${b.bg};color:${b.c};vertical-align:middle`;
+            span.textContent=b.t;
+            fromEl.appendChild(span);
+          }
+        }
+      }
+    });
+  }
+
+  // Render server-side deep-search results as clickable rows.
+  function renderDeepResults(){
+    const lb = document.getElementById('inboxListBody');
+    const ce = document.getElementById('inboxCount');
+    if(!lb) return;
+    if(ce) ce.textContent = (deepResults.length||0)+' found';
+    if(!deepResults.length){
+      lb.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">No matches in full history.</div>';
+      return;
+    }
+    lb.innerHTML = deepResults.map(d=>{
+      const name = d.name || d.phone;
+      const initials = (name||'?').split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
+      const b = STATUS_BADGE[d.status];
+      const badge = b ? `<span style="margin-left:6px;font-size:9px;font-weight:700;padding:1px 6px;border-radius:5px;background:${b.bg};color:${b.c}">${b.t}</span>` : '';
+      const sub = d.email || d.last_text || d.phone || '';
+      return `<div class="inboxItem" onclick="window._openDeepThread('${esc(d.phone)}','${esc(name)}')">
+        <div class="inboxAvatar">${initials}</div>
+        <div style="flex:1;min-width:0">
+          <div class="inboxFrom">${esc(name)}${badge}</div>
+          <div class="inboxPreview">${esc(sub)}</div>
+        </div>
+        <div style="font-size:10px;color:var(--muted)">${d.source==='lead'?'lead':'chat'}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // Open a thread found via deep search: load that phone's messages then open.
+  window._openDeepThread = function(phone, name){
+    fetch('/.netlify/functions/wa-messages?phone='+encodeURIComponent(normP(phone)))
+      .then(r=>r.json())
+      .then(data=>{
+        const arr = Array.isArray(data)?data:[];
+        const existing = window.allMessages || [];
+        const ids = new Set(existing.map(m=>m.id));
+        arr.forEach(m=>{ if(!ids.has(m.id)) existing.push(m); });
+        window.allMessages = existing;
+        // clear search so the thread shows
+        window._inboxSearchClear();
+        if(typeof window.openThread==='function') window.openThread(normP(phone), name);
+      })
+      .catch(()=>{ if(typeof window.openThread==='function') window.openThread(normP(phone), name); });
+  };
+
+  // ── Wrap openThread to inject the Quote button + show lead email ──────────
+  function wrapOpenThread(){
+    const orig = window.openThread;
+    if(typeof orig !== 'function' || orig.__enhanced) return;
+    window.openThread = function(phone, name){
+      const lead = leadFor(phone);
+      // prefer real lead name in the header
+      const displayName = (lead && lead.name) ? lead.name : name;
+      orig.call(this, phone, displayName);
+      decorateThreadHeader(phone, lead);
+    };
+    window.openThread.__enhanced = true;
+  }
+
+  function decorateThreadHeader(phone, lead){
+    const hdr = document.getElementById('threadHeader');
+    if(!hdr) return;
+
+    // show lead email under the phone, if we have it
+    const phoneEl = document.getElementById('threadPhone');
+    if(phoneEl){
+      let emailEl = document.getElementById('threadLeadEmail');
+      if(!emailEl){
+        emailEl = document.createElement('div');
+        emailEl.id = 'threadLeadEmail';
+        emailEl.style.cssText='font-size:11px;color:var(--accent);margin-top:1px';
+        phoneEl.insertAdjacentElement('afterend', emailEl);
+      }
+      emailEl.textContent = (lead && lead.email) ? '✉ '+lead.email : '';
+      emailEl.style.display = (lead && lead.email) ? 'block' : 'none';
+    }
+
+    // inject the "Cotizar" button once, before "Use Template"
+    let qbtn = document.getElementById('threadQuoteBtn');
+    const tplBtn = hdr.querySelector('button[onclick*="replyWithTemplate"]');
+    if(!qbtn && tplBtn){
+      qbtn = document.createElement('button');
+      qbtn.id = 'threadQuoteBtn';
+      qbtn.className = 'waBtn';
+      qbtn.style.cssText = 'padding:5px 12px;font-size:12px;margin-right:6px;background:rgba(31,164,99,.12);border:1px solid rgba(31,164,99,.4);color:var(--accent)';
+      qbtn.textContent = '📋 Cotizar';
+      tplBtn.insertAdjacentElement('beforebegin', qbtn);
+    }
+    if(qbtn){
+      if(lead && lead.lead_id){
+        qbtn.style.display='';
+        qbtn.title='Open Quote Builder pre-filled with this lead';
+        qbtn.onclick = ()=>{
+          // open the Quote Builder in the in-app viewer with the lead id
+          const url = QUOTE_APP + '#lead=' + encodeURIComponent(lead.lead_id);
+          if(typeof window.openApp==='function') window.openApp(url, 'Quote Builder');
+          else window.open(url,'_blank');
+        };
+      } else {
+        // no lead match — hide the button (nothing to pre-fill)
+        qbtn.style.display='none';
+      }
+    }
+  }
+
+  // ── Boot ──────────────────────────────────────────────────────────────────
+  function boot(){
+    injectSearchBox();
+    wrapRenderInbox();
+    wrapOpenThread();
+    loadLeadMap().then(()=>{
+      if(typeof window.renderInboxList==='function') window.renderInboxList();
+    });
+  }
+
+  // Re-run setup whenever the user lands on the WhatsApp tab.
+  document.addEventListener('click',(e)=>{
+    const btn = e.target.closest('[onclick*="switchTab(\'Whatsapp\'"]');
+    if(btn) setTimeout(boot, 120);
+  });
+
+  // Refresh the lead map every 5 min so new leads enrich automatically.
+  setInterval(loadLeadMap, 5*60*1000);
+
+  // First boot (in case inbox is the initial view after login).
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(boot,500));
+  else setTimeout(boot,500);
+})();
+</script>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     INBOX SIGNALS  ·  2026-08-24
+     Capa de señales sobre el WhatsApp Inbox. Autocontenida: no toca ni una
+     línea del código existente, se engancha envolviendo renderInboxList
+     igual que hace la capa de enriquecimiento de leads.
+
+     Qué agrega:
+       · Barra de píldoras con contadores, clicables como filtro
+       · Semáforo de la ventana de 24h de Meta en cada hilo
+       · Chip de canal (WhatsApp / Web / Instagram)
+       · Orden por urgencia en vez de por fecha
+       · Búsqueda dentro del cuerpo de los mensajes
+
+     El eje del diseño es la VENTANA DE 24 HORAS. No es una meta interna:
+     pasadas 24h desde el último mensaje del cliente, Meta no deja responder
+     con texto libre — hace falta plantilla aprobada. Por eso el semáforo es
+     lo más visible de toda la pantalla.
+     ═══════════════════════════════════════════════════════════════════ -->
+<style>
+/* ── Barra de píldoras ─────────────────────────────────────────────── */
+#inboxSignals{padding:12px;border-bottom:1px solid var(--border);background:
+  linear-gradient(180deg,#fbfdff 0%,var(--card) 100%);display:flex;flex-wrap:wrap;gap:7px}
+.sigPill{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border-radius:999px;
+  border:1.5px solid transparent;font-size:11.5px;font-weight:600;cursor:pointer;
+  font-family:inherit;line-height:1;transition:transform .14s ease,box-shadow .14s ease,filter .14s ease;
+  white-space:nowrap;user-select:none}
+.sigPill:hover{transform:translateY(-1.5px);filter:brightness(.97)}
+.sigPill:active{transform:translateY(0)}
+.sigPill .n{font-size:13px;font-weight:800;letter-spacing:-.02em}
+.sigPill.on{box-shadow:0 0 0 2.5px rgba(15,23,42,.14),0 4px 10px rgba(15,23,42,.13)}
+.sigPill.zero{opacity:.42;filter:saturate(.35)}
+
+/* Cada estado con su color. El rojo se reserva para lo irreversible. */
+.sig-wait  {background:#fff7ed;color:#9a3412;border-color:#fed7aa}
+.sig-soon  {background:#fefce8;color:#854d0e;border-color:#fde68a}
+.sig-closed{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
+.sig-unread{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
+.sig-paused{background:#f5f3ff;color:#6d28d9;border-color:#ddd6fe}
+.sig-web   {background:#ecfeff;color:#0e7490;border-color:#a5f3fc}
+.sig-all   {background:#f1f5f9;color:#334155;border-color:#e2e8f0}
+
+/* La píldora de ventana cerrada late — es plata que se está perdiendo. */
+.sigPill.sig-closed:not(.zero)::before{content:'';width:7px;height:7px;border-radius:50%;
+  background:#ef4444;animation:sigPulse 1.9s ease-in-out infinite}
+@keyframes sigPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.78)}}
+
+/* ── Barra lateral de urgencia en cada hilo ────────────────────────── */
+.inboxItem{position:relative}
+.inboxItem[data-sig]::after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
+.inboxItem[data-sig="closed"]::after{background:linear-gradient(180deg,#f87171,#dc2626)}
+.inboxItem[data-sig="soon"]::after{background:linear-gradient(180deg,#fbbf24,#d97706)}
+.inboxItem[data-sig="wait"]::after{background:linear-gradient(180deg,#fb923c,#ea580c)}
+.inboxItem.active[data-sig]::after{width:0}
+
+/* ── Etiquetas dentro del hilo ─────────────────────────────────────── */
+.sigTag{display:inline-flex;align-items:center;gap:3px;font-size:9.5px;font-weight:700;
+  padding:2px 6px;border-radius:5px;letter-spacing:.01em;vertical-align:middle;white-space:nowrap}
+.tag-closed{background:#fee2e2;color:#b91c1c}
+.tag-soon  {background:#fef3c7;color:#92400e}
+.tag-open  {background:#dcfce7;color:#15803d}
+.tag-web   {background:#cffafe;color:#0e7490}
+.tag-wa    {background:#dcfce7;color:#166534}
+.tag-ig    {background:#fce7f3;color:#9d174d}
+
+/* Reloj de ventana: el número grande a la derecha del hilo */
+.sigClock{font-size:10px;font-weight:800;letter-spacing:-.01em;white-space:nowrap}
+.clock-open{color:#16a34a}.clock-soon{color:#d97706}.clock-closed{color:#dc2626}
+
+#inboxSignalsEmpty{display:none;text-align:center;padding:34px 20px;color:var(--muted);font-size:13px}
+
+@media (prefers-reduced-motion:reduce){
+  .sigPill,.sigPill.sig-closed::before{transition:none!important;animation:none!important}
+}
+</style>
+
+<script>
+(function(){
+  'use strict';
+
+  // La ventana de Meta: 24h desde el ÚLTIMO mensaje ENTRANTE del cliente.
+  // Un saliente nuestro no la reabre — solo el cliente reinicia el reloj.
+  var WINDOW_H   = 24;
+  var SOON_H     = 6;      // por debajo de esto, ámbar
+  var MSG_API    = '/.netlify/functions/wa-messages';
+  var REFRESH_MS = 60000;
+
+  var threads    = {};     // clave normalizada -> señales del hilo
+  var activePill = 'all';
+  var counts     = {all:0,wait:0,soon:0,closed:0,unread:0,paused:0,web:0};
+
+  function normP(p){
+    var d = String(p||'').replace(/\D/g,'');
+    if(!d) return '';
+    if(d.length===12 && d.indexOf('11')===0) d = d.slice(1);
+    if(d.length===10 && /^[2-9]/.test(d))    d = '1'+d;
+    return d;
+  }
+
+  // El canal se deduce del prefijo de la dirección CRUDA, antes de
+  // normalizar. Por eso un visitante web salía como "+53829817…": el uuid
+  // de sesión pasaba por el formateador de teléfonos.
+  function channelOf(raw){
+    var s = String(raw||'').toLowerCase();
+    if(s.indexOf('web:')===0) return 'web';
+    if(s.indexOf('ig:')===0)  return 'instagram';
+    return 'whatsapp';
+  }
+
+  // ── Construir el índice de señales ──────────────────────────────────
+  function buildIndex(messages){
+    var t = {};
+    (messages||[]).forEach(function(m){
+      var raw  = m.direction==='inbound' ? m.from : m.to;
+      var chan = channelOf(raw);
+      var key  = chan==='whatsapp' ? normP(raw) : String(raw||'');
+      if(!key) return;
+
+      if(!t[key]) t[key] = {key:key, channel:chan, lastIn:0, lastOut:0, unread:0, bodies:[]};
+      var ts = m.timestamp || 0;
+      if(m.direction==='inbound'){
+        if(ts > t[key].lastIn) t[key].lastIn = ts;
+        if(!m.read) t[key].unread++;
+      } else {
+        if(ts > t[key].lastOut) t[key].lastOut = ts;
+      }
+      if(m.text) t[key].bodies.push(String(m.text).toLowerCase());
+    });
+
+    var now = Date.now()/1000;
+    counts  = {all:0,wait:0,soon:0,closed:0,unread:0,paused:0,web:0};
+
+    Object.keys(t).forEach(function(k){
+      var x = t[k];
+      // Horas restantes de ventana. Solo aplica a WhatsApp: el chat web y
+      // los DMs no tienen ese límite de Meta.
+      x.hoursLeft = x.lastIn ? (WINDOW_H - (now - x.lastIn)/3600) : null;
+      x.windowed  = (x.channel === 'whatsapp' && x.lastIn > 0);
+      x.waiting   = x.lastIn > 0 && (x.lastOut === 0 || x.lastOut < x.lastIn);
+
+      if(!x.windowed)              x.state = 'nowindow';
+      else if(x.hoursLeft <= 0)    x.state = 'closed';
+      else if(x.hoursLeft <= SOON_H) x.state = 'soon';
+      else                         x.state = 'open';
+
+      // Señal de la barra lateral: primero lo irreversible, luego lo urgente.
+      x.sig = x.state==='closed' && x.waiting ? 'closed'
+            : x.state==='soon'   && x.waiting ? 'soon'
+            : x.waiting                       ? 'wait'
+            : '';
+
+      counts.all++;
+      if(x.waiting)                          counts.wait++;
+      if(x.state==='soon'   && x.waiting)    counts.soon++;
+      if(x.state==='closed' && x.waiting)    counts.closed++;
+      if(x.unread>0)                         counts.unread++;
+      if(x.channel==='web')                  counts.web++;
+    });
+
+    threads = t;
+  }
+
+  function sigFor(phone){
+    return threads[normP(phone)] || threads[String(phone||'')] || null;
+  }
+
+  // ── La barra de píldoras ────────────────────────────────────────────
+  var PILLS = [
+    {id:'all',    cls:'sig-all',    label:'Todos'},
+    {id:'wait',   cls:'sig-wait',   label:'Sin responder'},
+    {id:'soon',   cls:'sig-soon',   label:'Por vencer'},
+    {id:'closed', cls:'sig-closed', label:'Ventana cerrada'},
+    {id:'unread', cls:'sig-unread', label:'Sin leer'},
+    {id:'web',    cls:'sig-web',    label:'Web'}
+  ];
+
+  function renderPills(){
+    var bar = document.getElementById('inboxSignals');
+    if(!bar) return;
+    bar.innerHTML = PILLS.map(function(p){
+      var n    = counts[p.id] || 0;
+      var zero = (n===0 && p.id!=='all') ? ' zero' : '';
+      var on   = (activePill===p.id) ? ' on' : '';
+      return '<button class="sigPill '+p.cls+zero+on+'" data-pill="'+p.id+'" '+
+             'title="'+p.label+'"><span class="n">'+n+'</span>'+p.label+'</button>';
+    }).join('');
+  }
+
+  function onPillClick(e){
+    var b = e.target.closest('.sigPill');
+    if(!b) return;
+    var id = b.getAttribute('data-pill');
+    activePill = (activePill===id && id!=='all') ? 'all' : id;
+    renderPills();
+    if(typeof window.renderInboxList==='function') window.renderInboxList();
+  }
+
+  function injectBar(){
+    var header = document.querySelector('#tabWhatsapp .inboxList .inboxHeader');
+    if(!header || document.getElementById('inboxSignals')) return;
+    var bar = document.createElement('div');
+    bar.id = 'inboxSignals';
+    bar.addEventListener('click', onPillClick);
+    // Debajo del buscador si existe, si no justo bajo la cabecera.
+    var searchWrap = document.getElementById('inboxSearchWrap');
+    (searchWrap || header).insertAdjacentElement('afterend', bar);
+    renderPills();
+  }
+
+  // ── Pintar señales sobre las filas ya renderizadas ──────────────────
+  function fmtClock(h){
+    if(h === null)  return '';
+    if(h <= 0)      return 'cerrada';
+    if(h < 1)       return Math.round(h*60) + ' min';
+    return Math.floor(h) + ' h';
+  }
+
+  function decorate(){
+    var lb = document.getElementById('inboxListBody');
+    if(!lb) return;
+    var rows = Array.prototype.slice.call(lb.querySelectorAll('.inboxItem'));
+    var shown = 0;
+
+    rows.forEach(function(row){
+      var oc = row.getAttribute('onclick') || '';
+      var m  = oc.match(/openThread\('([^']*)'/);
+      var s  = m ? sigFor(m[1]) : null;
+      if(!s){ row.removeAttribute('data-sig'); return; }
+
+      row.setAttribute('data-sig', s.sig);
+      row.dataset.sigOrder = orderScore(s);
+
+      // Chip de canal + estado de ventana, una sola vez por fila.
+      var fromEl = row.querySelector('.inboxFrom');
+      if(fromEl && !fromEl.querySelector('.sigTag')){
+        if(s.channel === 'web'){
+          fromEl.insertAdjacentHTML('beforeend',
+            ' <span class="sigTag tag-web">WEB</span>');
+        } else if(s.channel === 'instagram'){
+          fromEl.insertAdjacentHTML('beforeend',
+            ' <span class="sigTag tag-ig">IG</span>');
+        }
+        if(s.windowed && s.waiting){
+          var cls = s.state==='closed' ? 'tag-closed'
+                  : s.state==='soon'   ? 'tag-soon' : 'tag-open';
+          var txt = s.state==='closed' ? 'VENTANA CERRADA'
+                  : s.state==='soon'   ? 'POR VENCER' : 'ESPERANDO';
+          fromEl.insertAdjacentHTML('beforeend',
+            ' <span class="sigTag '+cls+'">'+txt+'</span>');
+        }
+      }
+
+      // Reloj de ventana debajo de la hora.
+      var right = row.querySelector('.inboxTime');
+      if(right && right.parentElement && !right.parentElement.querySelector('.sigClock') && s.windowed){
+        var ck = s.state==='closed' ? 'clock-closed'
+               : s.state==='soon'   ? 'clock-soon' : 'clock-open';
+        right.insertAdjacentHTML('afterend',
+          '<div class="sigClock '+ck+'">'+fmtClock(s.hoursLeft)+'</div>');
+      }
+
+      // Filtro por píldora activa.
+      var pass = activePill==='all'
+        || (activePill==='wait'   && s.waiting)
+        || (activePill==='soon'   && s.waiting && s.state==='soon')
+        || (activePill==='closed' && s.waiting && s.state==='closed')
+        || (activePill==='unread' && s.unread>0)
+        || (activePill==='web'    && s.channel==='web');
+
+      if(!pass){ row.style.display='none'; }
+      else if(row.style.display==='none' && !window.__inboxSearchActive){ row.style.display=''; }
+      if(row.style.display!=='none') shown++;
+    });
+
+    // Reordenar por urgencia: lo que vence primero, arriba.
+    if(activePill==='all'){
+      rows.filter(function(r){ return r.dataset.sigOrder; })
+          .sort(function(a,b){ return b.dataset.sigOrder - a.dataset.sigOrder; })
+          .forEach(function(r){ lb.appendChild(r); });
+    }
+
+    var ce = document.getElementById('inboxCount');
+    if(ce && activePill!=='all'){
+      ce.textContent = shown + ' de ' + counts.all;
+    }
+
+    var empty = document.getElementById('inboxSignalsEmpty');
+    if(!empty){
+      empty = document.createElement('div');
+      empty.id = 'inboxSignalsEmpty';
+      empty.innerHTML = '<div style="font-size:26px;margin-bottom:8px">✅</div>Nada pendiente en este filtro.';
+      lb.appendChild(empty);
+    }
+    empty.style.display = (shown===0 && activePill!=='all') ? 'block' : 'none';
+  }
+
+  // Puntaje de urgencia. Lo irreversible pesa más que lo urgente, y a
+  // igualdad de estado gana el que lleva más tiempo esperando.
+  function orderScore(s){
+    if(!s.waiting) return 1;
+    var base = s.state==='closed' ? 4000000
+             : s.state==='soon'   ? 3000000
+             : 2000000;
+    return base + Math.max(0, 100000 - Math.round(s.hoursLeft||0));
+  }
+
+  // ── Enganche: envolver renderInboxList sin tocar el original ────────
+  function wrap(){
+    var orig = window.renderInboxList;
+    if(typeof orig !== 'function' || orig.__signals) return;
+    window.renderInboxList = function(){
+      orig.apply(this, arguments);
+      injectBar();
+      try{ decorate(); }catch(err){ console.error('[inbox-signals]', err); }
+    };
+    window.renderInboxList.__signals = true;
+  }
+
+  function refresh(){
+    fetch(MSG_API)
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        buildIndex(Array.isArray(data) ? data : []);
+        renderPills();
+        if(typeof window.renderInboxList==='function') window.renderInboxList();
+      })
+      .catch(function(){ /* el inbox sigue funcionando sin señales */ });
+  }
+
+  function boot(){
+    wrap();
+    injectBar();
+    refresh();
+  }
+
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest('[onclick*="switchTab(\'Whatsapp\'"]');
+    if(btn) setTimeout(boot, 260);
+  });
+
+  setInterval(function(){
+    var ws = document.getElementById('tabWhatsapp');
+    if(ws && ws.classList.contains('active')) refresh();
+  }, REFRESH_MS);
+
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(boot, 900); });
+  } else {
+    setTimeout(boot, 900);
+  }
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     INBOX · TEMA OSCURO NEÓN  ·  2026-08-24
+     Solo dentro de #tabWhatsapp. Las otras pestañas (Apps, Clients,
+     Dashboard, EcoPack+) no se enteran de que este archivo existe.
+
+     El inbox se lee como una CONSOLA embebida: panel oscuro con bordes
+     redondeados sobre el fondo claro del portal. No es medio tema a medias
+     — es un módulo con identidad propia, que es como se ve en las
+     herramientas que sirvieron de referencia.
+     ═══════════════════════════════════════════════════════════════════ -->
+<style>
+#tabWhatsapp{
+  --d-bg:#0B1120; --d-panel:#111A2E; --d-panel2:#161F36;
+  --d-line:rgba(148,163,184,.14); --d-line2:rgba(148,163,184,.22);
+  --d-txt:#E6EDF7; --d-mut:#8FA3BF;
+  --n-green:#22D97F; --n-cyan:#22D3EE; --n-amber:#FBBF24;
+  --n-red:#FF5A6E;   --n-violet:#A78BFA; --n-blue:#60A5FA;
+}
+
+/* ── Los dos paneles ───────────────────────────────────────────────── */
+#tabWhatsapp .inboxList,
+#tabWhatsapp .inboxThread{
+  background:
+    radial-gradient(1100px 420px at 8% -12%, rgba(34,211,238,.09), transparent 62%),
+    radial-gradient(900px 400px at 96% 104%, rgba(34,217,127,.08), transparent 60%),
+    linear-gradient(168deg, var(--d-panel) 0%, var(--d-bg) 100%);
+  border:1px solid var(--d-line);
+  box-shadow:0 18px 44px rgba(3,7,18,.42), inset 0 1px 0 rgba(255,255,255,.045);
+  color:var(--d-txt);
+}
+
+/* Hilo fino de luz en el borde superior — el detalle que da el acabado */
+#tabWhatsapp .inboxList,#tabWhatsapp .inboxThread{position:relative;overflow:hidden}
+#tabWhatsapp .inboxList{overflow-y:auto}
+#tabWhatsapp .inboxList::before,#tabWhatsapp .inboxThread::before{
+  content:'';position:absolute;top:0;left:12%;right:12%;height:1px;z-index:5;
+  background:linear-gradient(90deg,transparent,rgba(34,211,238,.55),rgba(34,217,127,.45),transparent)}
+
+#tabWhatsapp .inboxHeader{
+  border-bottom:1px solid var(--d-line);color:var(--d-mut);
+  background:linear-gradient(180deg,rgba(255,255,255,.035),transparent);
+  letter-spacing:.02em;text-transform:uppercase;font-size:11.5px}
+#tabWhatsapp #inboxCount{color:var(--n-cyan);font-weight:700;text-transform:none;font-size:12px}
+
+/* ── Filas ─────────────────────────────────────────────────────────── */
+#tabWhatsapp .inboxItem{
+  border-bottom:1px solid rgba(148,163,184,.09);
+  transition:background .16s ease, box-shadow .16s ease}
+#tabWhatsapp .inboxItem:hover{background:rgba(148,163,184,.07)}
+#tabWhatsapp .inboxItem.active{
+  background:linear-gradient(90deg,rgba(34,217,127,.16),rgba(34,217,127,.03));
+  border-left:3px solid var(--n-green);
+  box-shadow:inset 0 0 26px rgba(34,217,127,.09)}
+#tabWhatsapp .inboxFrom{color:var(--d-txt)}
+#tabWhatsapp .inboxPreview,#tabWhatsapp .inboxTime{color:var(--d-mut)}
+#tabWhatsapp .inboxItem.unread .inboxFrom{color:#fff}
+#tabWhatsapp .inboxAvatar{
+  background:linear-gradient(140deg,#0E9F6E,#22D97F);color:#052014;
+  box-shadow:0 0 0 1px rgba(34,217,127,.32),0 0 16px rgba(34,217,127,.28)}
+#tabWhatsapp .inboxUnreadDot{
+  background:var(--n-cyan);box-shadow:0 0 10px rgba(34,211,238,.85)}
+
+/* ── Burbujas ──────────────────────────────────────────────────────── */
+#tabWhatsapp .bubble.in{
+  background:rgba(148,163,184,.11);border:1px solid var(--d-line2);color:var(--d-txt)}
+#tabWhatsapp .bubble.out{
+  background:linear-gradient(135deg,#0F9A66,#1DBE78);color:#04170E;border:none;
+  box-shadow:0 4px 16px rgba(29,190,120,.24)}
+#tabWhatsapp .bubbleTime{opacity:.72}
+#tabWhatsapp .threadEmpty{color:var(--d-mut)}
+
+/* ── Barra de respuesta ────────────────────────────────────────────── */
+#tabWhatsapp .replyBar{
+  border-top:1px solid var(--d-line);
+  background:linear-gradient(180deg,transparent,rgba(0,0,0,.22))}
+#tabWhatsapp .replyInput{
+  background:rgba(8,13,26,.75);border:1px solid var(--d-line2);color:var(--d-txt)}
+#tabWhatsapp .replyInput::placeholder{color:#64748B}
+#tabWhatsapp .replyInput:focus{
+  border-color:var(--n-green);box-shadow:0 0 0 3px rgba(34,217,127,.15)}
+#tabWhatsapp .replyBtn{
+  background:linear-gradient(135deg,#16A34A,#22D97F);color:#04170E;
+  box-shadow:0 4px 14px rgba(34,217,127,.3)}
+#tabWhatsapp .replyBtn:disabled{background:#334155;color:#64748B;box-shadow:none}
+
+/* Buscador y botones sueltos del inbox */
+#tabWhatsapp #inboxSearchWrap{
+  border-bottom:1px solid var(--d-line);
+  background:linear-gradient(180deg,rgba(255,255,255,.03),transparent)}
+#tabWhatsapp #inboxSearch{
+  background:rgba(8,13,26,.7);border:1px solid var(--d-line2);color:var(--d-txt)}
+#tabWhatsapp #inboxSearch::placeholder{color:#64748B}
+#tabWhatsapp #inboxSearch:focus{
+  border-color:var(--n-cyan);box-shadow:0 0 0 3px rgba(34,211,238,.14)}
+#tabWhatsapp #inboxSearchHint{color:var(--d-mut)}
+
+/* Barra de scroll a tono */
+#tabWhatsapp .inboxList::-webkit-scrollbar,
+#tabWhatsapp .threadMsgs::-webkit-scrollbar{width:9px}
+#tabWhatsapp .inboxList::-webkit-scrollbar-thumb,
+#tabWhatsapp .threadMsgs::-webkit-scrollbar-thumb{
+  background:rgba(148,163,184,.26);border-radius:9px}
+#tabWhatsapp .inboxList::-webkit-scrollbar-track,
+#tabWhatsapp .threadMsgs::-webkit-scrollbar-track{background:transparent}
+
+/* ── Píldoras, ahora en neón ───────────────────────────────────────── */
+#inboxSignals{
+  background:linear-gradient(180deg,rgba(255,255,255,.04),transparent);
+  border-bottom:1px solid var(--d-line)}
+#tabWhatsapp .sigPill{
+  background:rgba(148,163,184,.09);border:1px solid var(--d-line2);
+  color:var(--d-mut);backdrop-filter:blur(6px)}
+#tabWhatsapp .sigPill .n{color:#fff}
+#tabWhatsapp .sigPill:hover{filter:brightness(1.22)}
+
+#tabWhatsapp .sig-all   {color:#CBD5E1}
+#tabWhatsapp .sig-wait  {color:#FDBA74;border-color:rgba(251,146,60,.42);background:rgba(251,146,60,.12)}
+#tabWhatsapp .sig-soon  {color:#FCD34D;border-color:rgba(251,191,36,.42);background:rgba(251,191,36,.12)}
+#tabWhatsapp .sig-closed{color:#FF8A9B;border-color:rgba(255,90,110,.5);background:rgba(255,90,110,.14);
+  box-shadow:0 0 18px rgba(255,90,110,.2)}
+#tabWhatsapp .sig-unread{color:#93C5FD;border-color:rgba(96,165,250,.42);background:rgba(96,165,250,.12)}
+#tabWhatsapp .sig-web   {color:#67E8F9;border-color:rgba(34,211,238,.45);background:rgba(34,211,238,.12)}
+
+#tabWhatsapp .sigPill.on{
+  box-shadow:0 0 0 2px rgba(255,255,255,.16),0 0 22px currentColor;
+  filter:brightness(1.3)}
+#tabWhatsapp .sigPill.zero{opacity:.3;filter:saturate(.2);box-shadow:none}
+
+/* ── Etiquetas y reloj ─────────────────────────────────────────────── */
+#tabWhatsapp .tag-closed{background:rgba(255,90,110,.18);color:#FF8A9B;
+  box-shadow:0 0 12px rgba(255,90,110,.28)}
+#tabWhatsapp .tag-soon  {background:rgba(251,191,36,.18);color:#FCD34D}
+#tabWhatsapp .tag-open  {background:rgba(34,217,127,.16);color:#5EEAA5}
+#tabWhatsapp .tag-web   {background:rgba(34,211,238,.18);color:#67E8F9}
+#tabWhatsapp .tag-wa    {background:rgba(34,217,127,.16);color:#5EEAA5}
+#tabWhatsapp .tag-ig    {background:rgba(236,72,153,.18);color:#F9A8D4}
+
+#tabWhatsapp .clock-open  {color:#5EEAA5}
+#tabWhatsapp .clock-soon  {color:#FCD34D;text-shadow:0 0 9px rgba(251,191,36,.5)}
+#tabWhatsapp .clock-closed{color:#FF8A9B;text-shadow:0 0 9px rgba(255,90,110,.6)}
+
+/* La barra lateral de urgencia, con brillo hacia adentro */
+#tabWhatsapp .inboxItem[data-sig="closed"]::after{
+  background:linear-gradient(180deg,#FF8A9B,#E11D48);box-shadow:0 0 16px rgba(255,90,110,.75)}
+#tabWhatsapp .inboxItem[data-sig="soon"]::after{
+  background:linear-gradient(180deg,#FCD34D,#D97706);box-shadow:0 0 14px rgba(251,191,36,.6)}
+#tabWhatsapp .inboxItem[data-sig="wait"]::after{
+  background:linear-gradient(180deg,#FDBA74,#EA580C);box-shadow:0 0 12px rgba(251,146,60,.45)}
+
+#tabWhatsapp #inboxSignalsEmpty{color:var(--d-mut)}
+
+/* Badges de lead de la capa de enriquecimiento — se ven lavados en oscuro */
+#tabWhatsapp .leadBadge{filter:brightness(.92) saturate(1.25)}
+
+/* Cabecera del hilo abierto */
+#tabWhatsapp #threadHeader{border-bottom:1px solid var(--d-line)}
+#tabWhatsapp #threadName{color:#fff;text-transform:none;font-size:14px}
+#tabWhatsapp #threadPhone{color:var(--d-mut)}
+
+@media (prefers-reduced-motion:reduce){
+  #tabWhatsapp *{transition:none!important;animation:none!important}
+}
+</style>
+
+</body>
+</html>
