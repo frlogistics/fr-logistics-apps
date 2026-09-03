@@ -728,6 +728,39 @@ export default async function handler(req) {
           }, 409);
         }
       }
+      // ── Day 7 (2026-09-03): No-outbound ship guard ────────────────────────
+      // Sept 2026: five Shop World packages went out with status=shipped and
+      // outbound_tracking NULL, and nobody noticed for ten days. The proximate
+      // cause was an outbound_pdf_pattern that had silently stopped matching,
+      // but the real defect is that the state machine ALLOWED the transition.
+      // A shipped package with no outbound number has no traceability: nothing
+      // to hand the client, nothing to track, nothing to dispute with the
+      // carrier.
+      //
+      // This gets worse from 2026-09-08, when Mercado Libre replaces
+      // MailAmericas with Chilexpress: under Chilexpress the seller account
+      // stays liable until each parcel is scanned individually (up to 24h after
+      // the bulk handoff). The signed bulk receipt and our outbound number are
+      // the only evidence we hold.
+      //
+      // Same philosophy as GROUP_INCOMPLETE: CONFIRMATION, not rejection. The
+      // first attempt returns 409 so the UI can open Link Outbound. If the
+      // barcode genuinely can't be read, the operator can still ship with
+      // confirm_no_outbound:true — but that override is deliberate, and it gets
+      // recorded in exception_reason so it surfaces in a report instead of
+      // vanishing. A hard block would deadlock the floor on an unreadable
+      // label, and a deadlocked floor ends with someone working around the app.
+      if (act === "ship" && !current.outbound_tracking && body.confirm_no_outbound !== true) {
+        return jRes({
+          error: "cannot ship without an outbound tracking number",
+          code: "NO_OUTBOUND",
+          tracking_number: current.tracking_number,
+          order_id: current.order_id,
+          label_url: current.label_url,
+          hint: "Este paquete no tiene número de salida. Escanea el código de barras de la etiqueta impresa (Link Outbound) antes de despachar."
+        }, 409);
+      }
+
       // Decision (chat 2026-05-08): if a package is in a SEALED manifest, we
       // hard-reject the revert. The manifest is legal evidence (signed by the
       // carrier driver). To "undo" a shipped package post-seal, the operator
@@ -774,6 +807,16 @@ export default async function handler(req) {
         if (act === "receive" && current.status === "orphan") {
           patch.orphan_alerted_at = null;
         }
+        // Day 7: the NO_OUTBOUND guard above was overridden (confirm_no_outbound).
+        // Leave a trace so these are queryable after the fact — the whole point
+        // is that this stops being invisible. Never overwrite an existing
+        // reason (e.g. an outbound conflict recorded by the sync).
+        if (act === "ship" && !current.outbound_tracking) {
+          if (!(current.exception_reason || "").trim()) {
+            patch.exception_reason =
+              `shipped without outbound tracking · override by ${operator} · ${new Date().toISOString().slice(0, 10)}`;
+          }
+        }
       }
 
       const updated = await sbPatch("dropshipments", `id=eq.${id}`, patch);
@@ -803,7 +846,11 @@ export default async function handler(req) {
                   tracking:  current.outbound_tracking,
                   direction: "Outbound",
                   type:      "Outbound (Drop-Shipment)",
-                  carrier:   current.outbound_carrier || cfg.outbound_carrier || "MailAmericas",
+                  // Day 7: was `|| "MailAmericas"`. This row feeds the Billing
+                  // Generator; stamping a carrier we didn't actually use makes
+                  // the billing record wrong. Leave it null and let it show as
+                  // missing rather than confidently wrong.
+                  carrier:   current.outbound_carrier || cfg.outbound_carrier || null,
                   client:    cfg.client_name_billing,
                   client_id: current.client_id,
                   notes:     `Order: ${current.order_id || "—"}`
@@ -836,7 +883,20 @@ export default async function handler(req) {
           const cfgRows = await sbSelect("dropship_client_configs",
             `?client_id=eq.${current.client_id}&select=outbound_carrier&limit=1`
           );
-          const carrier = current.outbound_carrier || cfgRows[0]?.outbound_carrier || "MailAmericas";
+          // Day 7 (2026-09-03): the literal "MailAmericas" used to be the last
+          // fallback here. That was harmless while MailAmericas was the only
+          // outbound carrier; from 2026-09-08 it is actively dangerous, because
+          // a package with no carrier resolved would be filed into the
+          // MailAmericas manifest — a document we hand to a carrier as the list
+          // of what they received. Putting a Chilexpress parcel on it (or vice
+          // versa) is a false handoff record, and the manifest is the evidence
+          // we rely on while liability sits with the seller account.
+          // Better to leave the package unassigned and shout about it: an
+          // unassigned package is visible and fixable, a mis-assigned one is not.
+          const carrier = current.outbound_carrier || cfgRows[0]?.outbound_carrier || null;
+          if (!carrier) {
+            console.error(`[dropshipments.ship] NO outbound carrier for id=${id} (${current.tracking_number}) — manifest assignment SKIPPED. Set dropship_client_configs.outbound_carrier or the row's outbound_carrier, then re-ship.`);
+          } else {
 
           const result = await assignToOpenManifest({
             packageId:       current.id,
@@ -844,6 +904,7 @@ export default async function handler(req) {
             operator,
           });
           console.log(`[dropshipments.ship] manifest assigned: ${result.manifest_id} (was_created=${result.was_created || false}, already_assigned=${result.already_assigned || false})`);
+          }
         } catch (e) {
           console.error(`[dropshipments.ship] manifest auto-assign failed (non-fatal):`, e.message);
         }
