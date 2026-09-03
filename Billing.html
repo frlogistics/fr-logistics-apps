@@ -382,7 +382,12 @@ const API_KEY_TO_LINE_KEY = {
   'FUL_OUT_CART':  'outbound_carton',
   'FUL_OUT_PAL':   'outbound_pallet',
   'FUL_OUT_OVS':   'oversized_pallet',
-  'FUL_OUT_DROP':  'drop_shipment',
+  'FUL_OUT_DROP':  'drop_shipment',   // RETIRED 2026-09-03 — alias kept so old runs still resolve
+  // Casillero — canonical codes (2026-09-03). DS_CONSOL replaces FUL_OUT_DROP.
+  'DS_INTAKE':         'ds_intake',
+  'DS_CONSOL':         'ds_consol',
+  'DS_STORAGE':        'ds_storage',
+  'DS_ADDITIONAL_PKG': 'ds_additional_pkg',
   'FUL_PICKUP':    'carrier_pickup',
   'FUL_LABEL_APP': 'shipping_label_app',
   'FUL_CONSOL':    'order_consol',
@@ -731,7 +736,13 @@ function getBillingLines(client) {
     {cat:'Returns', id:'removal_order',  name:'FBA Removal Order Processing', sku:'RET_REMOVAL', unit:'units', rate:r.removal_order||0,  qty:0, auto:false, tip:'FBA returns to 3PL warehouse', optional:true},
 
     // ─── OUTBOUND ───────────────────────────────────────────────────────────
-    {cat:'Outbound', id:'drop_shipment',    name:'Drop-Shipment Service', sku:'FUL_OUT_DROP', unit:'packages', rate:r.drop_shipment||6.00, qty:0, auto:true,  tip:'Auto from Inbound/Outbound portal (Outbound Drop-Shipment records)'},
+    // ─── CASILLERO / DROPSHIPMENT (canonical codes 2026-09-03) ──────────────
+    // DS_CONSOL replaces FUL_OUT_DROP (same $6.00). Rate falls back to the legacy
+    // drop_shipment column until it is dropped from fr_client_rates.
+    {cat:'Casillero', id:'ds_intake',         name:'Dropshipment Intake',         sku:'DS_INTAKE',          unit:'packages',  rate:r.ds_intake||0,         qty:0, auto:true,  tip:'Auto from Inbound/Outbound portal (Inbound Drop-Shipment records)'},
+    {cat:'Casillero', id:'drop_shipment',     name:'Casillero Outbound Order',    sku:'DS_CONSOL',          unit:'orders',    rate:(r.ds_consol||r.drop_shipment||6.00), qty:0, auto:true,  tip:'Auto from Inbound/Outbound portal (Outbound Drop-Shipment records). Includes de-branding + neutral repack.'},
+    {cat:'Casillero', id:'ds_additional_pkg', name:'Additional Package in Order', sku:'DS_ADDITIONAL_PKG',  unit:'packages',  rate:r.ds_additional_pkg||0, qty:0, auto:false, tip:'Each package beyond the 1st in the same outbound consolidation', optional:true},
+    {cat:'Casillero', id:'ds_storage',        name:'Dropshipment Storage',        sku:'DS_STORAGE',         unit:'pkg-weeks', rate:r.ds_storage||0,        qty:0, auto:false, tip:'Package-weeks counted from date of receipt — no grace period. Enter manually.', optional:true},
     {cat:'Outbound', id:'outbound_carton',  name:'Outbound — Cartons',    sku:'FUL_OUT_CART', unit:'cartons',  rate:r.outbound_carton||0,  qty:0, auto:false, tip:'Enter outbound cartons shipped'},
     {cat:'Outbound', id:'outbound_pallet',  name:'Outbound — Pallets',    sku:'FUL_OUT_PAL',  unit:'pallets',  rate:r.outbound_pallet||0,  qty:0, auto:false, tip:'Enter outbound pallets shipped'},
     {cat:'Outbound', id:'oversized_pallet', name:'Oversized Pallet',      sku:'FUL_OUT_OVS',  unit:'pallets',  rate:r.oversized_pallet||0, qty:0, auto:false, tip:'Exceeds 40x48", >70" ht, or >1500 lbs', optional:true},
@@ -980,6 +991,7 @@ async function loadBilling() {
     if (l.id === 'inbound_carton')     l.qty = inboundCount;
     if (l.id === 'return_proc')        l.qty = rmaCount;
     if (l.id === 'drop_shipment')      l.qty = dropCount;
+    if (l.id === 'ds_intake')          l.qty = inboundDropshipCount;
     if (l.id === 'outbound_carton')    { l.qty = outboundCount; l.auto = outboundCount > 0; }
     if (l.id === 'wms')                l.qty = (_client.wmsIntegration || _client.wms_integration) && l.rate > 0 ? 1 : 0;
 
@@ -1037,7 +1049,24 @@ async function loadBilling() {
   const slCount = Object.keys(svcLogEntries).length;
   const slLbl = slCount > 0 ? ` · Services Log: <b>${slCount} entries</b>` : '';
   const rtnLbl = returnsData.labelCount > 0 ? ` · Returns: <b>${returnsData.labelCount} labels / ${returnsData.pickupCount} pickups</b>` : '';
-  const fullStatus = `${ssStatus}<br>Inbound: <b>${inboundCount}</b> · RMA: <b>${rmaCount}</b> · Drop-Ship: <b>${dropCount}</b>${outLbl}${slLbl}${rtnLbl}${wmsLbl}`;
+  // ── Line-mixing guard (2026-09-03) ────────────────────────────────────────
+  // Casillero and Fulfillment are parallel rate lines, never additive: the same
+  // unit must not pay DS_CONSOL and a Pick & Pack tier in the same period.
+  // A warning, not a block — a client can legitimately run both lines on
+  // different merchandise. See fr_clients.receiving_mode / services.
+  const _q = id => (_lines.find(l => l.id === id)?.qty || 0);
+  const _casillero = _q('ds_intake') + _q('drop_shipment') + _q('ds_storage') + _q('ds_additional_pkg');
+  const _fulfil    = _q('pick_pack_sm') + _q('pick_pack_st') + _q('pick_pack_ov');
+  const _services  = _client.services || [];
+  const _isCasilleroClient = Array.isArray(_services) && _services.includes('Dropship');
+  let mixWarn = '';
+  if (_casillero > 0 && _fulfil > 0) {
+    mixWarn = `<br>\u26a0\ufe0f <b>Casillero + Fulfillment en la misma factura.</b> Verifica que no sea la misma mercanc\u00eda cobrada dos veces (DS_CONSOL ya incluye pick, empaque y etiqueta).`;
+  } else if (_casillero > 0 && !_isCasilleroClient) {
+    mixWarn = `<br>\u26a0\ufe0f Hay l\u00edneas de Casillero con cantidad, pero <b>${_client.displayName}</b> no tiene el servicio "Dropship" en su ficha. Rev\u00edsalo en Clients \u2192 Edit.`;
+  }
+
+  const fullStatus = `${ssStatus}<br>Inbound: <b>${inboundCount}</b> · RMA: <b>${rmaCount}</b> · Drop-Ship: <b>${dropCount}</b>${outLbl}${slLbl}${rtnLbl}${wmsLbl}${mixWarn}`;
   setStatus(fullStatus, ordersCount > 0 || inboundCount > 0 || rmaCount > 0 || dropCount > 0 || outboundCount > 0 || returnsData.labelCount > 0 ? 'ok' : 'warn');
 
   // Update Shipping Label Fee panel
@@ -1385,7 +1414,9 @@ function genCSV() {
     'FUL_OUT_CART':     'Storage & Warehousing:Outbound Fees Package',
     'FUL_OUT_PAL':      'Storage & Warehousing:Outbound Fees Pallets',
     'FUL_OUT_OVS':      'Storage & Warehousing:Oversized Pallet',
-    'FUL_OUT_DROP':     'Cross-Docking:Inbound-Dropshipment',
+    'FUL_OUT_DROP':     'Cross-Docking:Inbound-Dropshipment',  // retired — kept for old runs
+    'DS_CONSOL':        'Cross-Docking:Inbound-Dropshipment',  // same QBO item as before: export unchanged
+    'DS_INTAKE':        'Cross-Docking:Inbound-Dropshipment',  // TODO Jose: dedicated QBO item for intake
     'FUL_LABEL_MARKUP': 'Fulfillment Service:Shipping Label Fee',
     'FUL_LABEL_APP':    'Cross-Docking:Shipping Label Application',
     'FUL_PICKUP':       'Cross-Docking:Carrier Facility Pickup',
