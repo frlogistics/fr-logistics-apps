@@ -264,6 +264,35 @@ function extractOutboundFromFilename(filename, pattern) {
 // returns a `hint` with the numeric candidates found in the label, which the
 // sync surfaces in its summary so the pattern can be configured from evidence
 // instead of guessed.
+// ─── Day 7 (2026-09-03): detect the OUTBOUND carrier from the label ─────────
+// From 2026-09-08 Mercado Libre replaces MailAmericas with Chilexpress, and
+// between 09-08 and 09-11 both operate: orders placed up to 09-07 keep their
+// MailAmericas label, new ones get Chilexpress.
+//
+// Until now the row's outbound_carrier was copied from the client config at
+// ingestion time. That breaks during the transition: the config is per CLIENT,
+// but the carrier is per PACKAGE, and the email can arrive days after the order
+// was placed. A package with a MailAmericas label ingested on 09-09 would be
+// stamped Chilexpress and land in the Chilexpress manifest — meaning we'd hand
+// Chilexpress a manifest listing parcels we physically dropped at MailAmericas.
+//
+// So the label is the ground truth, same reasoning as detectCarrier() below for
+// the inbound side: the config is a declaration, the label is evidence.
+//
+// Discriminator, verified against 6 real MailAmericas labels (AR + BR):
+//   - "USXFL1" appears in the Chilexpress origin box  → Chilexpress
+//   - "FBA02" (MELI origin box) or a MAIL…TX barcode  → MailAmericas
+//   - note "MailAmericas" as a word is NOT reliable: on Argentina labels it is
+//     a logo IMAGE, absent from extracted text. Only Brazil carries it as text.
+// Returns null when nothing matches, so the caller falls back to the config.
+function detectOutboundCarrierFromLabel(cleanedText) {
+  if (!cleanedText) return null;
+  const t = cleanedText.toUpperCase();
+  if (t.includes("USXFL1")) return "Chilexpress";
+  if (t.includes("FBA02") || /MAIL\d{9,10}TX/.test(t) || t.includes("MAILAMERICAS")) return "MailAmericas";
+  return null;
+}
+
 async function extractBarcodeFromPDF(pdfBuffer, filenameId, cfgPattern = null) {
   if (!pdfBuffer) return null;
 
@@ -280,11 +309,15 @@ async function extractBarcodeFromPDF(pdfBuffer, filenameId, cfgPattern = null) {
   // (e.g. "MA IL1 033 299 91 TX" → "MAIL103329991TX")
   const cleaned = text.replace(/\s+/g, "");
 
+  // Day 7: carrier detected from the label itself, returned on every path so
+  // the caller can stamp the row regardless of which barcode pattern matched.
+  const carrier = detectOutboundCarrierFromLabel(cleaned);
+
   // Pattern 0 — per-client pattern from config. Highest priority.
   if (cfgPattern) {
     try {
       const m = cleaned.match(new RegExp(cfgPattern, "i"));
-      if (m && m[1]) return { barcode: m[1].toUpperCase(), source: "pdf_client_pattern" };
+      if (m && m[1]) return { barcode: m[1].toUpperCase(), source: "pdf_client_pattern", carrier };
     } catch (err) {
       console.warn(`[pdf-extract] bad outbound_pdf_pattern "${cfgPattern}": ${err.message}`);
     }
@@ -294,19 +327,19 @@ async function extractBarcodeFromPDF(pdfBuffer, filenameId, cfgPattern = null) {
   // Specific format, highest priority when present.
   const brazilMatch = cleaned.match(/MAIL\d{9,10}TX/i);
   if (brazilMatch) {
-    return { barcode: brazilMatch[0].toUpperCase(), source: "pdf_brazil_total" };
+    return { barcode: brazilMatch[0].toUpperCase(), source: "pdf_brazil_total", carrier };
   }
 
   // Pattern 2 — filename-ID appears in PDF text
   // This confirms filename = barcode (typical MailAmericas Express route).
   if (filenameId && cleaned.includes(filenameId)) {
-    return { barcode: filenameId, source: "pdf_filename_confirmed" };
+    return { barcode: filenameId, source: "pdf_filename_confirmed", carrier };
   }
 
   // No recognized pattern matched. Return the numeric candidates so whoever
   // configures outbound_pdf_pattern can see what the label actually contains.
   const candidates = [...new Set((text.match(/[A-Z0-9]{8,}/gi) || []))].slice(0, 12);
-  return { barcode: null, source: "no_match", hint: candidates };
+  return { barcode: null, source: "no_match", hint: candidates, carrier };
 }
 
 // ─── Detect carrier from tracking number format ──────────────────────────────
@@ -451,6 +484,7 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
   let labelFilename = null;
   let outboundTracking = null;
   let pdfHint = null;
+  let outboundCarrierFromLabel = null;
   const att = findPdfAttachment(msg.payload, cfg.attachment_pattern || ".*\\.pdf$");
   if (att) {
     const bytes = await gmailGetAttachment(msg.id, att.attachmentId);
@@ -468,6 +502,13 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
     // filename-based extraction if the PDF parser returns nothing.
     const filenameId = extractOutboundFromFilename(labelFilename, cfg.outbound_filename_pattern);
     const pdfResult  = await extractBarcodeFromPDF(bytes, filenameId, cfg.outbound_pdf_pattern);
+    // NOTE: deliberately NOT called detectedCarrier — that name is already
+    // taken above for the INBOUND carrier (Amazon/UPS/USPS). Two different
+    // things: this one is who takes the parcel OUT of the building.
+    outboundCarrierFromLabel = pdfResult?.carrier || null;
+    if (outboundCarrierFromLabel && outboundCarrierFromLabel !== cfg.outbound_carrier) {
+      console.log(`[${cfg.client_code}] ${parsed.tracking_number}: outbound carrier from label = ${outboundCarrierFromLabel} (config says ${cfg.outbound_carrier})`);
+    }
 
     if (pdfResult?.barcode) {
       outboundTracking = pdfResult.barcode;
@@ -496,7 +537,7 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
       notes:             cfg.default_notes,
       label_url:         labelPath,
       label_filename:    labelFilename,
-      outbound_carrier:  cfg.outbound_carrier,
+      outbound_carrier:  outboundCarrierFromLabel || cfg.outbound_carrier,
       outbound_platform: cfg.outbound_platform,
       outbound_tracking: outboundTracking,
       group_seq:         groupSeq,
@@ -553,7 +594,7 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
     notes:             cfg.default_notes,
     label_url:         labelPath,
     label_filename:    labelFilename,
-    outbound_carrier:  cfg.outbound_carrier,
+    outbound_carrier:  outboundCarrierFromLabel || cfg.outbound_carrier,
     outbound_platform: cfg.outbound_platform,
     outbound_tracking: outboundTracking,
     group_seq:         groupSeq,
