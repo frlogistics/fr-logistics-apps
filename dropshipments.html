@@ -1380,6 +1380,11 @@
       // Guard Opción 2 (backend): orphan sin email/label no puede pasar a received.
       if (e.message && (e.message.includes("ORPHAN_NO_DOCS") || e.message.includes("no email/label"))) {
         toast("Recibido físico, pero sin email/label → queda en Orphans hasta el match.", { error: true });
+      } else if (e.payload && e.payload.code === "NO_OUTBOUND") {
+        // Day 7: shipping a package with no outbound tracking. Open Link
+        // Outbound so the normal path is one scan away; the override is a
+        // deliberate second choice, never the default.
+        handleNoOutbound(id, row);
       } else if (e.payload && e.payload.code === "GROUP_INCOMPLETE") {
         // Day 6: not a failure — the box holds sibling orders that haven't
         // shipped. Show them, and let the operator ship this one knowingly.
@@ -1391,6 +1396,51 @@
       btns.forEach(b => b.disabled = false);
     }
   }
+
+  // ── Day 7: NO_OUTBOUND handler ────────────────────────────────────────────
+  // Two paths, in this order of preference:
+  //   1. Link the outbound (one scan) → then ship normally. This is the path
+  //      we want taken 99% of the time, so it opens automatically.
+  //   2. Override, if the barcode is unreadable/absent. Explicit confirm, and
+  //      the backend stamps exception_reason so it shows up in a report.
+  function handleNoOutbound(id, row) {
+    toast("Sin outbound tracking — escanea la etiqueta antes de despachar", { error: true });
+    _shipAfterLink = id;
+    linkOutboundForRow(id);
+  }
+
+  // Set when a ship attempt was blocked by NO_OUTBOUND. If the operator then
+  // links the outbound successfully, we retry the ship automatically so the
+  // guard costs one scan, not two clicks.
+  let _shipAfterLink = null;
+
+  // Called by the Link Outbound flow once a row has been linked.
+  function onOutboundLinked(linkedRowId) {
+    if (_shipAfterLink && linkedRowId === _shipAfterLink) {
+      const pending = _shipAfterLink;
+      _shipAfterLink = null;
+      setTimeout(() => doAction(pending, "ship"), 150);
+    }
+  }
+  window.onOutboundLinked = onOutboundLinked;
+
+  // Escape hatch for an unreadable label. Deliberately not a button on the
+  // main action bar — it lives in the detail drawer only.
+  window.shipWithoutOutbound = function (id) {
+    const row = state.rows.find(r => r.id === id);
+    if (!row) return;
+    const ok = confirm(
+      `Despachar SIN número de salida?\n\n` +
+      `Entrada: ${row.tracking_number}\n` +
+      `Orden: ${row.order_id || "—"}\n\n` +
+      `Este paquete quedará sin trazabilidad: no hay número que darle al cliente ` +
+      `ni con qué reclamar al carrier. Se registrará como excepción.\n\n` +
+      `Úsalo solo si el código de barras de la etiqueta no se puede leer.`
+    );
+    if (!ok) return;
+    _shipAfterLink = null;
+    doAction(id, "ship", { confirm_no_outbound: true });
+  };
 
   function actionMessage(action, tracking) {
     const t = tracking.length > 14 ? tracking.slice(0, 10) + "…" : tracking;
@@ -1781,7 +1831,16 @@
       toast(`✓ Marked ${rows.length} as shipped`);
     } else {
       const grouped = failures.filter(f => f.payload && f.payload.code === "GROUP_INCOMPLETE");
-      if (grouped.length === failures.length) {
+      const noOut   = failures.filter(f => f.payload && f.payload.code === "NO_OUTBOUND");
+      // Day 7: the batch is exactly where the silent failure happened — five
+      // packages went out with no outbound number and the summary said nothing.
+      // These are NEVER auto-confirmed in a batch: they have to be handled one
+      // by one, so the operator sees each missing number.
+      if (noOut.length === failures.length) {
+        toast(`${noOut.length} sin número de salida. Ábrelos uno por uno y escanea la etiqueta antes de despachar.`, { error: true });
+      } else if (noOut.length && grouped.length + noOut.length === failures.length) {
+        toast(`${noOut.length} sin outbound · ${grouped.length} en cajas incompletas. Despáchalos individualmente.`, { error: true });
+      } else if (grouped.length === failures.length) {
         // Every failure is a partially-selected consolidated box. Say so
         // plainly instead of a generic "failed" — the operator needs to know
         // WHY, and that nothing is broken.
@@ -2079,6 +2138,10 @@
       renderLinkPending();
       renderRows();    // reflects the new labeled status in the main grid
       renderCounts();
+
+      // Day 7: if this link came from a ship blocked by NO_OUTBOUND, resume
+      // the ship now that the row has its number.
+      onOutboundLinked(target.id);
 
       // Auto-close when all done
       if (_linkState.pending.length === 0) {
@@ -2718,7 +2781,7 @@
       ${r.outbound_tracking
         ? `<div class="detail-row"><span class="k">Outbound tracking</span><span class="v mono">${escapeHtml(r.outbound_tracking)}</span></div>`
         : ((r.status === "received" || r.status === "labeled")
-          ? `<div class="detail-row"><span class="k">Outbound tracking</span><span class="v"><button class="btn" onclick="linkOutboundForRow('${r.id}')" style="font-size:12px; padding:5px 12px; background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe;">🔗 Scan to link</button></span></div>`
+          ? `<div class="detail-row"><span class="k">Outbound tracking</span><span class="v"><button class="btn" onclick="linkOutboundForRow('${r.id}')" style="font-size:12px; padding:5px 12px; background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe;">🔗 Scan to link</button>${r.status === "labeled" ? `<button class="btn" onclick="shipWithoutOutbound('${r.id}')" title="Solo si el código de barras no se puede leer" style="font-size:12px; padding:5px 12px; margin-left:8px; background:#fef3c7; color:#92400e; border:1px solid #fde68a;">⚠️ Despachar sin outbound</button>` : ""}</span></div>`
           : "")}
       ${exceptionBox}
 
