@@ -109,11 +109,18 @@ function deriveLines(services) {
 
 function enrich(row) {
   const { lines, unmapped } = deriveLines(row.services);
-  const display = (row.company && String(row.company).trim())
-    ? row.company
-    : (row.name || '');
+  // Nombre canonico: empresa si existe, si no el contacto (personas naturales).
+  const label = (row.company && String(row.company).trim())
+    ? String(row.company).trim()
+    : String(row.name || '').trim();
+  const code = String(row.client_code || '').trim();
+  // display = idioma unico del ecosistema: "RAG_LIMI · RAGSA, LLC".
+  // El codigo va primero porque es lo que el operador lee en la caja.
+  const display = code ? (code + ' \u00b7 ' + label) : label;
   return Object.assign({}, row, {
     display,
+    display_name: label,
+    client_code: code || null,
     service_lines: lines,
     unmapped_services: unmapped,
     flags: {
