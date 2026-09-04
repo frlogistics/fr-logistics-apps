@@ -778,6 +778,7 @@
   /* and asks the operator to fix it in the Clients App.                    */
   let masterClients = [];
   let clientNames   = [];
+  let clientLabels  = {};   // valor guardado -> etiqueta visible con codigo
   let clientsLoadError = null;
 
   async function loadMasterClients(){
@@ -791,6 +792,8 @@
       }
       masterClients = data.map(c => ({
         id:        c.id        || null,
+        clientCode:c.client_code || "",
+        display:   c.display   || "",
         name:      c.name      || "",
         company:   c.company   || "",
         storeName: c.store_name || c.storeName || "",
@@ -805,11 +808,18 @@
                       : (c.shipNotifyEmails || []),
         defaultOutboundCarrier: c.default_outbound_carrier || c.defaultOutboundCarrier || "",
       }));
-      // Display name preference: storeName → company → name
+      // Valor guardado (shipments_general.client): storeName → company → name.
+      // La ETIQUETA que ve el operador lleva el codigo delante: "RAG_LIMI · RAGSA, LLC".
       clientNames = ["", ...masterClients
         .map(c => c.storeName || c.company || c.name)
         .filter(Boolean)
         .sort((a,b) => a.localeCompare(b))];
+      clientLabels = {};
+      masterClients.forEach(c => {
+        const v = c.storeName || c.company || c.name;
+        if (!v) return;
+        clientLabels[v] = c.clientCode ? (c.clientCode + " · " + v) : v;
+      });
       console.log("clients-list loaded:", masterClients.length);
     } catch(e){
       clientsLoadError = e.message;
@@ -916,7 +926,7 @@
     const sel = $("pinClientSelect");
     const btn = $("pinToggleBtn");
     sel.innerHTML = clientNames.map(n =>
-      `<option value="${n}">${n || "— Select client —"}</option>`
+      `<option value="${n}">${n ? ((clientLabels && clientLabels[n]) || n) : "— Select client —"}</option>`
     ).join("");
 
     // Restore previously pinned client (if it still exists in masterClients)
@@ -1053,7 +1063,7 @@
   function fmtDate(d){ const dt=new Date(d); return `${String(dt.getMonth()+1).padStart(2,"0")}/${String(dt.getDate()).padStart(2,"0")}/${dt.getFullYear()}`; }
   function fmtTime(d){ const dt=new Date(d); let h=dt.getHours(); const m=String(dt.getMinutes()).padStart(2,"0"),ap=h>=12?"PM":"AM"; h=h%12||12; return `${h}:${m} ${ap}`; }
   function monthKey(d){ const dt=new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}`; }
-  function fillSelect(sel,arr){ sel.innerHTML=""; arr.forEach(v=>{ const o=document.createElement("option"); o.value=o.textContent=v; sel.appendChild(o); }); }
+  function fillSelect(sel,arr){ sel.innerHTML=""; arr.forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=(clientLabels && clientLabels[v]) || v; sel.appendChild(o); }); }
   function setLastSaved(t){ localStorage.setItem("fr_general_last_tracking",t||""); $("lastSaved").value=t||""; }
   function getLastSaved(){ return localStorage.getItem("fr_general_last_tracking")||""; }
 
@@ -1332,7 +1342,7 @@
 
   // Self-contained client list (does not depend on the main app's scope).
   // Same source of truth: clients-list (fr_clients).
-  let rtnClients = [];     // [{id, display}]
+  let rtnClients = [];     // [{id, value, display}] · value = lo que se guarda, display = lo que se ve
   let rtnClientsLoaded = false;
 
   function rtnStatus(msg, kind){
@@ -1347,11 +1357,12 @@
       const res = await fetch("/.netlify/functions/clients-list");
       const data = await res.json();
       rtnClients = (Array.isArray(data) ? data : [])
-        .map(c => ({
-          id: c.id || null,
-          display: c.store_name || c.storeName || c.company || c.name || ""
-        }))
-        .filter(c => c.display)
+        .map(c => {
+          const v = c.store_name || c.storeName || c.company || c.name || "";
+          return { id: c.id || null, value: v,
+                   display: c.client_code ? (c.client_code + " · " + v) : v };
+        })
+        .filter(c => c.value)
         .sort((a,b) => a.display.localeCompare(b.display));
       rtnClientsLoaded = true;
     } catch(e){
@@ -1364,11 +1375,11 @@
     const sel = document.getElementById("rtnClient");
     if(!sel) return;
     sel.innerHTML = `<option value="">— Select client —</option>` +
-      rtnClients.map(c => `<option value="${c.display}">${c.display}</option>`).join("");
+      rtnClients.map(c => `<option value="${c.value}">${c.display}</option>`).join("");
   }
 
-  function rtnClientId(display){
-    const m = rtnClients.find(c => c.display === display);
+  function rtnClientId(value){
+    const m = rtnClients.find(c => c.value === value || c.display === value);
     return m ? m.id : null;
   }
 
