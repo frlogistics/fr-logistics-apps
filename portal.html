@@ -419,8 +419,14 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
             </select>
           </div>
           <div class="formField" style="margin:0">
-            <label>SS Custom Field 1 Tag</label>
+            <label>SS Custom Field 1 Tag <span style="font-weight:400;color:#718096">(ShipStation, para facturar)</span></label>
             <input id="cm_ssCustomField1" placeholder="e.g. MXS Overseas Ltd"/>
+          </div>
+          <div class="formField" style="margin:0">
+            <label>Client Code <span style="font-weight:400;color:#718096">(ship-to · se ancla al guardar)</span></label>
+            <input id="cm_clientCode" placeholder="se genera solo" maxlength="8"
+                   style="font-family:'DM Mono',monospace;text-transform:uppercase"/>
+            <div id="cm_codeHint" style="font-size:11px;color:#718096;margin-top:4px"></div>
           </div>
           <div class="formField" style="margin:0">
             <label>Shipping Markup %</label>
@@ -698,11 +704,47 @@ function fillClientSelect(list){
   sel.innerHTML='<option value="">— Select client —</option>'+list.map(c=>`<option value="${c.id}" data-wa="${esc(c.wa_number||'')}" data-name="${esc(c.name||'')}">${esc(c.name)}${c.company?' — '+esc(c.company):''}</option>`).join('');
 }
 
+/* ── Codigo de cliente ─────────────────────────────────────────────────────
+   Nace aqui y se ancla. Misma regla que fr_derive_client_code() en Supabase:
+   mayusculas, se elimina &, resto no alfanumerico a espacio, primeros 8,
+   espacios a _, se recorta el _ final. Se propaga a todo el ecosistema. */
+function deriveCode(txt){
+  return String(txt||'').toUpperCase().replace(/&/g,'')
+    .replace(/[^A-Z0-9]+/g,' ').trim().slice(0,8).replace(/ /g,'_').replace(/_+$/,'');
+}
+function setClientCode(code, locked){
+  const el=document.getElementById('cm_clientCode');
+  const hint=document.getElementById('cm_codeHint');
+  el.value=code||'';
+  el.readOnly=!!locked;
+  el.style.background=locked?'#f1f5f9':'';
+  el.style.color=locked?'#475569':'';
+  hint.textContent=locked
+    ? 'Anclado. Ya esta en etiquetas y documentos del cliente — no se cambia.'
+    : (code ? 'Propuesto. Puedes ajustarlo antes de guardar.' : '');
+  hint.style.color=locked?'#718096':'#059669';
+}
+function suggestCode(){
+  const el=document.getElementById('cm_clientCode');
+  if(el.readOnly) return;                       // ya anclado
+  if(el.dataset.touched==='1') return;          // el usuario lo escribio a mano
+  const base=document.getElementById('cm_company').value.trim()
+          || document.getElementById('cm_name').value.trim();
+  const code=deriveCode(base);
+  const dup=(clients||[]).some(c=>String(c.client_code||'').toUpperCase()===code && c.id!==editId);
+  setClientCode(code,false);
+  if(code && dup){
+    document.getElementById('cm_codeHint').textContent='Ese codigo ya existe. Ajustalo antes de guardar.';
+    document.getElementById('cm_codeHint').style.color='#e53e3e';
+  }
+}
+
 function openClientModal(mode,id){
   editId=null;
   ['name','company','storeId','storeName','waNumber','email','phone','notes'].forEach(f=>{const el=document.getElementById('cm_'+f);if(el)el.value='';});
   document.getElementById('cm_country').value='US';document.getElementById('cm_lang').value='EN';document.getElementById('cm_type').value='Business';document.getElementById('cm_status').value='Active';document.getElementById('cm_waConsent').value='Pending';document.getElementById('cm_waNotif').checked=false;
   document.querySelectorAll('[name=svc]').forEach(cb=>cb.checked=false);
+  const _cc=document.getElementById('cm_clientCode'); _cc.dataset.touched='0'; setClientCode('',false);
   document.getElementById('clientModalTitle').textContent=mode==='edit'?'Edit Client':'New Client';
   if(mode==='edit'&&id){
     const c=clients.find(x=>x.id===id);
@@ -712,12 +754,20 @@ function openClientModal(mode,id){
       // Billing config fields
       document.getElementById('cm_billingSource').value=c.billing_source||'ss_cf1';
       document.getElementById('cm_ssCustomField1').value=c.ss_custom_field_1||'';
+      setClientCode(c.client_code||'', !!c.client_code);
       document.getElementById('cm_shippingMarkup').value=c.shipping_markup??10;
       document.getElementById('cm_mmb').value=c.mmb||0;
       document.getElementById('cm_wmsIntegration').checked=c.wms_integration||false;
       const svcs=Array.isArray(c.services)?c.services.map(s=>s.replace(/"/g,'').trim()):(c.services?String(c.services).split(',').map(s=>s.trim()):[]);
       document.querySelectorAll('[name=svc]').forEach(cb=>{cb.checked=svcs.includes(cb.value);});
     }
+  }
+  const cc=document.getElementById('cm_clientCode');
+  if(!cc.dataset.wired){
+    cc.dataset.wired='1';
+    cc.addEventListener('input',()=>{ cc.dataset.touched='1'; cc.value=cc.value.toUpperCase(); });
+    document.getElementById('cm_company').addEventListener('input',suggestCode);
+    document.getElementById('cm_name').addEventListener('input',suggestCode);
   }
   document.getElementById('clientModal').classList.add('open');
   setTimeout(()=>document.getElementById('cm_name').focus(),80);
@@ -726,6 +776,11 @@ function closeClientModal(){document.getElementById('clientModal').classList.rem
 function saveClientModal(){
   const name=document.getElementById('cm_name').value.trim();
   if(!name){alert('Contact Name is required');return;}
+  const code=(document.getElementById('cm_clientCode').value||'').trim().toUpperCase();
+  if(!code){alert('Client Code is required — es lo que va en la etiqueta de envio del cliente.');return;}
+  if(!/^[A-Z0-9_]{2,8}$/.test(code)){alert('Client Code: 2 a 8 caracteres, solo A-Z, 0-9 y _');return;}
+  if((clients||[]).some(c=>String(c.client_code||'').toUpperCase()===code && c.id!==editId)){
+    alert('Ese Client Code ya lo tiene otro cliente. Debe ser unico.');return;}
   const services=Array.from(document.querySelectorAll('[name=svc]:checked')).map(cb=>cb.value);
   const payload={name,
       company:document.getElementById('cm_company').value.trim(),
@@ -746,6 +801,7 @@ function saveClientModal(){
       // Billing config — propagates to all apps
       billing_source:document.getElementById('cm_billingSource').value,
       ss_custom_field_1:document.getElementById('cm_ssCustomField1').value.trim(),
+      client_code:(document.getElementById('cm_clientCode').value||'').trim().toUpperCase()||null,
       shipping_markup:parseFloat(document.getElementById('cm_shippingMarkup').value)||10,
       mmb:parseFloat(document.getElementById('cm_mmb').value)||0,
       wms_integration:document.getElementById('cm_wmsIntegration').checked,
