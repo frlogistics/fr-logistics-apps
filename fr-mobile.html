@@ -1008,7 +1008,8 @@ function setPad(state,big,hint,code){
 function receivingModeFor(r){
   if(!r) return 'inventory';
   const c = S.clients.find(x => (r.client_id && x.id===r.client_id))
-         || S.clients.find(x => x.label===r.client);
+         || S.clients.find(x => r.client_code && x.code===r.client_code)
+         || S.clients.find(x => x.name===r.client);
   return (c && c.receivingMode) || 'inventory';
 }
 
@@ -2909,17 +2910,25 @@ async function loadClients(){
     if(!res.ok) throw new Error('HTTP '+res.status);
     const data=await res.json();
     const rows=Array.isArray(data)?data:(data.clients||data.data||[]);
-    // Exclude internal + inactive; display/match by company (canonical), fallback to name
+    // Exclude internal + inactive.
+    // label  = what the operator READS  -> "RAG_LIMI · RAGSA, LLC" (viene de clients-list)
+    // name   = what the app STORES in shipments_general.client -> nombre canonico
+    // El client_code se deriva solo en la base a partir del client_id.
     S.clients=rows
       .filter(c=>c.active!==false && c.type!=='Internal' && (c.status||'')!=='Internal')
-      .map(c=>({label:(c.company&&c.company.trim())||c.name, id:c.id,
-                receivingMode:(c.flags&&c.flags.receiving_mode)||c.receiving_mode||'inventory'}))
-      .filter(c=>c.label)
+      .map(c=>{
+        const name=(c.display_name&&c.display_name.trim())||(c.company&&c.company.trim())||c.name||'';
+        const code=(c.client_code||'').trim();
+        return {name, code, label:(c.display&&c.display.trim())||(code?code+' · '+name:name), id:c.id,
+                receivingMode:(c.flags&&c.flags.receiving_mode)||c.receiving_mode||'inventory'};
+      })
+      .filter(c=>c.name)
       .sort((a,b)=>a.label.localeCompare(b.label));
-    // de-dup labels (two contacts, same company)
-    const seen=new Set(); S.clients=S.clients.filter(c=>{const k=c.label.toLowerCase(); if(seen.has(k))return false; seen.add(k); return true;});
+    // de-dup por codigo de cliente (unico por definicion); sin codigo, por nombre
+    const seen=new Set(); S.clients=S.clients.filter(c=>{const k=(c.code||c.name).toLowerCase(); if(seen.has(k))return false; seen.add(k); return true;});
+    const esc=v=>String(v).replace(/"/g,'&quot;');
     const opts='<option value="">— Select client —</option>'+
-      S.clients.map(c=>`<option value="${c.label.replace(/"/g,'&quot;')}" data-id="${c.id}">${c.label}</option>`).join('');
+      S.clients.map(c=>`<option value="${esc(c.name)}" data-id="${c.id}" data-code="${esc(c.code)}">${esc(c.label)}</option>`).join('');
     const rc=$('rClient'); if(rc) rc.innerHTML=opts;
     const oc=$('oClient'); if(oc) oc.innerHTML=opts;
     const cc=$('cntClient'); if(cc) cc.innerHTML=opts;
