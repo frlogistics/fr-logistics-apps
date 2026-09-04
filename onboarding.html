@@ -416,8 +416,10 @@ async function loadClients(manual){
     CLIENTS.sort((a,b)=>String(a.company||a.name||'').localeCompare(String(b.company||b.name||'')));
     sel.innerHTML = '<option value="">— Select a client —</option>' +
       CLIENTS.map(c=>{
-        const label = (c.company||c.name||'Unnamed') + (c.company&&c.name?` · ${c.name}`:'') +
-                      (c.status?` (${c.status})`:'');
+        const nm   = c.company||c.name||'Unnamed';
+        const code = (c.client_code||'').trim();
+        const label = (code?code+' · ':'') + nm + (c.company&&c.name?` · ${c.name}`:'') +
+                      (c.status?` (${c.status})`:'') + (code?'':'  ⚠ SIN CODIGO');
         return `<option value="${c.id}">${esc(label)}</option>`;
       }).join('');
     g('clientWarn').style.display='none';
@@ -916,16 +918,19 @@ function frPdfShell(tagRight, titleRight) {
 }
 
 // ─── CLIENT CODE ─────────────────────────────────────────────────────────────
+// El codigo de cliente NACE en la ficha (fr_clients.client_code) y esta anclado.
+// Aqui solo se lee. El derivado local es una red de seguridad para fichas viejas
+// y queda marcado para que se corrija en la Clients App.
 function deriveClientCode(c){
   const rec = CLIENT || {};
   const known = rec.client_code || rec.code || rec.warehouse_code || rec.client_id_code;
   if (known) return String(known).toUpperCase();
-  const words = String(c.clientName||'CLIENT').toUpperCase().replace(/[^A-Z0-9 ]/g,' ').split(/\s+/).filter(Boolean);
-  const a = (words[0]||'CLIENT').slice(0,4);
-  const b = (words[1]||words[0]||'GEN').slice(0,3);
-  const d = (c.startDate ? new Date(c.startDate+'T12:00:00') : new Date());
-  const ymd = String(d.getFullYear()).slice(2) + String(d.getMonth()+1).padStart(2,'0') + String(d.getDate()).padStart(2,'0');
-  return `${a}_${b}-${ymd}`;
+  console.warn('Cliente sin client_code en su ficha. Asignalo en la Clients App.');
+  // Misma regla que fr_derive_client_code() en Supabase:
+  // mayusculas, se elimina &, resto no alfanumerico a espacio, primeros 8, espacios a _
+  return String(c.clientName||'CLIENT')
+    .toUpperCase().replace(/&/g,'').replace(/[^A-Z0-9]+/g,' ')
+    .trim().slice(0,8).replace(/ /g,'_').replace(/_+$/,'');
 }
 
 // ─── PDF: SHIP-TO INSTRUCTIONS (EN / ES) ─────────────────────────────────────
