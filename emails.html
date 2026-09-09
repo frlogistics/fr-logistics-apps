@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Email Builder — FR-Logistics</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#0f172a;font-size:13px}
+  .wrap{max-width:1500px;margin:0 auto;padding:16px 16px 40px}
+  .hd{background:linear-gradient(135deg,#065f46,#16a34a);border-radius:12px;padding:16px 22px;color:#fff;margin-bottom:12px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .hd h1{margin:0;font-size:18px}
+  .hd p{margin:4px 0 0;font-size:12px;color:rgba(209,250,229,.92)}
+  .hd .sp{flex:1}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin-bottom:12px}
+  .ch{padding:10px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .ch h3{margin:0;font-size:12.5px;font-weight:700;flex:1}
+  .cb{padding:12px 16px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+  label{display:block;font-size:11px;font-weight:700;color:#475569;margin-bottom:4px}
+  input,select,textarea{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:7px 9px;font:inherit;font-size:12.5px;color:#0f172a;background:#fff}
+  input:focus,select:focus,textarea:focus{outline:2px solid #16a34a;outline-offset:0;border-color:#16a34a}
+  button{border:none;border-radius:8px;padding:8px 13px;font-size:12px;font-weight:700;cursor:pointer;background:#059669;color:#fff;white-space:nowrap}
+  button.sec{background:#e2e8f0;color:#0f172a}
+  button.dark{background:#0f172a}
+  button.warn{background:#b45309}
+  button.mini{padding:5px 9px;font-size:11px;font-weight:500;background:#e2e8f0;color:#0f172a}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .work{display:grid;grid-template-columns:460px 1fr;gap:12px;align-items:start}
+  @media (max-width:1000px){.work{grid-template-columns:1fr}}
+  .editor textarea{height:62vh;resize:vertical;font:12px/1.5 Consolas,Menlo,monospace;border-radius:0;border:0;border-top:1px solid #e2e8f0}
+  .status{padding:7px 14px;font-size:11.5px;color:#475569;background:#f8fafc;border-top:1px solid #e2e8f0}
+  .status.err{color:#b91c1c;background:#fef2f2}
+  .tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 14px}
+  .tools .lbl{font-size:11px;color:#94a3b8;width:100%}
+  #preview{padding:18px;background:#e5e7eb;min-height:60vh;overflow:auto}
+  .actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .toast{position:fixed;bottom:18px;right:18px;background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font-size:12.5px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:420px}
+  .toast.show{opacity:1}
+  .pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.4px}
+  .p-draft{background:#e2e8f0;color:#334155}.p-gmail_draft{background:#e0e7ff;color:#3730a3}.p-sent{background:#dcfce7;color:#166534}
+  table.list{width:100%;border-collapse:collapse;font-size:12px}
+  table.list th{text-align:left;font-size:11px;color:#64748b;padding:6px 8px;border-bottom:1px solid #e2e8f0}
+  table.list td{padding:7px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+  table.list tr:hover td{background:#f8fafc}
+  .lnk{color:#059669;font-weight:700;cursor:pointer;text-decoration:none}
+  .note{background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:9px 13px;font-size:11.5px;color:#92400e;line-height:1.5}
+  .catpick{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px}
+  .catpick label{display:inline-flex;align-items:center;gap:5px;font-weight:500;color:#0f172a;margin:0}
+  .catpick input{width:auto}
+  dialog{border:0;border-radius:12px;padding:0;max-width:520px;width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  dialog::backdrop{background:rgba(15,23,42,.45)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hd">
+    <div><h1>Email Builder</h1><p>Correos a prospectos y clientes antes de la firma — cotización, términos, calificación, seguimiento. Los términos de política se insertan desde bloques fijos, no se redactan a mano.</p></div>
+    <div class="sp"></div>
+    <button class="sec" onclick="openHistory()">Historial</button>
+  </div>
+
+  <!-- RECIPIENT + TEMPLATE -->
+  <div class="card">
+    <div class="ch"><h3>Destinatario y plantilla</h3><span id="msgState" class="pill p-draft">nuevo</span></div>
+    <div class="cb">
+      <div class="grid">
+        <div style="grid-column:span 2"><label>Cliente registrado (fr_clients)</label>
+          <select id="clientSel" onchange="pickClient()"><option value="">— Prospecto sin ficha (llenar a mano) —</option></select></div>
+        <div><label>Empresa</label><input id="fCompany" placeholder="Razón social o marca"></div>
+        <div><label>Contacto</label><input id="fContact" placeholder="Nombre y apellido"></div>
+        <div><label>Correo</label><input id="fEmail" type="email" placeholder="contacto@empresa.com"></div>
+        <div><label>Idioma</label><select id="fLang" onchange="refreshTemplateList()"><option value="ES">ES</option><option value="EN">EN</option></select></div>
+        <div><label>Referencia</label><input id="fRef" placeholder="XXXX_XXX-YYMMDD"></div>
+        <div style="grid-column:span 2"><label>Plantilla</label><select id="tplSel"></select></div>
+        <div style="align-self:end"><button onclick="newFromTemplate()" style="width:100%">Nuevo desde plantilla</button></div>
+        <div style="align-self:end"><button class="sec" onclick="applyTokens()" style="width:100%" title="Reemplaza {{company}}, {{contact}}, {{first_name}}, {{ref}}, {{date}}, {{client_code}} en el JSON">Aplicar datos al correo</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="work">
+    <!-- EDITOR -->
+    <div class="card editor">
+      <div class="ch"><h3>Contenido (JSON)</h3></div>
+      <div class="tools">
+        <span class="lbl">Bloques de política (idioma actual)</span>
+        <select id="policySel" style="flex:1;min-width:200px"></select>
+        <button class="mini" onclick="insertPolicy()">Insertar</button>
+        <span class="lbl">Bloques libres</span>
+        <button class="mini" onclick="addBlock('text')">Texto</button>
+        <button class="mini" onclick="addBlock('amber')">Aviso ámbar</button>
+        <button class="mini" onclick="addBlock('terms')">Tabla</button>
+        <button class="mini" onclick="addBlock('steps')">Pasos</button>
+        <button class="mini" onclick="addBlock('dark')">Tarjeta oscura</button>
+        <button class="mini" onclick="addBlock('button')">Botón</button>
+        <button class="mini" onclick="openRates()">Rate schedule del catálogo…</button>
+      </div>
+      <textarea id="src" spellcheck="false" oninput="render()"></textarea>
+      <div class="status" id="status">Elige un cliente o llena los datos, escoge una plantilla y pulsa "Nuevo desde plantilla".</div>
+    </div>
+
+    <!-- PREVIEW -->
+    <div class="card">
+      <div class="ch">
+        <h3>Vista previa</h3>
+        <div class="actions">
+          <button class="sec" onclick="saveMessage()">Guardar borrador</button>
+          <button onclick="copyEmail()">Copiar para Gmail</button>
+          <button class="sec" onclick="copySubject()">Copiar asunto</button>
+          <button class="dark" onclick="gmailDraft()">Crear borrador en Gmail</button>
+          <button class="warn" onclick="markSent()">Marcar enviado + registrar cotización</button>
+          <button class="sec" onclick="saveAsTemplate()">Guardar como plantilla</button>
+          <button class="sec" onclick="downloadHtml()">Descargar .html</button>
+        </div>
+      </div>
+      <div id="preview"></div>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top:4px">
+    <b>Flujo:</b> cliente/prospecto → plantilla → "Nuevo desde plantilla" (rellena los marcadores) → editar → <b>Guardar borrador</b> → "Crear borrador en Gmail" (llega a Borradores de josefuentes@) o "Copiar para Gmail" → cuando lo envíes desde Gmail, <b>Marcar enviado</b>: eso lo registra en <code>quotes</code> con vencimiento a 30 días y aparece en el CRM Scorecard.
+  </div>
+</div>
+
+<!-- RATES DIALOG -->
+<dialog id="ratesDlg">
+  <div class="ch"><h3>Rate schedule desde fr_service_catalog</h3><button class="mini" onclick="document.getElementById('ratesDlg').close()">Cerrar</button></div>
+  <div class="cb">
+    <p style="margin:0 0 10px;font-size:12px;color:#475569">Elige las categorías. Las tarifas son las DEFAULT del catálogo; si el cliente tiene tarifa negociada, edítala en el JSON después de insertar.</p>
+    <div class="catpick" id="catPick"></div>
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end"><button onclick="insertRates()">Insertar bloque</button></div>
+  </div>
+</dialog>
+
+<!-- HISTORY DIALOG -->
+<dialog id="histDlg" style="max-width:900px">
+  <div class="ch"><h3>Historial de correos</h3><button class="mini" onclick="document.getElementById('histDlg').close()">Cerrar</button></div>
+  <div class="cb" id="histBody" style="max-height:70vh;overflow:auto">Cargando…</div>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/.netlify/functions/emails';
+const CLIENTS_API = '/.netlify/functions/clients-list';
+const ADMIN_EMAIL = 'josefuentes@fr-logistics.net';
+
+let BOOT = { templates: [], policy: [], catalog: [] };
+let CLIENTS = [];
+let data = null;          // builder JSON
+let current = null;       // email_messages row (id, status...)
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $ = id => document.getElementById(id);
+function toast(t){ const el=$('toast'); el.textContent=t; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),3000); }
+
+/* ───────── render engine (same output as the standalone builder) ───────── */
+const R = s => String(s ?? '');
+const H1 = t => `<div style="font-family:'Syne',Arial,sans-serif;font-weight:800;font-size:18px;color:#065F46;margin-bottom:10px;">${R(t)}</div>`;
+const chip = n => `<span style="display:inline-block;background:#16a34a;color:#fff;font-weight:700;border-radius:12px;padding:1px 9px;font-size:12px;">${n}</span>`;
+const inl = h => R(h)
+  .replace(/<code>/g,'<span style="font-family:Consolas,monospace;font-size:13px;background:#f1f5f9;padding:2px 6px;border-radius:3px;">').replace(/<\/code>/g,'</span>')
+  .replace(/<small>/g,'<span style="color:#475569;font-size:13px;">').replace(/<\/small>/g,'</span>');
+
+function block(b){
+  switch(b.type){
+    case 'text': return `<tr><td style="padding:14px 32px 4px;font-size:15px;line-height:1.6;">${(b.paragraphs||[]).map(p=>`<p style="margin:0 0 14px;">${inl(p)}</p>`).join('')}</td></tr>`;
+    case 'amber': return `<tr><td style="padding:14px 32px 6px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:4px;"><tr><td style="padding:16px 18px;font-size:14px;line-height:1.6;color:#0F172A;">${b.title?`<div style="font-weight:700;color:#b45309;margin-bottom:8px;">${R(b.title)}</div>`:''}${(b.items||[]).map((it,i,a)=>`<p style="margin:0 0 ${i<a.length-1?10:0}px;">${inl(it)}</p>`).join('')}</td></tr></table></td></tr>`;
+    case 'terms': { const head=b.head||['Concepto','Condición']; return `<tr><td style="padding:22px 32px 6px;">${b.title?H1(b.title):''}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;"><tr style="background:#065F46;color:#ffffff;">${head.map(h=>`<th align="left" style="padding:9px 12px;">${R(h)}</th>`).join('')}</tr>${(b.rows||[]).map((r,i)=>`<tr${i%2?' style="background:#f8fafc;"':''}>${r.map(c=>`<td style="padding:9px 12px;border-bottom:1px solid #e2e8f0;vertical-align:top;">${inl(c)}</td>`).join('')}</tr>`).join('')}</table></td></tr>`; }
+    case 'steps': return `<tr><td style="padding:22px 32px 6px;font-size:15px;line-height:1.6;">${b.title?H1(b.title):''}<table role="presentation" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:1.55;">${(b.items||[]).map((it,i)=>`<tr><td valign="top" style="padding:4px 10px 4px 0;">${chip(i+1)}</td><td style="padding:4px 0;">${inl(it)}</td></tr>`).join('')}</table></td></tr>`;
+    case 'dark': { let n=0; return `<tr><td style="padding:22px 32px 6px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0F172A;border-radius:8px;"><tr><td style="padding:22px 24px;color:#e2e8f0;font-size:14px;line-height:1.6;"><div style="font-family:'Syne',Arial,sans-serif;font-weight:800;font-size:17px;color:#ffffff;margin-bottom:12px;">${R(b.title)}</div>${(b.groups||[]).map(g=>`<div style="color:#4ade80;font-weight:700;font-size:12px;letter-spacing:1px;margin:12px 0 4px;text-transform:uppercase;">${R(g.label)}</div>${(g.items||[]).map(it=>`<div>${++n}. ${inl(it)}</div>`).join('')}`).join('')}</td></tr></table></td></tr>`; }
+    case 'rates': return `<tr><td style="padding:22px 32px 6px;">${b.title?H1(b.title):''}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;">${(b.categories||[]).map(c=>`<tr style="background:#065F46;color:#fff;"><td colspan="3" style="padding:7px 12px;font-weight:700;">${R(c.name)}</td></tr>${(c.rows||[]).map((r,i)=>`<tr${i%2?' style="background:#f8fafc;"':''}><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${inl(r[0])}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;color:#475569;">${R(r[1])}</td><td align="right" style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-weight:700;white-space:nowrap;">${R(r[2])}</td></tr>`).join('')}`).join('')}</table></td></tr>`;
+    case 'button': return `<tr><td align="center" style="padding:20px 32px 8px;"><a href="${esc(b.url)}" style="display:inline-block;background:#16a34a;color:#fff;font-weight:700;font-size:15px;text-decoration:none;padding:13px 28px;border-radius:6px;">${R(b.label)}</a></td></tr>`;
+    default: return `<tr><td style="padding:10px 32px;color:#b91c1c;font-size:13px;">Bloque desconocido: ${esc(b.type)}</td></tr>`;
+  }
+}
+function buildEmail(d){
+  const s=d.signature||{};
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#e5e7eb;"><tr><td align="center" style="padding:0;">
+<table role="presentation" width="660" cellpadding="0" cellspacing="0" style="max-width:660px;width:100%;background:#ffffff;font-family:'DM Sans',Arial,sans-serif;color:#0F172A;">
+<tr><td style="background:#065F46;background-image:linear-gradient(135deg,#065F46 0%,#0ea55f 100%);padding:26px 32px;"><div style="font-family:'Syne',Arial,sans-serif;font-weight:800;font-size:24px;color:#ffffff;letter-spacing:1px;">FR-LOGISTICS</div><div style="font-size:13px;color:#d1fae5;margin-top:4px;">Amazon SPN Certified 3PL &nbsp;·&nbsp; Doral · Miami, FL</div></td></tr>
+<tr><td style="background:#f1f5f9;padding:12px 32px;font-size:12px;color:#475569;border-bottom:1px solid #e2e8f0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td><b style="color:#0F172A;">Ref.</b> ${R(d.ref)}</td><td align="center"><b style="color:#0F172A;">${d.lang==='EN'?'Date':'Fecha'}</b> ${R(d.date)}</td><td align="right"><b style="color:#0F172A;">${d.lang==='EN'?'Prepared for':'Preparado para'}</b> ${R(d.preparedFor)}</td></tr></table></td></tr>
+<tr><td style="padding:28px 32px 8px;font-size:15px;line-height:1.6;"><p style="margin:0 0 14px;">${R(d.greeting)}</p>${(d.intro||[]).map((p,i,a)=>`<p style="margin:0 0 ${i<a.length-1?14:0}px;">${inl(p)}</p>`).join('')}</td></tr>
+${(d.blocks||[]).map(block).join('')}
+<tr><td style="padding:22px 32px 8px;font-size:15px;line-height:1.6;">${(d.closing||[]).map((p,i,a)=>`<p style="margin:0 0 ${i<a.length-1?14:0}px;">${inl(p)}</p>`).join('')}</td></tr>
+<tr><td style="padding:10px 32px 26px;"><table role="presentation" cellpadding="0" cellspacing="0" style="border-top:3px solid #065F46;font-size:14px;line-height:1.5;"><tr><td style="padding-top:12px;"><b style="font-size:15px;">${R(s.name)}</b><br><span style="color:#475569;">${R(s.title)}</span><br><span style="color:#475569;">${R(s.email)} · ${R(s.phone)} · ${R(s.web)}</span></td></tr></table></td></tr>
+<tr><td style="background:#f1f5f9;padding:14px 32px;font-size:11px;color:#94a3b8;line-height:1.5;border-top:1px solid #e2e8f0;">${inl(d.footer||'')}</td></tr>
+</table></td></tr></table>`;
+}
+
+/* ───────── editor state ───────── */
+function parse(){ try{ data=JSON.parse($('src').value); $('status').className='status'; $('status').textContent=`JSON válido · ${(data.blocks||[]).length} bloques` + (current&&current.id?` · guardado ${current.status}`:' · sin guardar'); return true; }catch(e){ $('status').className='status err'; $('status').textContent='Error de JSON: '+e.message; return false; } }
+function render(){ if(parse()) $('preview').innerHTML=buildEmail(data); }
+function setData(d){ data=d; $('src').value=JSON.stringify(d,null,2); render(); }
+function setState(){ const s=current&&current.status?current.status:'draft'; const el=$('msgState'); el.className='pill p-'+s; el.textContent=current&&current.id?s.replace('_',' '):'nuevo'; }
+
+/* ───────── recipient ───────── */
+function todayLabel(lang){ const d=new Date(); return lang==='EN' ? d.toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric'}) : d.toLocaleDateString('es-VE',{day:'numeric',month:'short',year:'numeric'}).replace('.',''); }
+function yymmdd(){ const d=new Date(); return String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0'); }
+function deriveCode(company){
+  const words=String(company||'').toUpperCase().replace(/[^A-Z0-9 ]/g,' ').split(/\s+/).filter(w=>w&&!['LLC','INC','CORP','LTD','SA','SAS','THE','DE','DEL','Y','AND','CO'].includes(w));
+  if(!words.length) return 'XXXX_XXX';
+  const a=words[0].slice(0,4).padEnd(4,'X'); const b=(words[1]||words[0].slice(4)||'XXX').slice(0,3).padEnd(3,'X');
+  return a+'_'+b;
+}
+function suggestRef(){ const c=CLIENTS.find(x=>x.id===$('clientSel').value); const code=(c&&c.client_code)||deriveCode($('fCompany').value); if(!$('fRef').value||/^XXXX/.test($('fRef').value)) $('fRef').value=code+'-'+yymmdd(); }
+$('fCompany').addEventListener('change',suggestRef);
+function pickClient(){
+  const c=CLIENTS.find(x=>x.id===$('clientSel').value);
+  if(!c) return;
+  $('fCompany').value=c.company||c.display_name||''; $('fContact').value=c.name||''; $('fEmail').value=c.email||'';
+  if(c.lang) { $('fLang').value=String(c.lang).toUpperCase()==='EN'?'EN':'ES'; refreshTemplateList(); }
+  $('fRef').value=''; suggestRef();
+}
+function tokens(){
+  const contact=$('fContact').value.trim();
+  const c=CLIENTS.find(x=>x.id===$('clientSel').value);
+  return { company:$('fCompany').value.trim()||'[Empresa]', contact:contact||'[Contacto]', first_name:(contact.split(/\s+/)[0]||'[Nombre]'), ref:$('fRef').value.trim()||'[REF]', date:todayLabel($('fLang').value), client_code:(c&&c.client_code)||'[CÓDIGO]' };
+}
+function fill(obj){ const t=tokens(); let s=JSON.stringify(obj); s=s.replace(/\{\{(company|contact|first_name|ref|date|client_code)\}\}/g,(m,k)=>String(t[k]).replace(/\\/g,'\\\\').replace(/"/g,'\\"')); return JSON.parse(s); }
+function applyTokens(){ if(!parse()) return; setData(fill(data)); toast('Datos aplicados'); }
+
+/* ───────── templates & policy ───────── */
+function refreshTemplateList(){
+  const lang=$('fLang').value;
+  const list=BOOT.templates.filter(t=>t.lang===lang);
+  $('tplSel').innerHTML=list.map(t=>`<option value="${esc(t.slug)}">${esc(t.name)}${t.service_line&&t.service_line!=='general'?' · '+esc(t.service_line):''}</option>`).join('')||'<option value="">(sin plantillas en este idioma)</option>';
+  const pol=BOOT.policy.filter(p=>p.lang===lang);
+  $('policySel').innerHTML=pol.map(p=>`<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+}
+function newFromTemplate(){
+  const t=BOOT.templates.find(x=>x.slug===$('tplSel').value); if(!t){ toast('No hay plantilla seleccionada'); return; }
+  if(!$('fRef').value) suggestRef();
+  const body=JSON.parse(JSON.stringify(t.body)); body.lang=$('fLang').value;
+  current={ template_slug:t.slug, status:'draft' }; setState();
+  setData(fill(body)); toast('Correo creado desde '+t.name);
+}
+function insertPolicy(){ if(!parse()) return; const p=BOOT.policy.find(x=>x.slug===$('policySel').value&&x.lang===$('fLang').value); if(!p) return; data.blocks=data.blocks||[]; data.blocks.push(fill(JSON.parse(JSON.stringify(p.block)))); setData(data); }
+const SNIPPETS={
+  text:{type:'text',paragraphs:['Párrafo libre. Admite <b>negritas</b>.']},
+  amber:{type:'amber',title:'Título del aviso',items:['Primer punto.','Segundo punto.']},
+  terms:{type:'terms',title:'Título de la tabla',head:['Concepto','Condición'],rows:[['Fila 1','Valor'],['Fila 2','Valor']]},
+  steps:{type:'steps',title:'Cómo sigue el proceso',items:['Paso uno.','Paso dos.']},
+  dark:{type:'dark',title:'Lo que necesitamos de tu parte',groups:[{label:'Grupo',items:['Documento 1','Documento 2']}]},
+  button:{type:'button',label:'Agendar una llamada',url:'https://calendly.com/fr-logistics'}
+};
+function addBlock(k){ if(!parse()) return; data.blocks=data.blocks||[]; data.blocks.push(JSON.parse(JSON.stringify(SNIPPETS[k]))); setData(data); $('src').scrollTop=$('src').scrollHeight; }
+
+/* ───────── rate schedule from catalog ───────── */
+function openRates(){
+  const cats=[...new Set(BOOT.catalog.map(c=>c.category).filter(Boolean))];
+  $('catPick').innerHTML=cats.map(c=>`<label><input type="checkbox" value="${esc(c)}" ${/inbound|prep|storage|supplies/i.test(c)?'checked':''}> ${esc(c)} <span style="color:#94a3b8">(${BOOT.catalog.filter(x=>x.category===c).length})</span></label>`).join('');
+  $('ratesDlg').showModal();
+}
+function money(n){ return n==null?'':'$'+Number(n).toFixed(2); }
+function insertRates(){
+  if(!parse()) return;
+  const chosen=[...document.querySelectorAll('#catPick input:checked')].map(i=>i.value);
+  const categories=chosen.map(c=>({name:c,rows:BOOT.catalog.filter(x=>x.category===c).map(x=>[x.service_name,x.unit||'',money(x.default_rate)])})).filter(c=>c.rows.length);
+  data.blocks=data.blocks||[]; data.blocks.push({type:'rates',title:'Rate schedule',categories}); setData(data);
+  $('ratesDlg').close(); toast('Rate schedule insertado ('+categories.length+' categorías)');
+}
+
+/* ───────── persistence ───────── */
+async function api(payload){ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); const j=await r.json().catch(()=>({error:'Respuesta no válida'})); if(!r.ok||j.error) throw new Error(j.detail||j.error||('API '+r.status)); return j; }
+function messageRow(){
+  return { id:current&&current.id, ref:$('fRef').value.trim(), subject:data.subject||'', to_email:$('fEmail').value.trim(), to_name:$('fContact').value.trim(), company:$('fCompany').value.trim(), client_id:$('clientSel').value||null, template_slug:current&&current.template_slug||null, lang:$('fLang').value, body:data, created_by:ADMIN_EMAIL };
+}
+async function saveMessage(silent){
+  if(!parse()) return null;
+  try{ const j=await api({action:'save_message',message:messageRow()}); current={...(current||{}),...j.message}; setState(); parse(); if(!silent) toast('Borrador guardado'); return current; }
+  catch(e){ toast('No se pudo guardar: '+e.message); return null; }
+}
+async function markSent(){
+  if(!(await saveMessage(true))) return;
+  if(!$('fRef').value.trim()){ toast('Falta la referencia para registrar la cotización'); return; }
+  if(!confirm(`Marcar como enviado y registrar ${$('fRef').value} en quotes (vence en 30 días)?`)) return;
+  try{ const j=await api({action:'mark_sent',id:current.id,register_quote:true}); current=j.message; setState(); parse(); toast(j.quote?`Registrado: ${j.quote.quote_id} (vence ${j.quote.valid_until})`:'Marcado como enviado'); }
+  catch(e){ toast('Error: '+e.message); }
+}
+async function gmailDraft(){
+  if(!(await saveMessage(true))) return;
+  const to=$('fEmail').value.trim(); if(!to){ toast('Falta el correo del destinatario'); return; }
+  if(!confirm(`Crear un borrador en Gmail (${ADMIN_EMAIL}) para ${to}? No se envía nada.`)) return;
+  const html=buildEmail(data); const tmp=document.createElement('div'); tmp.innerHTML=html;
+  try{ const j=await api({action:'gmail_draft',id:current.id,to,subject:data.subject||'',htmlBody:html,textBody:tmp.innerText}); current=j.message; setState(); parse(); toast('Borrador creado en Gmail — revísalo en Borradores'); }
+  catch(e){ toast('Error: '+e.message); }
+}
+async function saveAsTemplate(){
+  if(!parse()) return;
+  const name=prompt('Nombre de la plantilla:'); if(!name) return;
+  const slug=prompt('Slug (minúsculas, sin espacios):', name.toLowerCase().replace(/[^a-z0-9]+/g,'_').slice(0,40)); if(!slug) return;
+  const service_line=prompt('Línea de servicio (fba_prep, fbm_dtc, casillero, general):','general')||'general';
+  try{ const j=await api({action:'save_template',template:{slug,name,service_line,lang:$('fLang').value,body:data}}); BOOT.templates=BOOT.templates.filter(t=>t.slug!==j.template.slug).concat([j.template]).sort((a,b)=>(a.sort_order-b.sort_order)||a.name.localeCompare(b.name)); refreshTemplateList(); $('tplSel').value=j.template.slug; toast('Plantilla guardada: '+j.template.name); }
+  catch(e){ toast('Error: '+e.message); }
+}
+async function openHistory(){
+  $('histDlg').showModal(); $('histBody').textContent='Cargando…';
+  try{ const r=await fetch(API+'?action=messages&limit=100'); const j=await r.json(); const rows=j.messages||[];
+    $('histBody').innerHTML=rows.length?`<table class="list"><tr><th>Fecha</th><th>Ref.</th><th>Empresa</th><th>Correo</th><th>Estado</th><th></th></tr>${rows.map(m=>`<tr><td>${esc((m.updated_at||'').slice(0,10))}</td><td>${esc(m.ref||'')}</td><td>${esc(m.company||m.to_name||'')}</td><td>${esc(m.to_email||'')}</td><td><span class="pill p-${esc(m.status)}">${esc(m.status.replace('_',' '))}</span></td><td><a class="lnk" onclick="loadMessage('${m.id}')">Abrir</a>${m.status!=='sent'?` · <a class="lnk" style="color:#b91c1c" onclick="deleteMessage('${m.id}')">Borrar</a>`:''}</td></tr>`).join('')}</table>`:'Sin correos guardados todavía.';
+  }catch(e){ $('histBody').textContent='No se pudo cargar: '+e.message; }
+}
+async function loadMessage(id){
+  try{ const r=await fetch(API+'?action=message&id='+id); const j=await r.json(); if(j.error) throw new Error(j.error);
+    const m=j.message; current=m; $('fCompany').value=m.company||''; $('fContact').value=m.to_name||''; $('fEmail').value=m.to_email||''; $('fRef').value=m.ref||''; $('fLang').value=m.lang||'ES'; $('clientSel').value=m.client_id||''; refreshTemplateList(); if(m.template_slug) $('tplSel').value=m.template_slug;
+    setState(); setData(m.body); $('histDlg').close(); toast('Cargado '+(m.ref||''));
+  }catch(e){ toast('Error: '+e.message); }
+}
+async function deleteMessage(id){ if(!confirm('Borrar este borrador?')) return; try{ await api({action:'delete_message',id}); if(current&&current.id===id){ current=null; setState(); parse(); } openHistory(); }catch(e){ toast('Error: '+e.message); } }
+
+/* ───────── clipboard / download ───────── */
+async function copyEmail(){ if(!parse()) return; const html=buildEmail(data); const tmp=document.createElement('div'); tmp.innerHTML=html;
+  try{ await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([html],{type:'text/html'}),'text/plain':new Blob([tmp.innerText],{type:'text/plain'})})]); toast('Copiado — pega en Gmail con Ctrl+V'); }
+  catch(e){ const r=document.createRange(); r.selectNodeContents($('preview')); const s=getSelection(); s.removeAllRanges(); s.addRange(r); document.execCommand('copy'); s.removeAllRanges(); toast('Copiado (fallback)'); } }
+function copySubject(){ if(!parse()) return; navigator.clipboard.writeText(data.subject||'').then(()=>toast('Asunto copiado')); }
+function downloadHtml(){ if(!parse()) return; const doc=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(data.subject)}</title><link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet"></head><body style="margin:0;padding:24px;background:#e5e7eb;">${buildEmail(data)}</body></html>`;
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([doc],{type:'text/html'})); a.download='FR_Email_'+(($('fRef').value||'draft').replace(/[^A-Za-z0-9_-]/g,'_'))+'.html'; a.click(); }
+
+/* ───────── boot ───────── */
+async function boot(){
+  try{
+    const [b,c]=await Promise.all([fetch(API+'?action=bootstrap').then(r=>r.json()), fetch(CLIENTS_API).then(r=>r.json())]);
+    if(b.error) throw new Error(b.error);
+    BOOT=b; CLIENTS=Array.isArray(c)?c:[];
+    const groups={Active:[],Onboarding:[],Dormant:[],Inactive:[]};
+    CLIENTS.forEach(x=>{ const st=(x.flags&&x.flags.state)||x.status||'Active'; (groups[st]||groups.Inactive).push(x); });
+    $('clientSel').innerHTML='<option value="">— Prospecto sin ficha (llenar a mano) —</option>'+Object.entries(groups).filter(([,l])=>l.length).map(([g,l])=>`<optgroup label="${g}">${l.sort((a,b)=>(a.display||'').localeCompare(b.display||'')).map(x=>`<option value="${x.id}">${esc(x.display||x.company||x.name)}</option>`).join('')}</optgroup>`).join('');
+    refreshTemplateList();
+    $('status').textContent=`Listo · ${BOOT.templates.length} plantillas · ${BOOT.policy.length} bloques de política · ${BOOT.catalog.length} servicios · ${CLIENTS.length} clientes`;
+  }catch(e){ $('status').className='status err'; $('status').textContent='No se pudo iniciar: '+e.message+' — verifica que la función emails esté desplegada.'; }
+}
+boot();
+</script>
+</body>
+</html>
