@@ -255,6 +255,10 @@
           <span class="ic">🗃️</span>
           <span><span class="nm">Boxes</span><br><span class="sub">Build, seal and move cartons</span></span>
         </button>
+        <button class="mod" data-go="lookup">
+          <span class="ic">🔍</span>
+          <span><span class="nm">Lookup</span><br><span class="sub">Scan a tracking to see its record</span></span>
+        </button>
       </div>
     </section>
 
@@ -360,6 +364,17 @@
       </div>
 
       <div id="lResult"></div>
+    </section>
+
+    <!-- LOOKUP (read-only: one tracking -> its record in shipments_general) -->
+    <section class="view" id="v-lookup">
+      <div class="scanpad" id="kScanpad" tabindex="-1">
+        <div class="icon" id="kIcon">▣</div>
+        <div class="big" id="kBig">Scan a tracking</div>
+        <div class="lastcode" id="kCode"></div>
+        <div class="hint" id="kHint">Shows who it belongs to, what it is and when it was logged.</div>
+      </div>
+      <div id="kResult"></div>
     </section>
 
     <!-- INVENTORY (read-only, stock by client) -->
@@ -795,6 +810,10 @@
     <button class="btn" id="bxLabelBtn">Print label</button>
     <button class="btn stop" id="bxReopenBtn">Open box</button>
   </footer>
+  <footer class="acts" id="kFoot" hidden>
+    <button class="btn ghost" id="kPhotoBtn">📷 Photo</button>
+    <button class="btn" id="kPrintBtn">🖨 Label</button>
+  </footer>
   <footer class="acts" id="cntLocFoot" hidden>
     <button class="btn ghost" id="cntBackLocBtn">Back to list</button>
     <button class="btn" id="cntCloseLocBtn">Location done ✓</button>
@@ -812,7 +831,7 @@
    ============================================================ */
 const API_BASE='https://apps.fr-logistics.net/.netlify/functions';
 
-const S={ operator:null, clients:[], view:'home',
+const S={ operator:null, clients:[], view:'home', pendingTracking:null,
   session:[], seen:new Set(),           // receiving session (kept as-is)
   outSession:[], outSeen:new Set() };   // outbound session
 
@@ -885,7 +904,7 @@ function go(view){
   // Reset both footers every time; each view turns on only the one it needs.
   $('foot').hidden=true; $('palFoot').hidden=true; $('fbaFoot').hidden=true;
   $('cntFoot').hidden=true; $('cntLocFoot').hidden=true;
-  $('bxFoot').hidden=true; $('bxSealedFoot').hidden=true;
+  $('bxFoot').hidden=true; $('bxSealedFoot').hidden=true; $('kFoot').hidden=true;
   if(view==='home'){bar.classList.remove('has-back');$('title').textContent='FR Mobile';detachCapture();}
   else{bar.classList.add('has-back');}
   if(view==='receiving'){$('title').textContent='Receiving';$('foot').hidden=false;attachCapture();refreshList();}
@@ -896,6 +915,8 @@ function go(view){
   if(view==='fba'){$('title').textContent='FBA Count';attachCapture();initFba();}
   if(view==='count'){$('title').textContent='Stock Count';attachCapture();initCount();}
   if(view==='boxes'){$('title').textContent='Boxes';attachCapture();initBoxes();}
+  if(view==='lookup'){$('title').textContent='Lookup';attachCapture();initLookup();}
+  if(view!=='receiving') S.pendingTracking=null;
   $('main').scrollTop=0;
 }
 
@@ -917,6 +938,7 @@ function attachCapture(){
   const cp2=$('cScanpad2'); if(cp2) cp2.addEventListener('click',onPadTap);
   const bp=$('bScanpad'); if(bp) bp.addEventListener('click',onPadTap);
   const bp2=$('bScanpad2'); if(bp2) bp2.addEventListener('click',onPadTap);
+  const kp=$('kScanpad'); if(kp) kp.addEventListener('click',onPadTap);
   document.addEventListener('keydown',onKey,true);
 }
 function detachCapture(){
@@ -932,6 +954,7 @@ function detachCapture(){
   const cp2=$('cScanpad2'); if(cp2) cp2.removeEventListener('click',onPadTap);
   const bp=$('bScanpad'); if(bp) bp.removeEventListener('click',onPadTap);
   const bp2=$('bScanpad2'); if(bp2) bp2.removeEventListener('click',onPadTap);
+  const kp=$('kScanpad'); if(kp) kp.removeEventListener('click',onPadTap);
 }
 function focusCap(){ if(!capAttached)return; const c=$('capture'); if(document.activeElement!==c) c.focus({preventScroll:true}); }
 function isFormField(el){ return el && (el.tagName==='SELECT' || (el.tagName==='INPUT' && el.id!=='capture')); }
@@ -941,12 +964,22 @@ function onKey(e){
   if(isFormField(document.activeElement)) return;
   if(e.key==='Enter'){
     const code=capBuf.trim();
-    if(code){ if(S.view==='locations') lookupScan(code); else if(S.view==='inventory') inventoryScan(code); else if(S.view==='pallets') palletScan(code); else if(S.view==='fba') fbaScan(code); else if(S.view==='count') countScan(code); else if(S.view==='boxes') boxScan(code); else commitScan(code); }
+    if(code){ if(S.view==='locations') lookupScan(code); else if(S.view==='inventory') inventoryScan(code); else if(S.view==='pallets') palletScan(code); else if(S.view==='fba') fbaScan(code); else if(S.view==='count') countScan(code); else if(S.view==='boxes') boxScan(code); else if(S.view==='lookup') lookupTracking(code); else commitScan(code); }
     capBuf=''; e.preventDefault(); return;
   }
   if(e.key.length===1){ capBuf+=e.key; clearTimeout(capTimer); capTimer=setTimeout(()=>{capBuf='';},120); }
 }
-function onPadTap(){ /* placeholder: camera flow lives on the 📷 button */ focusCap(); }
+function onPadTap(){
+  // Hand-off from Lookup: a package that was not in the log is waiting to be
+  // received. The operator picks client/type first, then taps the pad.
+  if(S.view==='receiving' && S.pendingTracking){
+    const code=S.pendingTracking;
+    commitScan(code);
+    if(curSeen().has(code)) S.pendingTracking=null;   // logged; clear the hand-off
+    return;
+  }
+  focusCap();
+}
 
 /* ---------- scan logic (shared by receiving + outbound) ---------- */
 function commitScan(code){
@@ -997,6 +1030,20 @@ function setPad(state,big,hint,code){
   $(ids.hint).textContent=hint||'Pull the trigger to scan. 📷 adds a photo to the last package.';
   $(ids.icon).textContent = state==='ok'?'✓' : state==='dup'?'!' : state==='err'?'✕' : '▣';
   if(state==='ok'||state==='dup'){ clearTimeout(p._t); p._t=setTimeout(()=>{ if($(ids.pad)) setPad('','Scan tracking','',''); },1400); }
+  else if(state==='err' && S.pendingTracking && S.view==='receiving'){
+    // keep the hand-off visible after e.g. "pick a client first"
+    clearTimeout(p._t); p._t=setTimeout(()=>{ if(S.pendingTracking) showPendingPad(); },1600);
+  }
+}
+/* Receiving pad in "hand-off" state: a tracking arrived from Lookup and is
+   waiting for the operator to confirm client/type and tap. */
+function showPendingPad(){
+  const ids=MODES.receiving.ids, p=$(ids.pad); if(!p||!S.pendingTracking) return;
+  p.className='scanpad dup';
+  $(ids.icon).textContent='↓';
+  $(ids.big).textContent='Tap here to receive';
+  $(ids.code).textContent=S.pendingTracking;
+  $(ids.hint).textContent='Check client and type above, then tap this box to log it.';
 }
 
 /* Operating mode of a client, straight from the client record (fr_clients
@@ -2887,6 +2934,177 @@ function openLabelPage(){
   window.open(BX.publicUrl, '_blank');
 }
 
+/* ============================================================
+   LOOKUP — one tracking -> its record (read-only)
+   GET /frm-lookup?tracking=<code>
+   One trigger pull = one card. The endpoint matches the raw scan, the
+   normalized tracking and a verified suffix, so a USPS label scanned as
+   GS1 "(420)33172(92)…" still finds the row someone typed clean on the PC.
+   ============================================================ */
+const LK={ current:null, busy:false };
+
+function initLookup(){
+  LK.current=null;
+  setKPad('', 'Scan a tracking', '', '');
+  $('kResult').innerHTML='';
+  $('kFoot').hidden=false;
+  syncLookupFoot();
+  focusCap();
+}
+
+function setKPad(state,big,hint,code){
+  const p=$('kScanpad'); if(!p) return;
+  p.className='scanpad'+(state?(' '+state):'');
+  $('kIcon').textContent = state==='ok'?'✓' : state==='dup'?'!' : state==='err'?'✕' : '▣';
+  $('kBig').textContent=big;
+  $('kCode').textContent=code||'';
+  $('kHint').textContent=hint||'Shows who it belongs to, what it is and when it was logged.';
+}
+
+// Footer buttons only make sense with a found row; the label never for
+// outbound (the box already wears the carrier label — same rule as Receiving).
+function syncLookupFoot(){
+  const r=LK.current;
+  const pb=$('kPhotoBtn'), lb=$('kPrintBtn');
+  pb.disabled=!r; pb.style.opacity=r?'1':'.45';
+  const canLabel = !!(r && r.id && r.direction!=='Outbound');
+  lb.hidden=!canLabel;
+}
+
+async function lookupTracking(code){
+  const kind=classify(code);
+  if(kind==='container'){ setKPad('err','That is a box plate','Use the Boxes module for FRC codes',code); feedback('err'); return; }
+  if(kind==='location'){ setKPad('err','That is a location','Use Locations to see what is stored there',code); feedback('err'); return; }
+  if(kind==='fnsku'){ setKPad('err','That is a product code','Use Locations to find where it is stored',code); feedback('err'); return; }
+  if(LK.busy) return;
+  LK.busy=true; LK.current=null; syncLookupFoot();
+  setKPad('','Looking up…','',code);
+  $('kResult').innerHTML='';
+  try{
+    const res=await fetch(`${API_BASE}/frm-lookup?tracking=${encodeURIComponent(code)}`);
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(j.error||('HTTP '+res.status));
+    if(j.found){
+      LK.current=j.shipment;
+      setKPad('ok', j.shipment.direction==='Outbound'?'Outbound record':'Inbound record', j.match==='exact'?'':'Matched after normalizing the barcode', code);
+      feedback('ok');
+      renderLookupCard(j);
+    }else{
+      LK.current=null;
+      setKPad('dup','Not in the log','This tracking has not been received or shipped yet',code);
+      feedback('dup');
+      renderLookupMissing(j);
+    }
+  }catch(err){
+    setKPad('err','Lookup failed', err.message||'Check the connection and try again', code);
+    feedback('err');
+  }
+  LK.busy=false; syncLookupFoot(); focusCap();
+}
+
+function kEsc(v){ return String(v==null?'':v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function kWhen(iso){
+  if(!iso) return '—';
+  const d=new Date(iso); if(isNaN(d)) return kEsc(iso);
+  return d.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'})+' · '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+' · '+timeAgo(d);
+}
+function kType(t){ return kEsc(String(t||'').replace(/^(Inbound|Outbound) /,'').replace(/[()]/g,'')||'—'); }
+const K_LINK='color:var(--teal-d);font-size:13px;text-decoration:underline;display:inline-block;margin-top:10px';
+
+function renderLookupCard(j){
+  const r=j.shipment;
+  const isOut = r.direction==='Outbound';
+  const pill = `<span class="lc-zone" style="${isOut?'background:#fff6e5;color:#a9760a':''}">${isOut?'Outbound':'Inbound'}</span>`;
+  const photos = r.photo_urls.length
+    ? `<div style="display:flex;gap:8px;overflow-x:auto;margin-top:12px">${r.photo_urls.map((u,i)=>`<img src="${kEsc(u)}" alt="Photo ${i+1}" data-kphoto="1" style="width:84px;height:84px;object-fit:cover;border-radius:10px;border:1px solid var(--line);flex:0 0 auto">`).join('')}</div>`
+    : `<div class="lc-sub" style="margin-top:12px">No photo on file${isOut?'':' — 📷 below adds one'}</div>`;
+  const differs = r.stored_differs
+    ? `<div class="lc-sub" style="margin-top:8px">Stored as <span style="font-family:ui-monospace,monospace">${kEsc(r.tracking)}</span></div>` : '';
+  const others = (j.others||[]).length
+    ? `<div class="lc-sub" style="margin-top:8px">Also logged ${j.others.length} more time(s) under a different spelling</div>` : '';
+  const link = r.tracking_url ? `<a href="${kEsc(r.tracking_url)}" target="_blank" rel="noopener" style="${K_LINK}">Track with ${kEsc(r.carrier&&r.carrier!=='Other'?r.carrier:'carrier')} ↗</a>` : '';
+  $('kResult').innerHTML=`
+    <div class="lcard">
+      <div class="lc-head">
+        <div><div class="lc-code" style="font-size:16px;word-break:break-all">${kEsc(r.tracking_clean||r.tracking)}</div>${differs}</div>
+        ${pill}
+      </div>
+      <div style="font-size:22px;font-weight:750;color:var(--navy);line-height:1.15;margin-bottom:12px">${kEsc(r.client||'—')}</div>
+      <ul class="lc-list">
+        <li><div class="cli" style="flex:0 0 78px">Type</div><div class="sku" style="font-family:inherit">${kType(r.type)}</div></li>
+        <li><div class="cli" style="flex:0 0 78px">Carrier</div><div class="sku" style="font-family:inherit">${kEsc(r.carrier||'—')}</div></li>
+        <li><div class="cli" style="flex:0 0 78px">${isOut?'Shipped':'Received'}</div><div class="sku" style="font-family:inherit;font-weight:500">${kWhen(r.received_at)}</div></li>
+        <li><div class="cli" style="flex:0 0 78px">By</div><div class="sku" style="font-family:inherit;font-weight:500">${kEsc(r.operator||'—')}</div></li>
+        ${r.note?`<li><div class="cli" style="flex:0 0 78px">Note</div><div class="sku" style="font-family:inherit;font-weight:500">${kEsc(r.note)}</div></li>`:''}
+      </ul>
+      ${photos}${others}${link}
+    </div>`;
+  $('kResult').querySelectorAll('[data-kphoto]').forEach(img=>{ img.onclick=()=>viewPhotos({tracking:r.tracking, photoUrls:r.photo_urls}); });
+}
+
+function renderLookupMissing(j){
+  const cands=(j.candidates||[]);
+  const near = cands.length
+    ? `<div class="lc-sub" style="margin:12px 0 6px">Same last digits, different tracking:</div>
+       <ul class="lc-list">${cands.map(c=>`<li><div style="flex:1"><div class="sku" style="font-size:12px">${kEsc(c.tracking_clean||c.tracking)}</div><div class="cli">${kEsc(c.client||'')} · ${kType(c.type)} · ${kEsc(c.direction)}</div></div></li>`).join('')}</ul>`
+    : '';
+  const link = j.tracking_url ? `<a href="${kEsc(j.tracking_url)}" target="_blank" rel="noopener" style="${K_LINK}">Track with ${kEsc(j.carrier_guess)} ↗</a>` : '';
+  $('kResult').innerHTML=`
+    <div class="lcard">
+      <div class="lc-head">
+        <div><div class="lc-code" style="font-size:16px;word-break:break-all">${kEsc(j.tracking_clean||j.scanned)}</div>
+        <div class="lc-sub">${j.carrier_guess?kEsc(j.carrier_guess)+' · ':''}not in the log</div></div>
+      </div>
+      <div class="lc-empty" style="padding-top:4px">No inbound or outbound record for this tracking.</div>
+      <button class="btn" id="kReceiveBtn" style="width:100%">Receive it now →</button>
+      ${near}${link}
+    </div>`;
+  $('kReceiveBtn').onclick=()=>{
+    // Hand the code to Receiving. Not logged here on purpose: the operator
+    // still has to pick the client and type, which is what makes the row
+    // billable and routable.
+    S.pendingTracking=j.scanned;
+    go('receiving');
+    showPendingPad();
+    toast('Pick client and type, then tap the box');
+  };
+}
+
+/* Photo from Lookup: same upload path as Receiving, attached to the STORED
+   tracking (the one the row has), not to the scan in hand. */
+function lookupPhoto(){
+  const r=LK.current; if(!r){ toast('Scan a package first'); return; }
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*'; inp.capture='environment';
+  inp.style.display='none'; document.body.appendChild(inp);
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; inp.remove();
+    if(!file){ focusCap(); return; }
+    toast('Uploading photo…');
+    try{
+      const dataUrl=await compressImage(file, 1600, 0.72);
+      const res=await fetch(`${API_BASE}/shipment-photos-proxy`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({tracking:r.tracking, photo_data_urls:[dataUrl], attach:true})
+      });
+      if(!res.ok){ const j=await res.json().catch(()=>({})); throw new Error(j.error||('HTTP '+res.status)); }
+      const j=await res.json();
+      r.photo_urls=(r.photo_urls||[]).concat(j.photo_urls||[]);
+      feedback('ok'); toast('Photo added to '+String(r.tracking).slice(-8));
+      renderLookupCard({shipment:r, others:[], match:'exact'});
+      askSlipExtract(r.tracking, (j.photo_urls||[])[0], r.type);
+    }catch(err){ feedback('err'); toast('Photo failed: '+(err.message||'try again')); }
+    focusCap();
+  };
+  inp.click();
+}
+
+function lookupPrint(){
+  const r=LK.current; if(!r||!r.id){ toast('Nothing to print'); return; }
+  if(r.direction==='Outbound'){ toast('Outbound boxes are not labelled'); return; }
+  queuePrint('inbound_label',{ref_id:r.id}, String(r.tracking).slice(-8));
+}
+
 /* ---------- scanpad helpers ---------- */
 function setBPad(state,big,hint,code){
   const p=$('bScanpad'); if(!p) return;
@@ -2965,6 +3183,8 @@ document.querySelectorAll('[data-soon]').forEach(b=>b.onclick=()=>toast('Module 
 $('backBtn').onclick=()=>go('home');
 $('finishBtn').onclick=()=>{ if(confirm('Finish this session?')) go('home'); };
 $('camBtn').onclick=takePhoto;
+$('kPhotoBtn').onclick=lookupPhoto;
+$('kPrintBtn').onclick=lookupPrint;
 $('syncBtn').onclick=refreshFromSkuVault;
 $('invSyncBtn').onclick=()=>refreshFromSkuVault().then(fillClientDropdown);
 $('invClient').onchange=e=>{ showClientStock(e.target.value, null); setTimeout(focusCap,60); };
