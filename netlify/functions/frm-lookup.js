@@ -1,11 +1,16 @@
 // netlify/functions/frm-lookup.js
-// Read-only endpoint for FR Mobile — Lookup module.
+// Read-only endpoint for FR Mobile — Lookup module (v2).
 //
 //   GET /frm-lookup?tracking=<scanned code>
 //
-// Answers "what is this package?" for one scanned tracking. Reads
-// shipments_general with the service key (RLS stays closed) and never
-// exposes billing columns. Same fetch pattern and CORS as frm-receive.js.
+// Answers "what is this package?" for one scanned tracking, in one call:
+//   shipment  — its row in shipments_general (the receiving/outbound log)
+//   dropship  — the DropShipments orders that ride under that tracking
+//               (inbound tracking_number OR outbound_tracking), with status
+//   pallet    — the returns pallet it was scanned into, if any
+//   slip      — the Amazon packing slip read off its photo, if any
+// Reads with the service key (RLS stays closed) and never exposes billing
+// columns. Same fetch pattern and CORS as frm-receive.js.
 //
 // Why this is not just shipments-proxy?tracking=eq.<x>:
 // the handheld stores the raw GS1 barcode for USPS labels
@@ -96,6 +101,145 @@ function shape(row, scannedNorm) {
   };
 }
 
+
+// ---- v2 side tables ---------------------------------------------------------
+// Every one of these is looked up the same way: exact on the scan, exact on
+// the normalized code, then a suffix ilike whose hits are re-normalized and
+// kept only when they equal the scan. pallet_packages in particular stores
+// the raw GS1 string, so a clean USPS number only matches via the suffix.
+
+function sameTracking(stored, norm, scanned) {
+  if (!stored) return false;
+  if (stored === scanned) return true;
+  return !!norm && normalizeTracking(stored).tracking === norm;
+}
+
+function shapeDropship(r) {
+  return {
+    id: r.id,
+    order_id: r.order_id,
+    status: r.status,
+    group_seq: r.group_seq,
+    group_total: r.group_total,
+    content: r.content,
+    qty_boxes: r.qty_boxes,
+    carrier: r.carrier,
+    tracking_number: r.tracking_number,
+    outbound_carrier: r.outbound_carrier,
+    outbound_platform: r.outbound_platform,
+    outbound_tracking: r.outbound_tracking,
+    has_label: !!r.label_url,
+    physical_received_at: r.physical_received_at,
+    labeled_at: r.labeled_at,
+    shipped_at: r.shipped_at,
+    received_by: r.received_by,
+    shipped_by: r.shipped_by,
+    exception_reason: r.exception_reason,
+    client_code: r.client_code,
+    client_id: r.client_id,
+    manifest_id: r.manifest_id,
+  };
+}
+
+function shapePallet(p, pkgCount, addedAt) {
+  return {
+    pallet_id: p.pallet_id,
+    client: p.client,
+    client_code: p.client_code,
+    status: p.status,
+    pallet_size: p.pallet_size,
+    packages: pkgCount,
+    full_at: p.full_at,
+    wrapped_at: p.wrapped_at,
+    added_at: addedAt,
+  };
+}
+
+function shapeSlip(x) {
+  const items = Array.isArray(x.items) ? x.items : [];
+  return {
+    status: x.status,
+    doc_type: x.doc_type,
+    ra_number: x.ra_number,
+    lpn: x.lpn,
+    origin_fc: x.origin_fc,
+    process_date: x.process_date,
+    confidence: x.confidence,
+    summary: x.summary,
+    items: items.map((it) => ({
+      fnsku: it.fnsku || null, lpn: it.lpn || null, upc: it.upc || null,
+      qty: it.qty == null ? null : Number(it.qty),
+      title: it.title ? String(it.title).slice(0, 90) : null,
+    })),
+    photo_url: x.photo_url,
+    created_at: x.completed_at || x.created_at,
+  };
+}
+
+const DS_COLS = [
+  'id', 'client_id', 'client_code', 'tracking_number', 'order_id', 'carrier', 'content',
+  'qty_boxes', 'label_url', 'outbound_carrier', 'outbound_platform', 'outbound_tracking',
+  'status', 'physical_received_at', 'labeled_at', 'shipped_at', 'received_by', 'shipped_by',
+  'exception_reason', 'group_seq', 'group_total', 'manifest_id',
+].join(',');
+const SLIP_COLS = [
+  'id', 'tracking', 'photo_url', 'status', 'doc_type', 'ra_number', 'lpn', 'origin_fc',
+  'process_date', 'items', 'summary', 'confidence', 'created_at', 'completed_at',
+].join(',');
+
+// Builds the PostgREST filter list for one column: exact scan, exact
+// normalized, and suffix. Executed as one OR so each table costs one round trip.
+function orFilter(col, scanned, norm) {
+  const parts = [`${col}.eq.${JSON.stringify(scanned)}`];
+  if (norm && norm !== scanned) parts.push(`${col}.eq.${JSON.stringify(norm)}`);
+  if (norm && norm.length >= 10) parts.push(`${col}.ilike.${JSON.stringify('*' + norm.slice(-12))}`);
+  return 'or=' + encodeURIComponent('(' + parts.join(',') + ')');
+}
+
+async function fetchDropship(sb, scanned, norm) {
+  // inbound side and outbound side, both matched the same way
+  const q = 'or=' + encodeURIComponent('(' + [
+    `tracking_number.eq.${JSON.stringify(scanned)}`,
+    norm && norm !== scanned ? `tracking_number.eq.${JSON.stringify(norm)}` : null,
+    norm && norm.length >= 10 ? `tracking_number.ilike.${JSON.stringify('*' + norm.slice(-12))}` : null,
+    `outbound_tracking.eq.${JSON.stringify(scanned)}`,
+    norm && norm !== scanned ? `outbound_tracking.eq.${JSON.stringify(norm)}` : null,
+    norm && norm.length >= 10 ? `outbound_tracking.ilike.${JSON.stringify('*' + norm.slice(-12))}` : null,
+  ].filter(Boolean).join(',') + ')');
+  const rows = await sb('dropshipments', DS_COLS, `${q}&order=group_seq.asc.nullslast,created_at.asc&limit=20`);
+  const inbound = rows.filter((r) => sameTracking(r.tracking_number, norm, scanned));
+  const outbound = rows.filter((r) => !inbound.includes(r) && sameTracking(r.outbound_tracking, norm, scanned));
+  return { inbound: inbound.map(shapeDropship), outbound: outbound.map(shapeDropship) };
+}
+
+async function fetchPallet(sb, scanned, norm) {
+  const links = await sb('pallet_packages', 'id,tracking,pallet_id,created_at',
+    `${orFilter('tracking', scanned, norm)}&order=created_at.desc&limit=10`);
+  const hit = links.find((l) => sameTracking(l.tracking, norm, scanned));
+  if (!hit) return null;
+  const pals = await sb('pallets', 'pallet_id,client,client_code,status,pallet_size,full_at,wrapped_at,packages',
+    `pallet_id=eq.${encodeURIComponent(hit.pallet_id)}&limit=1`);
+  const p = pals[0];
+  if (!p) return { pallet_id: hit.pallet_id, status: null, client: null, packages: null, added_at: hit.created_at };
+  // package count: count rows in pallet_packages (source of truth on the handheld)
+  const cnt = await sb('pallet_packages', 'id', `pallet_id=eq.${encodeURIComponent(hit.pallet_id)}&limit=500`);
+  return shapePallet(p, cnt.length, hit.created_at);
+}
+
+async function fetchSlip(sb, scanned, norm) {
+  const rows = await sb('wh_slip_extractions', SLIP_COLS,
+    `${orFilter('tracking', scanned, norm)}&order=created_at.desc&limit=5`);
+  const hit = rows.find((x) => sameTracking(x.tracking, norm, scanned));
+  return hit ? shapeSlip(hit) : null;
+}
+
+async function fetchClientName(sb, clientId) {
+  if (!clientId) return null;
+  const rows = await sb('fr_clients', 'id,company,name,store_name', `id=eq.${encodeURIComponent(clientId)}&limit=1`);
+  const c = rows[0];
+  return c ? (c.company || c.name || c.store_name || null) : null;
+}
+
 exports.handler = async (event) => {
   const origin = event.headers.origin || event.headers.Origin || '';
   const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
@@ -126,15 +270,26 @@ exports.handler = async (event) => {
 
   const norm = normalizeTracking(scanned);
 
-  const sb = async (query) => {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/shipments_general?select=${COLUMNS}&${query}`, {
+  const sbAny = async (table, cols, query) => {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=${cols}&${query}`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     });
-    if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+    if (!r.ok) throw new Error(`Supabase ${table} ${r.status}: ${await r.text()}`);
     return r.json();
   };
+  const sb = (query) => sbAny('shipments_general', COLUMNS, query);
 
   try {
+    // Side tables are independent of which pass finds the log row, so they
+    // run in parallel with the main chain. A failure in one of them must not
+    // hide the log row: each settles to null and is reported in `errors`.
+    const errors = [];
+    const side = Promise.allSettled([
+      fetchDropship(sbAny, scanned, norm.tracking),
+      fetchPallet(sbAny, scanned, norm.tracking),
+      fetchSlip(sbAny, scanned, norm.tracking),
+    ]);
+
     // Pass 1 — exact, as scanned.
     let rows = await sb(`tracking=eq.${encodeURIComponent(scanned)}&limit=2`);
     let match = 'exact';
@@ -160,8 +315,30 @@ exports.handler = async (event) => {
       match = 'none';
     }
 
+    const [dsR, palR, slipR] = await side;
+    const pick = (r, name) => { if (r.status === 'fulfilled') return r.value; errors.push(`${name}: ${String(r.reason && r.reason.message || r.reason)}`); return null; };
+    const dropship = pick(dsR, 'dropship') || { inbound: [], outbound: [] };
+    const pallet = pick(palR, 'pallet');
+    const slip = pick(slipR, 'slip');
+
+    // Client name for the "not in the log" case: a DropShipments row or a
+    // pallet already knows the owner even when nobody scanned the package
+    // into shipments_general (orphan / pre-registered inbound).
+    let owner = rows.length ? rows[0].client : null;
+    if (!owner) {
+      const first = dropship.inbound[0] || dropship.outbound[0];
+      if (first) owner = await fetchClientName(sbAny, first.client_id).catch(() => null);
+      if (!owner && pallet && pallet.client) owner = pallet.client;
+    }
+
     const body = {
       found: rows.length > 0,
+      found_any: rows.length > 0 || dropship.inbound.length > 0 || dropship.outbound.length > 0 || !!pallet || !!slip,
+      owner,
+      dropship,
+      pallet,
+      slip,
+      errors,
       match,
       scanned,
       tracking_clean: norm.tracking,
