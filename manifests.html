@@ -614,10 +614,39 @@ const API_BASE = '/.netlify/functions';
 const API_MANIFESTS     = `${API_BASE}/dropship-manifests`;
 const API_MANIFEST_EMAIL= `${API_BASE}/dropship-manifest-email`;
 
-// Carriers we manage. Stays in sync with the outbound_carriers table.
-// (Hardcoded for now since there's only MailAmericas; can be loaded
-// dynamically later if more carriers are added.)
-const CARRIERS = ['MailAmericas'];
+// Carriers we manage.
+//
+// Day 8 (2026-09-15): this used to be `['MailAmericas']`, hardcoded with a
+// note saying "there's only MailAmericas". Then Mercado Libre swapped the
+// operator to Chilexpress on 09-08 and this page kept asking for the one
+// carrier in the list — so the Chilexpress manifest was being created and
+// filled in the database while the screen showed nothing, and with no card
+// there was no Seal button, no PDF, no CSV and no handoff email.
+//
+// The list is no longer a constant. We derive it from the manifests that
+// actually exist, so a carrier the business starts using shows up on its own.
+// FALLBACK_CARRIERS only covers the cold-start case (no manifests at all yet)
+// so the page isn't blank on a fresh environment.
+const FALLBACK_CARRIERS = ['Chilexpress', 'MailAmericas'];
+let CARRIERS = [...FALLBACK_CARRIERS];
+
+// Pull the distinct carriers from the manifest history, newest first, and
+// merge with the fallbacks. Never throws: on failure we keep the fallbacks.
+async function refreshCarriers() {
+  try {
+    const rows = await apiGet(`${API_MANIFESTS}?action=list&limit=200`);
+    const list = Array.isArray(rows) ? rows : (rows?.manifests || rows?.data || []);
+    const seen = [];
+    for (const m of list) {
+      const c = m?.outbound_carrier;
+      if (c && !seen.includes(c)) seen.push(c);
+    }
+    for (const c of FALLBACK_CARRIERS) if (!seen.includes(c)) seen.push(c);
+    if (seen.length) CARRIERS = seen;
+  } catch (e) {
+    console.warn('[manifests] could not derive carrier list, using fallbacks:', e.message);
+  }
+}
 
 // Operator name (read from localStorage if available, falls back to "warehouse").
 function getOperator() {
@@ -719,8 +748,9 @@ async function loadOpenManifest() {
   const slot = $('openManifestSlot');
   slot.innerHTML = '';
 
-  // For now we only support 1 carrier (MailAmericas). When more come,
-  // we'd render one card per carrier in a loop here.
+  // Day 8: one card per carrier actually in use, not a hardcoded single one.
+  await refreshCarriers();
+
   for (const carrier of CARRIERS) {
     const card = el('div', { class: 'open-card', id: `openCard-${carrier}` });
     card.innerHTML = `<div class="loading-row">Loading ${carrier}…</div>`;
