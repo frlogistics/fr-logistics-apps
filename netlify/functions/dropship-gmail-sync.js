@@ -284,6 +284,14 @@ function extractOutboundFromFilename(filename, pattern) {
 //   - "FBA02" (MELI origin box) or a MAIL…TX barcode  → MailAmericas
 //   - note "MailAmericas" as a word is NOT reliable: on Argentina labels it is
 //     a logo IMAGE, absent from extracted text. Only Brazil carries it as text.
+//
+// ORDER IS LOAD-BEARING — do not reorder these checks. Verified 2026-09-15
+// against real Chilexpress labels: their route line reads
+// "USXFL1 > ARCST1 > FBA02 > SBU4 > VMT_SD", so FBA02 is present on a
+// CHILEXPRESS label too. FBA02 is a Mercado Libre facility code, not a
+// carrier marker — it only means MailAmericas when USXFL1 is absent. Checking
+// USXFL1 first is what keeps this correct; swapping the two lines would stamp
+// every Chilexpress parcel as MailAmericas.
 // Returns null when nothing matches, so the caller falls back to the config.
 function detectOutboundCarrierFromLabel(cleanedText) {
   if (!cleanedText) return null;
