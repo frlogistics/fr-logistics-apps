@@ -41,7 +41,7 @@ const NUDGE_MAX_AGE_DAYS = 30;    // older leads are never nudged automatically
 const MAX_SENDS_PER_RUN  = 20;    // safety valve
 const OPEN_LEAD_STATUS   = ["new", "qualifying", "sent_to_sales"];
 
-const TEMPLATE_LANG = { es: "es", en: "en_US" };
+const TEMPLATE_LANG = { es: "es", en: "en" };   // templates were created as plain "English" in Meta
 const PREVIEW = {
   quote_reminder_es: (n, q, d) => `Hola ${n}, te recordamos que tu cotización ${q} de FR-Logistics vence el ${d}. Si quieres avanzar o ajustar algo, responde a este mensaje y nuestro equipo te ayuda.`,
   quote_reminder_en: (n, q, d) => `Hi ${n}, a quick reminder that your FR-Logistics quote ${q} expires on ${d}. If you want to move forward or adjust anything, reply to this message and our team will help.`,
