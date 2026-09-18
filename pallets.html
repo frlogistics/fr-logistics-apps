@@ -577,6 +577,9 @@
       color: #000;
       border-color: #00ffae;
     }
+    .dimsRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+    .dimsRow input{margin:0}
+    .kpiRow .kpi span{white-space:nowrap}
     .scanner-status {
       padding: 8px 18px;
       background: rgba(0,0,0,0.7);
@@ -622,7 +625,7 @@
       <img src="fr_logo.png" alt="FR-Logistics Logo" onerror="this.style.display='none'">
       <div>
         <h1>Returns Pallet Builder (No WMS)</h1>
-        <div class="sub">Scan packages → Add to pallet → Mark FULL/WRAPPED → Print 4x6 Pallet ID QR label</div>
+        <div class="sub">Scan packages → Add to pallet → WRAPPED (height) → PICKED UP (height + weight) → Print 4x6 Pallet ID QR label</div>
       </div>
     </div>
     <div class="small"><b>CLIENTS WITHOUT WMS</b> PALLET ID • <b>QR:</b> REGISTER </div>
@@ -643,12 +646,16 @@
           <div class="small">Tip: Keep client fixed for that pallet.</div>
         </div>
         <div>
-          <label>Pallet Size</label>
-          <select id="palletSize">
-            <option value='40x48x60'>40x48x60 inches</option>
-            <option value='40x48x70'>40x48x70 inches</option>
-            <option value='Other'>Other</option>
+          <label>Pallet footprint</label>
+          <select id="footprint">
+            <option value='STANDARD_40x48'>Standard 40x48 in</option>
+            <option value='OVERSIZE'>Oversize (enter L x W)</option>
           </select>
+          <div id="oversizeDims" class="dimsRow" hidden>
+            <input id="lengthIn" class="mono" inputmode="decimal" placeholder="Length in" />
+            <input id="widthIn" class="mono" inputmode="decimal" placeholder="Width in" />
+          </div>
+          <div class="small">Height and weight are captured when wrapping / closing.</div>
         </div>
         <div>
           <label>Pallet ID</label>
@@ -665,6 +672,8 @@
         <div class="kpi"><b>Packages on pallet</b><span id="kCount">0</span></div>
         <div class="kpi"><b>Created</b><span id="kCreated">—</span></div>
         <div class="kpi"><b>Last scan</b><span id="kLastScan">—</span></div>
+        <div class="kpi"><b>Size (L×W×H)</b><span id="kSize">—</span></div>
+        <div class="kpi"><b>Gross weight</b><span id="kWeight">—</span></div>
       </div>
 
       <h3>Scan / Add package to this pallet</h3>
@@ -681,6 +690,7 @@
         <button class="primary" id="addPkgBtn">Add to pallet</button>
         <button class="warn" id="markFullBtn">Mark pallet FULL</button>
         <button class="primary" id="wrapReadyBtn">Mark WRAPPED / READY</button>
+        <button class="danger" id="pickedUpBtn">Close / PICKED UP</button>
         <button id="printLabelBtn">Label / Print</button>
       </div>
 
@@ -774,7 +784,7 @@
       </div>
 
       <div class="small" style="margin-top:10px;">
-        These are pallets with status <b>OPEN</b> or <b>WRAPPED / READY</b>. Pallets marked <b>FULL</b> are hidden.
+        These are pallets with status <b>OPEN</b> or <b>WRAPPED / READY</b>. Pallets marked <b>FULL</b> or <b>PICKED UP</b> are hidden.
       </div>
     </div>
 
@@ -815,7 +825,8 @@
             <div><b>Status</b><div class="stat" id="L_status">—</div></div>
             <div><b>Created</b><div id="L_created">—</div></div>
             <div><b>Packages</b><div id="L_count">—</div></div>
-            <div style="grid-column:1 / span 2;"><b>Pallet Size</b><div id="L_size">—</div></div>
+            <div><b>Size L×W×H (in)</b><div id="L_size">—</div></div>
+            <div><b>Gross weight</b><div id="L_weight">—</div></div>
           </div>
 
           <div class="qrWrap">
@@ -829,6 +840,34 @@
 
       <div class="modalBtns tools">
         <button class="primary" id="printBtn">Print 4x6</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<!-- Measure modal: height at wrap (weight optional), height + weight required at pickup -->
+<dialog id="measureDlg">
+  <div class="modal" style="max-width:520px">
+    <div class="modalHead">
+      <b id="measureTitle">Pallet measurements</b>
+      <button id="measureCancelBtn" type="button">Cancel</button>
+    </div>
+    <div class="modalBody">
+      <div class="small" id="measureHint" style="margin-bottom:10px"></div>
+      <div class="row tools">
+        <div>
+          <label>Height (in) <span id="measureHeightReq" class="pill warn">required</span></label>
+          <input id="measureHeight" class="mono" inputmode="decimal" placeholder="e.g. 71" />
+        </div>
+        <div>
+          <label>Gross weight (lb) <span id="measureWeightReq" class="pill gray">optional</span></label>
+          <input id="measureWeight" class="mono" inputmode="decimal" placeholder="e.g. 781" />
+        </div>
+      </div>
+      <div class="small" style="margin-top:8px">Gross weight = pallet + film + packages, from the floor scale. Footprint: <span id="measureFootprint" class="mono">—</span></div>
+      <div id="measureStatus" class="status" style="margin-top:10px; display:none"></div>
+      <div class="modalBtns tools">
+        <button class="primary" id="measureSaveBtn" type="button">Save &amp; continue</button>
       </div>
     </div>
   </div>
@@ -907,30 +946,68 @@
 
   let currentPallet = null;
 
+  /************************
+   * Pallet dimensions model
+   * footprint: STANDARD_40x48 (L/W fixed 48x40) | OVERSIZE (L/W entered)
+   * heightIn: captured at WRAPPED (required) — grossWeightLb: optional at WRAPPED, required at PICKED UP
+   * pallet_size (text) is derived by a DB trigger — never written by this app.
+   ************************/
+  const STATUS_PICKED = "PICKED UP";
+  const STATUS_WRAPPED = "WRAPPED / READY FOR PICKUP";
+
+  function numOrNull(v){
+    if(v===null||v===undefined) return null;
+    const s=String(v).trim().replace(",",".");
+    if(s==="") return null;
+    const n=Number(s);
+    return Number.isFinite(n)&&n>0 ? Math.round(n*100)/100 : null;
+  }
+  function fmtIn(n){ return n==null ? "" : String(Number(n)); }
+  function sizeLabel(p){
+    if(!p) return "—";
+    const L=p.footprint==="OVERSIZE"?fmtIn(p.lengthIn)||"?":"48";
+    const W=p.footprint==="OVERSIZE"?fmtIn(p.widthIn)||"?":"40";
+    const H=fmtIn(p.heightIn)||"?";
+    return `${L}×${W}×${H} in`;
+  }
+  function weightLabel(p){ return p&&p.grossWeightLb!=null ? `${fmtIn(p.grossWeightLb)} lb` : "—"; }
+  function rowToPallet(r){
+    return { palletId:r.pallet_id, client:r.client, palletSize:r.pallet_size, status:r.status,
+      footprint:r.footprint||"STANDARD_40x48", lengthIn:r.length_in!=null?Number(r.length_in):null,
+      widthIn:r.width_in!=null?Number(r.width_in):null, heightIn:r.height_in!=null?Number(r.height_in):null,
+      grossWeightLb:r.gross_weight_lb!=null?Number(r.gross_weight_lb):null, measuredAt:r.measured_at||null,
+      packages:r.packages||[], createdAt:r.created_at, fullAt:r.full_at, wrappedAt:r.wrapped_at,
+      pickedUpAt:r.picked_up_at||null,
+      lastScanAt:(r.packages||[]).length ? r.packages[r.packages.length-1].addedAt : null };
+  }
+
   async function savePalletToDB(pallet){
+    const oversize = pallet.footprint==="OVERSIZE";
     const rec = {
-      pallet_id: pallet.palletId, client: pallet.client||"", pallet_size: pallet.palletSize||"",
+      pallet_id: pallet.palletId, client: pallet.client||"",
+      footprint: oversize ? "OVERSIZE" : "STANDARD_40x48",
+      length_in: oversize ? (pallet.lengthIn??null) : 48,
+      width_in:  oversize ? (pallet.widthIn??null)  : 40,
+      height_in: pallet.heightIn??null,
+      gross_weight_lb: pallet.grossWeightLb??null,
       status: pallet.status||"OPEN", packages: pallet.packages||[],
       full_at: pallet.fullAt||null, wrapped_at: pallet.wrappedAt||null,
+      picked_up_at: pallet.pickedUpAt||null,
       updated_at: nowISO(), app_source: "pallets"
     };
-    await sbFetch("POST", `/rest/v1/pallets?on_conflict=pallet_id`, rec);
+    const saved = await sbFetch("POST", `/rest/v1/pallets?on_conflict=pallet_id`, rec);
+    if(saved && saved[0]){ pallet.palletSize = saved[0].pallet_size; pallet.measuredAt = saved[0].measured_at||null; }
   }
 
   async function getPalletFromDB(palletId){
     const data = await sbFetch("GET", `/rest/v1/pallets?pallet_id=eq.${encodeURIComponent(palletId)}&limit=1`);
     if(!data||data.length===0) return null;
-    const r = data[0];
-    return { palletId:r.pallet_id, client:r.client, palletSize:r.pallet_size, status:r.status,
-              packages:r.packages||[], createdAt:r.created_at, fullAt:r.full_at, wrappedAt:r.wrapped_at,
-              lastScanAt:(r.packages||[]).length ? r.packages[r.packages.length-1].addedAt : null };
+    return rowToPallet(data[0]);
   }
 
   async function getAllPalletsFromDB(){
     const data = await sbFetch("GET", `/rest/v1/pallets?app_source=eq.pallets&order=created_at.desc&limit=500`);
-    return (data||[]).map(r=>{ return { palletId:r.pallet_id, client:r.client, palletSize:r.pallet_size,
-      status:r.status, packages:r.packages||[], createdAt:r.created_at, fullAt:r.full_at,
-      wrappedAt:r.wrapped_at, lastScanAt:(r.packages||[]).length?r.packages[r.packages.length-1].addedAt:null }; });
+    return (data||[]).map(rowToPallet);
   }
 
   async function checkTrackingExists(trk){
@@ -959,6 +1036,7 @@
     if(!currentPallet){
       $("kStatus").textContent="—"; $("kCount").textContent="0";
       $("kCreated").textContent="—"; $("kLastScan").textContent="—";
+      $("kSize").textContent="—"; $("kWeight").textContent="—";
       $("rightSummary").textContent="";
       $("pkgTbl").querySelector("tbody").innerHTML=""; return;
     }
@@ -966,6 +1044,8 @@
     $("kCount").textContent=String(currentPallet.packages?.length||0);
     $("kCreated").textContent=currentPallet.createdAt?fmtDateTime(currentPallet.createdAt):"—";
     $("kLastScan").textContent=currentPallet.lastScanAt?fmtDateTime(currentPallet.lastScanAt):"—";
+    $("kSize").textContent=sizeLabel(currentPallet);
+    $("kWeight").textContent=weightLabel(currentPallet);
     $("rightSummary").textContent=`Loaded pallet: ${currentPallet.palletId} • Client: ${currentPallet.client||"—"}`;
   }
 
@@ -991,7 +1071,7 @@
     currentPallet=p;
     $("palletId").value=currentPallet.palletId;
     $("client").value=currentPallet.client||"";
-    $("palletSize").value=currentPallet.palletSize||"40x48x60";
+    fillFootprintForm(currentPallet);
     setStatus("leftStatus","Pallet loaded. Ready to scan packages.","ok");
     $("lookupResult").innerHTML=`<div class="status ok">Loaded pallet: <span class="mono">${currentPallet.palletId}</span></div>`;
     updateKPIs(); renderPackageTable(); return p;
@@ -1001,7 +1081,69 @@
     if(!currentPallet){ setStatus("leftStatus","Generate or load a pallet first.","bad"); return false; }
     const client=$("client").value.trim();
     if(!client){ setStatus("leftStatus","Client is required for this pallet.","bad"); return false; }
-    currentPallet.client=client; currentPallet.palletSize=$("palletSize").value; return true;
+    const fp=readFootprintForm();
+    if(!fp.ok){ setStatus("leftStatus",fp.error,"bad"); return false; }
+    currentPallet.client=client; currentPallet.footprint=fp.footprint;
+    currentPallet.lengthIn=fp.lengthIn; currentPallet.widthIn=fp.widthIn; return true;
+  }
+
+  function fillFootprintForm(p){
+    $("footprint").value = p.footprint==="OVERSIZE" ? "OVERSIZE" : "STANDARD_40x48";
+    $("lengthIn").value = p.footprint==="OVERSIZE" ? fmtIn(p.lengthIn) : "";
+    $("widthIn").value  = p.footprint==="OVERSIZE" ? fmtIn(p.widthIn)  : "";
+    syncFootprintUI();
+  }
+  function syncFootprintUI(){ $("oversizeDims").hidden = $("footprint").value!=="OVERSIZE"; }
+  function readFootprintForm(){
+    const footprint=$("footprint").value;
+    if(footprint!=="OVERSIZE") return {ok:true, footprint:"STANDARD_40x48", lengthIn:48, widthIn:40};
+    const L=numOrNull($("lengthIn").value), W=numOrNull($("widthIn").value);
+    if(L==null||W==null) return {ok:false, error:"Oversize pallet: enter length and width in inches."};
+    return {ok:true, footprint:"OVERSIZE", lengthIn:L, widthIn:W};
+  }
+
+  /************************
+   * Measure dialog — height at WRAPPED (weight optional), both required at PICKED UP
+   ************************/
+  function askMeasurements(p, mode){
+    return new Promise((resolve)=>{
+      const dlg=$("measureDlg"), needWeight = mode==="pickup";
+      $("measureTitle").textContent = needWeight ? "Close pallet — final height & weight" : "Wrapped — pallet height";
+      $("measureHint").textContent = needWeight
+        ? "Required to close the pallet: final height and gross weight from the floor scale. This is what goes on the client report."
+        : "Enter the height of the wrapped pallet. Weight is optional now and becomes required at Close / PICKED UP.";
+      $("measureWeightReq").textContent = needWeight ? "required" : "optional";
+      $("measureWeightReq").className = "pill " + (needWeight ? "warn" : "gray");
+      $("measureFootprint").textContent = p.footprint==="OVERSIZE" ? `Oversize ${fmtIn(p.lengthIn)||"?"}×${fmtIn(p.widthIn)||"?"}` : "Standard 40×48";
+      $("measureHeight").value = fmtIn(p.heightIn);
+      $("measureWeight").value = fmtIn(p.grossWeightLb);
+      const st=$("measureStatus"); st.style.display="none"; st.textContent="";
+      const finish=(val)=>{ cleanup(); if(dlg.open) dlg.close(); resolve(val); };
+      const onSave=()=>{
+        const H=numOrNull($("measureHeight").value), Wt=numOrNull($("measureWeight").value);
+        if(H==null){ st.style.display="block"; st.className="status bad"; st.textContent="Height is required (inches)."; return; }
+        if(needWeight && Wt==null){ st.style.display="block"; st.className="status bad"; st.textContent="Gross weight is required to close the pallet (lb)."; return; }
+        if($("measureWeight").value.trim()!=="" && Wt==null){ st.style.display="block"; st.className="status bad"; st.textContent="Weight must be a number in lb."; return; }
+        finish({heightIn:H, grossWeightLb:Wt});
+      };
+      const onCancel=()=>finish(null);
+      const onKey=(e)=>{ if(e.key==="Enter"){ e.preventDefault(); onSave(); } };
+      const cleanup=()=>{
+        $("measureSaveBtn").removeEventListener("click",onSave);
+        $("measureCancelBtn").removeEventListener("click",onCancel);
+        dlg.removeEventListener("cancel",onCancelEvt);
+        $("measureHeight").removeEventListener("keydown",onKey);
+        $("measureWeight").removeEventListener("keydown",onKey);
+      };
+      const onCancelEvt=(e)=>{ e.preventDefault(); onCancel(); };
+      $("measureSaveBtn").addEventListener("click",onSave);
+      $("measureCancelBtn").addEventListener("click",onCancel);
+      dlg.addEventListener("cancel",onCancelEvt);
+      $("measureHeight").addEventListener("keydown",onKey);
+      $("measureWeight").addEventListener("keydown",onKey);
+      dlg.showModal();
+      setTimeout(()=>$("measureHeight").focus(),50);
+    });
   }
 
   async function addTrackingToCurrent(){
@@ -1043,9 +1185,24 @@
 
   async function markStatus(newStatus){
     const ok=await ensureCurrentPallet(); if(!ok) return;
-    currentPallet.status=newStatus;
+    if(newStatus===STATUS_WRAPPED){
+      const m=await askMeasurements(currentPallet,"wrap");
+      if(!m){ setStatus("leftStatus","Wrap cancelled — height not saved.","warn"); return; }
+      currentPallet.heightIn=m.heightIn;
+      if(m.grossWeightLb!=null) currentPallet.grossWeightLb=m.grossWeightLb;
+      currentPallet.wrappedAt=nowISO();
+    }
+    if(newStatus===STATUS_PICKED){
+      if(!(currentPallet.packages||[]).length){ setStatus("leftStatus","Cannot close an empty pallet.","bad"); return; }
+      const m=await askMeasurements(currentPallet,"pickup");
+      if(!m){ setStatus("leftStatus","Close cancelled — pallet stays "+(currentPallet.status||"OPEN")+".","warn"); return; }
+      if(!confirm(`Close pallet ${currentPallet.palletId} as PICKED UP?\n${(currentPallet.packages||[]).length} packages · ${m.heightIn} in high · ${m.grossWeightLb} lb\nIt will disappear from the open list.`)) return;
+      currentPallet.heightIn=m.heightIn; currentPallet.grossWeightLb=m.grossWeightLb;
+      if(!currentPallet.wrappedAt) currentPallet.wrappedAt=nowISO();
+      currentPallet.pickedUpAt=nowISO();
+    }
     if(newStatus==="FULL") currentPallet.fullAt=nowISO();
-    if(newStatus==="WRAPPED / READY FOR PICKUP") currentPallet.wrappedAt=nowISO();
+    currentPallet.status=newStatus;
     await saveCurrentPallet();
     setStatus("leftStatus",`Pallet status updated: ${newStatus}`,"ok");
     updateKPIs();
@@ -1094,6 +1251,8 @@
         </div>
         <div class="palletMeta">
           <span><b>Created:</b> ${created}</span>
+          <span><b>Size:</b> ${sizeLabel(p)}</span>
+          <span><b>Wt:</b> ${weightLabel(p)}</span>
         </div>
         <div class="palletActions">
           <button class="primary small" data-load="${p.palletId}">Load</button>
@@ -1162,10 +1321,16 @@
       palletId: p.palletId,
       client: p.client || "",
       palletSize: p.palletSize || "",
+      footprint: p.footprint || "",
+      lengthIn: p.footprint==="OVERSIZE" ? fmtIn(p.lengthIn) : "48",
+      widthIn: p.footprint==="OVERSIZE" ? fmtIn(p.widthIn) : "40",
+      heightIn: fmtIn(p.heightIn),
+      grossWeightLb: fmtIn(p.grossWeightLb),
       status: p.status || "",
       createdAt: p.createdAt || "",
       fullAt: p.fullAt || "",
       wrappedAt: p.wrappedAt || "",
+      pickedUpAt: p.pickedUpAt || "",
     };
 
     const pkgs = p.packages || [];
@@ -1220,7 +1385,8 @@
       return;
     }
     const header = [
-      "palletId","client","palletSize","status","createdAt","fullAt","wrappedAt",
+      "palletId","client","palletSize","footprint","lengthIn","widthIn","heightIn","grossWeightLb",
+      "status","createdAt","fullAt","wrappedAt","pickedUpAt",
       "packageTracking","packageAddedAt","packageNotes"
     ];
     const rows = buildPalletRows(p);
@@ -1232,7 +1398,8 @@
     const all = await getAll(STORE_PALLETS);
     all.sort((a,b)=> new Date(a.createdAt||0) - new Date(b.createdAt||0));
     const header = [
-      "palletId","client","palletSize","status","createdAt","fullAt","wrappedAt",
+      "palletId","client","palletSize","footprint","lengthIn","widthIn","heightIn","grossWeightLb",
+      "status","createdAt","fullAt","wrappedAt","pickedUpAt",
       "packageTracking","packageAddedAt","packageNotes"
     ];
     const rows = [];
@@ -1248,7 +1415,7 @@ const STORE_PALLETS = "pallets";
 const STORE_TRACKING = "tracking_to_pallet";
 
 function isNotFull(status){
-  return status !== "FULL";
+  return status !== "FULL" && status !== STATUS_PICKED;
 }
 
 async function lookupTracking(){
@@ -1295,7 +1462,8 @@ async function openLabel(palletId){
   $("L_status").textContent = p.status || "OPEN";
   $("L_created").textContent = p.createdAt ? fmtDateTime(p.createdAt) : "—";
   $("L_count").textContent = String((p.packages||[]).length);
-  $("L_size").textContent = p.palletSize || "—";
+  $("L_size").textContent = sizeLabel(p);
+  $("L_weight").textContent = weightLabel(p);
   $("qrPayloadPreview").value = p.palletId;
 
   // Generate QR code
@@ -1318,11 +1486,14 @@ async function openLabel(palletId){
     await openDB();
 
     $("genPalletBtn").addEventListener("click", async ()=>{
+      const fp = readFootprintForm();
+      if(!fp.ok){ setStatus("leftStatus", fp.error, "bad"); return; }
       const id = genPalletId();
       const pallet = {
         palletId: id,
         client: $("client").value.trim(),
-        palletSize: $("palletSize").value,
+        footprint: fp.footprint, lengthIn: fp.lengthIn, widthIn: fp.widthIn,
+        heightIn: null, grossWeightLb: null,
         createdAt: nowISO(),
         status: "OPEN",
         packages: []
@@ -1348,7 +1519,9 @@ async function openLabel(palletId){
     $("pkgTracking").addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); addTrackingToCurrent(); }});
 
     $("markFullBtn").addEventListener("click", ()=>markStatus("FULL"));
-    $("wrapReadyBtn").addEventListener("click", ()=>markStatus("WRAPPED / READY FOR PICKUP"));
+    $("wrapReadyBtn").addEventListener("click", ()=>markStatus(STATUS_WRAPPED));
+    $("pickedUpBtn").addEventListener("click", ()=>markStatus(STATUS_PICKED));
+    $("footprint").addEventListener("change", syncFootprintUI);
 
     $("printLabelBtn").addEventListener("click", async ()=>{
       if(!currentPallet){
@@ -1390,6 +1563,7 @@ async function openLabel(palletId){
     $("labelDlg").addEventListener("close", ()=>{ $("labelPalletId").value=""; });
 
     // Initial state
+    syncFootprintUI();
     setStatus("leftStatus","Generate a pallet ID to start scanning.", "");
     updateKPIs();
     await refreshOpenPallets();
