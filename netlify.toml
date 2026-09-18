@@ -32,6 +32,10 @@
 [functions."wa-leads-weekly-report"]
   schedule = "0 23 * * 1"
 
+# Follow-ups: quote reminders + lead nudges. 14:00 UTC = 10:00 AM Miami (EDT).
+[functions."wa-followups"]
+  schedule = "0 14 * * *"
+
 # ─── Redirects ──────────────────────────────────────────────────────────────
 
 [[redirects]]
