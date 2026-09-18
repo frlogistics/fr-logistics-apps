@@ -1,0 +1,152 @@
+{
+  "version": "7.1",
+  "screens": [
+    {
+      "id": "LEAD_CAPTURE",
+      "title": "Cuéntanos de tu operación",
+      "terminal": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextSubheading",
+            "text": "Con esto nuestro equipo te responde con una cotización real."
+          },
+          {
+            "type": "TextInput",
+            "name": "name",
+            "label": "Tu nombre",
+            "input-type": "text",
+            "required": true
+          },
+          {
+            "type": "TextInput",
+            "name": "company",
+            "label": "Empresa o marca",
+            "input-type": "text",
+            "required": false
+          },
+          {
+            "type": "TextInput",
+            "name": "email",
+            "label": "Email",
+            "input-type": "email",
+            "required": true
+          },
+          {
+            "type": "Dropdown",
+            "name": "service",
+            "label": "¿Qué servicio necesitas?",
+            "required": true,
+            "data-source": [
+              {
+                "id": "fba_prep",
+                "title": "Prep FBA (Amazon)"
+              },
+              {
+                "id": "fulfillment",
+                "title": "Fulfillment Shopify / DTC"
+              },
+              {
+                "id": "removal",
+                "title": "Removal orders / devoluciones"
+              },
+              {
+                "id": "storage",
+                "title": "Almacenamiento / consolidación"
+              },
+              {
+                "id": "dropship",
+                "title": "Casillero / DropShipments"
+              },
+              {
+                "id": "other",
+                "title": "Otro"
+              }
+            ]
+          },
+          {
+            "type": "Dropdown",
+            "name": "volume",
+            "label": "Volumen mensual estimado",
+            "required": true,
+            "data-source": [
+              {
+                "id": "lt100",
+                "title": "Menos de 100 unidades/mes"
+              },
+              {
+                "id": "100_500",
+                "title": "100 – 500"
+              },
+              {
+                "id": "500_2000",
+                "title": "500 – 2,000"
+              },
+              {
+                "id": "gt2000",
+                "title": "Más de 2,000"
+              },
+              {
+                "id": "pallets",
+                "title": "Lo mido en pallets / cajas"
+              },
+              {
+                "id": "unknown",
+                "title": "Aún no lo sé"
+              }
+            ]
+          },
+          {
+            "type": "Dropdown",
+            "name": "timing",
+            "label": "¿Cuándo quieres empezar?",
+            "required": true,
+            "data-source": [
+              {
+                "id": "now",
+                "title": "Esta semana"
+              },
+              {
+                "id": "month",
+                "title": "Este mes"
+              },
+              {
+                "id": "quarter",
+                "title": "En 1–3 meses"
+              },
+              {
+                "id": "exploring",
+                "title": "Solo estoy explorando"
+              }
+            ]
+          },
+          {
+            "type": "TextArea",
+            "name": "product",
+            "label": "¿Qué producto es? (opcional)",
+            "required": false
+          },
+          {
+            "type": "Footer",
+            "label": "Enviar",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "name": "${form.name}",
+                "company": "${form.company}",
+                "email": "${form.email}",
+                "service": "${form.service}",
+                "volume": "${form.volume}",
+                "timing": "${form.timing}",
+                "product": "${form.product}",
+                "lang": "es"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
