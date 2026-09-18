@@ -27,6 +27,13 @@
 
 import { routeIncomingMessage } from "./_agent-helpers/wa-agent-router.js";
 
+// Explicit background mode. The "-background" filename suffix alone was NOT
+// honoured for this modern (ESM, Request/Response) function: the deploy of
+// 2026-09-18 answered 403/200 synchronously instead of the 202 that marks
+// an async invocation. With this config the platform returns 202 at once
+// and lets the code below run for up to 15 minutes.
+export const config = { background: true };
+
 const QUIET_MS      = 15000;   // silence window before LIAM answers
 const MAX_WAITS     = 6;       // max extra waits if the person keeps typing (~90s)
 const EXTRA_WAIT_MS = 12000;
