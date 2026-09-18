@@ -313,8 +313,11 @@ async function routeToAgent(messages) {
     if (!ok) {
       console.warn('[webhook] debounce trigger failed for ' + num + ' — routing immediately');
       const mine = eligible.filter(m => String(m.from || "").replace(/[^0-9]/g, "") === num);
-      await routeNow(mine);
+      // Mark first, route second: if the background worker DID start despite
+      // the failed/slow trigger, it wakes in 15s, finds nothing pending and
+      // exits — no double reply.
       await markRouted(mine.map(m => m.id), "immediate_fallback");
+      await routeNow(mine);
     }
   }
 }
@@ -388,23 +391,36 @@ async function markRouted(ids, batchId) {
 
 // Background functions answer 202 immediately and keep running. Anything
 // else means "not available right now" and the caller falls back.
+//
+// Hard timeout: if the platform ever runs the worker SYNCHRONOUSLY (as
+// happened on the first deploy, before `config.background` was set), this
+// call would otherwise hang the webhook for the whole 15s quiet window and
+// Meta would start retrying. A 202 arrives in well under a second; anything
+// slower is treated as "not available" and we fall back.
+const TRIGGER_TIMEOUT_MS = 3000;
+
 async function triggerDebounce(waNumber) {
   if (!INTERNAL_SECRET) {
     console.error('[webhook] WHATSAPP_WEBHOOK_SECRET missing — cannot sign internal trigger');
     return false;
   }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TRIGGER_TIMEOUT_MS);
   try {
     const r = await fetch(`${SITE_URL}/.netlify/functions/${DEBOUNCE_FN}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-fr-internal": INTERNAL_SECRET },
       body: JSON.stringify({ wa_number: waNumber, queued_at: new Date().toISOString() }),
+      signal: controller.signal,
     });
     if (r.status === 202) return true;
-    console.warn('[webhook] debounce trigger HTTP ' + r.status);
+    console.warn('[webhook] debounce trigger HTTP ' + r.status + ' (expected 202) — worker is not running as background');
     return false;
   } catch (e) {
-    console.error('[webhook] triggerDebounce error:', e?.message || e);
+    console.error('[webhook] triggerDebounce error:', e?.name === "AbortError" ? "timeout " + TRIGGER_TIMEOUT_MS + "ms" : (e?.message || e));
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
