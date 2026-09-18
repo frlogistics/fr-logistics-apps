@@ -1,4 +1,4 @@
-// netlify/functions-helpers/wa-agent-router.js
+// netlify/functions/_agent-helpers/wa-agent-router.js
 //
 // THE AGENT ROUTER — called for every inbound WhatsApp message after
 // the webhook has persisted to Blobs and fired email/push.
@@ -51,6 +51,7 @@ import {
   extractBoth,
 } from "./wa-agent-capture.js";
 import { sendHandoffEmail } from "./wa-agent-email-handoff.js";
+import { buildHandoffSummary } from "./wa-agent-summary.js";
 import {
   QUALIFY_SEQUENCES,
   parseQualifyReply,
@@ -1303,6 +1304,10 @@ async function escalateToHuman(conv, msg, language, reason) {
 
   await sendOnce({ to: from, text: note, clientName: "Liam" });
 
+  // [2026-09-18] Summary + score BEFORE the email so the human gets the
+  // 3-line brief in the inbox and in the mail. Best-effort: null on failure.
+  const escSummary = await buildHandoffSummary({ ...conv, handoff_reason: reason });
+
   try {
     if (!conv.info_email_sent_at) {
       await sendHandoffEmail({
@@ -1314,6 +1319,7 @@ async function escalateToHuman(conv, msg, language, reason) {
         firstMessage: conv.first_message || "",
         handoffReason: reason,
         conversationId: conv.id,
+        summary: escSummary,
       });
       await markInfoEmailSent(conv.id);
     }
@@ -1373,6 +1379,10 @@ async function completeHandoff(conv, msg, name, email) {
       .single();
     const summary = freshConv ? buildQualificationSummary(freshConv) : {};
 
+    // [2026-09-18] 3-line brief + hot/warm/cold score for the human.
+    // Written to wa_agent_conversations + wa_leads, and shown in the email.
+    const brief = await buildHandoffSummary(freshConv || conv);
+
     const emailResult = await sendHandoffEmail({
       waNumber: from,
       name,
@@ -1383,6 +1393,7 @@ async function completeHandoff(conv, msg, name, email) {
       handoffReason: conv.handoff_reason || "user_request_jose",
       conversationId: conv.id,
       qualification: summary,
+      summary: brief,
     });
 
     if (emailResult.ok) {
