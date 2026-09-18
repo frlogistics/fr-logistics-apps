@@ -72,7 +72,8 @@ const ECOPACK_TEMPLATES = [
 ];
 
 // [2026-09-18] Lead re-engagement templates (approved per language in Meta)
-const LEAD_TEMPLATES = { lead_followup_es: "es", lead_followup_en: "en_US", lead_nudge_es: "es", lead_nudge_en: "en_US", quote_reminder_es: "es", quote_reminder_en: "en_US" };
+// These were created in WhatsApp Manager as plain "English" (code "en"), not "English (US)".
+const LEAD_TEMPLATES = { lead_followup_es: "es", lead_followup_en: "en", lead_nudge_es: "es", lead_nudge_en: "en", quote_reminder_es: "es", quote_reminder_en: "en" };
 
 function getLangCode(type) {
   /* NEW */
