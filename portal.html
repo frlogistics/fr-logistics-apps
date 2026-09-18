@@ -271,7 +271,15 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
       <div class="sectionTitle">Operations Apps — click to open</div>
       <div class="appGrid" id="appGrid"></div>
     </section>
-    <section id="tabWhatsapp">
+<section id="tabWhatsapp">
+      <!-- 2026-09-18: the WhatsApp tab now hosts the new inbox app (inbox.html,
+           WhatsApp-Web look, contact panel, LIAM controls). The legacy inbox
+           markup below is kept HIDDEN so the enhancement scripts that still
+           reference its ids keep working without changes. -->
+      <div id="waInboxWrap" style="height:calc(100vh - 150px);min-height:520px;border-radius:14px;overflow:hidden;border:1px solid #E9EDEF;background:#fff">
+        <iframe id="waInboxFrame" src="about:blank" title="Inbox" style="width:100%;height:100%;border:0;display:block"></iframe>
+      </div>
+      <div id="waLegacyInbox" style="display:none">
       <div class="waHeader">
         <div class="waTitle">💬 WhatsApp Inbox</div>
         <div class="btnRow">
@@ -307,6 +315,7 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
             <button class="replyBtn" id="replyBtn" onclick="sendReply()">Send ↑</button>
           </div>
         </div>
+      </div>
       </div>
     </section>
     <section id="tabClients" class="">
@@ -544,7 +553,6 @@ const APPS=[
   {icon:'🔢',name:'Stock Count',desc:'Blind physical counts · variance vs SkuVault',url:'count.html'},
   {icon:'⬆️',name:'Push to SkuVault',desc:'Apply a finished count to SkuVault by API',url:'skuvault_push.html'},
   {icon:'📐',name:'Volume Calculator',desc:'Box & pallet calculator',url:'FR_Logistics_Volume_Calculator.html'},
-  {icon:'💬',name:'Inbox',desc:'WhatsApp · web chat · LIAM handoffs and lead scores',url:'inbox.html'},
   {icon:'📲',name:'WA Lead Capture',desc:'Capture & forward WhatsApp leads to sales',url:'wa-lead-capture.html'},
 ];
 const TPLS={
@@ -575,6 +583,7 @@ function switchTab(name,btn){
   if(el)el.classList.add('active');
   if(btn)btn.classList.add('active');
   if(name==='Dashboard'){const fr=document.getElementById('dashFrame');if(!fr.src||fr.src===window.location.href||fr.src==='about:blank'){fr.src='dashboard.html';}}
+  if(name==='Whatsapp'){const wf=document.getElementById('waInboxFrame');if(wf&&(!wf.src||wf.src===window.location.href||wf.src==='about:blank')){wf.src='inbox.html';}}
   if(name==='Pickups'&&allPickups.length===0)loadPickups();
 }
 
