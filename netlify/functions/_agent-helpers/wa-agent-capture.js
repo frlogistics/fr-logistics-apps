@@ -44,7 +44,9 @@ export const MAX_NAME_WORDS = 4;
 
 // Words that never appear inside a person's name. If one shows up we are
 // looking at a sentence, not a name.
-const SENTENCE_WORDS = /\b(hola|hello|hi|hey|buenos|buenas|gracias|thanks?|thank|please|favor|quiero|necesito|need|want|looking|busco|buscando|servicio|service|cotiza|cotizacion|quote|precio|price|empresa|company|amazon|shopify|whatsapp|email|correo|informacion|information|consulta|question|would|could|should|puede|puedo|somos|tenemos|estoy|estamos|disabled|boss|expecting)\b/i;
+// 2026-09-18: extended with function words after "Y ahora Que hago" was
+// accepted as a name (4 words, no punctuation, all letters).
+const SENTENCE_WORDS = /\b(hola|hello|hi|hey|buenos|buenas|gracias|thanks?|thank|please|favor|quiero|necesito|need|want|looking|busco|buscando|servicio|service|cotiza|cotizacion|quote|precio|price|empresa|company|amazon|shopify|whatsapp|email|correo|informacion|information|consulta|question|would|could|should|puede|puedo|somos|tenemos|estoy|estamos|disabled|boss|expecting|ahora|que|como|cuando|donde|cual|cuales|quien|hago|hacer|debo|tengo|hay|para|por|con|sin|the|what|how|when|where|which|who|now|then|next|do|does|did|can|will|this|that|there|here|and|but|not|sigo|espero|listo|dale|bueno|vale|okay|mi|tu|su|nuestro|your|our|me|you|we|they|it|is|are|am|was)\b/i;
 
 /**
  * Heuristic to decide whether a string is a plausible PERSON NAME.
