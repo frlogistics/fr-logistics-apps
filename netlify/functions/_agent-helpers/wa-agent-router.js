@@ -40,7 +40,7 @@ import {
   parseAddress,
   sendWebOutbound,
 } from "./wa-agent-db.js";
-import { sendAndRecord as sendWhatsAppAndRecord } from "./wa-agent-send.js";
+import { sendAndRecord as sendWhatsAppAndRecord, sendAgentFlow, recordOutboundInBlobs } from "./wa-agent-send.js";
 import {
   extractEmail,
   isValidEmail,
@@ -101,6 +101,148 @@ async function sendOnce(args) {
   if (channel === "web") return await sendWebOutbound({ ...args, once: true });
   console.error(`[agent-router] sin transporte para el canal ${channel}`);
   return { ok: false, suppressed: false };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// WHATSAPP FLOWS — native in-chat lead form  [2026-09-18]
+//
+// Published in WhatsApp Manager (WABA "FR-Logistics Miami"):
+//   FR Lead Capture ES → 2325583131526236
+//   FR Lead Capture EN → 1670919591296203
+// Both end with a "complete" action whose payload is:
+//   { name, company, email, service, volume, timing, product, lang }
+//
+// How it plugs in (deliberately minimal):
+//   - Every place that used to start the text capture (sub_state
+//     awaiting_name) still sends its ack text, then ALSO sends the Flow.
+//     The person can tap the form or just type — both paths work.
+//   - A submitted form arrives from the webhook as
+//     "[flow-submit] {json}". handleFlowSubmit() fills the captured_*
+//     columns + wa_leads and calls completeHandoff(). It is checked in
+//     STEP 3.8, before any state branch, so a late submit never falls
+//     into the FAQ/LLM path.
+//   - Web/Instagram channels never get a Flow (WhatsApp only).
+// ─────────────────────────────────────────────────────────────────────
+const WA_FLOW_IDS = { ES: "2325583131526236", EN: "1670919591296203" };
+const FLOW_SUBMIT_MARK = "[flow-submit]";
+
+const FLOW_LABELS = {
+  service: {
+    fba_prep: "Amazon FBA prep", fulfillment: "Shopify / DTC fulfillment",
+    removal: "Removal orders / returns", storage: "Storage / consolidation",
+    dropship: "Casillero / DropShipments", other: "Other",
+  },
+  volume: {
+    lt100: "Under 100 units/month", "100_500": "100–500 units/month",
+    "500_2000": "500–2,000 units/month", gt2000: "Over 2,000 units/month",
+    pallets: "Measured in pallets / boxes", unknown: "Not sure yet",
+  },
+  timing: {
+    now: "This week", month: "This month", quarter: "In 1–3 months", exploring: "Just exploring",
+  },
+};
+
+function extractFlowSubmit(text) {
+  const t = String(text || "");
+  const idx = t.indexOf(FLOW_SUBMIT_MARK);
+  if (idx < 0) return null;
+  const rest = t.slice(idx + FLOW_SUBMIT_MARK.length).trim();
+  const line = rest.split("\n")[0].trim();
+  try {
+    const data = JSON.parse(line);
+    return data && typeof data === "object" ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+// Sends the lead-capture Flow. Best-effort: never throws, WhatsApp only.
+async function offerLeadForm(conv, from, language) {
+  try {
+    if (parseAddress(from).channel !== "whatsapp") return;
+    const lang = (language || "EN").toUpperCase() === "ES" ? "ES" : "EN";
+    const flowId = WA_FLOW_IDS[lang];
+    if (!flowId) return;
+
+    const copy = lang === "ES"
+      ? { header: "Formulario rápido", body: "Si prefieres, completa este formulario de 1 minuto y nuestro equipo te responde con una cotización real.", cta: "Completar", footer: "FR-Logistics · Miami" }
+      : { header: "Quick form", body: "If you prefer, fill out this 1-minute form and our team will reply with a real quote.", cta: "Open form", footer: "FR-Logistics · Miami" };
+
+    const res = await sendAgentFlow(from, {
+      flowId,
+      header: copy.header,
+      body: copy.body,
+      cta: copy.cta,
+      footer: copy.footer,
+      screen: "LEAD_CAPTURE",
+      flowToken: `lead-${conv?.id || "noconv"}-${Date.now()}`,
+    });
+    if (res.ok) {
+      // Inbox shows that a form was offered (the Flow itself is not text)
+      await recordOutboundInBlobs({ to: from, text: `📋 Lead form sent (${lang})`, messageId: res.messageId, clientName: "Liam" });
+      if (conv?.id) await recordAgentMessage(conv.id);
+      console.log(`[agent-router] lead form (${lang}) sent to ${from}`);
+    } else {
+      console.error(`[agent-router] lead form send failed: ${res.error}`);
+    }
+  } catch (e) {
+    console.error("[agent-router] offerLeadForm error:", e?.message || e);
+  }
+}
+
+// A submitted form: fill everything we can and close the handoff.
+async function handleFlowSubmit(conv, msg, data) {
+  const { from } = msg;
+  const language = (conv.language || data.lang || "en").toUpperCase();
+  await updateConversationOnUserMessage(conv.id);
+
+  const name    = String(data.name || "").trim();
+  const email   = String(data.email || "").trim().toLowerCase();
+  const company = String(data.company || "").trim();
+  const product = String(data.product || "").trim();
+  const service = String(data.service || "").trim();
+  const volume  = String(data.volume || "").trim();
+  const timing  = String(data.timing || "").trim();
+
+  // Conversation columns
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
+    const patch = {};
+    if (name && isPlausibleName(name)) patch.captured_name = name;
+    if (email && isValidEmail(email)) patch.captured_email = email;
+    if (service) { patch.captured_service = service; }
+    if (volume)  { patch.captured_volume = FLOW_LABELS.volume[volume] || volume; patch.captured_volume_raw = volume; }
+    if (timing)  { patch.captured_stage = FLOW_LABELS.timing[timing] || timing; patch.captured_stage_raw = timing; }
+    if (product) { patch.captured_product_type = product.slice(0, 200); patch.captured_product_type_raw = product.slice(0, 500); }
+    const noteBits = [company ? `Company: ${company}` : null, "Source: WhatsApp Flow"].filter(Boolean);
+    patch.internal_notes = [conv.internal_notes, noteBits.join(" · ")].filter(Boolean).join("\n");
+    if (!conv.handoff_required) { patch.handoff_required = true; patch.handoff_reason = "flow_submitted"; patch.handoff_at = new Date().toISOString(); }
+    await sb.from("wa_agent_conversations").update(patch).eq("id", conv.id);
+
+    // Lead columns
+    if (conv.lead_id) {
+      const lp = {};
+      if (name && isPlausibleName(name)) lp.name = name;
+      if (email && isValidEmail(email)) lp.email = email;
+      if (volume)  lp.monthly_volume = FLOW_LABELS.volume[volume] || volume;
+      if (product) lp.product_type = product.slice(0, 200);
+      if (service) lp.service_detail = FLOW_LABELS.service[service] || service;
+      const notes = [company ? `Company: ${company}` : null, timing ? `Start: ${FLOW_LABELS.timing[timing] || timing}` : null].filter(Boolean).join(" · ");
+      if (notes) {
+        const { data: cur } = await sb.from("wa_leads").select("notes").eq("id", conv.lead_id).single();
+        lp.notes = [cur?.notes, notes].filter(Boolean).join("\n");
+      }
+      if (Object.keys(lp).length) await sb.from("wa_leads").update(lp).eq("id", conv.lead_id);
+    }
+  } catch (e) {
+    console.error("[agent-router] handleFlowSubmit persist error:", e?.message || e);
+  }
+
+  await resetRetry(conv.id);
+  const finalName  = (name && isPlausibleName(name)) ? name : (conv.captured_name || msg.clientName || "Lead");
+  const finalEmail = (email && isValidEmail(email)) ? email : (conv.captured_email || "(no proporcionado)");
+  return await completeHandoff({ ...conv, language: language.toLowerCase(), handoff_reason: conv.handoff_reason || "flow_submitted" }, msg, finalName, finalEmail);
 }
 
 /**
@@ -232,6 +374,35 @@ export async function routeIncomingMessage(msg) {
         await markHandoff(existingConv.id, "visit_request", existingConv.state);
       }
       return;
+    }
+
+    // ─── STEP 3.8: FLOW SUBMIT ────────────────────────────────────
+    // [2026-09-18] A completed lead form wins over any state. If there is
+    // no conversation at all (form submitted long after the session
+    // expired) we open one straight in handoff and close it.
+    const flowData = extractFlowSubmit(text);
+    if (flowData) {
+      let conv = existingConv;
+      if (!conv) {
+        const lang = (flowData.lang || "en").toUpperCase() === "ES" ? "ES" : "EN";
+        conv = await createConversation({
+          waNumber: from,
+          waProfileName: clientName,
+          firstMessage: "[lead form]",
+          language: lang,
+          languageSource: "flow_payload",
+          isExistingClient: !!existingClient,
+          clientId: existingClient?.clientId || null,
+        });
+        if (!conv) return;
+        if (!existingClient) {
+          const leadId = await createLeadFromConversation({ waNumber: from, waProfileName: clientName, language: lang.toLowerCase(), firstMessage: "[lead form]" });
+          if (leadId) { await linkConversationToLead(conv.id, leadId); conv.lead_id = leadId; }
+        }
+        await markHandoff(conv.id, "flow_submitted", "handoff_jose");
+      }
+      console.log(`[agent-router] flow submit received for conv ${conv.id}`);
+      return await handleFlowSubmit(conv, msg, flowData);
     }
 
     // Branch B: active conversation in pending_language state
@@ -376,6 +547,7 @@ async function handleHumanShortcut(msg) {
     if (send.ok) {
       await recordAgentMessage(existingConv.id, "handoff_jose");
       await setSubStateAndService(existingConv.id, "awaiting_name", "jose_handoff");
+      await offerLeadForm(existingConv, from, language);
     }
     return;
   }
@@ -418,6 +590,7 @@ async function handleHumanShortcut(msg) {
   if (send.ok) {
     await recordAgentMessage(conv.id, "handoff_jose");
     await setSubStateAndService(conv.id, "awaiting_name", "jose_handoff");
+    await offerLeadForm(conv, from, language);
   }
 }
 
@@ -571,6 +744,7 @@ async function handleMenuReply(conv, msg) {
       await markHandoff(conv.id, "user_request_jose", "handoff_jose");
       // Day 3: enter capture flow waiting for name
       await setSubStateAndService(conv.id, "awaiting_name", "jose_handoff");
+      await offerLeadForm(conv, from, language);
     }
     return;
   }
@@ -1149,6 +1323,7 @@ async function handleQualifyReply(conv, msg) {
     await recordAgentMessage(conv.id, "handoff_jose");
     await markHandoff(conv.id, `qualified_${service}`, "handoff_jose");
     await setSubState(conv.id, "awaiting_name");
+    await offerLeadForm(conv, from, language);
   }
 }
 
