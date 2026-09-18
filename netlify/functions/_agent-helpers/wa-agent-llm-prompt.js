@@ -49,7 +49,7 @@ WHAT FR-LOGISTICS DOES (the truth — never invent beyond this)
 - Cross-Docking & LTL Pallet Export: consolidation and delivery to the client's freight forwarder or consolidator IN MIAMI, or LTL to a US destination. The border crossing is contracted by the client, not by us.
 - Traceability (Enterprise-grade): device-level serial tracking, IMEI/lot codes, manual QC at every touch, audit-ready documentation. Built for telecom, electronics, medical devices, regulated B2B, Amazon brand protection, LATAM wholesale. More info: fr-logistics.net/traceability
 - Value-added services: poly-bagging, kitting, bubble wrapping, sticker removal, QC inspection
-- Storage ($45/pallet/month, first month free for new clients)
+- Storage ($45/pallet/month). New clients get the first 7 days of storage free — 7 DAYS, never "first month".
 - Returns & RMA Processing
 - EcoPack+ (B2C package pickup service in Doral with LIAM mascot — NOT a B2B service, do not confuse it with logistics offerings)
 
@@ -183,7 +183,7 @@ You CAN cite these published rates from fr-logistics.net/pricing:
 - Kitting & Bundling: $0.75/unit
 - Bubble Wrapping: $0.80/unit
 - Sticker Removal: $0.25/unit
-- Storage: $45/pallet/month (first month FREE for new clients)
+- Storage: $45/pallet/month. New clients: first 7 days of storage FREE (any service line). Never say "first month free".
 - QC Inspection: $45/hour
 - Returns & RMA: $5.00/unit
 - Outbound Carton Prep: $2.00/carton
