@@ -14,6 +14,13 @@
 //   SUPABASE_SERVICE_KEY
 //   WHATSAPP_TOKEN          — for agent outbound replies (Meta Cloud API)
 //   WHATSAPP_PHONE_ID       — for agent outbound replies
+//
+// DEBOUNCE (2026-09-18): inbound messages are no longer routed to LIAM one
+// by one. Each one is queued in wa_agent_inbox and a background function
+// (wa-agent-debounce-background.js) waits ~15s of silence, then routes the
+// whole burst as ONE message. A person who types four short lines gets one
+// considered reply instead of four. If the background trigger is not
+// available (non-202), we fall back to immediate routing so nothing is lost.
 
 import { getStore } from "@netlify/blobs";
 import { createClient } from "@supabase/supabase-js";
@@ -250,23 +257,154 @@ async function notifyOutOfBand(messages, agentMessages) {
   ]);
 }
 
-// [NEW Sprint 1] Loop over new messages and route each to the agent.
-// Errors per-message are swallowed so one bad message doesn't block others.
-// [NEW 2026-08-20] Antes de enrutar, se descarta cualquier numero con baja
-// ACTIVA en wa_optouts — asi un numero que se dio de baja en una sesion
-// anterior tampoco recibe respuesta del agente.
+// ───────────────────────────────── Agent routing with DEBOUNCE  [2026-09-18]
+//
+// Before: every inbound message called routeIncomingMessage() right away,
+// so "hola" / "quiero cotizar" / "es para FBA" sent 3 seconds apart got
+// three separate replies (and three LLM calls).
+//
+// Now: each message is queued in wa_agent_inbox and we poke the background
+// function once per number. That function sleeps DEBOUNCE_MS, checks that
+// the person went quiet, atomically claims the pending rows (Postgres
+// advisory lock — two invocations can never split a burst) and routes
+// them merged. Opt-outs and internal numbers never reach the queue.
+//
+// Fallback: if the trigger call does not return 202 (plan without
+// background functions, deploy in progress, network blip) we route
+// immediately as before and mark the rows routed, so no message is ever
+// stuck in the queue.
+
+const DEBOUNCE_FN = "wa-agent-debounce-background";
+const SITE_URL = (process.env.URL || "https://apps.fr-logistics.net").replace(/\/$/, "");
+const INTERNAL_SECRET = process.env.WHATSAPP_WEBHOOK_SECRET || "";
+
 async function routeToAgent(messages) {
   if (!messages?.length) return;
+
+  // 1) Filter opted-out numbers (same rule as before)
+  const eligible = [];
   for (const msg of messages) {
     try {
       if (await isOptedOut(msg.from)) {
         console.log('[webhook] ' + msg.from + ' esta en baja (wa_optouts) — no se enruta al agente');
         continue;
       }
+      eligible.push(msg);
+    } catch (err) {
+      console.error('[webhook] optout check error for ' + msg.from + ':', err?.message || err);
+      eligible.push(msg);
+    }
+  }
+  if (!eligible.length) return;
+
+  // 2) Queue
+  const queued = await enqueueForAgent(eligible);
+  if (!queued) {
+    // Queue unavailable → behave exactly like before
+    console.warn('[webhook] inbox queue unavailable — routing immediately');
+    await routeNow(eligible);
+    return;
+  }
+
+  // 3) Poke the background function once per number
+  const numbers = [...new Set(eligible.map(m => String(m.from || "").replace(/[^0-9]/g, "")))];
+  for (const num of numbers) {
+    const ok = await triggerDebounce(num);
+    if (!ok) {
+      console.warn('[webhook] debounce trigger failed for ' + num + ' — routing immediately');
+      const mine = eligible.filter(m => String(m.from || "").replace(/[^0-9]/g, "") === num);
+      await routeNow(mine);
+      await markRouted(mine.map(m => m.id), "immediate_fallback");
+    }
+  }
+}
+
+// Immediate routing (legacy path + fallback). Errors per message are
+// swallowed so one bad message doesn't block others.
+async function routeNow(messages) {
+  for (const msg of messages) {
+    try {
       await routeIncomingMessage(msg);
     } catch (err) {
       console.error('[webhook] agent route error for msg ' + msg.id + ':', err?.message || err);
     }
+  }
+}
+
+async function enqueueForAgent(messages) {
+  const creds = sbRest();
+  if (!creds) return false;
+  const rows = messages.map(m => ({
+    wa_msg_id:   m.id,
+    wa_number:   String(m.from || "").replace(/[^0-9]/g, ""),
+    client_name: m.clientName || null,
+    body:        m.text || null,
+    msg_type:    m.type || "text",
+    media_id:    m.mediaId || null,
+    received_at: new Date((m.timestamp || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+  }));
+  try {
+    const r = await fetch(`${creds.sbUrl}/rest/v1/wa_agent_inbox?on_conflict=wa_msg_id`, {
+      method: "POST",
+      headers: {
+        apikey: creds.sbKey,
+        Authorization: `Bearer ${creds.sbKey}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=ignore-duplicates,return=minimal",
+      },
+      body: JSON.stringify(rows),
+    });
+    if (!r.ok) {
+      console.error('[webhook] wa_agent_inbox insert failed HTTP ' + r.status + ' ' + (await r.text().catch(() => "")));
+      return false;
+    }
+    console.log('[webhook] queued ' + rows.length + ' msg(s) for debounce');
+    return true;
+  } catch (e) {
+    console.error('[webhook] enqueueForAgent error:', e?.message || e);
+    return false;
+  }
+}
+
+async function markRouted(ids, batchId) {
+  const creds = sbRest();
+  if (!creds || !ids?.length) return;
+  try {
+    const list = ids.map(id => `"${String(id).replace(/"/g, "")}"`).join(",");
+    await fetch(`${creds.sbUrl}/rest/v1/wa_agent_inbox?wa_msg_id=in.(${list})&routed_at=is.null`, {
+      method: "PATCH",
+      headers: {
+        apikey: creds.sbKey,
+        Authorization: `Bearer ${creds.sbKey}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({ routed_at: new Date().toISOString(), batch_id: batchId }),
+    });
+  } catch (e) {
+    console.error('[webhook] markRouted error:', e?.message || e);
+  }
+}
+
+// Background functions answer 202 immediately and keep running. Anything
+// else means "not available right now" and the caller falls back.
+async function triggerDebounce(waNumber) {
+  if (!INTERNAL_SECRET) {
+    console.error('[webhook] WHATSAPP_WEBHOOK_SECRET missing — cannot sign internal trigger');
+    return false;
+  }
+  try {
+    const r = await fetch(`${SITE_URL}/.netlify/functions/${DEBOUNCE_FN}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-fr-internal": INTERNAL_SECRET },
+      body: JSON.stringify({ wa_number: waNumber, queued_at: new Date().toISOString() }),
+    });
+    if (r.status === 202) return true;
+    console.warn('[webhook] debounce trigger HTTP ' + r.status);
+    return false;
+  } catch (e) {
+    console.error('[webhook] triggerDebounce error:', e?.message || e);
+    return false;
   }
 }
 
