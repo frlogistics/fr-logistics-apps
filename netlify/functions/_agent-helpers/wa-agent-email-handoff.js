@@ -60,6 +60,7 @@ export async function sendHandoffEmail(payload) {
     handoffReason = "unknown",
     conversationId = "",
     qualification = {},
+    summary = null,   // [2026-09-18] { summary, score, reason, next_action } from wa-agent-summary.js
   } = payload;
 
   const phoneClean = waNumber.startsWith("+") ? waNumber : `+${waNumber}`;
@@ -77,7 +78,8 @@ export async function sendHandoffEmail(payload) {
   // Direct link to lead in WA Lead Capture
   const leadCaptureLink = "https://apps.fr-logistics.net/wa-lead-capture.html";
 
-  const subject = `🆕 New Lead from Liam — ${name} — ${serviceLabel}`;
+  const scoreTag = summary?.score ? ` [${summary.score.toUpperCase()}]` : "";
+  const subject = `🆕 New Lead from Liam${scoreTag} — ${name} — ${serviceLabel}`;
 
   const html = renderEmailHtml({
     name,
@@ -93,6 +95,7 @@ export async function sendHandoffEmail(payload) {
     leadCaptureLink,
     conversationId,
     qualification,
+    summary,
   });
 
   try {
@@ -134,11 +137,38 @@ export async function sendHandoffEmail(payload) {
 function renderEmailHtml({
   name, email, phone, phoneRaw, language, serviceLabel,
   firstMessage, handoffReason, waReplyLink, portalLink, leadCaptureLink,
-  conversationId, qualification = {},
+  conversationId, qualification = {}, summary = null,
 }) {
   const esc = (s) => String(s ?? "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  // [2026-09-18] Brief + score block. Traffic-light colors, strong tones
+  // (Jose's rule: real semaphore green/yellow/red, never pastel).
+  const SCORE_STYLE = {
+    hot:  { bg: "#DC2626", label: "HOT" },
+    warm: { bg: "#F59E0B", label: "WARM" },
+    cold: { bg: "#16A34A", label: "COLD" },
+  };
+  let briefSectionHtml = "";
+  if (summary?.summary) {
+    const st = SCORE_STYLE[summary.score] || SCORE_STYLE.warm;
+    const lines = String(summary.summary).split(/\n+/).map((l) => l.trim()).filter(Boolean);
+    briefSectionHtml = `
+      <!-- Handoff brief -->
+      <tr><td style="padding:8px 32px 16px;">
+        <div style="font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">🧭 Brief for the team</div>
+        <div style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+          <div style="background:${st.bg};color:#ffffff;padding:8px 14px;font-size:13px;font-weight:700;letter-spacing:0.5px;">
+            LEAD SCORE: ${st.label}${summary.reason ? ` <span style="font-weight:400;opacity:0.95;">— ${esc(summary.reason)}</span>` : ""}
+          </div>
+          <div style="padding:12px 14px;font-size:14px;color:#111827;line-height:1.6;">
+            ${lines.map((l) => `<div>• ${esc(l)}</div>`).join("")}
+            ${summary.next_action ? `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e5e7eb;font-weight:600;color:#0B2545;">Next action: ${esc(summary.next_action)}</div>` : ""}
+          </div>
+        </div>
+      </td></tr>`;
+  }
 
   // Build qualification HTML if any data is present
   const qualifyFields = [
@@ -191,6 +221,8 @@ function renderEmailHtml({
         <div style="font-size:24px;font-weight:700;margin-top:6px;">🆕 New Lead from WhatsApp</div>
         <div style="font-size:14px;opacity:0.9;margin-top:8px;">Captured 24/7 — ready for follow-up</div>
       </td></tr>
+
+      ${briefSectionHtml}
 
       <!-- Lead summary table -->
       <tr><td style="padding:28px 32px 8px;">
