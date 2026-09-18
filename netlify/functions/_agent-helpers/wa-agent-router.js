@@ -298,6 +298,38 @@ export async function routeIncomingMessage(msg) {
     // ─── STEP 3: Active conversation? ─────────────────────────────
     const existingConv = await getActiveConversation(from);
 
+    // ─── STEP 3.8: FLOW SUBMIT ────────────────────────────────────
+    // [2026-09-18] A completed lead form wins over any state — including a
+    // PAUSED conversation, which is why this runs before Branch A: the
+    // form was offered by the bot and its data must land in the CRM even
+    // if a human already took the thread. If there is no conversation at
+    // all (form submitted long after the session expired) we open one
+    // straight in handoff and close it.
+    const flowData = extractFlowSubmit(text);
+    if (flowData) {
+      let conv = existingConv;
+      if (!conv) {
+        const lang = (flowData.lang || "en").toUpperCase() === "ES" ? "ES" : "EN";
+        conv = await createConversation({
+          waNumber: from,
+          waProfileName: clientName,
+          firstMessage: "[lead form]",
+          language: lang,
+          languageSource: "flow_payload",
+          isExistingClient: !!existingClient,
+          clientId: existingClient?.clientId || null,
+        });
+        if (!conv) return;
+        if (!existingClient) {
+          const leadId = await createLeadFromConversation({ waNumber: from, waProfileName: clientName, language: lang.toLowerCase(), firstMessage: "[lead form]" });
+          if (leadId) { await linkConversationToLead(conv.id, leadId); conv.lead_id = leadId; }
+        }
+        await markHandoff(conv.id, "flow_submitted", "handoff_jose");
+      }
+      console.log(`[agent-router] flow submit received for conv ${conv.id}`);
+      return await handleFlowSubmit(conv, msg, flowData);
+    }
+
     // Branch A: paused (human took over) — agent stays silent
     if (existingConv?.paused_by_human) {
       console.log("[agent-router] conversation paused by human, agent silent");
@@ -374,35 +406,6 @@ export async function routeIncomingMessage(msg) {
         await markHandoff(existingConv.id, "visit_request", existingConv.state);
       }
       return;
-    }
-
-    // ─── STEP 3.8: FLOW SUBMIT ────────────────────────────────────
-    // [2026-09-18] A completed lead form wins over any state. If there is
-    // no conversation at all (form submitted long after the session
-    // expired) we open one straight in handoff and close it.
-    const flowData = extractFlowSubmit(text);
-    if (flowData) {
-      let conv = existingConv;
-      if (!conv) {
-        const lang = (flowData.lang || "en").toUpperCase() === "ES" ? "ES" : "EN";
-        conv = await createConversation({
-          waNumber: from,
-          waProfileName: clientName,
-          firstMessage: "[lead form]",
-          language: lang,
-          languageSource: "flow_payload",
-          isExistingClient: !!existingClient,
-          clientId: existingClient?.clientId || null,
-        });
-        if (!conv) return;
-        if (!existingClient) {
-          const leadId = await createLeadFromConversation({ waNumber: from, waProfileName: clientName, language: lang.toLowerCase(), firstMessage: "[lead form]" });
-          if (leadId) { await linkConversationToLead(conv.id, leadId); conv.lead_id = leadId; }
-        }
-        await markHandoff(conv.id, "flow_submitted", "handoff_jose");
-      }
-      console.log(`[agent-router] flow submit received for conv ${conv.id}`);
-      return await handleFlowSubmit(conv, msg, flowData);
     }
 
     // Branch B: active conversation in pending_language state
