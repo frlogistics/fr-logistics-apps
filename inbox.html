@@ -266,8 +266,12 @@ const TPLS = {
   ecopack_pickup_scheduled:{text:'Hi {{1}}, your EcoPack+ pickup is scheduled for {{2}} at {{3}}. You have {{4}} packages ready. Reply CONFIRM to confirm.',vars:['Client name','Date','Time','Package count']},
   lead_followup_es:{text:'Hola {{1}}, te escribimos de FR-Logistics Miami. Nos escribiste hace unos días y tu mensaje no recibió la respuesta que merecía; nos disculpamos. Seguimos disponibles para ayudarte con tu operación en USA. ¿Te parece si retomamos? Responde a este mensaje y nuestro equipo te contacta hoy mismo.',vars:['Name']},
   lead_followup_en:{text:'Hi {{1}}, this is FR-Logistics Miami. You reached out a few days ago and your message did not get the reply it deserved; we apologize. We are still here to help with your US operation. Shall we pick it up? Reply to this message and our team will get back to you today.',vars:['Name']},
+  lead_nudge_es:{text:'Hola {{1}}, te escribimos de FR-Logistics Miami. Quedamos pendientes de tu operación en USA. ¿Seguimos? Responde a este mensaje y retomamos donde lo dejamos.',vars:['Name']},
+  lead_nudge_en:{text:'Hi {{1}}, this is FR-Logistics Miami. We are still here for your US operation. Shall we continue? Reply to this message and we pick up where we left off.',vars:['Name']},
+  quote_reminder_es:{text:'Hola {{1}}, te recordamos que tu cotización {{2}} de FR-Logistics vence el {{3}}. Si quieres avanzar o ajustar algo, responde a este mensaje y nuestro equipo te ayuda.',vars:['Name','Quote ID','Valid until']},
+  quote_reminder_en:{text:'Hi {{1}}, a quick reminder that your FR-Logistics quote {{2}} expires on {{3}}. If you want to move forward or adjust anything, reply to this message and our team will help.',vars:['Name','Quote ID','Valid until']},
 };
-const TPL_KEYS = { order_received:['clientName','orderNumber'], tracking_update:['clientName','orderNumber','trackingNumber','carrier'], payment_link:['clientName','amount','link'], daily_summary:['clientName','dateLabel','inbound','outbound'], ecopack_package_received:['clientName'], ecopack_multi_package:['clientName','packageCount'], ecopack_pickup_scheduled:['clientName','date','time','packageCount'], lead_followup_es:['clientName'], lead_followup_en:['clientName'] };
+const TPL_KEYS = { order_received:['clientName','orderNumber'], tracking_update:['clientName','orderNumber','trackingNumber','carrier'], payment_link:['clientName','amount','link'], daily_summary:['clientName','dateLabel','inbound','outbound'], ecopack_package_received:['clientName'], ecopack_multi_package:['clientName','packageCount'], ecopack_pickup_scheduled:['clientName','date','time','packageCount'], lead_followup_es:['clientName'], lead_followup_en:['clientName'], lead_nudge_es:['clientName'], lead_nudge_en:['clientName'], quote_reminder_es:['clientName','quoteId','validUntil'], quote_reminder_en:['clientName','quoteId','validUntil'] };
 
 /* ────────────────────────────── state ────────────────────────────── */
 let messages = [], threads = new Map(), enrich = {}, clients = {}, agent = {};
@@ -584,6 +588,13 @@ function renderPanel(){
       <div class="score ${score||'none'}">${esc(scoreLabel)}${a?.score_reason?`<small>${esc(a.score_reason)}</small>`:''}</div>
       ${a?.summary?`<div class="summary" style="margin-top:10px">${esc(a.summary)}</div>`:`<div style="color:var(--muted);font-size:13px;margin-top:8px">LIAM writes a 3-line brief when it hands the conversation over.</div>`}
     </div>
+    <div class="card">
+      <h3>Lead classification</h3>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${[['real','Real lead'],['noise','Noise / spam'],['duplicate','Duplicate'],['vendor','Vendor pitch']].map(([v,l])=>`<button class="btn ${a?.lead_dq===v?'p':''}" onclick="setDq('${v}')" ${a?.lead_id?'':'disabled'}>${l}</button>`).join('')}
+      </div>
+      <div style="color:var(--muted);font-size:12px;margin-top:8px">Only leads marked <b>Real</b> get automatic follow-ups (3 and 7 days of silence).</div>
+    </div>
     <div class="card na">
       <h3>Next action</h3>
       <textarea id="naText" placeholder="e.g. Send FBA prep quote for 2 pallets">${esc(na)}</textarea>
@@ -613,6 +624,11 @@ async function saveNote(){
   const t=threads.get(activeKey); if(!t?.agent?.lead_id) return;
   const r=await fetch(API.agent,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'note',phone:t.key,next_action:$('naText').value.trim(),next_action_date:$('naDate').value||null})});
   if(r.ok){ t.agent.next_action=$('naText').value.trim(); t.agent.next_action_date=$('naDate').value||null; toast('Next action saved'); } else toast('Could not save');
+}
+async function setDq(v){
+  const t=threads.get(activeKey); if(!t?.agent?.lead_id) return;
+  const r=await fetch(API.agent,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'note',phone:t.key,dq_flag:v})});
+  if(r.ok){ t.agent.lead_dq=v; toast('Lead marked as '+v); renderPanel(); } else toast('Could not save');
 }
 function openQuote(){ const t=threads.get(activeKey); const url=QUOTE_APP+(t?.agent?.lead_id?'#lead='+encodeURIComponent(t.agent.lead_id):''); openApp(url,'Quote Builder'); }
 function openApp(url,name){ try{ if(window.parent && window.parent!==window && typeof window.parent.openApp==='function'){ window.parent.openApp(url,name); return; } }catch{} window.open(url,'_blank'); }
