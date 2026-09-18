@@ -241,6 +241,16 @@ async function persist(conv, r) {
   if (conv.lead_id) {
     try {
       const patch = { conversation_summary: r.summary };
+      // CRM hygiene: classify the lead if nobody has yet. hot/warm → real;
+      // an existing client is never a lead; cold stays unclassified for a
+      // human to decide (out-of-scope businesses are not "noise").
+      try {
+        const { data: cur } = await sb().from("wa_leads").select("dq_flag").eq("id", conv.lead_id).single();
+        if (cur && !cur.dq_flag) {
+          if (conv.is_existing_client) { patch.dq_flag = "existing_client"; patch.dq_note = "auto: conversation matched fr_clients"; }
+          else if (r.score === "hot" || r.score === "warm") { patch.dq_flag = "real"; patch.dq_note = `auto: LIAM scored ${r.score} at handoff`; }
+        }
+      } catch (e) { console.error("[summary] dq_flag check:", e?.message || e); }
       if (r.next_action) {
         patch.next_action = r.next_action;
         // Hot → today, warm → tomorrow, cold → no date (parked).
