@@ -114,6 +114,12 @@ a{color:var(--wa-green)}
 .composer{background:var(--bg);padding:8px 16px;display:flex;gap:10px;align-items:flex-end;z-index:1;border-top:1px solid var(--line)}
 .composer textarea{flex:1;border:0;border-radius:8px;background:#fff;padding:10px 12px;resize:none;max-height:140px;min-height:42px;outline:0;line-height:1.4}
 .composer textarea:disabled{background:#F5F6F6;color:var(--muted)}
+.suggest-btn{height:42px;border-radius:999px;border:1px solid #C7F0DD;background:#E7FCE3;color:var(--wa-green);padding:0 14px;font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.suggest-btn:disabled{opacity:.5}
+.draft-bar{background:#E7FCE3;color:#166534;font-size:12.5px;padding:6px 16px;display:none;align-items:center;gap:10px;z-index:1;border-top:1px solid #C7F0DD}
+.draft-bar.on{display:flex}
+.draft-bar b{font-weight:600}
+.draft-bar button{margin-left:auto;background:transparent;border:0;color:#166534;text-decoration:underline;font-size:12.5px}
 .send{width:42px;height:42px;border-radius:50%;border:0;background:var(--wa-green);color:#fff;display:inline-flex;align-items:center;justify-content:center}
 .send:disabled{background:#A8B0B5}
 .closed-note{background:#FEF3C7;color:#92400E;font-size:13px;padding:8px 16px;border-top:1px solid #FDE68A;z-index:1;display:flex;gap:10px;align-items:center}
@@ -200,9 +206,11 @@ a{color:var(--wa-green)}
     </div>
     <div class="msgs" id="msgs" style="display:none"></div>
     <div class="closed-note" id="closedNote" style="display:none"></div>
+    <div class="draft-bar" id="draftBar"><span>✨ <b>Draft by LIAM.</b> Edit it as you like, then send — or discard it.</span><button onclick="discardDraft()">Discard</button></div>
     <div class="composer" id="composer" style="display:none">
       <input type="file" id="file" style="display:none" onchange="sendFile(this)">
       <button class="icon-btn" title="Attach" onclick="document.getElementById('file').click()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6H10v9.5a2.5 2.5 0 0 0 5 0V5a4 4 0 0 0-8 0v12.5a5.5 5.5 0 0 0 11 0V6h-1.5z"/></svg></button>
+      <button class="suggest-btn" id="suggestBtn" onclick="suggestReply()" title="Ask LIAM for a draft reply">✨ Suggest</button>
       <textarea id="txt" rows="1" placeholder="Type a message" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendText()}" oninput="autoGrow(this)"></textarea>
       <button class="send" id="sendBtn" onclick="sendText()" title="Send"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
     </div>
@@ -242,6 +250,7 @@ const API = {
   enrich: '/.netlify/functions/wa-inbox-enrich',
   clients:'/.netlify/functions/wa-clients',
   agent:  '/.netlify/functions/wa-agent-state',
+  suggest:'/.netlify/functions/wa-agent-suggest',
 };
 const QUOTE_APP = 'FR_Logistics_Quote_System_v3.html';
 const CRM_APP   = 'crm-board.html';
@@ -255,8 +264,10 @@ const TPLS = {
   ecopack_package_received:{text:'Hi {{1}}, we received a package for you at FR-Logistics! Reply PICKUP to schedule or HOURS for availability.',vars:['Client name']},
   ecopack_multi_package:{text:'Hi {{1}}, you now have {{2}} packages waiting at FR-Logistics. Reply PICKUP to consolidate and schedule collection.',vars:['Client name','Package count']},
   ecopack_pickup_scheduled:{text:'Hi {{1}}, your EcoPack+ pickup is scheduled for {{2}} at {{3}}. You have {{4}} packages ready. Reply CONFIRM to confirm.',vars:['Client name','Date','Time','Package count']},
+  lead_followup_es:{text:'Hola {{1}}, te escribimos de FR-Logistics Miami. Nos escribiste hace unos días y tu mensaje no recibió la respuesta que merecía; nos disculpamos. Seguimos disponibles para ayudarte con tu operación en USA. ¿Te parece si retomamos? Responde a este mensaje y nuestro equipo te contacta hoy mismo.',vars:['Name']},
+  lead_followup_en:{text:'Hi {{1}}, this is FR-Logistics Miami. You reached out a few days ago and your message did not get the reply it deserved; we apologize. We are still here to help with your US operation. Shall we pick it up? Reply to this message and our team will get back to you today.',vars:['Name']},
 };
-const TPL_KEYS = { order_received:['clientName','orderNumber'], tracking_update:['clientName','orderNumber','trackingNumber','carrier'], payment_link:['clientName','amount','link'], daily_summary:['clientName','dateLabel','inbound','outbound'], ecopack_package_received:['clientName'], ecopack_multi_package:['clientName','packageCount'], ecopack_pickup_scheduled:['clientName','date','time','packageCount'] };
+const TPL_KEYS = { order_received:['clientName','orderNumber'], tracking_update:['clientName','orderNumber','trackingNumber','carrier'], payment_link:['clientName','amount','link'], daily_summary:['clientName','dateLabel','inbound','outbound'], ecopack_package_received:['clientName'], ecopack_multi_package:['clientName','packageCount'], ecopack_pickup_scheduled:['clientName','date','time','packageCount'], lead_followup_es:['clientName'], lead_followup_en:['clientName'] };
 
 /* ────────────────────────────── state ────────────────────────────── */
 let messages = [], threads = new Map(), enrich = {}, clients = {}, agent = {};
@@ -375,6 +386,7 @@ function preview(m){
 
 /* ────────────────────────────── chat ────────────────────────────── */
 function openThread(k){
+  if(pendingSuggestion && pendingSuggestion.key!==k) clearDraftUI();
   activeKey = k; panelOpen = false;
   $('app').classList.add('chat-open'); $('app').classList.remove('panel-open');
   render(); renderChat(true); loadContact();
@@ -408,7 +420,7 @@ function renderChat(scroll){
 
   // composer / window
   const closed = t.window==='closed';
-  $('txt').disabled = closed; $('sendBtn').disabled = closed;
+  $('txt').disabled = closed; $('sendBtn').disabled = closed; $('suggestBtn').disabled = closed || !t.lastIn;
   $('txt').placeholder = closed ? 'The 24-hour window is closed — send a template' : 'Type a message';
   if(closed){ $('closedNote').style.display='flex'; $('closedNote').innerHTML = `<span>${t.lastIn?`<b>Window closed.</b> Last message from the contact ${Math.floor(24-t.hoursLeft)}h ago.`:'<b>No open window.</b> This contact has never written.'} Free text is not allowed; use an approved template.</span><button class="btn" onclick="openTemplate()">Template</button>`; }
   else if(t.window==='soon'){ $('closedNote').style.display='flex'; $('closedNote').innerHTML=`<span><b>${Math.max(1,Math.floor(t.hoursLeft))}h left</b> on the 24-hour window. After that only templates go through.</span>`; }
@@ -450,6 +462,27 @@ async function markRead(k){
   t.msgs.forEach(m=>{ if(m.direction==='inbound') m.read=true; }); t.unread=0; render();
 }
 
+/* ────────────────────────────── suggest mode ────────────────────────────── */
+let pendingSuggestion = null;   // { id, key, text }
+async function suggestReply(){
+  const t=threads.get(activeKey); if(!t) return;
+  const btn=$('suggestBtn'); btn.disabled=true; btn.textContent='✨ Thinking…';
+  try{
+    const r=await fetch(API.suggest,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'suggest',phone:t.key})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||j.error){ toast(j.error||'No draft available'); return; }
+    pendingSuggestion={id:j.suggestion_id,key:t.key,text:j.text};
+    $('txt').value=j.text; autoGrow($('txt')); $('txt').focus();
+    $('draftBar').classList.add('on');
+  }catch{ toast('No draft available'); }
+  finally{ btn.disabled=false; btn.textContent='✨ Suggest'; }
+}
+function discardDraft(){
+  if(pendingSuggestion?.id) fetch(API.suggest,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'discard',suggestion_id:pendingSuggestion.id})}).catch(()=>{});
+  pendingSuggestion=null; $('draftBar').classList.remove('on'); $('txt').value=''; autoGrow($('txt'));
+}
+function clearDraftUI(){ pendingSuggestion=null; $('draftBar').classList.remove('on'); }
+
 /* ────────────────────────────── sending ────────────────────────────── */
 async function sendText(){
   const t=threads.get(activeKey); const text=$('txt').value.trim(); if(!t||!text) return;
@@ -459,6 +492,10 @@ async function sendText(){
     const j = await r.json().catch(()=>({}));
     if(!r.ok||j.error){ toast(j.message||j.error||'Send failed'); return; }
     $('txt').value=''; autoGrow($('txt'));
+    if(pendingSuggestion && pendingSuggestion.key===t.key){
+      fetch(API.suggest,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'feedback',suggestion_id:pendingSuggestion.id,sent_text:text})}).catch(()=>{});
+    }
+    clearDraftUI();
     // If a human writes, LIAM steps back
     if(t.agent && !t.agent.paused) await setMode('human', true);
     await loadAll();
