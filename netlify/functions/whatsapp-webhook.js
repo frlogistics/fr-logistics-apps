@@ -127,13 +127,21 @@ export default async function handler(req) {
       const mimeType = mediaObj?.mime_type || null;
       const caption  = mediaObj?.caption || null;
 
+      // [2026-09-18] Respuesta de un WhatsApp Flow (formulario nativo).
+      // Meta la entrega como interactive.nfm_reply con el payload en JSON.
+      // - inbox (wa_messages): version legible para el humano
+      // - agente: marcador [flow-submit] + JSON, que el router interpreta
+      const flowSubmit = parseFlowReply(msg);
+
       const text =
+        (flowSubmit ? flowSubmit.readable : null) ||
         msg.text?.body ||
         msg.button?.text ||
         msg.interactive?.button_reply?.title ||
         msg.interactive?.list_reply?.title ||
         caption ||                                  // el caption vale mas que el marcador
         `[${msg.type || "media"}]`;
+      const agentText = flowSubmit ? flowSubmit.agentText : text;
       const contact = contacts.find((c) => c.wa_id === from);
       const clientName = contact?.profile?.name || from;
 
@@ -149,6 +157,7 @@ export default async function handler(req) {
         from,
         clientName,
         text,
+        agentText,
         timestamp: ts,
         type: msg.type || "text",
         mediaId,
@@ -327,7 +336,7 @@ async function routeToAgent(messages) {
 async function routeNow(messages) {
   for (const msg of messages) {
     try {
-      await routeIncomingMessage(msg);
+      await routeIncomingMessage({ ...msg, text: msg.agentText || msg.text });
     } catch (err) {
       console.error('[webhook] agent route error for msg ' + msg.id + ':', err?.message || err);
     }
@@ -341,7 +350,7 @@ async function enqueueForAgent(messages) {
     wa_msg_id:   m.id,
     wa_number:   String(m.from || "").replace(/[^0-9]/g, ""),
     client_name: m.clientName || null,
-    body:        m.text || null,
+    body:        m.agentText || m.text || null,
     msg_type:    m.type || "text",
     media_id:    m.mediaId || null,
     received_at: new Date((m.timestamp || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
@@ -452,6 +461,37 @@ function escapeHtml(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// ───────────────────────────────── WhatsApp Flow replies  [2026-09-18]
+// Un envio de formulario llega como:
+//   msg.type === "interactive", msg.interactive.type === "nfm_reply",
+//   msg.interactive.nfm_reply.response_json = '{"name":"...","email":"..."...}'
+// Devuelve { readable, agentText, data } o null si no es un flow reply.
+const FLOW_SUBMIT_MARK = "[flow-submit]";
+
+function parseFlowReply(msg) {
+  const nfm = msg?.interactive?.nfm_reply;
+  if (!nfm) return null;
+  let data = {};
+  try { data = JSON.parse(nfm.response_json || "{}"); } catch { data = {}; }
+  if (!data || typeof data !== "object") data = {};
+
+  const pick = (k) => (data[k] === undefined || data[k] === null) ? "" : String(data[k]).trim();
+  const parts = [];
+  if (pick("name"))    parts.push(`Name: ${pick("name")}`);
+  if (pick("company")) parts.push(`Company: ${pick("company")}`);
+  if (pick("email"))   parts.push(`Email: ${pick("email")}`);
+  if (pick("service")) parts.push(`Service: ${pick("service")}`);
+  if (pick("volume"))  parts.push(`Volume: ${pick("volume")}`);
+  if (pick("timing"))  parts.push(`Start: ${pick("timing")}`);
+  if (pick("product")) parts.push(`Product: ${pick("product")}`);
+  const readable = "📋 Form submitted — " + (parts.length ? parts.join(" · ") : "(empty)");
+  return {
+    readable,
+    agentText: `${FLOW_SUBMIT_MARK} ${JSON.stringify(data)}`,
+    data,
+  };
 }
 
 // ───────────────────────────────── STOP / BAJA — opt-out  [NEW 2026-08-20]
