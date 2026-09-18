@@ -1,4 +1,4 @@
-// netlify/functions-helpers/wa-agent-send.js
+// netlify/functions/_agent-helpers/wa-agent-send.js
 //
 // Sends outbound WhatsApp messages via Meta Cloud API.
 // Mirrors the pattern used by whatsapp-notify.js but tailored to agent use:
@@ -63,6 +63,70 @@ export async function sendAgentText(to, text) {
     return { ok: true, messageId };
   } catch (err) {
     console.error("[agent-send] fetch error:", err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Sends a WhatsApp Flow (native in-chat form) via Meta Cloud API.  [2026-09-18]
+ *
+ * The person sees a message with a button; tapping it opens the form inside
+ * WhatsApp. When they submit, Meta delivers an "interactive / nfm_reply"
+ * message to the webhook with the payload we declared in the Flow JSON.
+ *
+ * @param {string} to        - E.164 without +
+ * @param {object} opts
+ * @param {string} opts.flowId     - Published Flow ID
+ * @param {string} opts.header     - short header text (<=60 chars)
+ * @param {string} opts.body       - body text
+ * @param {string} opts.cta        - button label (<=20 chars)
+ * @param {string} opts.screen     - first screen id (default LEAD_CAPTURE)
+ * @param {string} [opts.footer]
+ * @param {string} [opts.flowToken] - opaque token echoed back on submit
+ * @returns {Promise<{ok:boolean, messageId?:string, error?:string}>}
+ */
+export async function sendAgentFlow(to, opts = {}) {
+  if (!WA_TOKEN || !PHONE_ID) return { ok: false, error: "WA_TOKEN or PHONE_ID env missing" };
+  if (!to || !opts.flowId) return { ok: false, error: "Missing 'to' or 'flowId'" };
+
+  const recipient = String(to).replace(/^\+/, "");
+  const body = {
+    messaging_product: "whatsapp",
+    to: recipient,
+    type: "interactive",
+    interactive: {
+      type: "flow",
+      header: { type: "text", text: String(opts.header || "FR-Logistics").slice(0, 60) },
+      body:   { text: String(opts.body || "").slice(0, 1024) },
+      ...(opts.footer ? { footer: { text: String(opts.footer).slice(0, 60) } } : {}),
+      action: {
+        name: "flow",
+        parameters: {
+          flow_message_version: "3",
+          flow_token: opts.flowToken || `lead-${recipient}-${Date.now()}`,
+          flow_id: String(opts.flowId),
+          flow_cta: String(opts.cta || "Open form").slice(0, 20),
+          flow_action: "navigate",
+          flow_action_payload: { screen: opts.screen || "LEAD_CAPTURE" },
+        },
+      },
+    },
+  };
+
+  try {
+    const res = await fetch(`${WA_BASE}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${WA_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      console.error("[agent-send] Meta API error (flow):", JSON.stringify(data));
+      return { ok: false, error: data?.error?.message || `HTTP ${res.status}` };
+    }
+    return { ok: true, messageId: data?.messages?.[0]?.id || null };
+  } catch (err) {
+    console.error("[agent-send] flow fetch error:", err.message);
     return { ok: false, error: err.message };
   }
 }
