@@ -32,7 +32,9 @@ body{font-family:"Segoe UI",Helvetica,Arial,sans-serif;font-size:14.2px;color:va
 button{font:inherit;cursor:pointer}
 input,textarea,select{font:inherit;color:inherit}
 a{color:var(--wa-green)}
-.app{display:grid;grid-template-columns:380px 1fr 320px;height:100vh;background:var(--panel)}
+.app{display:grid;grid-template-columns:380px 1fr 320px;height:100vh;height:100dvh;overflow:hidden;background:var(--panel)}
+.app>*{min-height:0;min-width:0}
+.side{grid-column:1}.chat{grid-column:2}.panel{grid-column:3}
 .app.no-panel{grid-template-columns:380px 1fr 0}
 
 /* ─── left: threads ─── */
@@ -53,7 +55,7 @@ a{color:var(--wa-green)}
 .chip.on .n{background:#D1F5CC}
 .chip.warn.on{background:#FEF3C7;border-color:#FEF3C7;color:#92400E}
 .chip.bad.on{background:#FEE2E2;border-color:#FEE2E2;color:#991B1B}
-.list{flex:1;overflow-y:auto}
+.list{flex:1;min-height:0;overflow-y:auto}
 .item{display:flex;gap:14px;padding:0 12px;cursor:pointer;align-items:center;height:76px}
 .item:hover{background:var(--hover)}
 .item.on{background:var(--active)}
@@ -92,7 +94,7 @@ a{color:var(--wa-green)}
 .hbtn{height:34px;border-radius:999px;border:1px solid var(--line);background:#fff;padding:0 14px;font-size:13px;color:var(--ink);display:inline-flex;align-items:center;gap:6px}
 .hbtn:hover{background:var(--hover)}
 .hbtn.primary{background:var(--wa-green);border-color:var(--wa-green);color:#fff}
-.msgs{flex:1;overflow-y:auto;padding:20px 8% 12px;z-index:1;display:flex;flex-direction:column;gap:3px}
+.msgs{flex:1;min-height:0;overflow-y:auto;padding:20px 8% 12px;z-index:1;display:flex;flex-direction:column;gap:3px}
 .day{align-self:center;background:#fff;color:#54656F;font-size:12.5px;padding:5px 12px;border-radius:8px;box-shadow:0 1px .5px rgba(11,20,26,.13);margin:10px 0 6px}
 .sys{align-self:center;background:#FFF5C4;color:#54656F;font-size:12.5px;padding:5px 12px;border-radius:8px;box-shadow:0 1px .5px rgba(11,20,26,.13);max-width:80%;text-align:center}
 .b{max-width:65%;padding:6px 8px 8px 9px;border-radius:8px;box-shadow:0 1px .5px rgba(11,20,26,.13);position:relative;font-size:14.2px;line-height:1.35;white-space:pre-wrap;word-wrap:break-word}
@@ -120,7 +122,7 @@ a{color:var(--wa-green)}
 .nochat h2{font-weight:300;font-size:28px;margin:0}
 
 /* ─── right: contact ─── */
-.panel{border-left:1px solid var(--line);background:var(--bg);overflow-y:auto;display:flex;flex-direction:column}
+.panel{border-left:1px solid var(--line);background:var(--bg);overflow-y:auto;display:flex;flex-direction:column;min-height:0}
 .app.no-panel .panel{display:none}
 .panel-head{height:60px;display:flex;align-items:center;padding:0 16px;gap:8px;font-size:16px;font-weight:500;background:var(--bg);border-bottom:1px solid var(--line);position:sticky;top:0}
 .card{background:#fff;margin:10px 12px 0;border-radius:var(--r);padding:12px 14px;box-shadow:0 1px 1px rgba(11,20,26,.06)}
