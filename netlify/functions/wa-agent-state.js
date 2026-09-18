@@ -112,6 +112,8 @@ function shape(c, lead) {
   };
 }
 
+const json_ = (o, status) => new Response(JSON.stringify(o), { status, headers: HEADERS });
+
 async function loadLeads(ids) {
   const list = [...new Set(ids.filter(Boolean))];
   if (!list.length) return {};
@@ -210,6 +212,11 @@ export default async function handler(req) {
         if (body.next_action !== undefined) patch.next_action = String(body.next_action || "").slice(0, 200) || null;
         if (body.next_action_date !== undefined) patch.next_action_date = body.next_action_date || null;
         if (body.owner !== undefined) patch.owner = body.owner || null;
+        if (body.dq_flag !== undefined) {
+          const ok = ["real", "duplicate", "existing_client", "internal", "vendor", "noise"];
+          if (body.dq_flag !== null && !ok.includes(body.dq_flag)) return json_({ error: "bad dq_flag" }, 400);
+          patch.dq_flag = body.dq_flag; patch.dq_note = `portal: set by human ${new Date().toISOString().slice(0, 10)}`;
+        }
         await sb(`wa_leads?id=eq.${c.lead_id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch) });
         return new Response(JSON.stringify({ ok: true }), { status: 200, headers: HEADERS });
       }
