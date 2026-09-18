@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inbox · FR-Logistics</title>
+<!--
+  FR-Logistics · WhatsApp Inbox (2026-09-18)
+  Standalone app for the Apps Portal (register in APPS[] of portal.html as
+  url:'inbox.html'). WhatsApp-Web look, three panes: threads · chat · contact.
+
+  Backend (existing unless noted):
+    GET  /.netlify/functions/wa-messages?limit=N         messages (both directions, all channels)
+    GET  /.netlify/functions/wa-messages?action=media&path=…  signed media redirect
+    POST /.netlify/functions/wa-messages { action:"reply" | "send_media" | "mark_read" } / { type, to, data } templates
+    GET  /.netlify/functions/wa-inbox-enrich?enrich=phones   lead by phone
+    GET  /.netlify/functions/wa-clients                       existing clients (wa_number, company)
+    GET  /.netlify/functions/wa-agent-state                   LIAM state, score, summary (NEW)
+    POST /.netlify/functions/wa-agent-state { action:"pause"|"resume"|"note", phone }
+-->
+<style>
+:root{
+  --wa-green:#008069;--wa-green-2:#25D366;--wa-teal:#00A884;
+  --out:#D9FDD3;--in:#FFFFFF;--bg:#F0F2F5;--wall:#EFE7DD;--panel:#FFFFFF;
+  --ink:#111B21;--muted:#667781;--line:#E9EDEF;--hover:#F5F6F6;--active:#F0F2F5;
+  --red:#DC2626;--amber:#F59E0B;--green:#16A34A;--navy:#0B2545;
+  --r:8px;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:"Segoe UI",Helvetica,Arial,sans-serif;font-size:14.2px;color:var(--ink);background:var(--bg);overflow:hidden}
+button{font:inherit;cursor:pointer}
+input,textarea,select{font:inherit;color:inherit}
+a{color:var(--wa-green)}
+.app{display:grid;grid-template-columns:380px 1fr 320px;height:100vh;background:var(--panel)}
+.app.no-panel{grid-template-columns:380px 1fr 0}
+
+/* ─── left: threads ─── */
+.side{border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
+.side-head{height:60px;padding:0 16px;display:flex;align-items:center;gap:10px;background:var(--bg);border-bottom:1px solid var(--line)}
+.side-head h1{font-size:19px;font-weight:600;margin:0;flex:1}
+.icon-btn{width:36px;height:36px;border:0;border-radius:50%;background:transparent;color:#54656F;display:inline-flex;align-items:center;justify-content:center}
+.icon-btn:hover{background:#E9EDEF}
+.icon-btn svg{width:22px;height:22px}
+.search{padding:8px 12px;border-bottom:1px solid var(--line)}
+.search input{width:100%;height:36px;border:0;border-radius:var(--r);background:var(--bg);padding:0 12px 0 40px;outline:0;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2354656F'><path d='M15.9 14.3h-.8l-.3-.3a6.5 6.5 0 1 0-.7.7l.3.3v.8l5 5 1.5-1.5-5-5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z'/></svg>");background-repeat:no-repeat;background-size:18px;background-position:12px center}
+.search input:focus{background-color:#fff;box-shadow:inset 0 0 0 1px var(--wa-green)}
+.chips{display:flex;gap:6px;padding:8px 12px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--line)}
+.chips::-webkit-scrollbar{display:none}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 12px;font-size:13px;color:#54656F;white-space:nowrap;display:inline-flex;gap:6px;align-items:center}
+.chip .n{background:#E9EDEF;border-radius:999px;padding:0 6px;font-size:11px;min-width:18px;text-align:center}
+.chip.on{background:#E7FCE3;border-color:#E7FCE3;color:var(--wa-green)}
+.chip.on .n{background:#D1F5CC}
+.chip.warn.on{background:#FEF3C7;border-color:#FEF3C7;color:#92400E}
+.chip.bad.on{background:#FEE2E2;border-color:#FEE2E2;color:#991B1B}
+.list{flex:1;overflow-y:auto}
+.item{display:flex;gap:14px;padding:0 12px;cursor:pointer;align-items:center;height:76px}
+.item:hover{background:var(--hover)}
+.item.on{background:var(--active)}
+.avatar{width:49px;height:49px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:600;color:#fff;font-size:17px;position:relative}
+.avatar .dot{position:absolute;right:-1px;bottom:-1px;width:14px;height:14px;border-radius:50%;border:2px solid #fff}
+.item-body{flex:1;min-width:0;border-bottom:1px solid var(--line);height:100%;display:flex;flex-direction:column;justify-content:center;gap:3px}
+.row{display:flex;align-items:center;gap:8px}
+.name{font-size:16px;font-weight:400;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item.unread .name{font-weight:600}
+.time{font-size:12px;color:var(--muted);flex:none}
+.item.unread .time{color:var(--wa-green-2)}
+.preview{font-size:13.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;display:flex;gap:4px;align-items:center}
+.preview .tick{color:#53BDEB}
+.badge{background:var(--wa-green-2);color:#fff;border-radius:999px;min-width:20px;height:20px;padding:0 6px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.pill{font-size:10.5px;font-weight:600;letter-spacing:.2px;border-radius:4px;padding:2px 6px;flex:none}
+.pill.closed{background:#FEE2E2;color:#991B1B}
+.pill.soon{background:#FEF3C7;color:#92400E}
+.pill.wait{background:#E0F2FE;color:#075985}
+.pill.paused{background:#EDE9FE;color:#5B21B6}
+.pill.liam{background:#E7FCE3;color:#166534}
+.pill.web{background:#F1F5F9;color:#334155}
+.score-dot{width:10px;height:10px;border-radius:50%;flex:none;display:inline-block}
+.score-hot{background:var(--red)}.score-warm{background:var(--amber)}.score-cold{background:var(--green)}
+.empty{padding:48px 24px;text-align:center;color:var(--muted);font-size:14px}
+
+/* ─── center: chat ─── */
+.chat{display:flex;flex-direction:column;min-width:0;background:var(--wall);position:relative}
+.chat::before{content:"";position:absolute;inset:0;opacity:.4;pointer-events:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'><g fill='none' stroke='%23C9BEB2' stroke-width='1.2' opacity='.55'><rect x='14' y='18' width='24' height='18' rx='2'/><path d='M14 24h24M20 18v6'/><circle cx='84' cy='30' r='9'/><path d='M80 30l3 3 6-6'/><path d='M22 78l10-8 10 8v14H22z'/><rect x='70' y='76' width='28' height='12' rx='2'/><path d='M70 82h28M84 76v12'/><path d='M52 54h16l-2 10H54z'/><circle cx='56' cy='68' r='2'/><circle cx='64' cy='68' r='2'/></g></svg>")}
+.chat-head{height:60px;background:var(--bg);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 16px;z-index:1}
+.chat-head .who{flex:1;min-width:0}
+.chat-head .who .t{font-size:16px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-head .who .s{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.status-sel{height:34px;border-radius:999px;border:1px solid var(--line);background:#fff;padding:0 12px 0 10px;display:inline-flex;align-items:center;gap:8px;font-size:13px}
+.status-sel .led{width:10px;height:10px;border-radius:50%}
+.status-sel select{border:0;background:transparent;outline:0;font-weight:500}
+.hbtn{height:34px;border-radius:999px;border:1px solid var(--line);background:#fff;padding:0 14px;font-size:13px;color:var(--ink);display:inline-flex;align-items:center;gap:6px}
+.hbtn:hover{background:var(--hover)}
+.hbtn.primary{background:var(--wa-green);border-color:var(--wa-green);color:#fff}
+.msgs{flex:1;overflow-y:auto;padding:20px 8% 12px;z-index:1;display:flex;flex-direction:column;gap:3px}
+.day{align-self:center;background:#fff;color:#54656F;font-size:12.5px;padding:5px 12px;border-radius:8px;box-shadow:0 1px .5px rgba(11,20,26,.13);margin:10px 0 6px}
+.sys{align-self:center;background:#FFF5C4;color:#54656F;font-size:12.5px;padding:5px 12px;border-radius:8px;box-shadow:0 1px .5px rgba(11,20,26,.13);max-width:80%;text-align:center}
+.b{max-width:65%;padding:6px 8px 8px 9px;border-radius:8px;box-shadow:0 1px .5px rgba(11,20,26,.13);position:relative;font-size:14.2px;line-height:1.35;white-space:pre-wrap;word-wrap:break-word}
+.b.in{align-self:flex-start;background:var(--in);border-top-left-radius:0}
+.b.out{align-self:flex-end;background:var(--out);border-top-right-radius:0}
+.b.internal{opacity:.55}
+.b .meta{float:right;margin:6px -4px -4px 8px;font-size:11px;color:var(--muted);display:inline-flex;gap:4px;align-items:center}
+.b .meta .tick{color:#53BDEB}
+.b .author{font-size:12px;font-weight:600;color:var(--wa-green);margin-bottom:2px}
+.b img{max-width:100%;border-radius:6px;display:block;margin-bottom:4px;cursor:zoom-in}
+.b audio{width:260px;display:block;margin:4px 0}
+.b .doc{display:flex;gap:10px;align-items:center;background:rgba(0,0,0,.04);padding:8px 10px;border-radius:6px;text-decoration:none;color:var(--ink)}
+.form-card{border:1px solid #BBF7D0;background:#F0FDF4;border-radius:6px;padding:8px 10px;font-size:13px;line-height:1.5}
+.form-card .ttl{font-weight:600;color:#166534;margin-bottom:4px}
+.form-card .kv{display:grid;grid-template-columns:auto 1fr;gap:1px 10px}
+.form-card .k{color:var(--muted)}
+.composer{background:var(--bg);padding:8px 16px;display:flex;gap:10px;align-items:flex-end;z-index:1;border-top:1px solid var(--line)}
+.composer textarea{flex:1;border:0;border-radius:8px;background:#fff;padding:10px 12px;resize:none;max-height:140px;min-height:42px;outline:0;line-height:1.4}
+.composer textarea:disabled{background:#F5F6F6;color:var(--muted)}
+.send{width:42px;height:42px;border-radius:50%;border:0;background:var(--wa-green);color:#fff;display:inline-flex;align-items:center;justify-content:center}
+.send:disabled{background:#A8B0B5}
+.closed-note{background:#FEF3C7;color:#92400E;font-size:13px;padding:8px 16px;border-top:1px solid #FDE68A;z-index:1;display:flex;gap:10px;align-items:center}
+.closed-note b{font-weight:600}
+.nochat{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#41525D;gap:10px;z-index:1;background:var(--bg)}
+.nochat h2{font-weight:300;font-size:28px;margin:0}
+
+/* ─── right: contact ─── */
+.panel{border-left:1px solid var(--line);background:var(--bg);overflow-y:auto;display:flex;flex-direction:column}
+.app.no-panel .panel{display:none}
+.panel-head{height:60px;display:flex;align-items:center;padding:0 16px;gap:8px;font-size:16px;font-weight:500;background:var(--bg);border-bottom:1px solid var(--line);position:sticky;top:0}
+.card{background:#fff;margin:10px 12px 0;border-radius:var(--r);padding:12px 14px;box-shadow:0 1px 1px rgba(11,20,26,.06)}
+.card h3{margin:0 0 8px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.score{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--r);color:#fff;font-weight:600}
+.score.hot{background:var(--red)}.score.warm{background:var(--amber)}.score.cold{background:var(--green)}.score.none{background:#94A3B8}
+.score small{font-weight:400;font-size:12px;opacity:.95;display:block}
+.summary{white-space:pre-wrap;line-height:1.5;font-size:13.5px}
+.kv2{display:grid;grid-template-columns:110px 1fr;row-gap:6px;font-size:13px}
+.kv2 .k{color:var(--muted)}
+.kv2 .v{word-break:break-word}
+.na input,.na textarea{width:100%;border:1px solid var(--line);border-radius:6px;padding:8px;background:#fff;outline:0}
+.na textarea{resize:vertical;min-height:56px}
+.na .r{display:flex;gap:8px;margin-top:8px;align-items:center}
+.btn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:8px 12px;font-size:13px;color:var(--ink)}
+.btn.p{background:var(--wa-green);border-color:var(--wa-green);color:#fff}
+.btn.d{color:#991B1B;border-color:#FECACA;background:#FFF1F2}
+.btn:disabled{opacity:.5;cursor:default}
+.q{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
+.q:last-child{border-bottom:0}
+.q .st{font-size:11px;padding:2px 6px;border-radius:4px;background:#E9EDEF;color:#334155}
+.q .st.sent{background:#DBEAFE;color:#1E3A8A}.q .st.draft{background:#FEF3C7;color:#92400E}.q .st.won,.q .st.accepted{background:#DCFCE7;color:#166534}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 12px}
+
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(17,27,33,.55);display:none;align-items:center;justify-content:center;z-index:50}
+.modal.on{display:flex}
+.box{background:#fff;border-radius:12px;width:min(560px,92vw);max-height:88vh;overflow:auto;padding:20px}
+.box h2{margin:0 0 12px;font-size:18px;font-weight:600}
+.box label{display:block;font-size:12.5px;color:var(--muted);margin:10px 0 4px}
+.box input,.box select,.box textarea{width:100%;border:1px solid var(--line);border-radius:6px;padding:9px 10px;outline:0}
+.box .prev{background:var(--out);border-radius:8px;padding:10px;font-size:13.5px;white-space:pre-wrap;margin-top:12px}
+.box .foot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111B21;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;z-index:60;display:none}
+.toast.on{display:block}
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:70;cursor:zoom-out}
+.lightbox.on{display:flex}
+.lightbox img{max-width:92vw;max-height:92vh}
+
+@media(max-width:1100px){.app{grid-template-columns:340px 1fr 0}.panel{display:none}.app.panel-open{grid-template-columns:0 1fr 320px}.app.panel-open .side{display:none}.app.panel-open .panel{display:flex}}
+@media(max-width:760px){.app{grid-template-columns:1fr 0 0}.chat,.panel{display:none}.app.chat-open{grid-template-columns:0 1fr 0}.app.chat-open .side{display:none}.app.chat-open .chat{display:flex}.app.panel-open{grid-template-columns:0 0 1fr}.app.panel-open .chat{display:none}.app.panel-open .panel{display:flex}.msgs{padding:16px 12px}.b{max-width:85%}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app no-panel" id="app">
+
+  <!-- ─── threads ─── -->
+  <aside class="side">
+    <div class="side-head">
+      <h1>Inbox</h1>
+      <button class="icon-btn" title="Refresh" onclick="loadAll(true)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg></button>
+      <button class="icon-btn" title="New message" onclick="newMessage()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
+    </div>
+    <div class="search"><input id="q" type="search" placeholder="Search name, phone or email" oninput="render()"></div>
+    <div class="chips" id="chips"></div>
+    <div class="list" id="list"><div class="empty">Loading conversations…</div></div>
+  </aside>
+
+  <!-- ─── chat ─── -->
+  <main class="chat" id="chat">
+    <div class="nochat" id="nochat">
+      <svg width="120" height="120" viewBox="0 0 24 24" fill="#8696A0"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg>
+      <h2>FR-Logistics Inbox</h2>
+      <div>Pick a conversation on the left. LIAM answers first; you can take over any thread.</div>
+    </div>
+    <div class="chat-head" id="chatHead" style="display:none">
+      <button class="icon-btn" onclick="backToList()" title="Back" id="backBtn" style="display:none"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></button>
+      <div class="avatar" id="hAvatar" style="width:40px;height:40px;font-size:15px"></div>
+      <div class="who"><div class="t" id="hName"></div><div class="s" id="hSub"></div></div>
+      <div class="status-sel" title="Who is handling this conversation"><span class="led" id="hLed"></span><select id="hMode" onchange="setMode(this.value)"><option value="liam">LIAM handling</option><option value="human">You (LIAM paused)</option></select></div>
+      <button class="hbtn" onclick="openQuote()" id="quoteBtn">Quote</button>
+      <button class="hbtn" onclick="openTemplate()">Template</button>
+      <button class="hbtn" onclick="togglePanel()" title="Contact details"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 3a3 3 0 1 1 0 6 3 3 0 0 1 0-6zm0 14.2a7.2 7.2 0 0 1-6-3.22c.03-1.99 4-3.08 6-3.08s5.97 1.09 6 3.08a7.2 7.2 0 0 1-6 3.22z"/></svg></button>
+    </div>
+    <div class="msgs" id="msgs" style="display:none"></div>
+    <div class="closed-note" id="closedNote" style="display:none"></div>
+    <div class="composer" id="composer" style="display:none">
+      <input type="file" id="file" style="display:none" onchange="sendFile(this)">
+      <button class="icon-btn" title="Attach" onclick="document.getElementById('file').click()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6H10v9.5a2.5 2.5 0 0 0 5 0V5a4 4 0 0 0-8 0v12.5a5.5 5.5 0 0 0 11 0V6h-1.5z"/></svg></button>
+      <textarea id="txt" rows="1" placeholder="Type a message" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendText()}" oninput="autoGrow(this)"></textarea>
+      <button class="send" id="sendBtn" onclick="sendText()" title="Send"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
+    </div>
+  </main>
+
+  <!-- ─── contact ─── -->
+  <aside class="panel" id="panel">
+    <div class="panel-head"><button class="icon-btn" onclick="togglePanel()" title="Close"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>Contact</div>
+    <div id="panelBody"></div>
+  </aside>
+</div>
+
+<div class="modal" id="tplModal"><div class="box">
+  <h2>Send a template</h2>
+  <div style="font-size:13px;color:var(--muted)">Templates work outside the 24-hour window. Approved by Meta; fill the variables.</div>
+  <label>Template</label><select id="tplType" onchange="tplRender()"></select>
+  <div id="tplVars"></div>
+  <div class="prev" id="tplPrev"></div>
+  <div class="foot"><button class="btn" onclick="closeModal('tplModal')">Cancel</button><button class="btn p" id="tplSend" onclick="sendTemplate()">Send template</button></div>
+</div></div>
+
+<div class="modal" id="newModal"><div class="box">
+  <h2>New message</h2>
+  <div style="font-size:13px;color:var(--muted)">Starts a thread with a number that has not written yet. Only templates can be sent until they reply.</div>
+  <label>WhatsApp number (with country code)</label><input id="newPhone" placeholder="1 786 555 0123">
+  <label>Name (for the inbox)</label><input id="newName" placeholder="Company or contact">
+  <div class="foot"><button class="btn" onclick="closeModal('newModal')">Cancel</button><button class="btn p" onclick="startNew()">Open thread</button></div>
+</div></div>
+
+<div class="lightbox" id="lb" onclick="this.classList.remove('on')"><img id="lbImg" alt=""></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ────────────────────────────── config ────────────────────────────── */
+const API = {
+  msgs:   '/.netlify/functions/wa-messages',
+  enrich: '/.netlify/functions/wa-inbox-enrich',
+  clients:'/.netlify/functions/wa-clients',
+  agent:  '/.netlify/functions/wa-agent-state',
+};
+const QUOTE_APP = 'FR_Logistics_Quote_System_v3.html';
+const CRM_APP   = 'crm-board.html';
+const REFRESH_MS = 20000;
+const SOON_H = 6;
+const TPLS = {
+  order_received:{text:'Hi {{1}}, we received your shipment at FR-Logistics Miami. Order #{{2}}. We will keep you updated every step of the way.',vars:['Client name','Order number']},
+  tracking_update:{text:'Hi {{1}}, your order #{{2}} has been processed. Tracking number: {{3}} with {{4}}.',vars:['Client name','Order number','Tracking number','Carrier']},
+  payment_link:{text:'Hi {{1}}, your FR-Logistics invoice for ${{2}} is ready. Pay here: {{3}}. Thank you!',vars:['Client name','Amount','Payment link']},
+  daily_summary:{text:'Hi {{1}}, daily summary {{2}} — Inbound: {{3}} packages. Outbound: {{4}} shipments. Questions? info@fr-logistics.net',vars:['Client name','Date','Inbound count','Outbound count']},
+  ecopack_package_received:{text:'Hi {{1}}, we received a package for you at FR-Logistics! Reply PICKUP to schedule or HOURS for availability.',vars:['Client name']},
+  ecopack_multi_package:{text:'Hi {{1}}, you now have {{2}} packages waiting at FR-Logistics. Reply PICKUP to consolidate and schedule collection.',vars:['Client name','Package count']},
+  ecopack_pickup_scheduled:{text:'Hi {{1}}, your EcoPack+ pickup is scheduled for {{2}} at {{3}}. You have {{4}} packages ready. Reply CONFIRM to confirm.',vars:['Client name','Date','Time','Package count']},
+};
+const TPL_KEYS = { order_received:['clientName','orderNumber'], tracking_update:['clientName','orderNumber','trackingNumber','carrier'], payment_link:['clientName','amount','link'], daily_summary:['clientName','dateLabel','inbound','outbound'], ecopack_package_received:['clientName'], ecopack_multi_package:['clientName','packageCount'], ecopack_pickup_scheduled:['clientName','date','time','packageCount'] };
+
+/* ────────────────────────────── state ────────────────────────────── */
+let messages = [], threads = new Map(), enrich = {}, clients = {}, agent = {};
+let activeKey = null, filter = 'all', timer = null, panelOpen = false;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function normP(p){ let d=String(p||'').replace(/\D/g,''); if(!d) return ''; if(d.length===12&&d.startsWith('11')) d=d.slice(1); if(d.length===10&&/^[2-9]/.test(d)) d='1'+d; return d; }
+function keyOf(raw){ const s=String(raw||'').trim(); if(/^(web:|ig:)/i.test(s)) return s.toLowerCase(); return normP(s); }
+function isChannel(k){ return /^(web|ig):/.test(k); }
+function fmtPhone(k){ if(isChannel(k)) return k.startsWith('web:')?'Website chat':'Instagram'; return '+'+k; }
+function toast(t){ const e=$('toast'); e.textContent=t; e.classList.add('on'); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove('on'),2600); }
+function hue(s){ let h=0; for(const c of s) h=(h*31+c.charCodeAt(0))>>>0; return h%360; }
+function avatarStyle(k){ return `background:hsl(${hue(k)} 45% 45%)`; }
+function initials(n){ const w=String(n||'').replace(/[^\p{L}\s]/gu,'').trim().split(/\s+/).filter(Boolean); return (w.length? (w[0][0]+(w[1]?.[0]||'')) : '#').toUpperCase(); }
+function tsFmt(sec){ const d=new Date(sec*1000), now=new Date(); const same=d.toDateString()===now.toDateString(); const y=new Date(now); y.setDate(y.getDate()-1); if(same) return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); if(d.toDateString()===y.toDateString()) return 'Yesterday'; if(now-d<6*864e5) return d.toLocaleDateString('en-US',{weekday:'short'}); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
+function dayLabel(sec){ const d=new Date(sec*1000), now=new Date(); if(d.toDateString()===now.toDateString()) return 'Today'; const y=new Date(now); y.setDate(y.getDate()-1); if(d.toDateString()===y.toDateString()) return 'Yesterday'; return d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}); }
+function autoGrow(t){ t.style.height='auto'; t.style.height=Math.min(140,t.scrollHeight)+'px'; }
+
+/* ────────────────────────────── data ────────────────────────────── */
+async function loadAll(manual){
+  try{
+    const [m, e, c, a] = await Promise.all([
+      fetch(API.msgs+'?limit=800').then(r=>r.json()).catch(()=>[]),
+      fetch(API.enrich+'?enrich=phones').then(r=>r.json()).catch(()=>({})),
+      fetch(API.clients).then(r=>r.json()).catch(()=>[]),
+      fetch(API.agent).then(r=>r.json()).catch(()=>({})),
+    ]);
+    messages = Array.isArray(m)?m:[];
+    enrich = e||{};
+    clients = {};
+    for(const cl of (Array.isArray(c)?c:[])){ const k=normP(cl.wa_number||cl.phone||''); if(k) clients[k]=cl; }
+    agent = a||{};
+    buildThreads();
+    render();
+    if(activeKey) renderChat(false);
+    if(manual) toast('Refreshed');
+  }catch(err){ console.error(err); toast('Could not load inbox'); }
+}
+
+function buildThreads(){
+  threads = new Map();
+  for(const m of messages){
+    const raw = m.direction==='inbound' ? m.from : m.to;
+    const k = keyOf(raw); if(!k) continue;
+    if(!threads.has(k)) threads.set(k,{key:k,msgs:[],unread:0,names:[]});
+    const t=threads.get(k); t.msgs.push(m);
+    if(m.direction==='inbound'){ if(!m.read) t.unread++; if(m.clientName) t.names.push(m.clientName); }
+  }
+  for(const t of threads.values()){
+    t.msgs.sort((a,b)=>a.timestamp-b.timestamp);
+    t.last = t.msgs[t.msgs.length-1];
+    const lastIn = [...t.msgs].reverse().find(x=>x.direction==='inbound');
+    t.lastIn = lastIn||null;
+    t.hoursLeft = lastIn ? 24 - (Date.now()/1000 - lastIn.timestamp)/3600 : -1;
+    t.window = t.hoursLeft<=0 ? 'closed' : t.hoursLeft<SOON_H ? 'soon' : 'open';
+    t.waiting = t.last?.direction==='inbound' && !t.last?.isInternal;
+    t.agent = agent[t.key]||null;
+    t.lead = enrich[t.key]||null;
+    t.client = clients[t.key]||null;
+    t.name = displayName(t);
+  }
+}
+function displayName(t){
+  const ok = n => n && n.length<=40 && !/^liam/i.test(n) && !/^\+?\d+$/.test(n) && !/^web visitor$/i.test(n);
+  return (t.client && (t.client.company||t.client.name)) || (t.agent?.name && ok(t.agent.name) ? t.agent.name : null) || (t.lead?.name && ok(t.lead.name) ? t.lead.name : null) || t.names.reverse().find(ok) || (isChannel(t.key) ? fmtPhone(t.key) : '+'+t.key);
+}
+
+/* ────────────────────────────── threads list ────────────────────────────── */
+const FILTERS = [
+  {id:'all',label:'All'},
+  {id:'unread',label:'Unread'},
+  {id:'wait',label:'Waiting for you',cls:'warn'},
+  {id:'soon',label:'Closing soon',cls:'warn'},
+  {id:'closed',label:'Window closed',cls:'bad'},
+  {id:'hot',label:'Hot leads',cls:'bad'},
+  {id:'paused',label:'LIAM paused'},
+  {id:'web',label:'Website'},
+];
+function matches(t,f){
+  switch(f){
+    case 'unread': return t.unread>0;
+    case 'wait': return t.waiting && t.window!=='closed';
+    case 'soon': return t.window==='soon';
+    case 'closed': return t.window==='closed' && t.lastIn;
+    case 'hot': return t.agent?.score==='hot';
+    case 'paused': return !!t.agent?.paused;
+    case 'web': return isChannel(t.key);
+    default: return true;
+  }
+}
+function render(){
+  const q = ($('q').value||'').trim().toLowerCase();
+  const all = [...threads.values()].sort((a,b)=>(b.last?.timestamp||0)-(a.last?.timestamp||0));
+  const counts = {}; for(const f of FILTERS) counts[f.id]=all.filter(t=>matches(t,f.id)).length;
+  $('chips').innerHTML = FILTERS.map(f=>`<button class="chip ${f.cls||''} ${filter===f.id?'on':''}" onclick="filter='${f.id}';render()">${f.label}<span class="n">${counts[f.id]}</span></button>`).join('');
+  const rows = all.filter(t=>matches(t,filter)).filter(t=>{ if(!q) return true; const hay=[t.name,t.key,t.lead?.email,t.agent?.email,t.client?.email,t.client?.company,...t.names].join(' ').toLowerCase(); return hay.includes(q); });
+  if(!rows.length){ $('list').innerHTML=`<div class="empty">${q?'No conversations match your search.':'Nothing here right now.'}</div>`; return; }
+  $('list').innerHTML = rows.map(t=>{
+    const pv = preview(t.last);
+    const pill = t.agent?.paused ? '<span class="pill paused">YOU</span>' : t.window==='closed'&&t.lastIn ? '<span class="pill closed">CLOSED</span>' : t.window==='soon' ? `<span class="pill soon">${Math.max(1,Math.floor(t.hoursLeft))}h LEFT</span>` : t.waiting ? '<span class="pill wait">WAITING</span>' : '';
+    const sc = t.agent?.score ? `<span class="score-dot score-${t.agent.score}" title="Lead score: ${t.agent.score}"></span>` : '';
+    return `<div class="item ${t.key===activeKey?'on':''} ${t.unread?'unread':''}" onclick="openThread('${esc(t.key)}')">
+      <div class="avatar" style="${avatarStyle(t.key)}">${esc(initials(t.name))}${t.agent?.paused?'<span class="dot" style="background:#7C3AED"></span>':t.agent?'<span class="dot" style="background:var(--wa-green-2)"></span>':''}</div>
+      <div class="item-body">
+        <div class="row"><div class="name">${esc(t.name)}</div>${sc}<div class="time">${t.last?tsFmt(t.last.timestamp):''}</div></div>
+        <div class="row"><div class="preview">${t.last?.direction==='outbound'?'<span class="tick">✓✓</span>':''}${esc(pv)}</div>${pill}${t.unread?`<span class="badge">${t.unread}</span>`:''}</div>
+      </div></div>`;
+  }).join('');
+}
+function preview(m){
+  if(!m) return '';
+  if(m.mediaPath||/^\[(image|audio|video|document|sticker|voice)\]$/.test(m.text||'')){ const k=(m.mimeType||m.text||'').toLowerCase(); return k.includes('image')?'📷 Photo':k.includes('audio')||k.includes('voice')?'🎤 Voice message':k.includes('video')?'🎥 Video':'📄 Document'; }
+  return (m.text||'').replace(/\s+/g,' ').slice(0,70);
+}
+
+/* ────────────────────────────── chat ────────────────────────────── */
+function openThread(k){
+  activeKey = k; panelOpen = false;
+  $('app').classList.add('chat-open'); $('app').classList.remove('panel-open');
+  render(); renderChat(true); loadContact();
+  markRead(k);
+}
+function backToList(){ $('app').classList.remove('chat-open','panel-open'); activeKey=null; render(); }
+function renderChat(scroll){
+  const t = threads.get(activeKey);
+  $('nochat').style.display = t?'none':'flex';
+  for(const id of ['chatHead','msgs','composer']) $(id).style.display = t?(id==='msgs'?'flex':'flex'):'none';
+  $('closedNote').style.display='none';
+  if(!t) return;
+  $('backBtn').style.display = window.innerWidth<=760?'':'none';
+  $('hAvatar').style.cssText = avatarStyle(t.key)+';width:40px;height:40px;font-size:15px'; $('hAvatar').textContent = initials(t.name);
+  $('hName').textContent = t.name;
+  const email = t.agent?.email||t.lead?.email||t.client?.email||'';
+  $('hSub').textContent = [fmtPhone(t.key), email, t.client?'Client':t.agent?.lead_status?('Lead · '+t.agent.lead_status):''].filter(Boolean).join(' · ');
+  $('hMode').value = t.agent?.paused?'human':'liam';
+  $('hLed').style.background = t.agent?.paused?'#7C3AED':'var(--wa-green-2)';
+  $('hMode').disabled = !t.agent;
+  $('quoteBtn').style.display = isChannel(t.key)?'none':'';
+
+  // messages
+  let html='', lastDay='';
+  for(const m of t.msgs){
+    const d = dayLabel(m.timestamp); if(d!==lastDay){ html+=`<div class="day">${d}</div>`; lastDay=d; }
+    html += bubble(m);
+  }
+  $('msgs').innerHTML = html;
+  if(scroll!==false) $('msgs').scrollTop = $('msgs').scrollHeight;
+
+  // composer / window
+  const closed = t.window==='closed';
+  $('txt').disabled = closed; $('sendBtn').disabled = closed;
+  $('txt').placeholder = closed ? 'The 24-hour window is closed — send a template' : 'Type a message';
+  if(closed){ $('closedNote').style.display='flex'; $('closedNote').innerHTML = `<span>${t.lastIn?`<b>Window closed.</b> Last message from the contact ${Math.floor(24-t.hoursLeft)}h ago.`:'<b>No open window.</b> This contact has never written.'} Free text is not allowed; use an approved template.</span><button class="btn" onclick="openTemplate()">Template</button>`; }
+  else if(t.window==='soon'){ $('closedNote').style.display='flex'; $('closedNote').innerHTML=`<span><b>${Math.max(1,Math.floor(t.hoursLeft))}h left</b> on the 24-hour window. After that only templates go through.</span>`; }
+}
+function bubble(m){
+  const out = m.direction==='outbound';
+  const time = new Date(m.timestamp*1000).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  const meta = `<span class="meta">${time}${out?'<span class="tick">✓✓</span>':''}</span>`;
+  const txt = m.text||'';
+  // system-ish outbound markers
+  if(out && /^📋 Lead form sent/.test(txt)) return `<div class="sys">Lead form sent to the contact</div>`;
+  // form submitted card
+  if(!out && /^📋 Form submitted/.test(txt)){
+    const body = txt.replace(/^📋 Form submitted\s*—\s*/,'');
+    const kv = body.split(' · ').map(p=>p.split(/:\s(.+)/)).filter(x=>x[1]!==undefined);
+    return `<div class="b in"><div class="form-card"><div class="ttl">Lead form submitted</div><div class="kv">${kv.map(([k,v])=>`<span class="k">${esc(k)}</span><span>${esc(v)}</span>`).join('')}</div></div>${meta}</div>`;
+  }
+  let inner='';
+  if(m.mediaPath){
+    const url = API.msgs+'?action=media&path='+encodeURIComponent(m.mediaPath);
+    const mime=(m.mimeType||'').toLowerCase();
+    if(mime.startsWith('image/')) inner += `<img src="${url}" alt="" onclick="zoom('${url}')">`;
+    else if(mime.startsWith('audio/')) inner += `<audio controls preload="none" src="${url}"></audio>`;
+    else if(mime.startsWith('video/')) inner += `<video controls style="max-width:100%;border-radius:6px" src="${url}"></video>`;
+    else inner += `<a class="doc" href="${url}" target="_blank" rel="noopener">📄 <span>${esc(m.caption||'Open document')}</span></a>`;
+    if(m.caption && !mime.startsWith('application/')) inner += esc(m.caption);
+  } else if(/^\[(image|audio|video|document|sticker|voice)\]$/.test(txt)){
+    inner = `<span style="color:var(--muted)">${esc(preview(m))} (not stored)</span>`;
+  } else inner = esc(txt);
+  const author = out && m.clientName && !/liam/i.test(m.clientName) ? `<div class="author">${esc(m.clientName)}</div>` : '';
+  return `<div class="b ${out?'out':'in'} ${m.isInternal?'internal':''}">${author}${inner}${meta}</div>`;
+}
+function zoom(u){ $('lbImg').src=u; $('lb').classList.add('on'); }
+async function markRead(k){
+  const t=threads.get(k); if(!t) return;
+  const ids = t.msgs.filter(m=>m.direction==='inbound'&&!m.read).map(m=>m.id);
+  if(!ids.length) return;
+  for(const id of ids){ fetch(API.msgs,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'mark_read',id})}).catch(()=>{}); }
+  t.msgs.forEach(m=>{ if(m.direction==='inbound') m.read=true; }); t.unread=0; render();
+}
+
+/* ────────────────────────────── sending ────────────────────────────── */
+async function sendText(){
+  const t=threads.get(activeKey); const text=$('txt').value.trim(); if(!t||!text) return;
+  $('sendBtn').disabled=true;
+  try{
+    const r = await fetch(API.msgs,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'reply',to:t.key,text})});
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok||j.error){ toast(j.message||j.error||'Send failed'); return; }
+    $('txt').value=''; autoGrow($('txt'));
+    // If a human writes, LIAM steps back
+    if(t.agent && !t.agent.paused) await setMode('human', true);
+    await loadAll();
+  }catch(e){ toast('Send failed'); } finally{ $('sendBtn').disabled=false; }
+}
+async function sendFile(input){
+  const f=input.files?.[0]; input.value=''; const t=threads.get(activeKey); if(!f||!t) return;
+  if(f.size>4*1024*1024){ toast('File too large (max 4 MB)'); return; }
+  const b64 = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(f); });
+  toast('Sending '+f.name+'…');
+  const r = await fetch(API.msgs,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'send_media',to:t.key,base64:b64,mimeType:f.type,filename:f.name})});
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok||j.error){ toast(j.message||j.error||'Upload failed'); return; }
+  if(t.agent && !t.agent.paused) await setMode('human', true);
+  await loadAll();
+}
+function openTemplate(){
+  const sel=$('tplType'); sel.innerHTML=Object.keys(TPLS).map(k=>`<option value="${k}">${k.replace(/_/g,' ')}</option>`).join('');
+  tplRender(); $('tplModal').classList.add('on');
+}
+function tplRender(){
+  const k=$('tplType').value, tp=TPLS[k], t=threads.get(activeKey);
+  $('tplVars').innerHTML = tp.vars.map((v,i)=>`<label>${v}</label><input data-i="${i}" value="${i===0?esc(t?.name||''):''}" oninput="tplRender()">`).join('');
+  const vals=[...$('tplVars').querySelectorAll('input')].map(i=>i.value||'…');
+  $('tplPrev').textContent = tp.text.replace(/\{\{(\d)\}\}/g,(_,n)=>vals[n-1]);
+}
+async function sendTemplate(){
+  const k=$('tplType').value, t=threads.get(activeKey); if(!t) return;
+  const vals=[...$('tplVars').querySelectorAll('input')].map(i=>i.value.trim());
+  const data={}; TPL_KEYS[k].forEach((key,i)=>data[key]=vals[i]);
+  $('tplSend').disabled=true;
+  try{
+    const r=await fetch(API.msgs,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:k,to:t.key,data})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||j.error){ toast(j.message||j.error||'Template failed'); return; }
+    closeModal('tplModal'); toast('Template sent'); await loadAll();
+  } finally{ $('tplSend').disabled=false; }
+}
+function closeModal(id){ $(id).classList.remove('on'); }
+function newMessage(){ $('newModal').classList.add('on'); }
+function startNew(){
+  const k=normP($('newPhone').value); if(k.length<8){ toast('Enter a valid number'); return; }
+  const name=$('newName').value.trim()||('+'+k);
+  if(!threads.has(k)) threads.set(k,{key:k,msgs:[],unread:0,names:[name],last:null,lastIn:null,hoursLeft:-1,window:'closed',waiting:false,agent:null,lead:null,client:null,name});
+  closeModal('newModal'); openThread(k);
+}
+
+/* ────────────────────────────── LIAM control ────────────────────────────── */
+async function setMode(mode, silent){
+  const t=threads.get(activeKey); if(!t||!t.agent) return;
+  const action = mode==='human'?'pause':'resume';
+  const r=await fetch(API.agent,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,phone:t.key,by:'portal'})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok||j.error){ toast(j.error||'Could not change mode'); $('hMode').value=t.agent.paused?'human':'liam'; return; }
+  t.agent.paused = mode==='human';
+  $('hLed').style.background = t.agent.paused?'#7C3AED':'var(--wa-green-2)'; $('hMode').value=mode;
+  if(!silent) toast(mode==='human'?'You have this conversation. LIAM is paused.':'LIAM is handling this conversation again.');
+  render(); renderPanel();
+}
+
+/* ────────────────────────────── contact panel ────────────────────────────── */
+let contactData = null;
+function togglePanel(){ panelOpen=!panelOpen; $('app').classList.toggle('no-panel',!panelOpen); $('app').classList.toggle('panel-open',panelOpen); if(panelOpen) renderPanel(); }
+async function loadContact(){
+  contactData=null; renderPanel();
+  if(!activeKey) return;
+  try{ const r=await fetch(API.agent+'?phone='+encodeURIComponent(activeKey)); contactData=await r.json(); }catch{ contactData=null; }
+  if(contactData?.contact){ const t=threads.get(activeKey); if(t) t.agent=contactData.contact; }
+  renderPanel();
+}
+function renderPanel(){
+  const t=threads.get(activeKey); const body=$('panelBody');
+  if(!t){ body.innerHTML='<div class="empty">Open a conversation to see the contact.</div>'; return; }
+  const a=t.agent, lead=t.lead, cl=t.client, quotes=contactData?.quotes||[];
+  const score=a?.score;
+  const scoreLabel={hot:'Hot lead',warm:'Warm lead',cold:'Cold / out of scope'}[score]||'Not scored yet';
+  const na = a?.next_action||'';
+  body.innerHTML = `
+    <div class="card" style="text-align:center;padding:18px 14px">
+      <div class="avatar" style="${avatarStyle(t.key)};width:72px;height:72px;font-size:26px;margin:0 auto 10px">${esc(initials(t.name))}</div>
+      <div style="font-size:17px;font-weight:500">${esc(t.name)}</div>
+      <div style="color:var(--muted);font-size:13px">${esc(fmtPhone(t.key))}${(a?.email||lead?.email||cl?.email)?' · '+esc(a?.email||lead?.email||cl?.email):''}</div>
+      ${cl?`<div style="margin-top:6px"><span class="pill liam">EXISTING CLIENT</span></div>`:''}
+    </div>
+    <div class="card">
+      <div class="score ${score||'none'}">${esc(scoreLabel)}${a?.score_reason?`<small>${esc(a.score_reason)}</small>`:''}</div>
+      ${a?.summary?`<div class="summary" style="margin-top:10px">${esc(a.summary)}</div>`:`<div style="color:var(--muted);font-size:13px;margin-top:8px">LIAM writes a 3-line brief when it hands the conversation over.</div>`}
+    </div>
+    <div class="card na">
+      <h3>Next action</h3>
+      <textarea id="naText" placeholder="e.g. Send FBA prep quote for 2 pallets">${esc(na)}</textarea>
+      <div class="r"><input type="date" id="naDate" value="${esc(a?.next_action_date||'')}" style="flex:1"><button class="btn p" onclick="saveNote()" ${a?.lead_id?'':'disabled title="No lead linked"'}>Save</button></div>
+    </div>
+    <div class="card">
+      <h3>What LIAM captured</h3>
+      <div class="kv2">
+        ${kv('Service', a?.service)}${kv('Volume', a?.volume)}${kv('Start', a?.stage)}${kv('Product', a?.product)}${kv('Country', a?.country)}${kv('Platforms', a?.platforms)}
+        ${kv('Language', a?.language)}${kv('State', a?a.state+(a.sub_state?' / '+a.sub_state:''):null)}${kv('Handoff', a?.handoff_reason)}${kv('Email sent', a?(a.email_sent?'Yes':'No'):null)}
+        ${kv('Lead status', a?.lead_status||lead?.status)}${kv('Owner', a?.lead_owner)}${kv('Discovery call', a?.meeting_start?new Date(a.meeting_start).toLocaleString('en-US'):null)}
+      </div>
+    </div>
+    <div class="card">
+      <h3>Quotes</h3>
+      ${quotes.length? quotes.map(q=>`<div class="q"><div><b>${esc(q.quote_id)}</b><div style="color:var(--muted);font-size:12px">${esc(q.op_type||'')} ${q.valid_until?'· valid until '+esc(q.valid_until):''}</div></div><div style="text-align:right">${q.suggested||q.subtotal?'$'+Number(q.suggested||q.subtotal).toLocaleString('en-US'):''}<div><span class="st ${esc(q.status||'')}">${esc(q.status||'—')}</span></div></div></div>`).join('') : '<div style="color:var(--muted);font-size:13px">No quotes yet.</div>'}
+    </div>
+    <div class="actions">
+      ${a?(a.paused?`<button class="btn" onclick="setMode('liam')">Hand back to LIAM</button>`:`<button class="btn d" onclick="setMode('human')">Take over</button>`):''}
+      ${!isChannel(t.key)?`<button class="btn" onclick="openQuote()">New quote</button>`:''}
+      ${a?.lead_id?`<button class="btn" onclick="openApp('${CRM_APP}','CRM Scorecard')">Open in CRM</button>`:''}
+      ${!isChannel(t.key)?`<a class="btn" href="https://wa.me/${t.key}" target="_blank" rel="noopener">Open in WhatsApp</a>`:''}
+    </div>`;
+}
+function kv(k,v){ return v?`<div class="k">${esc(k)}</div><div class="v">${esc(v)}</div>`:''; }
+async function saveNote(){
+  const t=threads.get(activeKey); if(!t?.agent?.lead_id) return;
+  const r=await fetch(API.agent,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'note',phone:t.key,next_action:$('naText').value.trim(),next_action_date:$('naDate').value||null})});
+  if(r.ok){ t.agent.next_action=$('naText').value.trim(); t.agent.next_action_date=$('naDate').value||null; toast('Next action saved'); } else toast('Could not save');
+}
+function openQuote(){ const t=threads.get(activeKey); const url=QUOTE_APP+(t?.agent?.lead_id?'#lead='+encodeURIComponent(t.agent.lead_id):''); openApp(url,'Quote Builder'); }
+function openApp(url,name){ try{ if(window.parent && window.parent!==window && typeof window.parent.openApp==='function'){ window.parent.openApp(url,name); return; } }catch{} window.open(url,'_blank'); }
+
+/* ────────────────────────────── boot ────────────────────────────── */
+loadAll();
+timer = setInterval(()=>{ if(document.visibilityState==='visible') loadAll(); }, REFRESH_MS);
+window.addEventListener('resize',()=>{ if(activeKey) $('backBtn').style.display=window.innerWidth<=760?'':'none'; });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ ['tplModal','newModal'].forEach(closeModal); $('lb').classList.remove('on'); } });
+</script>
+</body>
+</html>
