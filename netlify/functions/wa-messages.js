@@ -71,8 +71,12 @@ const ECOPACK_TEMPLATES = [
   "ecopack_pickup_scheduled"
 ];
 
+// [2026-09-18] Lead re-engagement templates (approved per language in Meta)
+const LEAD_TEMPLATES = { lead_followup_es: "es", lead_followup_en: "en_US", lead_nudge_es: "es", lead_nudge_en: "en_US", quote_reminder_es: "es", quote_reminder_en: "en_US" };
+
 function getLangCode(type) {
   /* NEW */
+  if (LEAD_TEMPLATES[type]) return LEAD_TEMPLATES[type];
   return ECOPACK_TEMPLATES.includes(type) ? "en" : "en_US";
 }
 
@@ -113,6 +117,20 @@ function buildComponents(type, data) {
       { type: "text", text: s(data.date) },
       { type: "text", text: s(data.time) },
       { type: "text", text: s(data.packageCount || data.package_count || "1") }
+    ]}],
+    lead_followup_es: [{ type: "body", parameters: [
+      { type: "text", text: s(data.clientName) }
+    ]}],
+    lead_followup_en: [{ type: "body", parameters: [
+      { type: "text", text: s(data.clientName) }
+    ]}],
+    lead_nudge_es: [{ type: "body", parameters: [{ type: "text", text: s(data.clientName) }]}],
+    lead_nudge_en: [{ type: "body", parameters: [{ type: "text", text: s(data.clientName) }]}],
+    quote_reminder_es: [{ type: "body", parameters: [
+      { type: "text", text: s(data.clientName) }, { type: "text", text: s(data.quoteId) }, { type: "text", text: s(data.validUntil) }
+    ]}],
+    quote_reminder_en: [{ type: "body", parameters: [
+      { type: "text", text: s(data.clientName) }, { type: "text", text: s(data.quoteId) }, { type: "text", text: s(data.validUntil) }
     ]}]
   };
   return templates[type] || null;
@@ -126,7 +144,13 @@ function buildPreviewText(type, data) {
     daily_summary:            `Hi ${data.clientName}, daily summary ${data.dateLabel} — Inbound: ${data.inbound}. Outbound: ${data.outbound}.`,
     ecopack_package_received: `Hola ${data.clientName}, recibimos un paquete para ti en FR-Logistics. Responde PICKUP para agendar o HOURS para ver disponibilidad.`,
     ecopack_multi_package:    `Hola ${data.clientName}, tienes ${data.packageCount || data.package_count || "1"} paquetes esperando en FR-Logistics. Responde PICKUP para consolidar y agendar.`,
-    ecopack_pickup_scheduled: `Hola ${data.clientName}, tu pickup EcoPack+ está agendado para ${data.date} a las ${data.time}. Tienes ${data.packageCount || data.package_count || "1"} paquetes listos.`
+    ecopack_pickup_scheduled: `Hola ${data.clientName}, tu pickup EcoPack+ está agendado para ${data.date} a las ${data.time}. Tienes ${data.packageCount || data.package_count || "1"} paquetes listos.`,
+    lead_followup_es: `Hola ${data.clientName}, te escribimos de FR-Logistics Miami. Nos escribiste hace unos días y tu mensaje no recibió la respuesta que merecía; nos disculpamos. Seguimos disponibles para ayudarte con tu operación en USA. ¿Te parece si retomamos? Responde a este mensaje y nuestro equipo te contacta hoy mismo.`,
+    lead_followup_en: `Hi ${data.clientName}, this is FR-Logistics Miami. You reached out a few days ago and your message did not get the reply it deserved; we apologize. We are still here to help with your US operation. Shall we pick it up? Reply to this message and our team will get back to you today.`,
+    lead_nudge_es: `Hola ${data.clientName}, te escribimos de FR-Logistics Miami. Quedamos pendientes de tu operación en USA. ¿Seguimos? Responde a este mensaje y retomamos donde lo dejamos.`,
+    lead_nudge_en: `Hi ${data.clientName}, this is FR-Logistics Miami. We are still here for your US operation. Shall we continue? Reply to this message and we pick up where we left off.`,
+    quote_reminder_es: `Hola ${data.clientName}, te recordamos que tu cotización ${data.quoteId} de FR-Logistics vence el ${data.validUntil}. Si quieres avanzar o ajustar algo, responde a este mensaje y nuestro equipo te ayuda.`,
+    quote_reminder_en: `Hi ${data.clientName}, a quick reminder that your FR-Logistics quote ${data.quoteId} expires on ${data.validUntil}. If you want to move forward or adjust anything, reply to this message and our team will help.`
   };
   return map[type] || "";
 }
