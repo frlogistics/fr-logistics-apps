@@ -369,6 +369,57 @@
 // ════════════════════════════════════════════════════════════════════
 const API_LOG     = '/.netlify/functions/services-log';
 const API_CLIENTS = '/.netlify/functions/wa-clients';
+const API_RATES   = '/.netlify/functions/billing-rates';
+
+// ── Client rate card (2026-09-21) ─────────────────────────────────────────
+// The entry used to snapshot the CATALOG default_rate, and Billing.html lets the
+// logged rate win over the client's rate card — so a client with a negotiated
+// rate was billed the list price on anything that came through this log.
+// Now the rate is resolved from billing-rates (fr_client_rates, the single
+// source of truth) for the selected client; the catalog default is only the
+// fallback when the rate card cannot be loaded.
+let CLIENT_RATES = {};          // { [client_id]: { [service_code]: {rate, source} } }
+let RATES_STATE  = 'idle';      // idle | loading | ok | fallback
+
+function selectedClient() {
+  const id = document.getElementById('f-client').value;
+  return CLIENTS.find(c => String(c.id) === String(id)) || null;
+}
+
+async function loadClientRates() {
+  const c = selectedClient();
+  if (!c) { RATES_STATE = 'idle'; refreshRateUI(); return; }
+  if (CLIENT_RATES[c.id]) { RATES_STATE = 'ok'; refreshRateUI(); return; }
+  RATES_STATE = 'loading'; refreshRateUI();
+  try {
+    // Same key Billing.html uses: company first, contact name as fallback.
+    const key = (c.company || c.name || '').trim();
+    const r = await fetch(`${API_RATES}?client=${encodeURIComponent(key)}`);
+    const d = await r.json();
+    if (!r.ok || !d || !d.rates) throw new Error((d && d.error) || `HTTP ${r.status}`);
+    CLIENT_RATES[c.id] = d.rates;
+    RATES_STATE = 'ok';
+  } catch (err) {
+    console.warn('[Services Log] rate card fetch failed:', err);
+    RATES_STATE = 'fallback';
+    toast('Could not load this client\'s rate card — using catalog list price. Check the rate before saving.', 'error');
+  }
+  // Ignore a late answer if the user already switched client.
+  if (selectedClient() && String(selectedClient().id) === String(c.id)) refreshRateUI();
+}
+
+// Resolve the rate for a catalog service under the selected client.
+function rateFor(svc) {
+  const c = selectedClient();
+  const card = c && CLIENT_RATES[c.id];
+  const hit  = card && card[svc.service_code];
+  if (hit && Number.isFinite(Number(hit.rate))) {
+    return { rate: Number(hit.rate), source: hit.source || 'client' };
+  }
+  return { rate: Number(svc.default_rate) || 0, source: 'list' };
+}
+
+function refreshRateUI() { onServiceChange(); }
 
 let CLIENTS = [];
 let CATALOG = [];
@@ -386,6 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Form events
   document.getElementById('f-service').addEventListener('change', onServiceChange);
+  document.getElementById('f-client').addEventListener('change', loadClientRates);
   document.getElementById('f-qty').addEventListener('input', updateEstimate);
   document.getElementById('btn-save').addEventListener('click', saveEntry);
   document.getElementById('btn-clear').addEventListener('click', clearForm);
@@ -557,7 +609,20 @@ function onServiceChange() {
     updateEstimate();
     return;
   }
-  document.getElementById('f-unit').value = `${svc.unit} · ${formatMoney(svc.default_rate)} per ${unitSingular(svc.unit)}`;
+  const rr = rateFor(svc);
+  const tag = RATES_STATE === 'loading' ? ' · loading client rate…'
+            : rr.source === 'client'    ? ' · client rate'
+            : rr.source === 'list'      ? ' · LIST PRICE (no client selected / rate card not loaded)'
+            : '';
+  document.getElementById('f-unit').value = `${svc.unit} · ${formatMoney(rr.rate)} per ${unitSingular(svc.unit)}${tag}`;
+  // B2B orders: the order number in Reference is what links this entry to the
+  // ShipStation order in the Billing Generator (takes it out of Pick & Pack).
+  const refEl = document.getElementById('f-ref');
+  if (refEl) {
+    refEl.placeholder = svc.service_code === 'B2B_RETAIL'
+      ? 'REQUIRED for B2B: exact ShipStation order # (e.g. NM-USA-09-p1)'
+      : 'e.g. INB-2026-0418, Order #12345';
+  }
   updateEstimate();
 }
 
@@ -570,9 +635,10 @@ function updateEstimate() {
     document.getElementById('estimate-formula').textContent = '';
     return;
   }
-  const total = qty * svc.default_rate;
+  const unitRate = rateFor(svc).rate;
+  const total = qty * unitRate;
   document.getElementById('estimate-total').textContent = formatMoney(total);
-  document.getElementById('estimate-formula').textContent = `(${qty} × ${formatMoney(svc.default_rate)})`;
+  document.getElementById('estimate-formula').textContent = `(${qty} × ${formatMoney(unitRate)})`;
 }
 
 async function saveEntry() {
@@ -592,6 +658,10 @@ async function saveEntry() {
   if (!svc) return toast('Select a service', 'error');
   if (!qty || qty <= 0) return toast('Quantity must be greater than 0', 'error');
   if (!date) return toast('Service date required', 'error');
+  if (RATES_STATE === 'loading') return toast('Client rate card still loading — try again in a second', 'error');
+  if (svc.service_code === 'B2B_RETAIL' && !document.getElementById('f-ref').value.trim()) {
+    return toast('Retail Distribution needs the ShipStation order # in Reference — that is what removes the order from Pick & Pack on the invoice', 'error');
+  }
 
   const payload = {
     client_id,
@@ -600,7 +670,7 @@ async function saveEntry() {
     service_name: svc.service_name,
     quantity: qty,
     unit: svc.unit,
-    unit_rate: svc.default_rate,
+    unit_rate: rateFor(svc).rate,
     service_date: date,
     reference_id: document.getElementById('f-ref').value.trim() || null,
     performed_by: document.getElementById('f-by').value.trim() || null,
@@ -620,7 +690,7 @@ async function saveEntry() {
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || 'Save failed');
     toast('Entry saved', 'success');
-    clearForm();
+    clearForm(true);
     loadEntries();
   } catch (err) {
     toast('Error: ' + err.message, 'error');
@@ -643,7 +713,21 @@ async function voidEntry(id) {
   }
 }
 
-function clearForm() {
+// keepContext=true (after a successful save): keep client, date, reference and
+// performed-by, so the 2nd and 3rd line of the same job — e.g. a B2B order =
+// Retail Distribution + Outbound Cartons + Label Application — are logged
+// without re-picking the client or retyping the order number. The Clear button
+// still wipes everything.
+function clearForm(keepContext) {
+  if (keepContext === true) {
+    document.getElementById('f-service').value = '';
+    document.getElementById('f-qty').value = '';
+    document.getElementById('f-unit').value = '—';
+    document.getElementById('f-notes').value = '';
+    updateEstimate();
+    return;
+  }
+  RATES_STATE = 'idle';
   document.getElementById('f-client').value = '';
   document.getElementById('f-service').value = '';
   document.getElementById('f-qty').value = '';
