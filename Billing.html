@@ -911,11 +911,23 @@ async function loadBilling() {
             // post Phase 1.5 migration. Keep keys uppercase to match.
             const key = (e.service_code || '').toUpperCase();
             if (!key) return;
-            if (!svcLogEntries[key]) svcLogEntries[key] = { qty: 0, rate: 0, count: 0 };
-            svcLogEntries[key].qty   += parseFloat(e.total_quantity || e.quantity || 0);
-            svcLogEntries[key].rate   = parseFloat(e.unit_rate || svcLogEntries[key].rate);
-            svcLogEntries[key].count += parseInt(e.entry_count || 1);
+            if (!svcLogEntries[key]) svcLogEntries[key] = { qty: 0, rate: 0, amount: 0, count: 0, ids: [], refs: [] };
+            const eQty  = parseFloat(e.total_quantity || e.quantity || 0);
+            const eRate = parseFloat(e.unit_rate || 0);
+            svcLogEntries[key].qty    += eQty;
+            svcLogEntries[key].amount += eQty * eRate;
+            svcLogEntries[key].count  += parseInt(e.entry_count || 1);
+            // 2026-09-21: keep the row ids (closed on Mark as Invoiced) and the
+            // reference_id (used to match B2B orders against ShipStation).
+            if (e.id != null)   svcLogEntries[key].ids.push(e.id);
+            if (e.reference_id) svcLogEntries[key].refs.push(String(e.reference_id));
           });
+        // Weighted rate: if two entries of the same service were logged at
+        // different rates, qty × rate must still equal what was logged.
+        // (Before: last entry's rate won and was applied to the whole qty.)
+        Object.values(svcLogEntries).forEach(v => {
+          v.rate = v.qty > 0 ? Math.round((v.amount / v.qty) * 10000) / 10000 : 0;
+        });
       }
     }
   } catch (err) {
@@ -953,6 +965,46 @@ async function loadBilling() {
   const shippingCharge = carrierCost > 0 ? Math.round(carrierCost * (1 + markup / 100) * 100) / 100 : 0;
 
   _lines = getBillingLines(_client);
+
+  // ── B2B / wholesale orders (2026-09-21) ───────────────────────────────────
+  // A multi-carton wholesale order is billed with the B2B lines (Retail
+  // Distribution + Outbound Cartons + Label Application) through the Services
+  // Log, NOT as a per-order Pick & Pack. The link is the order number: a
+  // B2B_RETAIL log entry whose reference_id contains a ShipStation order number
+  // takes that order out of its P&P weight tier. The order stays in
+  // _capturedSSOrders, so its label cost is still billed and it still lands in
+  // billed_orders (never reappears next period).
+  // Reference may carry extra text ("NM-USA-09-p1 / shipment 323687942"):
+  // it is split into tokens and any token equal to an order number matches.
+  const b2bMatched   = [];
+  const b2bUnmatched = [];
+  {
+    const refs = (svcLogEntries['B2B_RETAIL'] && svcLogEntries['B2B_RETAIL'].refs) || [];
+    const byNumber = {};
+    _capturedSSOrders.forEach(o => {
+      const n = String(o.order_number || '').trim().toUpperCase();
+      if (n) (byNumber[n] = byNumber[n] || []).push(o);
+    });
+    refs.forEach(ref => {
+      const tokens = String(ref).toUpperCase().split(/[\s,;|\/]+/).filter(Boolean);
+      let hit = false;
+      tokens.forEach(t => {
+        (byNumber[t] || []).forEach(o => {
+          hit = true;
+          if (o.b2b) return;                 // same order referenced twice → count once
+          o.b2b = true;
+          if (o.pp_tier === 'oversized')     ppOversized = Math.max(0, ppOversized - 1);
+          else if (o.pp_tier === 'standard') ppStandard  = Math.max(0, ppStandard  - 1);
+          else                               ppSmall     = Math.max(0, ppSmall     - 1);
+          b2bMatched.push(o.order_number);
+        });
+      });
+      if (!hit) b2bUnmatched.push(ref);
+    });
+    // B2B_RETAIL logged with NO reference at all → cannot be linked to an order.
+    const b2bEntry = svcLogEntries['B2B_RETAIL'];
+    if (b2bEntry && b2bEntry.count > refs.length) b2bUnmatched.push('(entry without reference)');
+  }
 
   // Phase 3.2: services_log map uses CANONICAL codes.
   // line.id (legacy key) → canonical service_code (uppercase, matches API_KEY_TO_LINE_KEY reversed).
@@ -1009,6 +1061,8 @@ async function loadBilling() {
       l.auto = true;
       l.tip  = `From Services Log: ${e.count} ${e.count === 1 ? 'entry' : 'entries'}`;
       l.fromServicesLog = true;
+      l.svcLogCode = canonicalCode;        // 2026-09-21: which log code fed this line
+      l.svcLogIds  = (e.ids || []).slice(); //             and which rows to close on Mark as Invoiced
     }
 
     if (l.id === 'shipping_label_fee') {
@@ -1066,7 +1120,24 @@ async function loadBilling() {
     mixWarn = `<br>\u26a0\ufe0f Hay l\u00edneas de Casillero con cantidad, pero <b>${_client.displayName}</b> no tiene el servicio "Dropship" en su ficha. Rev\u00edsalo en Clients \u2192 Edit.`;
   }
 
-  const fullStatus = `${ssStatus}<br>Inbound: <b>${inboundCount}</b> · RMA: <b>${rmaCount}</b> · Drop-Ship: <b>${dropCount}</b>${outLbl}${slLbl}${rtnLbl}${wmsLbl}${mixWarn}`;
+  // ── Services Log guards (2026-09-21) ──────────────────────────────────────
+  // (1) B2B orders taken out of Pick & Pack, (2) B2B entries that could not be
+  // linked to an order, (3) log entries whose service_code has no billing line
+  // (they would otherwise be dropped in silence and never billed).
+  const _usedLogCodes = new Set(_lines.filter(l => l.fromServicesLog).map(l => l.svcLogCode));
+  const _orphanCodes  = Object.keys(svcLogEntries).filter(k => !_usedLogCodes.has(k));
+  let svcWarn = '';
+  if (b2bMatched.length) {
+    svcWarn += `<br>\ud83d\udce6 <b>B2B:</b> ${b2bMatched.length} order(s) billed via Services Log and excluded from Pick &amp; Pack: <b>${b2bMatched.join(', ')}</b> (label cost still included).`;
+  }
+  if (b2bUnmatched.length) {
+    svcWarn += `<br>\u26a0\ufe0f <b>B2B sin enlazar:</b> Retail Distribution en el Services Log con referencia <b>${b2bUnmatched.join(' · ')}</b> no coincide con ninguna orden de ShipStation del per\u00edodo — el Pick &amp; Pack NO se ajust\u00f3. Revisa el n\u00famero de orden en la referencia o resta la orden a mano.`;
+  }
+  if (_orphanCodes.length) {
+    svcWarn += `<br>\u26a0\ufe0f <b>Services Log sin l\u00ednea de factura:</b> ${_orphanCodes.join(', ')} — no se est\u00e1n cobrando. Usa Custom / Other Charges o av\u00edsame para mapear el c\u00f3digo.`;
+  }
+
+  const fullStatus = `${ssStatus}<br>Inbound: <b>${inboundCount}</b> · RMA: <b>${rmaCount}</b> · Drop-Ship: <b>${dropCount}</b>${outLbl}${slLbl}${rtnLbl}${wmsLbl}${mixWarn}${svcWarn}`;
   setStatus(fullStatus, ordersCount > 0 || inboundCount > 0 || rmaCount > 0 || dropCount > 0 || outboundCount > 0 || returnsData.labelCount > 0 ? 'ok' : 'warn');
 
   // Update Shipping Label Fee panel
@@ -1555,6 +1626,18 @@ async function markAsInvoiced() {
     carrier_cost: Number(o.carrier_cost) || 0
   }));
 
+  // 2026-09-21: Services Log rows to close — only the ones behind a line that
+  // is actually being billed (qty > 0). A from-log line zeroed out by hand is a
+  // deferral: its entries stay 'logged' and come back in the next run.
+  const serviceLogIds = [...new Set(
+    _lines
+      .filter(l => l.fromServicesLog && +l.qty > 0)
+      .flatMap(l => l.svcLogIds || [])
+  )];
+  const svcLogLabel = serviceLogIds.length > 0
+    ? `\nServices Log entries to close: ${serviceLogIds.length}`
+    : '';
+
   const ssOrdersLabel = shipstationOrders.length > 0
     ? `\nShipStation orders to track: ${shipstationOrders.length}`
     : '';
@@ -1568,7 +1651,7 @@ async function markAsInvoiced() {
     `Client: ${_client.displayName}`,
     `Period: ${fD(start)} – ${fD(end)}`,
     `Invoice: ${invNum}`,
-    `Total: ${fc(total)}${ssOrdersLabel}${returnsLabel}`,
+    `Total: ${fc(total)}${ssOrdersLabel}${returnsLabel}${svcLogLabel}`,
     ``,
     `This will create invoice ${invNum} and mark all unbilled packages`,
     `in this period as invoiced. This action is NOT reversible from the UI.`
@@ -1594,7 +1677,8 @@ async function markAsInvoiced() {
         operator:           (window._operator || ''),
         invoice_number:     invNum,
         shipstation_orders: shipstationOrders,
-        return_ids:         _capturedReturnIds
+        return_ids:         _capturedReturnIds,
+        service_log_ids:    serviceLogIds
       })
     });
 
@@ -1620,6 +1704,9 @@ async function markAsInvoiced() {
       `Shipments invoiced (DB rows): ${data.marked_count}\n` +
       `ShipStation orders tracked: ${data.shipstation_marked || 0}\n` +
       `Return labels marked: ${data.returns_marked || 0}\n` +
+      `Services Log entries closed: ${data.services_marked || 0}` +
+        (serviceLogIds.length && (data.services_marked || 0) !== serviceLogIds.length
+          ? ` of ${serviceLogIds.length} — CHECK services-log.html` : '') + `\n` +
       `Total billed: ${fc(data.total_usd)}`
     );
 
