@@ -16,6 +16,14 @@
 // FUL_PP1.tiers.thresholds (small_max 1.50 lb, standard_max 3.00 lb). Weight
 // missing / 0 → Small (never overcharge on missing data).
 //
+// order_number (2026-09-21):
+// Every entry of orderIds now also carries order_number (ShipStation's
+// orderNumber, e.g. "NM-USA-09-p1"). Billing.html uses it to match a B2B /
+// wholesale order logged in the Services Log (B2B_RETAIL with that order number
+// as reference_id) and take it OUT of the per-order Pick & Pack tier count, so
+// the same order is not billed both as P&P and as B2B. Purely additive — callers
+// that ignore the field are unaffected.
+//
 // WHY client-side filter on orders (not shipments):
 // - ShipStation /orders?customField1= API filter does NOT work
 // - shipments.advancedOptions.customField1 is captured at label-creation time
@@ -178,6 +186,7 @@ exports.handler = async (event) => {
           // order IDs for billed_orders tracking (now include tier + weight)
           orderIds: unbilled.map(s => ({
             order_id:     String(s.orderId),
+            order_number: s.orderNumber || '',
             carrier_cost: round(s.shipmentCost || 0),
             weight_lb:    round(weightToLb(s.weight)),
             pp_tier:      ppTierOf(weightToLb(s.weight)),
@@ -243,6 +252,7 @@ exports.handler = async (event) => {
         ppOversized:  tiers.ppOversized,
         orderIds: unbilledShipments.map(s => ({
           order_id:     String(s.orderId),
+          order_number: s.orderNumber || '',
           carrier_cost: round(s.shipmentCost || 0),
           weight_lb:    round(weightToLb(s.weight)),
           pp_tier:      ppTierOf(weightToLb(s.weight)),
