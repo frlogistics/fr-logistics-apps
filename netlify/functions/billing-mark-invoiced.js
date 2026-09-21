@@ -12,6 +12,20 @@
 // - Stamps billed_at + invoice_id on those return_labels rows
 // - Returns returns_marked count for verification
 //
+// NEW (Services Log — fr_services_log, 2026-09-21):
+// - Accepts service_log_ids (array of fr_services_log ids) from the billing UI:
+//   the entries that actually fed a line with qty > 0 on THIS invoice.
+// - Flips them logged → billed and stamps invoice_id (invoice_number) +
+//   invoice_period ("YYYY-MM-DD..YYYY-MM-DD").
+// - Explicit ids on purpose, NOT a client+date sweep: with a biweekly cycle an
+//   entry can be loaded on the 15th, deferred (qty set to 0) and billed on the
+//   30th. A date sweep would close it without ever charging it.
+// - Guards: status=eq.logged (never re-stamps a billed/voided row) and
+//   client_id=eq.<uuid> when provided (ids from another client are ignored).
+// - Before this, nothing ever closed the log: 0 rows in status 'billed' since
+//   the table was created, so a re-run of the same period re-billed them.
+// - Returns services_marked count for verification.
+//
 // POST body:
 // {
 //   client:           "LN Store, LLC",
@@ -28,7 +42,8 @@
 //     { order_id: "12345", source: "shipstation_pp", carrier_cost: 5.20 },
 //     ...
 //   ],
-//   return_ids:       ["uuid1","uuid2", ...]                     // NEW (returns)
+//   return_ids:       ["uuid1","uuid2", ...],                    // NEW (returns)
+//   service_log_ids:  [14, 15, 16]                               // NEW (services log)
 // }
 //
 // Behavior:
@@ -37,7 +52,8 @@
 // - Creates billing_runs row, UPDATEs unbilled shipments_general rows
 // - INSERTs billed_orders rows for each ShipStation order_id (non-fatal on error)
 // - UPDATEs return_labels rows (billed_at + invoice_id) for return_ids (non-fatal)
-// - Returns { ok, invoice_number, billing_id, marked_count, shipstation_marked, returns_marked, total_usd }
+// - UPDATEs fr_services_log rows (status=billed + invoice_id + invoice_period) for service_log_ids (non-fatal)
+// - Returns { ok, invoice_number, billing_id, marked_count, shipstation_marked, returns_marked, services_marked, total_usd }
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -124,6 +140,17 @@ exports.handler = async (event) => {
   let   invoiceNumber     = (body.invoice_number || '').trim();
   const shipstationOrders = Array.isArray(body.shipstation_orders) ? body.shipstation_orders : [];  // NEW
   const returnIds         = Array.isArray(body.return_ids) ? body.return_ids.filter(Boolean) : [];  // NEW (returns)
+  // NEW (services log): fr_services_log.id is bigint — keep only positive integers, de-duplicated,
+  // so nothing but digits ever reaches the PostgREST in.() filter.
+  const serviceLogIds     = Array.isArray(body.service_log_ids)
+    ? [...new Set(
+        body.service_log_ids
+          .map(x => String(x == null ? '' : x).trim())
+          .filter(x => /^\d{1,15}$/.test(x))      // digits only — "1);drop" is rejected, not truncated to 1
+          .map(x => parseInt(x, 10))
+          .filter(n => n > 0)
+      )]
+    : [];
 
   // ── Validate ────────────────────────────────────────────────────────────
   if (!client) return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'client required' }) };
@@ -247,6 +274,31 @@ exports.handler = async (event) => {
       }
     }
 
+    // ── Step 5: NEW — Close the Services Log entries billed on this invoice ─
+    // Non-fatal, same contract as Steps 3–4. Only the explicit ids sent by the
+    // billing UI are touched (see header for why this is not a date sweep).
+    let servicesMarked = 0;
+    if (serviceLogIds.length > 0) {
+      try {
+        const svcFilter = [
+          `id=in.(${serviceLogIds.join(',')})`,
+          `status=eq.logged`,
+          clientId ? `client_id=eq.${clientId}` : null
+        ].filter(Boolean).join('&');
+        const closed = await sbPatch('fr_services_log', svcFilter, {
+          status:         'billed',
+          invoice_id:     run.invoice_number,
+          invoice_period: `${periodStart}..${periodEnd}`
+        });
+        servicesMarked = Array.isArray(closed) ? closed.length : 0;
+        if (servicesMarked !== serviceLogIds.length) {
+          console.warn(`fr_services_log: ${serviceLogIds.length} ids sent, ${servicesMarked} closed (rest were not 'logged' or belong to another client)`);
+        }
+      } catch (err) {
+        console.warn(`fr_services_log mark failed: ${err.message}`);
+      }
+    }
+
     return {
       statusCode: 200,
       headers: cors,
@@ -257,6 +309,8 @@ exports.handler = async (event) => {
         marked_count:       marked.length,
         shipstation_marked: shipstationMarked,   // NEW
         returns_marked:     returnsMarked,        // NEW (returns)
+        services_marked:    servicesMarked,       // NEW (services log)
+        services_sent:      serviceLogIds.length,
         total_usd:          totalUsd,
         period:             { start: periodStart, end: periodEnd },
         client
