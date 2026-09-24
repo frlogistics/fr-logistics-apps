@@ -69,6 +69,7 @@ details summary{cursor:pointer;font-weight:600;color:var(--navy);margin-top:12px
       <button class="sec" id="btnHtml">🖨 Printable list</button>
       <button class="sec" id="btnXlsx">⬇ Excel</button>
       <button id="btnClose">Close order</button>
+      <button class="sec" id="btnMail">✉ Email draft to client</button>
     </div>
     <div id="msgMain" class="msg"></div>
 
@@ -149,7 +150,7 @@ async function refresh(){
   REP=await api('GET','report',{id:CUR});
   const r=REP.ref, t=REP.totals, closed=['closed','shipped'].includes(r.status);
   $('dTitle').textContent=r.reference;
-  $('dSub').textContent=`${r.client_name} · ${r.kind} · ${r.status}${r.closed_at?' · closed '+new Date(r.closed_at).toLocaleString():''}`;
+  $('dSub').textContent=`${r.client_name} · ${r.kind} · ${r.status}${r.closed_at?' · closed '+new Date(r.closed_at).toLocaleString():''}${r.email_draft_at?' · email draft '+new Date(r.email_draft_at).toLocaleString()+' → '+r.email_draft_to:''}`;
   $('kBoxes').textContent=REP.boxes.length; $('kPacked').textContent=t.packed; $('kReq').textContent=t.requested;
   $('kDiff').textContent=REP.compare.filter(x=>x.state!=='OK').length;
   $('cmp').innerHTML=REP.compare.map(x=>`<tr><td class="mono">${esc(x.sku)}</td><td class="num">${x.qty_requested}</td><td class="num">${x.qty_packed}</td><td class="num">${x.diff>0?'+':''}${x.diff}</td><td class="mono">${esc(x.box_codes||'')}</td><td><span class="st st-${x.state}">${x.state.replace('_',' ')}</span></td></tr>`).join('')
@@ -228,8 +229,23 @@ $('btnClose').onclick=async()=>{
     } else return msg('msgMain','err',e.message);
   }
   await refresh(); loadRefs();
+  if(confirm('Order closed. Create the Gmail draft for the client now? (It is NOT sent — you review it in Gmail.)')) makeDraft();
 };
-  
+
+// Always a DRAFT in Gmail: the client email is reviewed before it goes out.
+async function makeDraft(){
+  clr('msgMain');
+  const to=prompt('Send to (leave empty to use the email on the client file):','');
+  if(to===null) return;
+  try{
+    msg('msgMain','info','Creating the Gmail draft…');
+    const j=await api('POST','email_draft',{id:CUR,...(to.trim()?{to:to.trim()}:{})});
+    msg('msgMain','ok',`Draft created in Gmail for ${j.to.join(', ')} — “${j.subject}”. Review it and send it from Gmail.`);
+    await refresh();
+  }catch(e){ msg('msgMain','err',e.message); }
+}
+$('btnMail').onclick=makeDraft;
+
 $('btnHtml').onclick=()=>window.open(`${API}?action=report&format=html&id=${CUR}`,'_blank');
 $('btnXlsx').onclick=()=>{ location.href=`${API}?action=report&format=xlsx&id=${CUR}`; };
 $('showClosed').onchange=loadRefs;
