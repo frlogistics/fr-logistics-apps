@@ -210,6 +210,14 @@ button:disabled{background:#94a3b8 !important;color:#fff;cursor:not-allowed;box-
         <label><input type="checkbox" id="pk_fba_link"/> Link: FBA inbound guide</label>
         <label><input type="checkbox" id="pk_portal" checked/> Create portal access</label>
       </div>
+      <div id="saveDirRow" style="margin-top:10px;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-size:12px;display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+        <span style="margin-right:6px">&#128274; <strong>Services Agreement is ALWAYS saved locally</strong> <span style="color:#64748b">(EN + ES)</span></span>
+        <span style="color:#64748b">Folder:</span>
+        <span id="saveDirLbl" style="font-family:Consolas,monospace;color:#0f172a">not set</span>
+        <button type="button" class="bs mini" onclick="chooseSaveDir()">&#128193; Choose folder</button>
+        <button type="button" class="bs mini" onclick="forgetSaveDir()">Forget</button>
+        <span id="saveDirHint" style="flex-basis:100%;color:#94a3b8;font-size:11px">First time: pick <code>OneDrive\FR_Logistics\Clients - Quotes or Others\New Clients</code>. The browser remembers it.</span>
+      </div>
     </div>
 
     <!-- STEP 3: RATE CARD -->
@@ -249,6 +257,7 @@ button:disabled{background:#94a3b8 !important;color:#fff;cursor:not-allowed;box-
       <div class="step wait" id="s2"><div class="dot"></div><span>Generating Onboarding Checklist PDF</span></div>
       <div class="step wait" id="s6"><div class="dot"></div><span>Generating Ship-To Instructions PDF (EN + ES)</span></div>
       <div class="step wait" id="s7"><div class="dot"></div><span>Generating Services Agreement PDF (EN + ES)</span></div>
+      <div class="step wait" id="s10"><div class="dot"></div><span>Saving Services Agreement to local folder (EN + ES)</span></div>
       <div class="step wait" id="s8"><div class="dot"></div><span>Generating Operating Guide PDF (EN + ES)</span></div>
       <div class="step wait" id="s9"><div class="dot"></div><span>Creating client portal access</span></div>
       <div class="step wait" id="s3"><div class="dot"></div><span>Saving services &amp; rates to client record</span></div>
@@ -403,6 +412,82 @@ function setStep(id, state, txt) {
   el.querySelector('span').textContent = txt;
 }
 function tick(ms=80){ return new Promise(r=>setTimeout(r,ms)); }
+
+// ─── LOCAL FOLDER SAVE (File System Access API, Chrome/Edge) ─────────────────
+// The browser cannot write to a hard-coded path like C:\Users\...; the user picks
+// the folder ONCE, the handle is kept in IndexedDB, and later runs write straight
+// into it. Falls back to a normal download if the API is missing or denied.
+const FS_DB = 'fr-onboarding-fs', FS_STORE = 'handles', FS_KEY = 'agreementDir';
+const FS_SUPPORTED = typeof window.showDirectoryPicker === 'function';
+let SAVE_DIR = null;           // FileSystemDirectoryHandle, preloaded on page load
+let LAST_LOCAL_FILES = [];     // [{name,url}] for the result panel
+
+function fsDb(){
+  return new Promise((res,rej)=>{
+    const r = indexedDB.open(FS_DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(FS_STORE);
+    r.onsuccess = () => res(r.result);
+    r.onerror   = () => rej(r.error);
+  });
+}
+async function fsGet(k){ const db=await fsDb(); return new Promise((res,rej)=>{ const t=db.transaction(FS_STORE,'readonly').objectStore(FS_STORE).get(k); t.onsuccess=()=>res(t.result||null); t.onerror=()=>rej(t.error); }); }
+async function fsSet(k,v){ const db=await fsDb(); return new Promise((res,rej)=>{ const t=db.transaction(FS_STORE,'readwrite'); t.objectStore(FS_STORE).put(v,k); t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); }); }
+async function fsDel(k){ const db=await fsDb(); return new Promise((res,rej)=>{ const t=db.transaction(FS_STORE,'readwrite'); t.objectStore(FS_STORE).delete(k); t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); }); }
+
+function renderSaveDir(){
+  const lbl = g('saveDirLbl'); if(!lbl) return;
+  if(!FS_SUPPORTED){
+    lbl.textContent = 'not supported in this browser — files go to Downloads';
+    g('saveDirHint').textContent = 'Use Chrome or Edge on the PC to save straight into the New Clients folder.';
+    return;
+  }
+  lbl.textContent = SAVE_DIR ? SAVE_DIR.name : 'not set (you will be asked on Generate)';
+}
+async function loadSaveDir(){
+  if(!FS_SUPPORTED){ renderSaveDir(); return; }
+  try{ SAVE_DIR = await fsGet(FS_KEY); }catch(e){ SAVE_DIR = null; }
+  renderSaveDir();
+}
+async function chooseSaveDir(){
+  if(!FS_SUPPORTED){ alert('This browser cannot save to a chosen folder. Use Chrome or Edge.'); return null; }
+  try{
+    const h = await window.showDirectoryPicker({ id:'fr-new-clients', mode:'readwrite', startIn: SAVE_DIR || 'documents' });
+    SAVE_DIR = h; await fsSet(FS_KEY, h); renderSaveDir(); return h;
+  }catch(e){
+    if(e && e.name === 'AbortError') return null;
+    alert('Could not open the folder picker: ' + (e.message||e)); return null;
+  }
+}
+async function forgetSaveDir(){
+  SAVE_DIR = null; try{ await fsDel(FS_KEY); }catch(e){}
+  renderSaveDir();
+}
+// Must be called FIRST in the click handler (before any other await): the
+// folder picker and the permission prompt both need the user's click gesture.
+// requestPermission returns 'granted' at once when already allowed.
+function prepSaveDirGesture(){
+  if(!FS_SUPPORTED) return Promise.resolve(null);
+  if(!SAVE_DIR) return chooseSaveDir();
+  return SAVE_DIR.requestPermission({mode:'readwrite'})
+    .then(p => p === 'granted' ? SAVE_DIR : null)
+    .catch(() => null);
+}
+function b64ToBlob(b64, type){
+  const bin = atob(b64); const u8 = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) u8[i] = bin.charCodeAt(i);
+  return new Blob([u8], {type});
+}
+function browserDownload(blob, name){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  return url; // kept alive for the result panel link
+}
+async function writeToDir(dir, name, blob){
+  const fh = await dir.getFileHandle(name, {create:true});
+  const w  = await fh.createWritable();
+  await w.write(blob); await w.close();
+}
 
 // ─── LOAD CLIENTS ─────────────────────────────────────────────────────────────
 async function loadClients(manual){
@@ -1630,6 +1715,12 @@ async function startOnboarding() {
   if (!rates.length) { alert('Select at least one service for the Rate Card.'); return; }
   if (!window.jspdf) { alert('PDF library is still loading, please wait 2 seconds and try again.'); return; }
 
+  // Ask for the local folder NOW, while the click gesture is still valid.
+  let localDir = null;
+  try { localDir = await prepSaveDirGesture(); } catch(e) { localDir = null; }
+  LAST_LOCAL_FILES.forEach(f => { try{ URL.revokeObjectURL(f.url); }catch(e){} });
+  LAST_LOCAL_FILES = [];
+
   const c = getClientData();
   const wb = buildWriteBack(rates);
   const es0 = isES(CLIENT);
@@ -1666,9 +1757,37 @@ async function startOnboarding() {
     // Step 2c — Services Agreement PDF (EN + ES)
     setStep('s7','active','Generating Services Agreement (EN + ES)...');
     await tick();
-    const agrEN = buildAgreementPDF(c, false);
-    const agrES = buildAgreementPDF(c, true);
-    setStep('s7','done','Services Agreement — EN + ES ready');
+    let agrEN = null, agrES = null; const agrErr = [];
+    try { agrEN = buildAgreementPDF(c, false); } catch(e) { agrErr.push('EN: '+e.message); console.error('Agreement EN', e); }
+    try { agrES = buildAgreementPDF(c, true);  } catch(e) { agrErr.push('ES: '+e.message); console.error('Agreement ES', e); }
+    if (!agrEN && !agrES) throw new Error('Services Agreement could not be generated in any language — ' + agrErr.join(' | '));
+    setStep('s7', agrErr.length ? 'fail' : 'done',
+      agrErr.length ? `Services Agreement — only ${agrEN?'EN':'ES'} generated (${agrErr.join(' | ')})` : 'Services Agreement — EN + ES ready');
+
+    // Step 2c-bis — Save the Services Agreement locally. MANDATORY: every version
+    // that was generated gets saved; if the folder fails it goes to Downloads.
+    const safeNameL = (c.clientName||'Client').replace(/[^a-z0-9]+/gi,'_');
+    const agrDocs = [];
+    if (agrES) agrDocs.push({ b64: agrES, name: `FR_Contrato_de_Servicios_ES_${safeNameL}.pdf` });
+    if (agrEN) agrDocs.push({ b64: agrEN, name: `FR_Services_Agreement_EN_${safeNameL}.pdf` });
+    setStep('s10','active','Saving Services Agreement ('+agrDocs.length+' file(s))...');
+    const savedMsg = [];
+    let anyFallback = false;
+    for (const d of agrDocs) {
+      const blob = b64ToBlob(d.b64, 'application/pdf');
+      LAST_LOCAL_FILES.push({ name: d.name, url: URL.createObjectURL(blob) });
+      let ok = false;
+      if (localDir) {
+        try { await writeToDir(localDir, d.name, blob); ok = true; savedMsg.push(d.name+' → "'+localDir.name+'"'); }
+        catch(e) { console.error('Folder write failed', d.name, e); }
+      }
+      if (!ok) {
+        try { browserDownload(blob, d.name); savedMsg.push(d.name+' → Downloads'); anyFallback = true; }
+        catch(e) { savedMsg.push(d.name+' → use the link at the end'); anyFallback = true; }
+      }
+    }
+    setStep('s10', anyFallback ? 'fail' : 'done',
+      (anyFallback ? 'Saved (folder not available, used Downloads): ' : 'Saved: ') + savedMsg.join(' · '));
 
     // Step 2d — Operating Guide (portal + contacts/SLA + billing + ASN)
     const wantDS = g('pk_ds').checked;
@@ -1732,9 +1851,10 @@ async function startOnboarding() {
       { base64: rcB64, name: `FR_RateCard_${safeName}.pdf`, mimeType: PDF },
     ];
     if(g('pk_check').checked) attachments.push({ base64: clB64, name: `FR_Checklist_${safeName}.pdf`, mimeType: PDF });
-    if(g('pk_agree').checked) attachments.push(
-      { base64: agrEN, name: `FR_Services_Agreement_EN_${safeName}.pdf`, mimeType: PDF },
-      { base64: agrES, name: `FR_Contrato_de_Servicios_ES_${safeName}.pdf`, mimeType: PDF });
+    if(g('pk_agree').checked){
+      if(agrEN) attachments.push({ base64: agrEN, name: `FR_Services_Agreement_EN_${safeName}.pdf`, mimeType: PDF });
+      if(agrES) attachments.push({ base64: agrES, name: `FR_Contrato_de_Servicios_ES_${safeName}.pdf`, mimeType: PDF });
+    }
     if(g('pk_ship').checked) attachments.push(
       { base64: shipEN, name: `FR_ShipTo_Instructions_EN_${safeName}.pdf`, mimeType: PDF },
       { base64: shipES, name: `FR_Instructivo_de_Envio_ES_${safeName}.pdf`, mimeType: PDF });
@@ -1783,6 +1903,8 @@ async function startOnboarding() {
           &#128176; Rate overrides: ${nOvr?nOvr+' service(s) at negotiated rate':'none — all at DEFAULT rates'}<br><br>
           <strong>Attachments (${attachments.length}):</strong><br>
           ${attachments.map(a=>'&#128206; '+esc(a.name)).join('<br>')}<br><br>
+          <strong>Services Agreement (local copy):</strong><br>
+          ${LAST_LOCAL_FILES.map(f=>`<a href="${f.url}" download="${esc(f.name)}" style="color:#065F46;font-weight:600">&#11015; ${esc(f.name)}</a>`).join('<br>')}<br><br>
           <strong>Client code used:</strong> ${esc(clientCode)}<br>
           <strong>Portal user:</strong> ${esc(CLIENT.portal_user || 'not created')}
           ${docs.length?`<br><strong>Linked material:</strong> ${docs.map(d=>esc(d.title)).join(', ')}`:''}
@@ -1790,7 +1912,7 @@ async function startOnboarding() {
       </div>`;
 
   } catch (err) {
-    ['s1','s2','s6','s7','s8','s9','s3','s4','s5'].forEach(id => {
+    ['s1','s2','s6','s7','s10','s8','s9','s3','s4','s5'].forEach(id => {
       if (g(id).className.includes('active')) setStep(id,'fail','Error: '+err.message);
     });
     g('progressCard').style.display = 'none';
@@ -1819,10 +1941,11 @@ function resetAll() {
   g('formCard').style.display     = 'block';
   g('progressCard').style.display = 'none';
   g('resultCard').style.display   = 'none';
-  ['s1','s2','s6','s7','s8','s9','s3','s4','s5'].forEach(id => setStep(id,'wait',
+  ['s1','s2','s6','s7','s10','s8','s9','s3','s4','s5'].forEach(id => setStep(id,'wait',
     {s1:'Generating Rate Card PDF',s2:'Generating Onboarding Checklist PDF',
      s6:'Generating Ship-To Instructions PDF (EN + ES)',
      s7:'Generating Services Agreement PDF (EN + ES)',
+     s10:'Saving Services Agreement to local folder (EN + ES)',
      s8:'Generating Operating Guide PDF (EN + ES)',
      s9:'Creating client portal access',
      s3:'Saving services & rates to client record',
@@ -1837,6 +1960,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const cf = g('catFilter');
   catList().forEach(c=>{ const o=document.createElement('option'); o.value=c; o.textContent=c; cf.appendChild(o); });
   loadClients();
+  loadSaveDir();
   loadRates();
 });
 </script>
