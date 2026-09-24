@@ -104,6 +104,12 @@ function blockReason(container, action) {
   return null;
 }
 
+// Case/space-insensitive equality for barcodes vs. what was typed.
+function sameCode(a, b) {
+  const n = (v) => String(v || '').replace(/\s+/g, '').toUpperCase();
+  return !!n(a) && n(a) === n(b);
+}
+
 function validQty(v) {
   const n = Number(v);
   return Number.isInteger(n) && n >= 0 && n <= 100000;
@@ -259,12 +265,17 @@ exports.handler = async (event) => {
       try {
         const prior = await sb(
           `wh_container_events?event=eq.line_set&detail=eq.${enc(code)}` +
-          '&select=sku,actor,created_at&order=created_at.desc&limit=1'
+          '&select=sku,actor,created_at&order=created_at.desc&limit=10'
         );
-        if (prior && prior[0] && prior[0].sku) {
+        // A row whose SKU IS the scanned code is the set_line bug of 22/23-sep
+        // (B0CQMKHM9K saved as its own SKU), not a mapping somebody confirmed.
+        // Remembering it would re-offer the raw barcode as "REMEMBERED" forever.
+        const good = (prior || []).find((r) => r.sku && !sameCode(r.sku, code));
+        if (good) {
           return res(200, {
-            sku: prior[0].sku, source: 'memory', mapped: true,
-            confirmed_by: prior[0].actor || null, confirmed_at: prior[0].created_at || null,
+            sku: good.sku, source: 'memory', mapped: true,
+            confirmed_by: good.actor || null, confirmed_at: good.created_at || null,
+            sku_client: await ownerOf(good.sku),
           });
         }
       } catch { /* memory is an accelerator, never a reason to fail a scan */ }
@@ -508,7 +519,7 @@ exports.handler = async (event) => {
         client_id: body.client_id || null,
         client,
         location_code: loc,
-        kind: ['storage', 'fba', 'inbound', 'return'].includes(body.kind) ? body.kind : 'storage',
+        kind: ['storage', 'fba', 'inbound', 'return', 'outbound'].includes(body.kind) ? body.kind : 'storage',
         fba_shipment_id: body.fba_shipment_id || null,
         box_seq: body.box_seq || null,
         created_by: actor,
@@ -527,8 +538,35 @@ exports.handler = async (event) => {
       const stop = blockReason(c, action);
       if (stop) return res(409, { error: 'STATUS_BLOCKED', message: stop, container: c });
 
-      const sku = String(body.sku || '').trim();
+      let sku = String(body.sku || '').trim();
       if (!sku) return res(400, { error: 'sku is required' });
+
+      // What arrives as "sku" is whatever ended up in the manual field — and a
+      // trigger pull with the cursor there types the BARCODE. Before trusting
+      // it: if it is a code the map knows (FNSKU / UPC / part number), store
+      // the SKU it maps to, never the code itself.
+      let translatedFrom = null;
+      if (action === 'set_line') {
+        const [owned0, asSku0] = await Promise.all([
+          sb(`wh_sku_clients?sku=eq.${enc(sku)}&select=sku&limit=1`),
+          sb(`wh_fnsku_map?sku=eq.${enc(sku)}&select=sku&limit=1`),
+        ]);
+        if (!(owned0 && owned0[0]) && !(asSku0 && asSku0[0])) {
+          const asCode = await sb(`wh_fnsku_map?code=eq.${enc(sku)}&select=sku&limit=1`);
+          if (asCode && asCode[0] && asCode[0].sku) {
+            translatedFrom = sku;
+            sku = asCode[0].sku;
+          } else if (body.code_scanned && sameCode(sku, body.code_scanned)) {
+            // Not overridable with confirm_unknown_sku on purpose: the scanned
+            // barcode is the thing being translated, it cannot be the answer.
+            return res(409, {
+              error: 'SKU_IS_BARCODE',
+              message: `"${sku}" is the barcode you scanned, not a SKU. Type the merchant SKU.`,
+              sku,
+            });
+          }
+        }
+      }
 
       const existing = await sb(
         `wh_container_lines?container_id=eq.${enc(c.id)}&sku=eq.${enc(sku)}&select=qty&limit=1`
@@ -596,7 +634,7 @@ exports.handler = async (event) => {
       }
 
       return res(200, {
-        container: c, lines, context,
+        container: c, lines, context, sku, translated_from: translatedFrom,
         units: lines.reduce((n, l) => n + (Number(l.qty) || 0), 0),
         skus: lines.filter((l) => l.qty > 0).length,
       });
@@ -709,10 +747,19 @@ exports.handler = async (event) => {
       const stop = blockReason(c, 'attach_fba');
       if (stop) return res(409, { error: 'STATUS_BLOCKED', message: stop, container: c });
       if (!body.fba_shipment_id) return res(400, { error: 'fba_shipment_id is required' });
+      // fba_shipments is the "outbound reference" table since 24-sep: kind fba,
+      // pickup or b2b. Only an FBA reference turns the box into an FBA carton —
+      // otherwise a pickup box would leak into v_fba_box_contents.
+      const refs = await sb(`fba_shipments?id=eq.${enc(body.fba_shipment_id)}&select=id,kind,status&limit=1`);
+      const ref = refs && refs[0];
+      if (!ref) return res(404, { error: 'Outbound reference not found' });
+      if (ref.status === 'closed' || ref.status === 'shipped') {
+        return res(409, { error: 'REFERENCE_CLOSED', message: 'That order is already closed.' });
+      }
       // This is the payoff of one shared model: a sealed storage box becomes an
       // FBA carton without being reopened, recounted or repacked.
       const updated = await touch(c.id, {
-        kind: 'fba',
+        kind: ref.kind === 'fba' ? 'fba' : 'outbound',
         fba_shipment_id: body.fba_shipment_id,
         box_seq: body.box_seq || c.box_seq,
         ...(body.weight_lb != null ? { weight_lb: Number(body.weight_lb) } : {}),
@@ -733,5 +780,5 @@ exports.handler = async (event) => {
   }
 };
 
-exports._helpers = { normalizeCode, isContainerCode, blockReason, validQty, EDITABLE,
+exports._helpers = { normalizeCode, isContainerCode, blockReason, validQty, EDITABLE, sameCode,
                      publicToken, publicUrl, splitCodeAndToken };
