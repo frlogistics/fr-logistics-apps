@@ -229,7 +229,7 @@ $('btnClose').onclick=async()=>{
   }
   await refresh(); loadRefs();
 };
-
+  
 $('btnHtml').onclick=()=>window.open(`${API}?action=report&format=html&id=${CUR}`,'_blank');
 $('btnXlsx').onclick=()=>{ location.href=`${API}?action=report&format=xlsx&id=${CUR}`; };
 $('showClosed').onchange=loadRefs;
