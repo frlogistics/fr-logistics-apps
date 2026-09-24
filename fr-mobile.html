@@ -712,7 +712,26 @@
             <input id="bxLoc" type="text" list="bxLocOptions" placeholder="Scan or type RA0301" autocomplete="off">
             <datalist id="bxLocOptions"></datalist>
           </div>
+          <div class="field">
+            <label for="bxOrder">Order (pickup / B2B)</label>
+            <select id="bxOrder"><option value="">— No order · storage box —</option></select>
+          </div>
           <button class="btn" id="bxNewBtn" style="width:100%;margin-top:6px">+ New box</button>
+        </div>
+
+        <!-- The order this box is being packed for: requested vs packed so far.
+             Shown AFTER boxes are built, never in the quantity panel. -->
+        <div class="lcard" id="bxOrderCard" hidden>
+          <div class="lc-head" style="margin-bottom:6px">
+            <div class="lc-code" style="font-size:15px" id="bxOrderTitle">—</div>
+            <span class="lc-total" id="bxOrderUnits">0</span>
+          </div>
+          <div class="lc-sub" id="bxOrderSub" style="margin-bottom:8px"></div>
+          <ul class="lc-list" id="bxOrderDiffs"></ul>
+          <div style="display:flex;gap:10px;margin-top:8px">
+            <button class="btn ghost" id="bxOrderRefresh" style="flex:0 0 38%">Check</button>
+            <button class="btn" id="bxOrderClose">Close order</button>
+          </div>
         </div>
 
         <div class="lcard" id="bxLocCard" hidden>
@@ -2624,11 +2643,92 @@ async function loadShelfPlan(loc){
   }catch(e){ empty.style.display='block'; empty.textContent='Could not load the shelf plan.'; }
 }
 
+/* ---------- outbound orders (pickup / B2B) ----------
+   The order lives in frm-packlist. A box created with an order is attached to
+   it from birth, so nobody has to attach cartons at the office afterwards. */
+async function plApi(method, action, payload){
+  const url = method==='GET'
+    ? `${API_BASE}/frm-packlist?action=${action}&${new URLSearchParams(payload||{})}`
+    : `${API_BASE}/frm-packlist`;
+  const res = await fetch(url, method==='GET' ? {} : {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action, actor:S.operator||'', ...(payload||{})})
+  });
+  const j = await res.json().catch(()=>({}));
+  if(!res.ok){ const e=new Error(j.message||j.error||('HTTP '+res.status)); e.code=j.error; e.payload=j; throw e; }
+  return j;
+}
+
+async function loadOrdersForClient(){
+  const sel=$('bxClient'), os=$('bxOrder');
+  const id=sel.selectedOptions[0] && sel.selectedOptions[0].dataset.id;
+  const keep=os.value;
+  os.innerHTML='<option value="">— No order · storage box —</option>';
+  $('bxOrderCard').hidden=true;
+  if(!id) return;
+  try{
+    const j=await plApi('GET','list',{client_id:id});
+    BX.orderRefs=BX.orderRefs||{};
+    (j.references||[]).forEach(r=>{
+      BX.orderRefs[r.id]=r.reference;
+      const o=document.createElement('option');
+      o.value=r.id; o.textContent=`${r.reference} · ${r.kind}`;
+      os.appendChild(o);
+    });
+    if(keep && [...os.options].some(o=>o.value===keep)){ os.value=keep; loadOrderCheck(); }
+  }catch(e){ /* orders are optional; a storage box can still be built */ }
+}
+
+async function loadOrderCheck(){
+  const id=$('bxOrder').value, card=$('bxOrderCard');
+  if(!id){ card.hidden=true; return; }
+  card.hidden=false;
+  $('bxOrderTitle').textContent=(BX.orderRefs&&BX.orderRefs[id])||'Order';
+  $('bxOrderSub').textContent='Loading…'; $('bxOrderDiffs').innerHTML=''; $('bxOrderUnits').textContent='—';
+  try{
+    const r=await plApi('GET','report',{id});
+    const t=r.totals, diffs=r.compare.filter(x=>x.state!=='OK');
+    $('bxOrderUnits').textContent=`${t.packed}/${t.requested}`;
+    let sub=`${r.boxes.length} box${r.boxes.length===1?'':'es'} · ${t.packed} of ${t.requested} units packed`;
+    if(r.unsealed.length) sub+=` · ⚠ not sealed: ${r.unsealed.join(', ')}`;
+    if(!t.requested) sub+=' · no request loaded yet';
+    $('bxOrderSub').textContent=sub;
+    const ul=$('bxOrderDiffs');
+    diffs.slice(0,25).forEach(d=>{
+      const li=document.createElement('li');
+      const label=d.state==='NOT_REQUESTED'?'not requested':d.state==='MISSING'?'missing':d.state.toLowerCase();
+      li.innerHTML=`<div style="flex:1"><div class="sku">${d.sku}</div><div class="cli">${label} · ${d.qty_packed} of ${d.qty_requested}</div></div><span class="qty">${d.diff>0?'+':''}${d.diff}</span>`;
+      ul.appendChild(li);
+    });
+    if(!diffs.length && t.requested){ const li=document.createElement('li'); li.innerHTML='<div class="sku">✓ Everything requested is packed</div>'; ul.appendChild(li); }
+    $('bxOrderClose').disabled=['closed','shipped'].includes(r.ref.status);
+  }catch(e){ $('bxOrderSub').textContent='Could not load the order.'; }
+}
+
+async function closeOrder(confirmDiff){
+  const id=$('bxOrder').value; if(!id) return;
+  const name=(BX.orderRefs&&BX.orderRefs[id])||'this order';
+  if(!confirmDiff && !confirm(`Close ${name}?\n\nIt checks every box against the request first.`)) return;
+  try{
+    await plApi('POST','close',{id, confirm_diff:!!confirmDiff});
+    toast(`${name} closed`); feedback('ok');
+    await loadOrdersForClient();
+  }catch(e){
+    if(e.code==='DIFFERENCES'){
+      const lines=(e.payload.diffs||[]).slice(0,8).map(d=>`${d.sku}: ${d.qty_packed} of ${d.qty_requested}`).join('\n');
+      if(confirm(`${e.message}\n\n${lines}${(e.payload.diffs||[]).length>8?'\n…':''}\n\nClose anyway? The differences go on the packing list.`)) return closeOrder(true);
+      return;
+    }
+    toast(e.message||'Could not close'); feedback('err');
+  }
+}
+
 function showBoxHome(){
   $('bxPlanCard').hidden=true;
   $('bxHome').hidden=false; $('bxOpen').hidden=true;
   $('bxFoot').hidden=true; $('bxSealedFoot').hidden=true;
   BX.current=null; BX.lines=[]; hideBxDeclare();
+  if($('bxOrder').value) loadOrderCheck();
   setBPad('','Scan a shelf or a box','','');
   setTimeout(focusCap,60);
 }
@@ -2652,6 +2752,7 @@ function renderBxHeader(){
   const c=BX.current; if(!c) return;
   $('bxCode').textContent=c.code;
   const bits=[c.client||'—', c.location_code||'no shelf', c.status];
+  if(c.fba_shipment_id && BX.orderRefs && BX.orderRefs[c.fba_shipment_id]) bits.splice(1,0,'📋 '+BX.orderRefs[c.fba_shipment_id]);
   $('bxMeta').textContent=bits.join(' · ');
   $('bxUnits').textContent=BX.lines.reduce((n,l)=>n+(Number(l.qty)||0),0);
 }
@@ -2693,12 +2794,15 @@ async function newBox(){
   if(!client_id){ toast('Pick a client first'); return; }
   if(!loc){ toast('Scan or type the shelf'); return; }
   try{
-    const j=await bxApi('POST','create',{client_id, location_code:loc, actor:S.operator||''});
+    const orderId=$('bxOrder').value||'';
+    const j=await bxApi('POST','create',{client_id, location_code:loc, actor:S.operator||'',
+                                         ...(orderId?{fba_shipment_id:orderId}:{})});
     BX.current=j.container; BX.lines=[]; BX.publicUrl=j.public_url||null;
     toast(`${j.container.code} created`);
     showBoxOpen(); feedback('ok'); setTimeout(focusCap,60);
   }catch(e){
     if(e.code==='UNKNOWN_LOCATION'){ toast(e.message); setBPad('err','Unknown shelf',e.message,loc); }
+    else if(e.code==='ORDER_MISMATCH'||e.code==='REFERENCE_CLOSED'){ toast(e.message); loadOrdersForClient(); }
     else toast(e.message||'Could not create the box');
     feedback('err');
   }
@@ -3385,7 +3489,10 @@ $('cntAddBtn').onclick=cntAddLine;
 $('cntCancelBtn').onclick=()=>{ hideCntDeclare(); setCPad2('','Scan a product','',''); setTimeout(focusCap,60); };
 $('cntQty').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); cntAddLine(); } });
 $('bxNewBtn').onclick=newBox;
-$('bxClient').onchange=()=>setTimeout(focusCap,60);
+$('bxClient').onchange=()=>{ loadOrdersForClient(); setTimeout(focusCap,60); };
+$('bxOrder').onchange=()=>{ loadOrderCheck(); setTimeout(focusCap,60); };
+$('bxOrderRefresh').onclick=loadOrderCheck;
+$('bxOrderClose').onclick=()=>closeOrder(false);
 $('bxSealBtn').onclick=sealBox;
 $('bxReopenBtn').onclick=reopenBox;
 $('bxLeaveBtn').onclick=showBoxHome;
