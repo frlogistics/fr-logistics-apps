@@ -510,6 +510,22 @@ exports.handler = async (event) => {
           });
         }
       }
+      // Born attached to an outbound order (pickup / B2B / FBA): check the order
+      // belongs to the same client and is still open, and let the order decide
+      // the box kind — a pickup box must never look like an FBA carton.
+      let kind = ['storage', 'fba', 'inbound', 'return', 'outbound'].includes(body.kind) ? body.kind : 'storage';
+      if (body.fba_shipment_id) {
+        const refs = await sb(`fba_shipments?id=eq.${enc(body.fba_shipment_id)}&select=id,client_id,kind,status,reference&limit=1`);
+        const ref = refs && refs[0];
+        if (!ref) return res(404, { error: 'ORDER_NOT_FOUND', message: 'That order does not exist.' });
+        if (body.client_id && ref.client_id !== body.client_id) {
+          return res(409, { error: 'ORDER_MISMATCH', message: `${ref.reference} belongs to another client.` });
+        }
+        if (ref.status === 'closed' || ref.status === 'shipped') {
+          return res(409, { error: 'REFERENCE_CLOSED', message: `${ref.reference} is already closed.` });
+        }
+        kind = ref.kind === 'fba' ? 'fba' : 'outbound';
+      }
       let client = body.client || null;
       if (body.client_id && !client) {
         const cli = await sb(`fr_clients?id=eq.${enc(body.client_id)}&select=company,name&limit=1`);
@@ -519,7 +535,7 @@ exports.handler = async (event) => {
         client_id: body.client_id || null,
         client,
         location_code: loc,
-        kind: ['storage', 'fba', 'inbound', 'return', 'outbound'].includes(body.kind) ? body.kind : 'storage',
+        kind,
         fba_shipment_id: body.fba_shipment_id || null,
         box_seq: body.box_seq || null,
         created_by: actor,
