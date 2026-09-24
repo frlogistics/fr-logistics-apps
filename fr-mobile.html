@@ -243,7 +243,7 @@
           <span class="ic">🧱</span>
           <span><span class="nm">Pallets</span><br><span class="sub">Returns pallet builder</span></span>
         </button>
-        <button class="mod" data-go="fba">
+        <button class="mod" data-open="/fba-count.html">
           <span class="ic">🏷️</span>
           <span><span class="nm">FBA Count</span><br><span class="sub">Count boxes and loose units</span></span>
         </button>
@@ -1879,14 +1879,14 @@ function initFba(){
 function showFbaHome(){
   $('fbaNoShip').hidden=false; $('fbaActive').hidden=true; $('fbaFoot').hidden=true;
   hideDeclare();
-  refreshOpenCounts();
+  refreshOpenFbaCounts();
 }
 function showFbaActive(){
   $('fbaNoShip').hidden=true; $('fbaActive').hidden=false; $('fbaFoot').hidden=false;
   renderFbaLines();
 }
 
-async function refreshOpenCounts(){
+async function refreshOpenFbaCounts(){
   const ul=$('fbaOpenList'), empty=$('fbaOpenEmpty');
   ul.innerHTML=''; empty.style.display='block'; empty.textContent='Loading…';
   try{
@@ -2171,7 +2171,7 @@ function showCountHome(){
   $('cntNoCount').hidden=false; $('cntActive').hidden=true;
   $('cntFoot').hidden=true; $('cntLocFoot').hidden=true;
   CNT.loc=null; CNT.lines=[]; hideCntDeclare();
-  refreshOpenCounts();
+  refreshOpenStockCounts();
 }
 function showCountActive(){
   $('cntNoCount').hidden=true; $('cntActive').hidden=false;
@@ -2207,7 +2207,7 @@ async function cntPreflight(){
   }catch(e){ box.textContent='Could not read the stock on file.'; }
 }
 
-async function refreshOpenCounts(){
+async function refreshOpenStockCounts(){
   const ul=$('cntOpenList'), empty=$('cntOpenEmpty');
   ul.innerHTML=''; empty.style.display='block'; empty.textContent='Loading…';
   try{
@@ -2919,6 +2919,15 @@ async function bxSetLine(){
   if(!p.mapped){
     sku=$('bxManualSku').value.trim();
     if(!sku){ toast('Enter the SKU'); return; }
+    // The bug from the Milano pickup (22/23-sep): with the cursor in this field
+    // a trigger pull types the barcode here, and B0CQMKHM9K went into a box as
+    // if it were a SKU. The barcode is what we are trying to TRANSLATE — it can
+    // never be the answer. Ask the server once more instead (it may be a known
+    // FNSKU/UPC typed by hand), and refuse if it is still the raw scan.
+    if(sku.toUpperCase()===String(p.code||'').trim().toUpperCase()){
+      toast('That is the barcode you scanned, not the SKU. Type the merchant SKU.');
+      $('bxManualSku').value=''; $('bxManualSku').focus(); feedback('err'); return;
+    }
     source='manual';
   }
   const qty=parseInt($('bxQty').value,10);
@@ -2935,6 +2944,10 @@ async function bxSetLine(){
       // A string nobody recognises does not silently become inventory. This is
       // the Milano lesson: three scanned codes that were not SKUs left 36 units
       // physically in the warehouse and invisible to SkuVault.
+      if(e.code==='SKU_IS_BARCODE'){
+        toast(e.message); $('bxManualSku').value=''; feedback('err');
+        BX.busy=false; $('bxAddBtn').disabled=false; return;
+      }
       if(e.code==='UNKNOWN_SKU'){
         if(!confirm(`"${sku}" is not a SKU we know.\n\nPut it in the box anyway? It will be flagged for review.`)){
           BX.busy=false; $('bxAddBtn').disabled=false; return;
@@ -2948,6 +2961,8 @@ async function bxSetLine(){
 
     hideBxDeclare();
     await reloadBox();
+    // The server may have translated a typed FNSKU/UPC into the real SKU.
+    if(r && r.translated_from){ toast(`${r.translated_from} → ${r.sku}`); sku=r.sku; }
 
     // Verification without anchoring: the number was committed first, the
     // comparison comes after.
