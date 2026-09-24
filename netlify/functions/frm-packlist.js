@@ -283,24 +283,10 @@ ${compare.length ? `<table><thead><tr><th>SKU</th><th>Description</th><th class=
 </div></body></html>`;
 }
 
-// ── handler ─────────────────────────────────────────────────────────────────
+// ── shared core (also used by portal-outbound.js) ──────────────────────────
 
-exports.handler = async (event) => {
-  const origin = event.headers.origin || event.headers.Origin || '';
-  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-  const cors = {
-    'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    Vary: 'Origin',
-  };
-  const res = (code, obj) => ({ statusCode: code, headers: { ...cors, 'Content-Type': 'application/json' }, body: JSON.stringify(obj) });
-  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: cors, body: '' };
-
-  const { SUPABASE_URL, SUPABASE_SERVICE_KEY } = process.env;
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return res(500, { error: 'Supabase not configured' });
-  const enc = encodeURIComponent;
-  const sb = async (path, opts = {}) => {
+function makeSb(SUPABASE_URL, SUPABASE_SERVICE_KEY) {
+  return async (path, opts = {}) => {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
       ...opts,
       headers: {
@@ -312,12 +298,10 @@ exports.handler = async (event) => {
     if (!r.ok) { const e = new Error(`Supabase ${r.status}: ${t}`); e.status = r.status; e.body = t; throw e; }
     return t ? JSON.parse(t) : null;
   };
-  const post = (table, rows, prefer = 'return=representation') =>
-    sb(table, { method: 'POST', headers: { Prefer: prefer }, body: JSON.stringify(rows) });
-  const patch = (path, body) =>
-    sb(path, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) });
-  const logEvent = (row) => post('wh_container_events', [row], 'return=minimal').catch(() => {});
+}
 
+function makeCore(sb) {
+  const enc = encodeURIComponent;
   const getRef = async (id) => {
     if (!/^[0-9a-f-]{36}$/i.test(String(id || ''))) return null;
     const r = await sb(`fba_shipments?id=eq.${enc(id)}&select=*&limit=1`);
@@ -389,6 +373,77 @@ exports.handler = async (event) => {
       generated_at: new Date().toISOString(),
     };
   };
+
+  return { getRef, identifiersFor, buildReport };
+}
+
+// ── client email (always a Gmail DRAFT — Jose reviews it before it goes out) ──
+
+// Same Apps Script the Email Builder and onboarding use: it creates the draft
+// in josefuentes@. One attachment only — the multi-attachment path of that
+// script's doPost() is the one with the known mix-up bug.
+const APPS_SCRIPT_URL =
+  'https://script.google.com/macros/s/AKfycbwnaHp2828BuXKkxPMCG8CsWG5eTjPPlYWx6RI4HevUZdpfA5TaDz13vHOHtkRrUM8rDw/exec';
+const PORTAL_URL = 'https://fr-logistics.net/app/';
+
+function buildClientEmail(rep, contactName) {
+  const { ref, boxes, compare, totals } = rep;
+  const diffs = compare.filter((r) => r.state !== 'OK');
+  const first = String(contactName || '').trim().split(/\s+/)[0] || 'there';
+  const what = ref.kind === 'pickup' ? 'pickup order' : 'order';
+  const done = ref.status === 'closed' || ref.status === 'shipped';
+  const diffRows = diffs.map((d) => `<tr><td style="padding:4px 8px;border-bottom:1px solid #E2E8F0;font-family:Consolas,monospace;font-size:12px">${esc(d.sku)}</td>
+    <td style="padding:4px 8px;border-bottom:1px solid #E2E8F0;text-align:right">${d.qty_requested}</td>
+    <td style="padding:4px 8px;border-bottom:1px solid #E2E8F0;text-align:right">${d.qty_packed}</td>
+    <td style="padding:4px 8px;border-bottom:1px solid #E2E8F0">${esc(NOTE[d.state] || d.state)}</td></tr>`).join('');
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#0f172a;max-width:640px">
+<p>Hi ${esc(first)},</p>
+<p>Your ${what} <b>${esc(ref.reference)}</b> ${done ? 'has been completed' : 'is packed and ready'}. Here is the summary:</p>
+<table style="border-collapse:collapse;margin:8px 0 14px">
+<tr><td style="padding:3px 12px 3px 0;color:#64748B">Boxes</td><td><b>${boxes.length}</b></td></tr>
+<tr><td style="padding:3px 12px 3px 0;color:#64748B">Units packed</td><td><b>${totals.packed}</b> of ${totals.requested} requested</td></tr>
+${rep.total_weight_lb ? `<tr><td style="padding:3px 12px 3px 0;color:#64748B">Total weight</td><td>${rep.total_weight_lb} lb</td></tr>` : ''}
+</table>
+${diffs.length ? `<p>These items differ from your request:</p>
+<table style="border-collapse:collapse;font-size:13px;margin-bottom:14px"><tr style="background:#0B2545;color:#fff"><th style="padding:5px 8px;text-align:left">SKU</th><th style="padding:5px 8px">Requested</th><th style="padding:5px 8px">Packed</th><th style="padding:5px 8px;text-align:left">Note</th></tr>${diffRows}</table>`
+  : '<p>Every item you requested was packed in full.</p>'}
+<p>The attached Excel file lists the contents of every box (SKU, ASIN, FNSKU and quantity). You can also see this order anytime in the <b>Outbound</b> tab of your client portal: <a href="${PORTAL_URL}">${PORTAL_URL}</a></p>
+<p>Best regards,<br>FR-Logistics Warehouse Team<br><span style="color:#64748B;font-size:12px">${esc(LEGAL)} · ${esc(ADDRESS)} · warehouse@fr-logistics.net</span></p>
+</div>`;
+  const text = [
+    `Hi ${first},`, '',
+    `Your ${what} ${ref.reference} ${done ? 'has been completed' : 'is packed and ready'}.`,
+    `Boxes: ${boxes.length} · Units packed: ${totals.packed} of ${totals.requested} requested`, '',
+    ...(diffs.length ? ['Differences from your request:', ...diffs.map((d) => `- ${d.sku}: requested ${d.qty_requested}, packed ${d.qty_packed}`), ''] : ['Every item you requested was packed in full.', '']),
+    `Box contents are in the attached Excel file and in the Outbound tab of your portal: ${PORTAL_URL}`, '',
+    'Best regards,', 'FR-Logistics Warehouse Team',
+  ].join('\n');
+  return { subject: `Packing list — ${ref.reference} (${boxes.length} boxes)`, html, text };
+}
+
+exports.handler = async (event) => {
+  const origin = event.headers.origin || event.headers.Origin || '';
+  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const cors = {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    Vary: 'Origin',
+  };
+  const res = (code, obj) => ({ statusCode: code, headers: { ...cors, 'Content-Type': 'application/json' }, body: JSON.stringify(obj) });
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: cors, body: '' };
+
+  const { SUPABASE_URL, SUPABASE_SERVICE_KEY } = process.env;
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return res(500, { error: 'Supabase not configured' });
+  const enc = encodeURIComponent;
+  const sb = makeSb(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  const post = (table, rows, prefer = 'return=representation') =>
+    sb(table, { method: 'POST', headers: { Prefer: prefer }, body: JSON.stringify(rows) });
+  const patch = (path, body) =>
+    sb(path, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) });
+  const logEvent = (row) => post('wh_container_events', [row], 'return=minimal').catch(() => {});
+
+  const { getRef, buildReport } = makeCore(sb);
 
   try {
     const qs = event.queryStringParameters || {};
@@ -558,6 +613,33 @@ exports.handler = async (event) => {
       return res(200, { reference: upd && upd[0], closed_with_diffs: diffs.length, totals: rep.totals });
     }
 
+    if (action === 'email_draft') {
+      const rep = await buildReport(ref);
+      if (!rep.boxes.length) return res(409, { error: 'NO_BOXES', message: 'No boxes on this order yet.' });
+      const cli = await sb(`fr_clients?id=eq.${enc(ref.client_id)}&select=name,email,portal_user&limit=1`);
+      const c = (cli && cli[0]) || {};
+      const to = String(body.to || c.email || c.portal_user || '').split(/[;,\s]+/).filter((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x));
+      if (!to.length) return res(400, { error: 'NO_RECIPIENT', message: 'The client has no email on file. Type one.' });
+      const mail = buildClientEmail(rep, c.name);
+      const safe = String(ref.reference).replace(/[^\w.-]+/g, '_');
+      const r = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' }, redirect: 'follow',
+        body: JSON.stringify({
+          to: to.join(','), subject: mail.subject, htmlBody: mail.html, textBody: mail.text,
+          attachments: [{
+            base64: renderXlsx(rep).toString('base64'),
+            name: `PackingList_${safe}.xlsx`,
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          }],
+        }),
+      });
+      const txt = await r.text();
+      let result; try { result = JSON.parse(txt); } catch { result = { success: r.ok, note: 'Draft likely created' }; }
+      if (!r.ok) return res(502, { error: 'DRAFT_FAILED', message: 'The Gmail draft could not be created.', detail: txt.slice(0, 300) });
+      await patch(`fba_shipments?id=eq.${enc(ref.id)}`, { email_draft_at: new Date().toISOString(), email_draft_to: to.join(',') }).catch(() => {});
+      return res(200, { ok: true, to, subject: mail.subject, result });
+    }
+
     return res(400, { error: `Unknown action: ${action}` });
   } catch (err) {
     console.error('[frm-packlist]', err);
@@ -565,4 +647,5 @@ exports.handler = async (event) => {
   }
 };
 
-exports._helpers = { parseCsv, mergeLines, summarize, buildXlsx, renderHtml, renderXlsx, normalizeCode, crc32 };
+exports.core = { makeSb, makeCore, renderHtml, renderXlsx };
+exports._helpers = { buildClientEmail, parseCsv, mergeLines, summarize, buildXlsx, renderHtml, renderXlsx, normalizeCode, crc32 };
