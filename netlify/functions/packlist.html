@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Packing Lists</title>
+<style>
+:root{--navy:#0B2545;--teal:#1C7293;--orange:#F4A261;--line:#E2E8F0;--muted:#64748B;--bg:#F8FAFC;--card:#fff;--ok:#166534;--okbg:#DCFCE7;--bad:#991B1B;--badbg:#FEE2E2;--amb:#92400E;--ambbg:#FEF3C7}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#0f172a;background:var(--bg)}
+header{background:var(--navy);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:12px}
+header h1{margin:0;font-size:18px}header span{color:#CBD5E1;font-size:13px}
+main{max-width:1100px;margin:0 auto;padding:18px 16px;display:grid;grid-template-columns:320px 1fr;gap:16px}
+@media (max-width:820px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+.card h2{margin:0 0 10px;font-size:15px;color:var(--navy);border-left:4px solid var(--orange);padding-left:8px}
+label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:8px 0 3px}
+input,select,textarea{width:100%;padding:8px;border:1px solid #CBD5E1;border-radius:6px;font:inherit;background:#fff}
+textarea{min-height:120px;font-family:Consolas,Menlo,monospace;font-size:12px}
+button{background:var(--navy);color:#fff;border:0;padding:8px 12px;border-radius:6px;font-weight:600;cursor:pointer;font:inherit;font-weight:600}
+button.sec{background:#fff;color:var(--navy);border:1px solid #CBD5E1}button.warn{background:#B45309}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+ul.refs{list-style:none;margin:0;padding:0}ul.refs li{padding:8px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+ul.refs li:hover{background:#F1F5F9}ul.refs li.on{border-color:var(--teal);background:#F0F9FF}
+ul.refs .r{font-weight:700;font-family:Consolas,Menlo,monospace}ul.refs .c{color:var(--muted);font-size:12px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.kpi{border:1px solid var(--line);border-top:3px solid var(--orange);border-radius:6px;padding:8px;background:#F8FAFC}
+.kpi b{display:block;font-size:20px;color:var(--navy)}
+table{width:100%;border-collapse:collapse;font-size:13px}th{background:var(--navy);color:#fff;text-align:left;padding:5px 7px;font-weight:600;font-size:12px}
+td{border-bottom:1px solid var(--line);padding:4px 7px}.mono{font-family:Consolas,Menlo,monospace;font-size:12px}.num{text-align:right}
+.st{font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;white-space:nowrap}
+.st-OK{background:var(--okbg);color:var(--ok)}.st-SHORT,.st-MISSING{background:var(--badbg);color:var(--bad)}.st-OVER,.st-NOT_REQUESTED{background:var(--ambbg);color:var(--amb)}
+.msg{margin-top:8px;padding:8px 10px;border-radius:6px;font-size:13px;display:none}.msg.on{display:block}
+.msg.ok{background:var(--okbg);color:var(--ok)}.msg.err{background:var(--badbg);color:var(--bad)}.msg.info{background:#F1F5F9;color:#334155}
+.boxes label{display:flex;gap:8px;align-items:center;font-weight:400;color:#0f172a;margin:2px 0}.boxes input{width:auto}
+.muted{color:var(--muted)}.scroll{max-height:420px;overflow:auto}
+details summary{cursor:pointer;font-weight:600;color:var(--navy);margin-top:12px}
+.hide{display:none}
+</style>
+</head>
+<body>
+<header><h1>📋 Packing Lists</h1><span>Pickups &amp; B2B orders · boxes vs request</span></header>
+<main>
+  <section>
+    <div class="card">
+      <h2>New order</h2>
+      <label for="cli">Client</label><select id="cli"><option value="">Loading…</option></select>
+      <label for="ref">Reference</label><input id="ref" placeholder="MBL-PICKUP-260923" autocomplete="off">
+      <label for="kind">Type</label>
+      <select id="kind"><option value="pickup">Customer pickup</option><option value="b2b">B2B order</option></select>
+      <div class="row"><button id="btnCreate">Create</button></div>
+      <div id="msgCreate" class="msg"></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>Open orders</h2>
+      <ul class="refs" id="refs"><li class="muted">Loading…</li></ul>
+      <div class="row"><label style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="showClosed" style="width:auto"> Show closed</label></div>
+    </div>
+  </section>
+
+  <section id="detail" class="card hide">
+    <h2 id="dTitle">—</h2>
+    <div class="muted" id="dSub"></div>
+    <div class="kpis" style="margin-top:10px">
+      <div class="kpi"><b id="kBoxes">0</b>Boxes</div><div class="kpi"><b id="kPacked">0</b>Units packed</div>
+      <div class="kpi"><b id="kReq">0</b>Units requested</div><div class="kpi"><b id="kDiff">0</b>SKUs with differences</div>
+    </div>
+    <div class="row">
+      <button class="sec" id="btnHtml">🖨 Printable list</button>
+      <button class="sec" id="btnXlsx">⬇ Excel</button>
+      <button id="btnClose">Close order</button>
+    </div>
+    <div id="msgMain" class="msg"></div>
+
+    <details id="dReq"><summary>1 · Load the client's request</summary>
+      <p class="muted">Paste from Excel or a CSV. Columns recognised: SKU / MSKU, Qty / Quantity, and optional FNSKU, ASIN, Description. Without a header row the first two columns are read as SKU and quantity. Loading replaces the current request.</p>
+      <textarea id="csv" placeholder="SKU,Qty&#10;HRSET-TEDDYBEAR-LG,24"></textarea>
+      <div class="row"><button id="btnLoad">Load request</button></div>
+      <div id="msgLoad" class="msg"></div>
+    </details>
+
+    <details id="dBoxes"><summary>2 · Attach boxes</summary>
+      <p class="muted">Sealed boxes of this client that are not on any order yet. PICKUP shelf first.</p>
+      <div class="boxes scroll" id="avail"></div>
+      <div class="row"><button id="btnAttach">Attach selected</button></div>
+      <div id="msgAttach" class="msg"></div>
+    </details>
+
+    <h2 style="margin-top:18px">Requested vs packed</h2>
+    <div class="scroll"><table><thead><tr><th>SKU</th><th class="num">Req.</th><th class="num">Packed</th><th class="num">Diff</th><th>Boxes</th><th>Status</th></tr></thead><tbody id="cmp"></tbody></table></div>
+
+    <h2 style="margin-top:18px">Boxes on this order</h2>
+    <div class="scroll"><table><thead><tr><th>Box</th><th>Status</th><th class="num">SKUs</th><th class="num">Units</th><th></th></tr></thead><tbody id="bx"></tbody></table></div>
+  </section>
+</main>
+<script>
+const API='/.netlify/functions/frm-packlist';
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let CUR=null, REP=null;
+const actor=()=>{ try{ return localStorage.getItem('fr_operator')||'Office'; }catch{ return 'Office'; } };
+
+function msg(id,kind,text){ const m=$(id); m.className='msg on '+kind; m.textContent=text; }
+function clr(id){ $(id).className='msg'; }
+
+async function api(method,action,payload){
+  let r;
+  if(method==='GET'){
+    const q=new URLSearchParams({action,...(payload||{})});
+    r=await fetch(`${API}?${q}`);
+  } else {
+    r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,actor:actor(),...(payload||{})})});
+  }
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){ const e=new Error(j.message||j.error||('HTTP '+r.status)); e.code=j.error; e.payload=j; throw e; }
+  return j;
+}
+
+async function loadClients(){
+  try{
+    const r=await fetch('/.netlify/functions/clients-list');
+    const j=await r.json();
+    const rows=(Array.isArray(j)?j:(j.clients||j.data||[])).filter(c=>c.active!==false);
+    rows.sort((a,b)=>String(a.display||a.company||a.name).localeCompare(String(b.display||b.company||b.name)));
+    $('cli').innerHTML='<option value="">— Select client —</option>'+rows.map(c=>`<option value="${esc(c.id)}">${esc(c.display||c.company||c.name)}</option>`).join('');
+  }catch(e){ $('cli').innerHTML='<option value="">Could not load clients</option>'; }
+}
+
+async function loadRefs(){
+  const ul=$('refs');
+  try{
+    const j=await api('GET','list',$('showClosed').checked?{include_closed:1}:{});
+    const rows=j.references||[];
+    if(!rows.length){ ul.innerHTML='<li class="muted">No open orders.</li>'; return; }
+    ul.innerHTML=rows.map(r=>`<li data-id="${esc(r.id)}" class="${CUR===r.id?'on':''}"><div class="r">${esc(r.reference)}</div><div class="c">${esc(r.client_name)} · ${esc(r.kind)} · ${esc(r.status)}</div></li>`).join('');
+    ul.querySelectorAll('li[data-id]').forEach(li=>li.onclick=()=>openRef(li.dataset.id));
+  }catch(e){ ul.innerHTML=`<li class="muted">${esc(e.message)}</li>`; }
+}
+
+async function openRef(id){
+  CUR=id; $('detail').classList.remove('hide');
+  ['msgMain','msgLoad','msgAttach'].forEach(clr);
+  document.querySelectorAll('#refs li').forEach(li=>li.classList.toggle('on',li.dataset.id===id));
+  await refresh();
+}
+
+async function refresh(){
+  if(!CUR) return;
+  REP=await api('GET','report',{id:CUR});
+  const r=REP.ref, t=REP.totals, closed=['closed','shipped'].includes(r.status);
+  $('dTitle').textContent=r.reference;
+  $('dSub').textContent=`${r.client_name} · ${r.kind} · ${r.status}${r.closed_at?' · closed '+new Date(r.closed_at).toLocaleString():''}`;
+  $('kBoxes').textContent=REP.boxes.length; $('kPacked').textContent=t.packed; $('kReq').textContent=t.requested;
+  $('kDiff').textContent=REP.compare.filter(x=>x.state!=='OK').length;
+  $('cmp').innerHTML=REP.compare.map(x=>`<tr><td class="mono">${esc(x.sku)}</td><td class="num">${x.qty_requested}</td><td class="num">${x.qty_packed}</td><td class="num">${x.diff>0?'+':''}${x.diff}</td><td class="mono">${esc(x.box_codes||'')}</td><td><span class="st st-${x.state}">${x.state.replace('_',' ')}</span></td></tr>`).join('')
+    || '<tr><td colspan="6" class="muted">Nothing yet.</td></tr>';
+  $('bx').innerHTML=REP.boxes.map(b=>`<tr><td class="mono">${esc(b.code)}</td><td>${esc(b.status)}</td><td class="num">${b.lines.length}</td><td class="num">${b.lines.reduce((n,l)=>n+l.qty,0)}</td><td>${closed?'':`<button class="sec" data-detach="${esc(b.code)}">Remove</button>`}</td></tr>`).join('')
+    || '<tr><td colspan="5" class="muted">No boxes attached.</td></tr>';
+  document.querySelectorAll('[data-detach]').forEach(b=>b.onclick=()=>detach(b.dataset.detach));
+  ['btnClose','btnLoad','btnAttach'].forEach(k=>$(k).disabled=closed);
+  if(!REP.compare.some(x=>x.qty_requested>0) && !closed) msg('msgMain','info','No request loaded yet — the list will show what was packed, but nothing can be checked against the client’s order.');
+  if(!closed) loadAvail();
+}
+
+async function loadAvail(){
+  const box=$('avail');
+  try{
+    const j=await api('GET','boxes_available',{id:CUR});
+    const rows=j.boxes||[];
+    box.innerHTML=rows.length?rows.map(b=>`<label><input type="checkbox" value="${esc(b.code)}" ${b.location_code==='PICKUP'&&b.status==='sealed'?'checked':''}> <span class="mono">${esc(b.code)}</span> · ${esc(b.location_code||'—')} · ${esc(b.status)} · ${b.units||0} u</label>`).join('')
+      :'<p class="muted">No free boxes for this client.</p>';
+  }catch(e){ box.innerHTML=`<p class="muted">${esc(e.message)}</p>`; }
+}
+
+$('btnCreate').onclick=async()=>{
+  clr('msgCreate');
+  const client_id=$('cli').value, reference=$('ref').value.trim();
+  if(!client_id||!reference) return msg('msgCreate','err','Pick a client and type a reference.');
+  try{
+    const j=await api('POST','create',{client_id,reference,kind:$('kind').value});
+    msg('msgCreate','ok',j.existed?'That order already existed — opened it.':'Created.');
+    $('ref').value=''; await loadRefs(); openRef(j.reference.id);
+  }catch(e){ msg('msgCreate','err',e.message); }
+};
+
+$('btnLoad').onclick=async()=>{
+  clr('msgLoad');
+  const csv=$('csv').value;
+  if(!csv.trim()) return msg('msgLoad','err','Paste the request first.');
+  try{
+    const j=await api('POST','set_expected',{id:CUR,csv});
+    let t=`Loaded ${j.loaded} SKUs · ${j.units} units.`;
+    if(j.translated.length) t+=` Translated ${j.translated.length} code(s) to SKU.`;
+    if(j.unknown.length) t+=` ⚠ Not recognised: ${j.unknown.join(', ')}.`;
+    if(j.bad.length) t+=` ⚠ Skipped ${j.bad.length} line(s) without a valid quantity.`;
+    msg('msgLoad',j.unknown.length||j.bad.length?'err':'ok',t);
+    await refresh();
+  }catch(e){ msg('msgLoad','err',e.message); }
+};
+
+$('btnAttach').onclick=async()=>{
+  clr('msgAttach');
+  const codes=[...document.querySelectorAll('#avail input:checked')].map(i=>i.value);
+  if(!codes.length) return msg('msgAttach','err','Select at least one box.');
+  try{
+    const j=await api('POST','attach',{id:CUR,codes});
+    msg('msgAttach',j.refused.length?'err':'ok',`Attached ${j.done.length}.`+(j.refused.length?' Refused: '+j.refused.map(r=>`${r.code} (${r.reason})`).join(', '):''));
+    await refresh();
+  }catch(e){ msg('msgAttach','err',e.message); }
+};
+
+async function detach(code){
+  if(!confirm(`Remove ${code} from this order?`)) return;
+  try{ await api('POST','detach',{id:CUR,code}); await refresh(); }catch(e){ msg('msgMain','err',e.message); }
+}
+
+$('btnClose').onclick=async()=>{
+  clr('msgMain');
+  try{
+    await api('POST','close',{id:CUR});
+    msg('msgMain','ok','Closed — every SKU matched the request.');
+  }catch(e){
+    if(e.code==='DIFFERENCES'){
+      const lines=e.payload.diffs.slice(0,12).map(d=>`${d.sku}: requested ${d.qty_requested}, packed ${d.qty_packed} (${d.state})`).join('\n');
+      if(!confirm(`${e.message}\n\n${lines}${e.payload.diffs.length>12?'\n…':''}\n\nClose it anyway with these differences?`)) return;
+      try{ await api('POST','close',{id:CUR,confirm_diff:true}); msg('msgMain','ok','Closed with differences — they are listed on the packing list.'); }
+      catch(e2){ return msg('msgMain','err',e2.message); }
+    } else return msg('msgMain','err',e.message);
+  }
+  await refresh(); loadRefs();
+};
+
+$('btnHtml').onclick=()=>window.open(`${API}?action=report&format=html&id=${CUR}`,'_blank');
+$('btnXlsx').onclick=()=>{ location.href=`${API}?action=report&format=xlsx&id=${CUR}`; };
+$('showClosed').onchange=loadRefs;
+
+loadClients(); loadRefs();
+</script>
+</body>
+</html>
