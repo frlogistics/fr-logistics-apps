@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Email Builder — FR-Logistics</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#0f172a;font-size:13px}
@@ -51,14 +52,41 @@
   .catpick input{width:auto}
   dialog{border:0;border-radius:12px;padding:0;max-width:520px;width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.25)}
   dialog::backdrop{background:rgba(15,23,42,.45)}
+  .who{font-size:11.5px;color:rgba(209,250,229,.95)}
+  #gate{position:fixed;inset:0;background:#f1f5f9;display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+  #gate .box{background:#fff;border:1px solid #e2e8f0;border-radius:14px;max-width:380px;width:100%;overflow:hidden;box-shadow:0 20px 50px rgba(15,23,42,.12)}
+  #gate .top{background:linear-gradient(135deg,#065f46,#16a34a);color:#fff;padding:18px 22px}
+  #gate .top b{font-size:17px;letter-spacing:.5px}
+  #gate .top p{margin:4px 0 0;font-size:12px;color:rgba(209,250,229,.92)}
+  #gate form{padding:18px 22px;display:grid;gap:12px}
+  #gate .err{color:#b91c1c;font-size:12px;min-height:16px}
+  #gate .hint{font-size:11.5px;color:#64748b;line-height:1.5}
+  #gate .hint a{color:#059669;font-weight:700}
+  body.locked .wrap{display:none}
 </style>
 </head>
-<body>
+<body class="locked">
+<!-- LOGIN GATE — the Email Builder API only answers to signed-in staff -->
+<div id="gate">
+  <div class="box">
+    <div class="top"><b>FR-LOGISTICS</b><p>Email Builder · acceso del equipo</p></div>
+    <form id="loginForm" onsubmit="event.preventDefault();signIn()">
+      <div><label>Correo</label><input id="lgEmail" type="email" autocomplete="username" required></div>
+      <div><label>Contraseña</label><input id="lgPass" type="password" autocomplete="current-password" required></div>
+      <button id="lgBtn" type="submit">Entrar</button>
+      <div class="err" id="lgErr"></div>
+      <div class="hint">Solo cuentas autorizadas del equipo. ¿Olvidaste la contraseña? <a href="https://fr-logistics.net/app/set-password.html" target="_blank" rel="noopener">Restablécela aquí</a>.</div>
+    </form>
+  </div>
+</div>
+
 <div class="wrap">
   <div class="hd">
     <div><h1>Email Builder</h1><p>Correos a prospectos y clientes antes de la firma — cotización, términos, calificación, seguimiento. Los términos de política se insertan desde bloques fijos, no se redactan a mano.</p></div>
     <div class="sp"></div>
+    <span class="who" id="whoAmI"></span>
     <button class="sec" onclick="openHistory()">Historial</button>
+    <button class="sec" onclick="signOut()">Salir</button>
   </div>
 
   <!-- RECIPIENT + TEMPLATE -->
@@ -145,7 +173,50 @@
 <script>
 const API = '/.netlify/functions/emails';
 const CLIENTS_API = '/.netlify/functions/clients-list';
-const ADMIN_EMAIL = 'josefuentes@fr-logistics.net';
+const ADMIN_EMAIL = 'josefuentes@fr-logistics.net';   // Gmail drafts land in this mailbox (Apps Script)
+
+/* ───────── auth (Supabase Auth, same project as the client portal) ─────────
+   The publishable key is public by design; what protects the data is the
+   server check in emails.js (valid session + staff allowlist). */
+const SUPABASE_URL = 'https://rijbschnchjiuggrhfrx.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_2iAxAlUmL5mzL_CXFDR4Mw_bSARmU90';
+const sbc = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true, storageKey: 'fr-email-builder-auth' }
+});
+let BOOTED = false;
+
+async function authHeaders(){
+  const { data } = await sbc.auth.getSession();
+  const t = data && data.session && data.session.access_token;
+  return t ? { Authorization: 'Bearer ' + t } : {};
+}
+// fetch to the emails API with the session token; a 401/403 sends you back to the login gate
+async function apiFetch(url, opts={}){
+  const r = await fetch(url, { ...opts, headers: { ...(opts.headers||{}), ...(await authHeaders()) } });
+  if (r.status === 401 || r.status === 403) {
+    const j = await r.clone().json().catch(()=>({}));
+    lockGate(j.error || (r.status===403 ? 'Cuenta no autorizada' : 'Sesión vencida — entra de nuevo'));
+    if (r.status === 403) await sbc.auth.signOut();
+  }
+  return r;
+}
+function lockGate(msg){ document.body.classList.add('locked'); document.getElementById('gate').style.display='flex'; if(msg!==undefined) document.getElementById('lgErr').textContent=msg; }
+function openGate(email){ document.body.classList.remove('locked'); document.getElementById('gate').style.display='none'; document.getElementById('whoAmI').textContent=email||''; }
+async function signIn(){
+  const btn=document.getElementById('lgBtn'), err=document.getElementById('lgErr');
+  btn.disabled=true; btn.textContent='Entrando…'; err.textContent='';
+  const { data, error } = await sbc.auth.signInWithPassword({ email: document.getElementById('lgEmail').value.trim(), password: document.getElementById('lgPass').value });
+  btn.disabled=false; btn.textContent='Entrar';
+  if (error) { err.textContent = /invalid/i.test(error.message) ? 'Correo o contraseña incorrectos' : error.message; return; }
+  document.getElementById('lgPass').value='';
+  await start(data.session);
+}
+async function signOut(){ await sbc.auth.signOut(); BOOTED=false; lockGate(''); }
+async function start(session){
+  if (!session) { lockGate(''); return; }
+  openGate(session.user && session.user.email);
+  if (!BOOTED) { BOOTED = true; await boot(); }
+}
 
 let BOOT = { templates: [], policy: [], catalog: [] };
 let CLIENTS = [];
@@ -264,7 +335,7 @@ function insertRates(){
 }
 
 /* ───────── persistence ───────── */
-async function api(payload){ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); const j=await r.json().catch(()=>({error:'Respuesta no válida'})); if(!r.ok||j.error) throw new Error(j.detail||j.error||('API '+r.status)); return j; }
+async function api(payload){ const r=await apiFetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); const j=await r.json().catch(()=>({error:'Respuesta no válida'})); if(!r.ok||j.error) throw new Error(j.detail||j.error||('API '+r.status)); return j; }
 function messageRow(){
   return { id:current&&current.id, ref:$('fRef').value.trim(), subject:data.subject||'', to_email:$('fEmail').value.trim(), to_name:$('fContact').value.trim(), company:$('fCompany').value.trim(), client_id:$('clientSel').value||null, template_slug:current&&current.template_slug||null, lang:$('fLang').value, body:data, created_by:ADMIN_EMAIL };
 }
@@ -298,12 +369,12 @@ async function saveAsTemplate(){
 }
 async function openHistory(){
   $('histDlg').showModal(); $('histBody').textContent='Cargando…';
-  try{ const r=await fetch(API+'?action=messages&limit=100'); const j=await r.json(); const rows=j.messages||[];
+  try{ const r=await apiFetch(API+'?action=messages&limit=100'); const j=await r.json(); if(j.error) throw new Error(j.error); const rows=j.messages||[];
     $('histBody').innerHTML=rows.length?`<table class="list"><tr><th>Fecha</th><th>Ref.</th><th>Empresa</th><th>Correo</th><th>Estado</th><th></th></tr>${rows.map(m=>`<tr><td>${esc((m.updated_at||'').slice(0,10))}</td><td>${esc(m.ref||'')}</td><td>${esc(m.company||m.to_name||'')}</td><td>${esc(m.to_email||'')}</td><td><span class="pill p-${esc(m.status)}">${esc(m.status.replace('_',' '))}</span></td><td><a class="lnk" onclick="loadMessage('${m.id}')">Abrir</a>${m.status!=='sent'?` · <a class="lnk" style="color:#b91c1c" onclick="deleteMessage('${m.id}')">Borrar</a>`:''}</td></tr>`).join('')}</table>`:'Sin correos guardados todavía.';
   }catch(e){ $('histBody').textContent='No se pudo cargar: '+e.message; }
 }
 async function loadMessage(id){
-  try{ const r=await fetch(API+'?action=message&id='+id); const j=await r.json(); if(j.error) throw new Error(j.error);
+  try{ const r=await apiFetch(API+'?action=message&id='+id); const j=await r.json(); if(j.error) throw new Error(j.error);
     const m=j.message; current=m; $('fCompany').value=m.company||''; $('fContact').value=m.to_name||''; $('fEmail').value=m.to_email||''; $('fRef').value=m.ref||''; $('fLang').value=m.lang||'ES'; $('clientSel').value=m.client_id||''; refreshTemplateList(); if(m.template_slug) $('tplSel').value=m.template_slug;
     setState(); setData(m.body); $('histDlg').close(); toast('Cargado '+(m.ref||''));
   }catch(e){ toast('Error: '+e.message); }
@@ -321,8 +392,8 @@ function downloadHtml(){ if(!parse()) return; const doc=`<!DOCTYPE html><html><h
 /* ───────── boot ───────── */
 async function boot(){
   try{
-    const [b,c]=await Promise.all([fetch(API+'?action=bootstrap').then(r=>r.json()), fetch(CLIENTS_API).then(r=>r.json())]);
-    if(b.error) throw new Error(b.error);
+    const [b,c]=await Promise.all([apiFetch(API+'?action=bootstrap').then(r=>r.json()), fetch(CLIENTS_API).then(r=>r.json())]);
+    if(b.error){ BOOTED=false; throw new Error(b.error); }
     BOOT=b; CLIENTS=Array.isArray(c)?c:[];
     const groups={Active:[],Onboarding:[],Dormant:[],Inactive:[]};
     CLIENTS.forEach(x=>{ const st=(x.flags&&x.flags.state)||x.status||'Active'; (groups[st]||groups.Inactive).push(x); });
@@ -331,7 +402,9 @@ async function boot(){
     $('status').textContent=`Listo · ${BOOT.templates.length} plantillas · ${BOOT.policy.length} bloques de política · ${BOOT.catalog.length} servicios · ${CLIENTS.length} clientes`;
   }catch(e){ $('status').className='status err'; $('status').textContent='No se pudo iniciar: '+e.message+' — verifica que la función emails esté desplegada.'; }
 }
-boot();
+// Restore a saved session on load; otherwise the login gate stays up.
+sbc.auth.getSession().then(({ data }) => start(data && data.session));
+sbc.auth.onAuthStateChange((evt, session) => { if (evt === 'SIGNED_OUT') { BOOTED=false; lockGate(); } });
 </script>
 </body>
 </html>
