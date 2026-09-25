@@ -18,6 +18,20 @@
 // v_crm_pipeline / v_crm_agenda without touching the SQL editor.
 //
 // Uses SUPABASE_URL + SUPABASE_SERVICE_KEY only. No new environment variables.
+//
+// AUTH (25-Sep-2026): every request (except OPTIONS) must carry
+//   Authorization: Bearer <Supabase Auth access_token>
+// The token is checked against Supabase Auth (/auth/v1/user) and the email
+// must be in STAFF_EMAILS. Client-portal users also have Supabase Auth
+// accounts, so a valid session alone is NOT enough — the allowlist is what
+// keeps clients out. 401 = no/expired session, 403 = signed in but not staff.
+// The list lives in code on purpose: the Netlify env-var block is near its
+// 4 KB limit (see fr-deploy-constraints).
+
+const STAFF_EMAILS = [
+  'josefuentes@fr-logistics.net',
+  'josefuentesjob@gmail.com',
+];
 
 const ALLOWED_ORIGINS = [
   'https://apps.fr-logistics.net',
@@ -40,7 +54,7 @@ function corsHeaders(origin) {
   const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
     'Access-Control-Allow-Origin': allowed,
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Content-Type': 'application/json',
   };
@@ -101,6 +115,48 @@ function cleanMessage(m) {
   return row;
 }
 
+// ── Staff auth ─────────────────────────────────────────────────────────────
+// Small per-instance cache so a burst of calls from one page load doesn't hit
+// /auth/v1/user every time. Entries expire after 60 s; an expired or revoked
+// token is re-checked after that.
+const AUTH_CACHE = new Map();
+const AUTH_TTL_MS = 60 * 1000;
+
+async function requireStaff(event) {
+  const h = event.headers || {};
+  const raw = h.authorization || h.Authorization || '';
+  const m = /^Bearer\s+(.+)$/i.exec(raw.trim());
+  if (!m) return { status: 401, error: 'Not signed in' };
+  const token = m[1].trim();
+  if (token === SUPABASE_SERVICE_KEY) return { status: 401, error: 'Not signed in' };
+
+  const hit = AUTH_CACHE.get(token);
+  if (hit && hit.exp > Date.now()) return hit.result;
+
+  let result;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      result = { status: 401, error: 'Session expired — sign in again' };
+    } else {
+      const user = await res.json();
+      const email = String((user && user.email) || '').toLowerCase();
+      result = STAFF_EMAILS.includes(email)
+        ? { status: 200, email }
+        : { status: 403, error: 'This account is not authorized for the Email Builder', email };
+    }
+  } catch (err) {
+    // Don't cache transport failures.
+    return { status: 503, error: 'Auth check unavailable', detail: String(err.message) };
+  }
+
+  if (AUTH_CACHE.size > 200) AUTH_CACHE.clear();
+  AUTH_CACHE.set(token, { exp: Date.now() + AUTH_TTL_MS, result });
+  return result;
+}
+
 function isoDatePlus(days) {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() + days);
@@ -113,6 +169,12 @@ exports.handler = async (event) => {
 
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers, body: '' };
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return bad(headers, 'Server not configured', 500);
+
+  const auth = await requireStaff(event);
+  if (auth.status !== 200) {
+    return bad(headers, auth.error, auth.status, auth.detail ? { detail: auth.detail } : {});
+  }
+  const staffEmail = auth.email;
 
   const qs = event.queryStringParameters || {};
 
@@ -163,6 +225,7 @@ exports.handler = async (event) => {
     if (action === 'save_message') {
       const row = cleanMessage(body.message);
       if (!row.body || typeof row.body !== 'object') return bad(headers, 'message.body must be the builder JSON');
+      row.created_by = staffEmail; // from the verified session, never from the client
       const id = body.message && body.message.id;
       let rows;
       if (id && UUID_RE.test(id)) {
