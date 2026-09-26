@@ -120,7 +120,7 @@ const crypto = require('crypto');
 // TO GO LIVE: watch the function logs for a few real bookings. Every one
 // should print `[calendly-webhook] signature ok`. Once you have seen that
 // happen for genuine traffic, change this to 'enforce' and redeploy.
-const SIGNATURE_MODE = 'observe';
+const SIGNATURE_MODE = 'enforce';  // 26-sep-2026: verified live — 'signature ok (key=app_secrets len=64 fp=e02bf521)'
 
 // Where the signing key lives (v3, 26-sep-2026): public.app_secrets row
 // 'calendly_signing_key' (RLS on, service key only) — so it can be checked and
