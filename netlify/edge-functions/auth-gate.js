@@ -87,17 +87,9 @@ function isPublic(fn, method, url, body) {
     case "srj-home-data":
       return true;
 
-    // TEMPORARY (phase 1b): called function-to-function without a token.
-    // Remove from this list once the callers send the internal Bearer:
-    //   inventory                    ← daily-ops-report, inventory-alert
-    //   dropship-manifest-email      ← dropship-manifest(s)
-    //   wa-agent-debounce-background ← whatsapp-webhook
-    //   wa-leads-create              ← calendly-webhook
-    case "inventory":
-    case "dropship-manifest-email":
-    case "wa-agent-debounce-background":
-    case "wa-leads-create":
-      return true;
+    // inventory, dropship-manifest-email, wa-agent-debounce-background and
+    // wa-leads-create are NOT public: their server-side callers send the
+    // internal Bearer (rule 3) and staff pages send the session (rule 5).
 
     // Public price list shown on fr-logistics.net — only the DEFAULT card.
     case "billing-rates":
