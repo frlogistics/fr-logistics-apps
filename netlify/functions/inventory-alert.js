@@ -7,6 +7,7 @@ const WA_TOKEN     = Netlify.env.get("WHATSAPP_TOKEN");
 const PHONE_ID     = Netlify.env.get("WHATSAPP_PHONE_ID");
 const ALERT_NUMBER = Netlify.env.get("ALERT_PHONE") || "17867757335";
 const SITE_URL     = Netlify.env.get("URL") || "https://apps.fr-logistics.net";
+const SERVICE_KEY  = Netlify.env.get("SUPABASE_SERVICE_KEY") || "";
 const WA_BASE      = `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`;
 
 // ── WA send helpers ───────────────────────────────────────────────
@@ -86,7 +87,10 @@ export default async function handler(req) {
 
   try {
     // 1. Get inventory KPIs from the inventory function (calls SKUVault)
-    const invRes = await fetch(`${SITE_URL}/.netlify/functions/inventory`);
+    // Internal call: auth-gate.js lets it through with the service key.
+    const invRes = await fetch(`${SITE_URL}/.netlify/functions/inventory`, {
+      headers: { "Authorization": `Bearer ${SERVICE_KEY}` },
+    });
     if (!invRes.ok) throw new Error(`inventory fn error: ${invRes.status}`);
     const inv = await invRes.json();
 

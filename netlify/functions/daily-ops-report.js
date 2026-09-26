@@ -118,7 +118,10 @@ async function getShipStationToday(dateStr) {
 // ── Inventory KPIs via internal inventory.js function ───────────
 async function getInventoryKPIs() {
   try {
-    const res = await fetch(`${SITE_URL}/.netlify/functions/inventory`);
+    // Internal call: auth-gate.js lets it through with the service key.
+    const res = await fetch(`${SITE_URL}/.netlify/functions/inventory`, {
+      headers: { "Authorization": `Bearer ${SUPABASE_KEY}` },
+    });
     if (!res.ok) return null;
     const data = await res.json();
     return data.kpis || null;

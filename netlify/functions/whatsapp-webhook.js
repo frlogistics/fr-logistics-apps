@@ -418,7 +418,12 @@ async function triggerDebounce(waNumber) {
   try {
     const r = await fetch(`${SITE_URL}/.netlify/functions/${DEBOUNCE_FN}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-fr-internal": INTERNAL_SECRET },
+      // x-fr-internal is checked by the worker; Authorization gets it past auth-gate.js.
+      headers: {
+        "Content-Type": "application/json",
+        "x-fr-internal": INTERNAL_SECRET,
+        "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_KEY || ""}`,
+      },
       body: JSON.stringify({ wa_number: waNumber, queued_at: new Date().toISOString() }),
       signal: controller.signal,
     });

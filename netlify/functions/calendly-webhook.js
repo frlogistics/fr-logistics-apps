@@ -364,7 +364,8 @@ async function handleCreated(data) {
   try {
     const res = await fetch(createUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // Internal call: auth-gate.js lets it through with the service key.
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_KEY || ''}` },
       body: JSON.stringify(leadPayload),
     });
     const result = await res.json();

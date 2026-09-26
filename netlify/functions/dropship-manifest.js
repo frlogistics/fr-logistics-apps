@@ -435,7 +435,8 @@ async function actionSeal(body) {
   try {
     const emailRes = await fetch(`${SITE_URL}/.netlify/functions/dropship-manifest-email`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // Internal call: auth-gate.js lets it through with the service key.
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_KEY}` },
       body: JSON.stringify({ action: "send", manifest_id }),
     });
     const emailJson = await emailRes.json().catch(() => ({}));
