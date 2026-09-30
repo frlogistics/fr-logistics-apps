@@ -24,6 +24,17 @@
 // the same order is not billed both as P&P and as B2B. Purely additive — callers
 // that ignore the field are unaffected.
 //
+// Multi-store clients (2026-09-30):
+// Mode 1 now accepts `stores` — a pipe-separated list ("A|B|C") — in addition
+// to the single `store`. Billing.html sends the client's primary store_name
+// PLUS every name in fr_clients.aliases, so a client that sells on several
+// ShipStation stores (e.g. A&V Products: A&VProducts-AMZ / -Wal / -ETSY) is
+// billed for all of them. Before this, only store_name was queried and a
+// Walmart shipment of A&V came out as $0.00 with "Store not found".
+// Names that match no store are simply ignored. `store` alone keeps working
+// exactly as before. The response adds `storesMatched` ({storeName: count})
+// and each orderIds entry carries `store`, both purely additive.
+//
 // WHY client-side filter on orders (not shipments):
 // - ShipStation /orders?customField1= API filter does NOT work
 // - shipments.advancedOptions.customField1 is captured at label-creation time
@@ -135,8 +146,16 @@ exports.handler = async (event) => {
   const cf1      = (p.cf1   || '').trim();
   const clientId = (p.client_id || '').trim();
 
-  if (!start || !end)      return { statusCode: 400, headers: h, body: JSON.stringify({ error: 'start and end required' }) };
-  if (!store && !cf1)      return { statusCode: 400, headers: h, body: JSON.stringify({ error: 'store or cf1 required' }) };
+  // Store patterns: primary `store` + every entry of `stores` (pipe-separated),
+  // trimmed, lowercased, de-duplicated. Capped at 20 names.
+  const storePatterns = [...new Set(
+    [store, ...String(p.stores || '').split('|')]
+      .map(s => String(s || '').trim().toLowerCase())
+      .filter(Boolean)
+  )].slice(0, 20);
+
+  if (!start || !end)                  return { statusCode: 400, headers: h, body: JSON.stringify({ error: 'start and end required' }) };
+  if (!storePatterns.length && !cf1)   return { statusCode: 400, headers: h, body: JSON.stringify({ error: 'store or cf1 required' }) };
 
   try {
     // Fetch shipments + stores list + billed orders set in parallel
@@ -161,24 +180,30 @@ exports.handler = async (event) => {
     const allStoreNames = [...new Set(enriched.map(s => s._store).filter(Boolean))].sort();
 
     // ══ MODE 1: Store filter ═══════════════════════════════════════════════
-    if (store) {
-      const pat        = store.toLowerCase();
-      const allMatched = enriched.filter(s => s._store === pat);
+    if (storePatterns.length) {
+      const patSet     = new Set(storePatterns);
+      const allMatched = enriched.filter(s => patSet.has(s._store));
       const unbilled   = allMatched.filter(s => !billedSet.has(String(s.orderId)));
       const billed     = allMatched.filter(s =>  billedSet.has(String(s.orderId)));
       const tiers      = tallyTiers(unbilled);
+
+      // Unbilled shipments per matched store (for the status line in the UI)
+      const storesMatched = {};
+      unbilled.forEach(s => { storesMatched[s._store] = (storesMatched[s._store] || 0) + 1; });
 
       return {
         statusCode: 200,
         headers: h,
         body: JSON.stringify({
-          mode:         'store',
+          mode:          'store',
           store,
-          count:        unbilled.length,
-          totalCount:   enriched.length,
-          carrierCost:  round(unbilled.reduce((s, x) => s + (x.shipmentCost || 0), 0)),
-          storeMatched: allMatched.length > 0,
-          storeNames:   allStoreNames,
+          storesQueried: storePatterns,
+          storesMatched,
+          count:         unbilled.length,
+          totalCount:    enriched.length,
+          carrierCost:   round(unbilled.reduce((s, x) => s + (x.shipmentCost || 0), 0)),
+          storeMatched:  allMatched.length > 0,
+          storeNames:    allStoreNames,
           // Pick & Pack weight-tier order counts
           ppSmall:      tiers.ppSmall,
           ppStandard:   tiers.ppStandard,
@@ -187,6 +212,7 @@ exports.handler = async (event) => {
           orderIds: unbilled.map(s => ({
             order_id:     String(s.orderId),
             order_number: s.orderNumber || '',
+            store:        s._store || '',
             carrier_cost: round(s.shipmentCost || 0),
             weight_lb:    round(weightToLb(s.weight)),
             pp_tier:      ppTierOf(weightToLb(s.weight)),
