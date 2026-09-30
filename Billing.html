@@ -1101,10 +1101,19 @@ async function loadBilling() {
     const canonicalCode = (l.sku || '').toUpperCase() || SVC_LOG_MAP[l.id];
     if (canonicalCode && svcLogEntries[canonicalCode]) {
       const e = svcLogEntries[canonicalCode];
-      l.qty  = e.qty;
-      if (e.rate > 0) l.rate = e.rate;
+      // 2026-09-30: on lines the system already counts by itself (ShipStation /
+      // receiving log), a Services Log entry is an EXTRA charge and is ADDED to
+      // the detected quantity. Before, it REPLACED it: one manual "Oversized ×1"
+      // wiped 29 Oversized orders detected from ShipStation on MXS Sep 16–30.
+      const autoQty = +l.qty || 0;
+      const additive = ADDITIVE_LOG_LINES.has(l.id) && autoQty > 0;
+      l.qty  = additive ? autoQty + (+e.qty || 0) : e.qty;
+      if (e.rate > 0 && !additive) l.rate = e.rate;
       l.auto = true;
-      l.tip  = `From Services Log: ${e.count} ${e.count === 1 ? 'entry' : 'entries'}`;
+      l.tip  = additive
+        ? `Detected ${autoQty} + Services Log ${e.qty} (${e.count} ${e.count === 1 ? 'entry' : 'entries'})`
+        : `From Services Log: ${e.count} ${e.count === 1 ? 'entry' : 'entries'}`;
+      if (additive) { l.autoQty = autoQty; l.logQty = +e.qty || 0; }
       l.fromServicesLog = true;
       l.svcLogCode = canonicalCode;        // 2026-09-21: which log code fed this line
       l.svcLogIds  = (e.ids || []).slice(); //             and which rows to close on Mark as Invoiced
@@ -1141,6 +1150,12 @@ async function loadBilling() {
         : 'No return labels this period';
     }
   });
+
+  // 2026-09-30: remember what the system DETECTED for each line, so Mark as
+  // Invoiced can stop an invoice that charges less than that (see
+  // underbillingGaps). On MXS Sep 1–15 the P&P, inbound and return lines were
+  // zeroed by hand and the records were still marked billed — $187+ lost.
+  _lines.forEach(l => { l.detectedQty = +l.qty || 0; l.detectedRate = +l.rate || 0; });
 
   // ── Step 4: Show results ──────────────────────────────────────────────────
   const wmsLbl = (_client.wmsIntegration || _client.wms_integration) ? ` · WMS: <b>${fc(_rates.wms || 99.99)}</b>` : ' · WMS: N/A';
@@ -1333,9 +1348,46 @@ function checkZeroRates() {
   box.style.display = 'block';
 }
 
+// ─── UNDERBILLING GUARD (2026-09-30) ─────────────────────────────────────────
+// Lines where the system counts the work by itself. A Services Log entry on one
+// of these ADDS to the detected quantity instead of replacing it.
+const ADDITIVE_LOG_LINES = new Set([
+  'pick_pack_sm', 'pick_pack_st', 'pick_pack_ov',
+  'inbound_carton', 'return_proc', 'outbound_carton',
+  'drop_shipment', 'ds_intake',
+]);
+
+// Lines whose final amount is lower than what was detected at load time.
+// Returns [{name, detected, billed, missing}] — missing in dollars.
+function underbillingGaps(lines) {
+  return (lines || [])
+    .filter(l => (+l.detectedQty || 0) > 0)
+    .map(l => {
+      const detected = (+l.detectedQty || 0) * (+l.detectedRate || +l.rate || 0);
+      const billed   = (+l.qty || 0) * (+l.rate || 0);
+      return {
+        name: l.name,
+        detectedQty: +l.detectedQty || 0,
+        billedQty:   +l.qty || 0,
+        missing: Math.round((detected - billed) * 100) / 100,
+      };
+    })
+    .filter(x => x.missing > 0.004);
+}
+
 function updateQty(id, val) {
   const l = _lines.find(x => x.id === id);
-  if (l) { l.qty = +val || 0; recalc(); }
+  if (l) { l.qty = +val || 0; markUnderbilled(l); recalc(); }
+}
+
+// Red border + hint when a line is set below what the system detected.
+function markUnderbilled(l) {
+  const inp = document.getElementById('qty_' + l.id);
+  if (!inp) return;
+  const low = (+l.detectedQty || 0) > 0 && (+l.qty || 0) < (+l.detectedQty || 0);
+  inp.style.borderColor = low ? '#dc2626' : '';
+  inp.style.background  = low ? '#fef2f2' : '';
+  inp.title = low ? `Detected ${l.detectedQty} — billing less will lose this charge` : (l.tip || '');
 }
 
 function updateCustomRate(idx, val) {
@@ -1702,6 +1754,31 @@ async function markAsInvoiced() {
     `in this period as invoiced. This action is NOT reversible from the UI.`
   ].join('\n');
 
+  // 2026-09-30: underbilling guard. Mark as Invoiced closes EVERY unbilled
+  // package / order of the period, so a line charged below what was detected
+  // is money lost for good — the records never come back in a later run.
+  const gaps = underbillingGaps(_lines);
+  let underbillNote = '';
+  if (gaps.length) {
+    const lost = gaps.reduce((s, x) => s + x.missing, 0);
+    const detail = gaps.map(x =>
+      `  • ${x.name}: detected ${x.detectedQty}, billing ${x.billedQty} → ${fc(x.missing)} not billed`
+    ).join('\n');
+    const answer = prompt(
+      `⚠️ THIS INVOICE CHARGES LESS THAN WHAT WAS DETECTED\n\n${detail}\n\n` +
+      `Total not billed: ${fc(lost)}\n\n` +
+      `If you continue, these packages/orders are marked as billed and will NOT ` +
+      `appear again in a later run.\n\n` +
+      `Go back and fix the quantities, or type OMITIR to invoice anyway:`
+    );
+    if ((answer || '').trim().toUpperCase() !== 'OMITIR') {
+      alert('Not marked. Review the highlighted quantities and try again.');
+      return;
+    }
+    underbillNote = `Underbilled on purpose (${fc(lost)}): ` +
+      gaps.map(x => `${x.name} ${x.billedQty}/${x.detectedQty}`).join('; ');
+  }
+
   if (!confirm(confirmMsg)) return;
 
   g('markInvoicedSpin').innerHTML = '<span class="spin"></span>';
@@ -1723,7 +1800,8 @@ async function markAsInvoiced() {
         invoice_number:     invNum,
         shipstation_orders: shipstationOrders,
         return_ids:         _capturedReturnIds,
-        service_log_ids:    serviceLogIds
+        service_log_ids:    serviceLogIds,
+        notes:              underbillNote || undefined
       })
     });
 
