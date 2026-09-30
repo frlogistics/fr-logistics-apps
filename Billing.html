@@ -499,6 +499,39 @@ function normalizeClient(c) {
   };
 }
 
+// ─── MULTI-STORE (2026-09-30) ───────────────────────────────────────────────
+// A client may sell on several ShipStation stores (A&V: -AMZ / -Wal / -ETSY).
+// Billing queries the primary store_name PLUS every name in fr_clients.aliases.
+// Guard: an alias that is ANOTHER client's primary store_name is dropped, so a
+// typo in aliases can never pull another client's shipments into this invoice.
+function storeListFor(client) {
+  if (!client) return [];
+  let aliases = client.aliases;
+  if (typeof aliases === 'string') {
+    try { aliases = JSON.parse(aliases); } catch (_) { aliases = aliases.split(/[|,;]/); }
+  }
+  if (!Array.isArray(aliases)) aliases = [];
+
+  const foreign = new Set(
+    _clients
+      .filter(c => c.id !== client.id)
+      .map(c => String(c.ssStore || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  const seen = new Set();
+  const out  = [];
+  [client.ssStore, ...aliases].forEach(n => {
+    const name = String(n || '').trim();
+    const key  = name.toLowerCase();
+    if (!name || seen.has(key)) return;
+    if (key !== String(client.ssStore || '').trim().toLowerCase() && foreign.has(key)) return;
+    seen.add(key);
+    out.push(name);
+  });
+  return out;
+}
+
 async function loadClients() {
   const sel = g('selClient');
   sel.innerHTML = '<option value="">⏳ Loading clients...</option>';
@@ -807,10 +840,20 @@ async function loadBilling() {
 
   } else if (bsrc === 'ss_store' && _client.ssStore) {
     try {
-      const url = `${SS_API}?start=${start}&end=${end}&store=${encodeURIComponent(_client.ssStore)}&client_id=${encodeURIComponent(_client.id || '')}`;
+      const storeList = storeListFor(_client);
+      const url = `${SS_API}?start=${start}&end=${end}&store=${encodeURIComponent(_client.ssStore)}&stores=${encodeURIComponent(storeList.join('|'))}&client_id=${encodeURIComponent(_client.id || '')}`;
       const res = await fetch(url);
       const d   = await res.json();
       if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
+
+      // Status label: which stores were queried and how many unbilled orders each one gave
+      const matchedMap   = d.storesMatched || {};
+      const storesLabel  = storeList.length > 1
+        ? `stores ${storeList.map(n => {
+            const k = n.toLowerCase();
+            return matchedMap[k] ? `"${n}" (${matchedMap[k]})` : `"${n}"`;
+          }).join(', ')}`
+        : `store "${_client.ssStore}"`;
 
       if (d.storeMatched) {
         ordersCount  = d.count || 0;
@@ -822,10 +865,12 @@ async function loadBilling() {
         const billedExtra = (d.billed && d.billed.count > 0)
           ? ` <span style="color:#92400e">· ${d.billed.count} ya facturado(s)</span>`
           : '';
-        ssStatus = `✅ ShipStation (store "${_client.ssStore}"): <b>${ordersCount} orders</b> · Carrier: <b>${fc(carrierCost)}</b>${billedExtra}`;
+        ssStatus = `✅ ShipStation (${storesLabel}): <b>${ordersCount} orders</b> · Carrier: <b>${fc(carrierCost)}</b>${billedExtra}`;
       } else {
         const found = (d.storeNames || []).join(', ') || 'none';
-        ssStatus = `⚠️ Store "${_client.ssStore}" not found. Active stores: [${found}] — enter orders manually`;
+        ssStatus = storeList.length > 1
+          ? `⚠️ No shipments this period in ${storesLabel}. Active stores: [${found}] — enter orders manually if needed`
+          : `⚠️ Store "${_client.ssStore}" not found. Active stores: [${found}] — enter orders manually`;
       }
     } catch (e) {
       ssStatus = `⚠️ ShipStation error: ${e.message}`;
