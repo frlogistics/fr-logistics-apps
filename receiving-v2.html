@@ -704,7 +704,22 @@ function renderList(){
   // Local jobs still in flight (or failed before the server knew them).
   const local = S.jobs.filter((j) => !j.readId || !doneIds.has(j.readId) || j.status === 'reading');
   const shownIds = new Set(local.map((j) => j.readId).filter(Boolean));
-  const server = S.recent.filter((r) => !shownIds.has(r.id));
+  // One line per PACKAGE, not per read: a tracking read twice (re-scan, retry,
+  // undo + redo) shows once, with the read that matters and a ×N count.
+  // Which read represents the package: registered/linked and live > live > undone; newest wins ties.
+  const rank = (r) => (r.voided_at ? 0 : 2) + (r.shipment_id && !r.voided_at ? 2 : 0) + (r.confirmed_client_id ? 1 : 0);
+  const groups = new Map();
+  for(const r of S.recent){
+    if(shownIds.has(r.id)) continue;
+    const key = r.tracking || r.scanned_tracking || r.id;
+    const g = groups.get(key);
+    if(!g){ groups.set(key, { best: r, n: 1 }); continue; }
+    g.n++;
+    const b = g.best;
+    if(rank(r) > rank(b) || (rank(r) === rank(b) && new Date(r.created_at) > new Date(b.created_at))) g.best = r;
+  }
+  const server = [...groups.values()].map((g) => Object.assign({}, g.best, { _reads: g.n }))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   const n = local.length + server.length;
   $('todayCount').textContent = n;
   if(!n){ $('todayList').innerHTML = '<li class="empty">Nothing yet.</li>'; return; }
@@ -738,7 +753,7 @@ function renderList(){
         : '<span class="chip warn">check</span>';
     rows.push(`<li data-id="${esc(x.id)}" class="${!x.confirmed_client_id && x.status !== 'pending' && !x.voided_at ? 'attn' : ''}" style="${x.voided_at ? 'opacity:.5' : ''}">
       <div><div class="l1 mono">${esc(x.tracking || x.scanned_tracking || '(no tracking)')}</div>
-      <div class="l2">${esc(time(x.created_at))} · ${esc(x.carrier || '?')} · ${x.source === 'scan' ? 'scan only' : esc(x.status)}</div></div>
+      <div class="l2">${esc(time(x.created_at))} · ${esc(x.carrier || '?')} · ${x.source === 'scan' ? 'scan only' : esc(x.status)}${x._reads > 1 ? ` · read ×${x._reads}` : ''}</div></div>
       <div class="right"><div class="l1">${esc(res.client_code || '—')}</div>${conf}</div></li>`);
   }
   $('todayList').innerHTML = rows.join('');
