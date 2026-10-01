@@ -103,17 +103,37 @@ function sameTracking(a, b) {
   if (!a || !b) return null;
   if (a === b) return true;
   const fold = (x) => x.replace(/[OQ]/g, '0').replace(/[IL]/g, '1').replace(/S/g, '5').replace(/Z/g, '2').replace(/B/g, '8');
-  // A FedEx scan may have been the 34-digit barcode and the label the 12-digit
-  // number: both already normalised to the last 12 by normTracking.
-  return fold(a) === fold(b);
+  const fa = fold(a);
+  const fb = fold(b);
+  if (fa === fb) return true;
+  // FedEx prints the 12-digit tracking INSIDE longer barcode strings (Ground
+  // Economy "9229…", the 34-digit "96…"). On 1-Oct the scan was 530243647098
+  // and the photo read 922995302436470983 — same package. If the shorter one
+  // (at least 10 characters) sits inside the longer one, it is a match.
+  const [s, l] = fa.length <= fb.length ? [fa, fb] : [fb, fa];
+  return s.length >= 10 && l.includes(s);
 }
 
+// The model sometimes returns almost-JSON (a trailing comma, a // comment, a
+// sentence after the object). Every failed parse used to cost a second model
+// call — 8-10 s more on the handheld — so repair the common slips first and
+// only ask again when that is not enough.
 function parseModelJson(text) {
   const s = String(text || '');
   const start = s.indexOf('{');
   const end = s.lastIndexOf('}');
   if (start === -1 || end === -1 || end <= start) throw new Error('model did not return JSON');
-  return JSON.parse(s.slice(start, end + 1));
+  const body = s.slice(start, end + 1);
+  try {
+    return JSON.parse(body);
+  } catch (first) {
+    const repaired = body
+      .replace(/\/\/[^\n"]*$/gm, '')          // line comments outside strings
+      .replace(/,\s*([}\]])/g, '$1')          // trailing commas
+      .replace(/[“”]/g, '"')        // curly quotes
+      .replace(/\bNone\b/g, 'null').replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false');
+    return JSON.parse(repaired);              // throws -> caller retries once
+  }
 }
 
 function cleanList(arr, max = 12) {
@@ -162,7 +182,7 @@ How to read each field:
 - tracking: the human-readable tracking number printed on the label, without spaces.
     UPS: "1Z" + 16 characters (it is printed "TRACKING #: 1Z ..."; the Z can look like a 2 — it is always 1Z).
     USPS: 20-22 digits under "USPS TRACKING #" (starts 92, 93, 94 or 95). Do NOT include the 420+ZIP routing prefix.
-    FedEx: the 12-digit number (on multi-piece labels it is the one after "MPS#" or "TRK#"), not the long 34-digit barcode string.
+    FedEx: the 12-digit number printed after "TRK#" or "MPS#" (often in large bold digits like "8773 9494 1709"). Never copy the long digit string printed under a barcode (34 digits starting 96, or Ground Economy strings starting 92) — if you cannot find the 12-digit number, use null.
     Amazon: "TBA" + digits.
 - master_tracking: FedEx "Mstr#" number when present (multi-piece shipments). Otherwise null.
 - piece_no / piece_total: from "2 of 5", "5 OF 14", "1 OF 1".
