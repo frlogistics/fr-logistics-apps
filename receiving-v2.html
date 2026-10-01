@@ -12,7 +12,14 @@
   the Receiving module in fr-mobile.html without touching it, and can be
   retired or promoted without a single change to fr-mobile.html.
 
-  SHADOW MODE: this page NEVER registers a package. It records what it WOULD
+  LIVE TEST (1-Oct-2026, Jose: "run the test with everything"): "Save" now
+  REGISTERS the package in shipments_general through frm-receive — the same
+  function and contract as Receiving — unless something already has that
+  tracking (matched on the normalised number), in which case v2 only links to
+  that row. It also asks for the packing slip photo on Overstock/RMA (skipped
+  for receipt_only clients), and can undo its own row while unbilled and < 48 h.
+  The paragraph below describes the earlier shadow-only phase.
+  SHADOW MODE (until 1-Oct): this page NEVER registered a package. It records what it WOULD
   propose (client, carrier, tracking, type) in wh_label_reads. The package is
   still received in FR Mobile → Receiving, which keeps driving
   shipments_general and billing. Supabase compares both (v_label_shadow).
@@ -26,6 +33,10 @@
        goes straight back to "Scan tracking". The result appears in the list
        with a beep; the operator checks it whenever.
     3. Smaller photo (1600 px) and tolerant parsing on the server.
+  Repeat scans (1-Oct, after Jose scanned the same UPS box twice with no
+  warning): a tracking already read in v2 shows an amber "Already scanned"
+  panel; saving or photographing it again needs "Read again" on purpose, and
+  the server refuses a silent repeat (409 DUPLICATE).
   Plus 🖨 Print: same inbound label as Receiving, queued through frm-print for
   the row Receiving created (v2 still creates none).
 
@@ -81,6 +92,7 @@
   .scanpad{background:#fff;border:2px dashed var(--line);border-radius:10px;padding:18px 14px;
            text-align:center;margin-bottom:12px;cursor:text}
   .scanpad.ok{border-color:var(--green);background:#F0FDF4}
+  .scanpad.warn{border-color:var(--amber);background:#FFF7ED}
   .scanpad .icon{font-size:24px;line-height:1}
   .scanpad .big{font-size:17px;font-weight:600;margin-top:6px;word-break:break-all}
   .scanpad .hint{font-size:12px;color:var(--muted);margin-top:5px}
@@ -95,6 +107,8 @@
   .quick .why{font-size:12px;margin-top:7px;background:rgba(255,255,255,.12);border-radius:6px;padding:6px 9px}
   .quick .msg{font-size:14px}
   .quick .sub{font-size:12px;color:var(--muted);margin-top:3px}
+  .quick.dup{background:#FFF7ED;border:2px solid var(--amber)}
+  .quick.dup .lbl{color:#9A3412;font-weight:700}
   .quick.hit .btn.ghost{background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.35)}
 
   .prop{border-radius:10px;padding:14px;margin-bottom:12px;color:#fff;background:var(--navy)}
@@ -150,7 +164,7 @@
   <h1>Receiving v2</h1>
   <span class="who" id="who" hidden></span>
 </div>
-<div class="shadow"><b>TEST MODE</b> — this does not receive the package. Keep receiving it in FR Mobile → Receiving.</div>
+<div class="shadow"><b>TEST — LIVE</b> · Save registers the package. If Receiving already has it, v2 only links. No need to scan it twice.</div>
 
 <input id="cap" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="none">
 
@@ -187,6 +201,20 @@
     <div class="card">
       <h2>Test results so far</h2>
       <div class="stats" id="stats"><div class="empty" style="grid-column:1/-1">Loading…</div></div>
+    </div>
+  </section>
+
+  <!-- ── packing slip (Overstock / RMA, inventory clients) ────────────── -->
+  <section id="vSlip" hidden>
+    <div class="card">
+      <h2>📄 Packing slip</h2>
+      <div class="note info" id="slipWhat"></div>
+      <p class="l2" style="margin:0 0 12px">Open the carton and photograph the Amazon packing slip — flat, the whole page. It is read automatically (FNSKU, quantity, RA#).</p>
+      <button class="btn go cam" id="slipCamBtn">📷 Photo of the slip</button>
+      <div class="row mt">
+        <button class="btn ghost" id="noSlipBtn">No slip in carton</button>
+        <button class="btn ghost" id="slipLaterBtn">Later</button>
+      </div>
     </div>
   </section>
 
@@ -235,6 +263,7 @@
         <button class="btn ok" id="saveBtn">✓ Save check</button>
         <button class="btn ghost slim" id="printBtn" title="Print the inbound label">🖨</button>
       </div>
+      <button class="btn ghost mt" id="undoBtn">↺ Undo this package</button>
       <button class="btn ghost mt" id="backBtn">‹ Back to scanning</button>
     </div>
   </section>
@@ -253,6 +282,7 @@ const S = {
   scannedRaw: null,     // trigger scan for the package in front of the operator
   probe: null,          // instant answer for that scan
   probeSeq: 0,          // ignore late answers from an older scan
+  force: false,         // operator chose to read an already-scanned package again
   jobs: [],             // photos being uploaded / read in the background
   recent: [],           // today's reads from the server
   open: null,           // read shown in the result view
@@ -265,10 +295,11 @@ function toast(msg){
   clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('up'), 2800);
 }
 function show(view){
-  ['vGate','vCap','vRes'].forEach((v) => { $(v).hidden = true; });
+  ['vGate','vCap','vRes','vSlip'].forEach((v) => { $(v).hidden = true; });
   if(view === 'gate') $('vGate').hidden = false;
   if(view === 'cap'){ $('vCap').hidden = false; focusCap(); }
   if(view === 'res') $('vRes').hidden = false;
+  if(view === 'slip') $('vSlip').hidden = false;
   window.scrollTo(0, 0);
 }
 function beep(ok){
@@ -350,6 +381,7 @@ $('pad').onclick = focusCap;
 async function onScan(raw){
   S.scannedRaw = raw;
   S.probe = null;
+  S.force = false;
   const seq = ++S.probeSeq;
   const clean = normTracking(raw);
   $('pad').className = 'scanpad ok';
@@ -361,6 +393,9 @@ async function onScan(raw){
   try{
     const p = await api(`label-reads?probe=${encodeURIComponent(raw)}`);
     if(seq !== S.probeSeq) return;               // a newer scan already replaced this one
+    // Photos still uploading from this handheld are not in the database yet.
+    const inFlight = S.jobs.filter((j) => j.tracking && j.tracking === p.tracking && (j.status === 'uploading' || j.status === 'reading'));
+    p.previous = (p.previous || []).concat(inFlight.map((j) => ({ id: null, at: j.t, operator: S.operator, source: 'photo', status: 'reading', client_code: null })));
     S.probe = p;
     renderQuick(p);
   }catch(err){
@@ -382,6 +417,33 @@ function renderQuick(p){
     q.className = 'quick';
     q.innerHTML = `<div class="msg">Could not check (${esc(p.error)}).</div><div class="sub">Take the photo.</div>`;
     $('padHint').textContent = 'Take the photo of the whole label.';
+    return;
+  }
+  if(p.previous && p.previous.length && !S.force){
+    const last = p.previous[0];
+    const who = last.operator ? ' by ' + esc(last.operator) : '';
+    const when = new Date(last.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const code = last.client_code || (clientById(last.confirmed_client_id) || {}).code || '';
+    const state = last.status === 'reading' ? 'still reading'
+                : last.confirmed_client_id ? 'checked ✓' : 'not checked yet';
+    q.className = 'quick dup';
+    q.innerHTML = `
+      <div class="lbl">⚠ Already scanned</div>
+      <div class="msg"><b>This package was already read in v2</b> — ${esc(when)}${who}${code ? ' · <b>' + esc(code) + '</b>' : ''} · ${esc(state)}.</div>
+      ${p.previous.length > 1 ? `<div class="sub">${p.previous.length} earlier reads.</div>` : ''}
+      <div class="row mt">
+        ${last.id ? '<button class="btn ghost" id="qOpen">Open it</button>' : ''}
+        <button class="btn ghost" id="qAgain">Read again</button>
+      </div>`;
+    if($('qOpen')) $('qOpen').onclick = async () => {
+      try{ const j = await api(`label-reads?id=${last.id}`); openRead(j.read); }catch(e){ toast('Could not open: ' + e.message); }
+    };
+    $('qAgain').onclick = () => { S.force = true; $('pad').className = 'scanpad ok'; $('padIcon').textContent = '✓'; renderQuick(p); };
+    $('camBtn').textContent = '📷 Photo of the label';
+    $('pad').className = 'scanpad warn';
+    $('padIcon').textContent = '⚠';
+    $('padHint').textContent = 'Already scanned — open it, or read it again on purpose.';
+    beep(false);
     return;
   }
   const res = p.resolution || {};
@@ -430,21 +492,100 @@ function resetCapture(){
   focusCap();
 }
 
+/* ---------- 3. register (LIVE) ---------- */
+// One call does it all on the server: records the answer, links to the row
+// Receiving already has, or registers through frm-receive.
+async function registerRead(readId, client_id, type, carrier){
+  return post('label-reads', { action: 'register', read_id: readId, client_id, type, carrier, operator: S.operator });
+}
+
+function registerMessage(j, tracking){
+  const code = j.client_code || '';
+  if(j.dropship) return `${tail(tracking)} → ${code} · DropShipment: receive it in the DropShipments app`;
+  if(j.linked) return `${tail(tracking)} → ${code} · already in the log, linked ✓`;
+  return `${tail(tracking)} → ${code} · registered ✓`;
+}
+
+// The slip matters only where we keep the client's stock (inventory) and only
+// for the two types that come with one. Same rule as Receiving's "📷 needed".
+function needsSlip(j, type){
+  if(!j || !j.registered || j.dropship) return false;
+  if((j.receiving_mode || 'inventory') === 'receipt_only') return false;
+  const t = String(type || '').toLowerCase();
+  return t.indexOf('overstock') !== -1 || t.indexOf('rma') !== -1 || t.indexOf('return') !== -1;
+}
+
+function afterRegister(j, readId, tracking, type){
+  if(needsSlip(j, type)){
+    S.slip = { readId, tracking: (j.shipment && j.shipment.tracking) || tracking, code: j.client_code, type };
+    $('slipWhat').innerHTML = `<b>${esc(tail(tracking))}</b> → ${esc(j.client_code || '')} · ${esc(type)} — registered.`;
+    show('slip');
+    beep(true);
+    return;
+  }
+  backToScan();
+}
+
+$('slipCamBtn').onclick = () => {
+  const sl = S.slip; if(!sl) return;
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment';
+  inp.style.display = 'none'; document.body.appendChild(inp);
+  inp.onchange = () => {
+    const file = inp.files && inp.files[0]; inp.remove();
+    if(!file) return;
+    S.slip = null;
+    toast('Slip photo uploading — scan the next one');
+    backToScan();
+    // Background: upload, append to the package (never replace), then read it.
+    (async () => {
+      try{
+        const dataUrl = await compressImage(file, 1600, 0.8);
+        const up = await post('shipment-photos-proxy', { tracking: 'v2slip_' + (sl.tracking || 'x'), photo_data_urls: [dataUrl], attach: false });
+        const url = up.photo_urls && up.photo_urls[0];
+        if(!url) throw new Error('upload returned no URL');
+        const a = await post('label-reads', { action: 'attach_photo', read_id: sl.readId, photo_url: url, kind: 'slip' });
+        fetch(`${API}/slip-extract`, { method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ tracking: a.tracking, photo_url: url }), keepalive: true }).catch(() => {});
+        toast(`${tail(sl.tracking)}: slip saved ✓`);
+        loadToday();
+      }catch(err){
+        beep(false);
+        toast(`${tail(sl.tracking)}: slip photo failed — ${err.message}`);
+      }
+    })();
+  };
+  inp.click();
+};
+$('noSlipBtn').onclick = async () => {
+  const sl = S.slip; if(!sl) return;
+  try{
+    await post('label-reads', { action: 'no_slip', read_id: sl.readId, operator: S.operator });
+    toast('Marked: no slip in carton');
+  }catch(err){ toast('Could not save — ' + err.message); return; }
+  S.slip = null; backToScan();
+};
+$('slipLaterBtn').onclick = () => {
+  toast('Slip pending — open the package in the list to add it');
+  S.slip = null; backToScan();
+};
+
 async function saveScanOnly(){
   const raw = S.scannedRaw; const p = S.probe;
   if(!raw || !p || !p.instant) return;
   const btn = $('qSave'); if(btn) btn.disabled = true;
   try{
-    const j = await post('label-reads', { action: 'scan_only', scanned_raw: raw, operator: S.operator });
+    const j = await post('label-reads', { action: 'scan_only', scanned_raw: raw, operator: S.operator, force: S.force });
     const r = j.read;
-    // Saving IS the operator saying "this is right": record it as confirmed.
-    await post('label-reads', { action: 'confirm', read_id: r.id, client_id: r.suggested_client_id,
-      type: r.suggested_type, carrier: r.suggested_carrier || r.carrier, operator: S.operator });
-    toast(`${tail(r.tracking)} → ${(r.resolution && r.resolution.client_code) || ''} saved`);
+    // Saving IS the operator saying "this is right": record it and register.
+    const type = r.suggested_type || 'Inbound (General)';
+    const reg = await registerRead(r.id, r.suggested_client_id, type, r.suggested_carrier || r.carrier || 'Other');
+    toast(registerMessage(reg, r.tracking));
     resetCapture();
     loadToday(); loadSummary();
+    afterRegister(reg, r.id, r.tracking, type);
   }catch(err){
-    toast('Not saved: ' + err.message);
+    toast(err.code === 'DUPLICATE' ? 'Already scanned — not saved again' : 'Not saved: ' + err.message);
     if(btn) btn.disabled = false;
   }
 }
@@ -467,6 +608,11 @@ function compressImage(file, maxDim, quality){
 }
 
 $('camBtn').onclick = () => {
+  if(S.probe && S.probe.previous && S.probe.previous.length && !S.force){
+    toast('Already scanned — tap "Read again" first if you really want a new read');
+    beep(false);
+    return;
+  }
   const inp = document.createElement('input');
   inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment';
   inp.style.display = 'none'; document.body.appendChild(inp);
@@ -475,7 +621,7 @@ $('camBtn').onclick = () => {
     if(!file){ focusCap(); return; }
     // Hand the photo to the queue and free the operator immediately.
     const job = { key: 'j' + Date.now() + Math.random().toString(36).slice(2, 6), file,
-                  scannedRaw: S.scannedRaw, tracking: normTracking(S.scannedRaw),
+                  scannedRaw: S.scannedRaw, tracking: normTracking(S.scannedRaw), force: S.force,
                   status: 'uploading', readId: null, read: null, error: null, t: new Date() };
     S.jobs.unshift(job);
     resetCapture();
@@ -502,7 +648,7 @@ async function pumpUploads(){
         const up = await post('shipment-photos-proxy', { tracking: folder, photo_data_urls: [dataUrl], attach: false });
         if(!up.photo_urls || !up.photo_urls[0]) throw new Error('upload returned no URL');
         const st = await post('label-reads', { action: 'start', photo_url: up.photo_urls[0],
-                                               scanned_raw: job.scannedRaw, operator: S.operator });
+                                               scanned_raw: job.scannedRaw, operator: S.operator, force: job.force });
         job.readId = st.read_id;
         job.status = 'reading';
         job.file = null;
@@ -512,7 +658,8 @@ async function pumpUploads(){
           body: JSON.stringify({ read_id: st.read_id }), keepalive: true,
         }).catch(() => {});
       }catch(err){
-        job.status = 'failed'; job.error = err.message; job.file = null;
+        job.status = 'failed'; job.file = null;
+        job.error = err.code === 'DUPLICATE' ? 'already scanned — not read again' : err.message;
         beep(false);
         toast(`${tail(job.tracking)}: upload failed — ${err.message}`);
       }
@@ -582,11 +729,14 @@ function renderList(){
   }
   for(const x of server){
     const res = x.resolution || {};
-    const conf = x.status === 'pending' ? '<span class="chip run">reading…</span>'
+    const conf = x.voided_at ? '<span class="chip mut">undone</span>'
+      : x.status === 'pending' ? '<span class="chip run">reading…</span>'
+      : x.confirmed_client_id && x.registered ? (x.confirmed_client_id === x.suggested_client_id ? '<span class="chip ok">✓ registered</span>' : '<span class="chip err">corrected · reg.</span>')
+      : x.confirmed_client_id && x.shipment_id ? (x.confirmed_client_id === x.suggested_client_id ? '<span class="chip ok">✓ linked</span>' : '<span class="chip err">corrected · linked</span>')
       : x.confirmed_client_id
         ? (x.confirmed_client_id === x.suggested_client_id ? '<span class="chip ok">✓ right</span>' : '<span class="chip err">corrected</span>')
         : '<span class="chip warn">check</span>';
-    rows.push(`<li data-id="${esc(x.id)}" class="${!x.confirmed_client_id && x.status !== 'pending' ? 'attn' : ''}">
+    rows.push(`<li data-id="${esc(x.id)}" class="${!x.confirmed_client_id && x.status !== 'pending' && !x.voided_at ? 'attn' : ''}" style="${x.voided_at ? 'opacity:.5' : ''}">
       <div><div class="l1 mono">${esc(x.tracking || x.scanned_tracking || '(no tracking)')}</div>
       <div class="l2">${esc(time(x.created_at))} · ${esc(x.carrier || '?')} · ${x.source === 'scan' ? 'scan only' : esc(x.status)}</div></div>
       <div class="right"><div class="l1">${esc(res.client_code || '—')}</div>${conf}</div></li>`);
@@ -642,8 +792,16 @@ function openRead(r){
   if(r.status === 'low_confidence' && r.tracking_match !== false) notes.push('<div class="note"><b>Hard to read.</b> Check the fields below; a flat photo with all four corners works best.</div>');
   if(r.route === 'dropshipments') notes.push('<div class="note info"><b>This is a DropShipment.</b> It was announced by email — receive it in the DropShipments app, not in Receiving.</div>');
   if(r.ship_from_is_fr) notes.push('<div class="note info"><b>Our own label came back</b> (sender is FR-Logistics). Treat as a return to sender.</div>');
-  if(r.logged) notes.push(`<div class="note info">In Receiving as <b>${esc(r.logged.client_code || '?')}</b> · ${esc(r.logged.type || '')}.</div>`);
-  else notes.push('<div class="note">Not in Receiving yet — receive it there too (that is the official record).</div>');
+  if(r.voided_at) notes.push(`<div class="note red"><b>Undone</b>${r.voided_by ? ' by ' + esc(r.voided_by) : ''}. Scan the package again to start over.</div>`);
+  else if(r.shipment_id && r.registered) notes.push('<div class="note info"><b>Registered by v2.</b> Saving again only updates the check.</div>');
+  else if(r.shipment_id) notes.push('<div class="note info"><b>Linked</b> to the row Receiving already had.</div>');
+  const prev = (r.previous && r.previous.length) ? r.previous : (res.duplicate_of || []);
+  if(prev.length){
+    const w = new Date(prev[0].at || prev[0].created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    notes.push(`<div class="note"><b>Repeat scan.</b> This package was also read in v2 on ${esc(w)}${prev[0].operator ? ' by ' + esc(prev[0].operator) : ''}${prev.length > 1 ? ' (' + prev.length + ' other reads)' : ''}. Only the latest read counts in the test results.</div>`);
+  }
+  if(r.logged && !r.shipment_id) notes.push(`<div class="note info">Already in the log as <b>${esc(r.logged.client_code || '?')}</b> · ${esc(r.logged.type || '')}. Save links to it.</div>`);
+  else if(!r.logged && !r.voided_at) notes.push('<div class="note">Not in the log yet — <b>Save registers it.</b></div>');
   if(r.piece_total > 1) notes.push(`<div class="note info">Box <b>${esc(r.piece_no || '?')} of ${esc(r.piece_total)}</b>${r.master_tracking ? ' · master ' + esc(r.master_tracking) : ''}. Expect ${esc(r.piece_total - 1)} more.</div>`);
   $('resNotes').innerHTML = notes.join('');
 
@@ -692,7 +850,19 @@ function openRead(r){
   $('cType').value = r.confirmed_type || r.suggested_type || 'Inbound (General)';
   $('cCarrier').value = r.confirmed_carrier || r.suggested_carrier || r.carrier || 'Other';
   $('printBtn').disabled = !r.logged;
-  $('printBtn').title = r.logged ? 'Print the inbound label' : 'Receive it in Receiving first, then print';
+  $('printBtn').title = r.logged ? 'Print the inbound label' : 'Save it first, then print';
+  $('saveBtn').disabled = !!r.voided_at;
+  $('saveBtn').textContent = r.shipment_id ? '✓ Update check' : '✓ Save';
+  $('undoBtn').hidden = !!r.voided_at;
+  undoArmed = null; $('undoBtn').textContent = '↺ Undo this package';
+  // A registered Overstock/RMA still waiting for its slip: offer it again.
+  const c = clientById(r.confirmed_client_id);
+  if(r.registered && !r.slip_status && !r.voided_at &&
+     needsSlip({ registered: true, receiving_mode: c && c.receivingMode }, r.confirmed_type)){
+    notes.push('<div class="note"><b>Slip photo pending.</b> <button class="btn ghost" id="slipNowBtn" style="display:inline-block;width:auto;padding:6px 12px;margin-left:6px">📄 Add it now</button></div>');
+    $('resNotes').innerHTML = notes.join('');
+    $('slipNowBtn').onclick = () => afterRegister({ registered: true, receiving_mode: c && c.receivingMode, client_code: (r.resolution && r.resolution.client_code) || (c && c.code), shipment: { tracking: r.logged && r.logged.tracking } }, r.id, r.tracking, r.confirmed_type);
+  }
   show('res');
 }
 
@@ -702,15 +872,16 @@ $('saveBtn').onclick = async () => {
   if(!client_id){ toast('Pick the client'); return; }
   $('saveBtn').disabled = true;
   try{
-    const j = await post('label-reads', { action: 'confirm', read_id: r.id, client_id,
-      type: $('cType').value, carrier: $('cCarrier').value, operator: S.operator });
-    let msg = client_id !== r.suggested_client_id ? 'Saved — correction noted' : 'Saved ✓';
+    const type = $('cType').value;
+    const j = await registerRead(r.id, client_id, type, $('cCarrier').value);
+    let msg = registerMessage(j, r.tracking) + (client_id !== r.suggested_client_id ? ' · correction noted' : '');
     if(j.ra_note === 'learned') msg += ` · RA ${j.ra_prefix} learned`;
     if(j.ra_note === 'conflict') msg += ` · RA ${j.ra_prefix} belongs to another client — tell Jose`;
     toast(msg);
     S.jobs = S.jobs.filter((x) => x.readId !== r.id);   // checked: drop it from the local queue
-    backToScan();
+    afterRegister(j, r.id, r.tracking, type);
   }catch(err){
+    beep(false);
     toast('Not saved: ' + err.message);
   }finally{
     $('saveBtn').disabled = false;
@@ -718,6 +889,31 @@ $('saveBtn').onclick = async () => {
 };
 $('printBtn').onclick = () => { if(S.open && S.open.logged) printInbound(S.open.logged, S.open.tracking); };
 $('backBtn').onclick = backToScan;
+
+let undoArmed = null;
+$('undoBtn').onclick = async () => {
+  const r = S.open; if(!r) return;
+  if(undoArmed !== r.id){
+    undoArmed = r.id;
+    $('undoBtn').textContent = r.registered ? 'Tap again: remove it from the log' : 'Tap again to undo';
+    setTimeout(() => { if(undoArmed === r.id){ undoArmed = null; $('undoBtn').textContent = '↺ Undo this package'; } }, 4000);
+    return;
+  }
+  undoArmed = null;
+  $('undoBtn').disabled = true;
+  try{
+    const j = await post('label-reads', { action: 'undo', read_id: r.id, operator: S.operator });
+    toast(j.deleted_shipment ? `${tail(r.tracking)} removed from the log` : `${tail(r.tracking)} undone`);
+    S.jobs = S.jobs.filter((x) => x.readId !== r.id);
+    backToScan();
+  }catch(err){
+    beep(false);
+    toast(err.message || 'Could not undo');
+  }finally{
+    $('undoBtn').disabled = false;
+    $('undoBtn').textContent = '↺ Undo this package';
+  }
+};
 
 function backToScan(){
   S.open = null;
@@ -741,6 +937,8 @@ async function printInbound(logged, tracking){
   }
 }
 
+function clientById(id){ return id ? S.clients.find((c) => c.id === id) : null; }
+
 /* ---------- clients ---------- */
 async function loadClients(){
   try{
@@ -751,7 +949,8 @@ async function loadClients(){
       .map((c) => {
         const name = (c.company && c.company.trim()) || c.name || '';
         const code = (c.client_code || '').trim();
-        return { id: c.id, code, name, label: code ? code + ' · ' + name : name };
+        return { id: c.id, code, name, label: code ? code + ' · ' + name : name,
+                 receivingMode: (c.flags && c.flags.receiving_mode) || c.receiving_mode || 'inventory' };
       })
       .filter((c) => c.name)
       .sort((a, b) => a.label.localeCompare(b.label));
