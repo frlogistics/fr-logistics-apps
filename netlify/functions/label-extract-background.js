@@ -295,6 +295,18 @@ exports.handler = async (event) => {
       resolution = await rpc.json();
     }
 
+    // Same package already read in v2? (A photo taken without a scan only
+    // reveals its tracking here.) Recorded, not blocked: the handheld shows it.
+    if (tracking) {
+      const t = encodeURIComponent(tracking);
+      const pr = await sb(`wh_label_reads?or=(tracking.eq.${t},scanned_tracking.eq.${t})&id=neq.${readId}` +
+        '&select=id,created_at,operator&order=created_at.desc&limit=3');
+      const prev = pr.ok ? await pr.json() : [];
+      if (Array.isArray(prev) && prev.length) {
+        resolution = { ...(resolution || {}), duplicate_of: prev };
+      }
+    }
+
     const carrier = carrierFromTracking(tracking) || mapCarrier(parsed.carrier);
     const status = decideStatus(parsed, trackingMatch, tracking);
     const confidence = Number(parsed.confidence);
