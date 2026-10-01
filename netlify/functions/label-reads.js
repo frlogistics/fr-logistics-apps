@@ -501,7 +501,14 @@ exports.handler = async (event) => {
       // New package: write through frm-receive (same contract as Receiving).
       const fr = await fetch(`${SITE}/.netlify/functions/frm-receive`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Origin: 'https://apps.fr-logistics.net' },
+        // auth-gate.js sits in front of every function: a call between our own
+        // functions must carry the service key as Bearer (its rule 3), or the
+        // gate answers 401 "Not signed in" before frm-receive ever runs.
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: 'https://apps.fr-logistics.net',
+          Authorization: `Bearer ${SB_KEY}`,
+        },
         body: JSON.stringify({
           tracking, client: client.storeName, client_id: clientId,
           type, carrier, direction: 'Inbound', operator: operator || '',
@@ -518,7 +525,9 @@ exports.handler = async (event) => {
         }
         return json(409, { error: 'DUPLICATE_UNRESOLVED', message: 'Receiving says it exists but it could not be found.' });
       }
-      if (!fr.ok || !fj.id) return json(502, { error: 'REGISTER_FAILED', message: fj.error || `frm-receive ${fr.status}` });
+      if (!fr.ok || !fj.id) {
+        return json(502, { error: 'REGISTER_FAILED', message: `Could not register (frm-receive ${fr.status}${fj.error ? ': ' + fj.error : ''}). Nothing was saved — try again.` });
+      }
 
       await patchRead({ shipment_id: fj.id, registered: true });
       if (read.photo_url) await appendPhotos(fj.id, [read.photo_url]);
