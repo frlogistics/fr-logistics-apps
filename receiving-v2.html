@@ -6,29 +6,32 @@
 <meta name="theme-color" content="#0B2545">
 <title>Receiving v2 — FR-Logistics</title>
 <!--
-  Receiving v2 — label reading by photo. SHADOW MODE.
+  Receiving v2 — label reading. SHADOW MODE.
 
   Standalone page on purpose (same reason as fba-count.html): it lives beside
   the Receiving module in fr-mobile.html without touching it, and can be
   retired or promoted without a single change to fr-mobile.html.
 
-  SHADOW MODE: this page NEVER registers a package. It photographs the label,
-  reads it, and records what it WOULD propose (client, carrier, tracking, type)
-  in wh_label_reads. The package is still received in FR Mobile → Receiving,
-  which keeps driving shipments_general and billing. Supabase compares both in
-  v_label_shadow / v_label_shadow_summary, and that number decides the cut-over.
+  SHADOW MODE: this page NEVER registers a package. It records what it WOULD
+  propose (client, carrier, tracking, type) in wh_label_reads. The package is
+  still received in FR Mobile → Receiving, which keeps driving
+  shipments_general and billing. Supabase compares both (v_label_shadow).
 
-  Flow per package:
-    1. Scan the tracking with the trigger (optional but recommended — it is the
-       exact number the photo is checked against).
-    2. Take the photo of the whole label.
-    3. Wait a few seconds: the proposal appears. Tap "Correct" or fix it.
+  Speed round (1-Oct-2026, after Jose's first 7 packages — 4 to 19 s each, with
+  the operator standing still the whole time):
+    1. INSTANT FROM THE SCAN. The trigger scan alone is checked against our own
+       records (return labels, DropShipments, our outbound, client orders). If
+       it is known, the answer is on screen in < 1 s and "Save" needs no photo.
+    2. NO WAITING. A photo is uploaded and read in the background; the screen
+       goes straight back to "Scan tracking". The result appears in the list
+       with a beep; the operator checks it whenever.
+    3. Smaller photo (1600 px) and tolerant parsing on the server.
+  Plus 🖨 Print: same inbound label as Receiving, queued through frm-print for
+  the row Receiving created (v2 still creates none).
 
   Shares the operator session with FR Mobile via localStorage (frm_op/frm_ok).
-
-  Backend: shipment-photos-proxy (upload, attach:false — never touches the
-  shipments_general row), label-reads (start / poll / confirm / recent /
-  summary), label-extract-background (vision + client resolution).
+  Backend: label-reads, label-extract-background, shipment-photos-proxy
+  (attach:false — never touches the shipments_general row), frm-print.
   No new env vars.
 -->
 <style>
@@ -71,26 +74,28 @@
   .btn:disabled{opacity:.5}
   .row{display:flex;gap:9px}
   .row .btn{flex:1}
+  .row .btn.slim{flex:0 0 64px}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-  .link{background:none;border:0;color:var(--teal);font:inherit;font-size:13px;padding:8px 0 0;
-        cursor:pointer;text-decoration:underline;display:block;margin:0 auto}
+  .mt{margin-top:9px}
 
-  .scanpad{background:#fff;border:2px dashed var(--line);border-radius:10px;padding:20px 14px;
+  .scanpad{background:#fff;border:2px dashed var(--line);border-radius:10px;padding:18px 14px;
            text-align:center;margin-bottom:12px;cursor:text}
   .scanpad.ok{border-color:var(--green);background:#F0FDF4}
-  .scanpad.warn{border-color:var(--amber);background:#FFF7ED}
-  .scanpad .icon{font-size:26px;line-height:1}
-  .scanpad .big{font-size:17px;font-weight:600;margin-top:7px}
-  .scanpad .code{font-family:Consolas,monospace;font-size:13px;color:var(--muted);margin-top:5px;word-break:break-all}
-  .scanpad .hint{font-size:12px;color:var(--muted);margin-top:6px}
+  .scanpad .icon{font-size:24px;line-height:1}
+  .scanpad .big{font-size:17px;font-weight:600;margin-top:6px;word-break:break-all}
+  .scanpad .hint{font-size:12px;color:var(--muted);margin-top:5px}
   #cap{position:absolute;left:-9999px;opacity:0;height:1px;width:1px}
 
-  .wait{text-align:center;padding:26px 10px}
-  .spin{width:34px;height:34px;border:4px solid var(--line);border-top-color:var(--teal);border-radius:50%;
-        margin:0 auto 12px;animation:sp 0.9s linear infinite}
-  @keyframes sp{to{transform:rotate(360deg)}}
-  .wait .l1{font-weight:600}
-  .wait .l2{font-size:12px;color:var(--muted)}
+  .quick{border-radius:10px;padding:13px 14px;margin-bottom:12px;background:#fff;border:1px solid var(--line)}
+  .quick.hit{background:var(--navy);color:#fff;border-color:var(--navy)}
+  .quick .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  .quick.hit .lbl{color:#B9CCE0}
+  .quick .client{font-size:21px;font-weight:700;line-height:1.2;margin-top:2px}
+  .quick .cname{font-size:13px;color:#D6E2EE}
+  .quick .why{font-size:12px;margin-top:7px;background:rgba(255,255,255,.12);border-radius:6px;padding:6px 9px}
+  .quick .msg{font-size:14px}
+  .quick .sub{font-size:12px;color:var(--muted);margin-top:3px}
+  .quick.hit .btn.ghost{background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.35)}
 
   .prop{border-radius:10px;padding:14px;margin-bottom:12px;color:#fff;background:var(--navy)}
   .prop.none{background:#475569}
@@ -111,6 +116,7 @@
   .chip.warn{background:#FEF3C7;color:#92400E}
   .chip.err{background:#FEE2E2;color:#991B1B}
   .chip.mut{background:#F1F5F9;color:var(--muted)}
+  .chip.run{background:#DBEAFE;color:#1E40AF}
 
   .note{border-left:3px solid var(--amber);background:#FFF7ED;padding:10px 12px;border-radius:0 6px 6px 0;
         font-size:13px;margin-bottom:10px}
@@ -120,6 +126,7 @@
   ul.list{list-style:none;margin:0;padding:0}
   ul.list li{display:flex;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line);cursor:pointer}
   ul.list li:last-child{border-bottom:0}
+  ul.list li.attn{background:#FFFBEB}
   .l1{font-weight:600;font-size:14px;word-break:break-word}
   .l2{font-size:12px;color:var(--muted)}
   .right{margin-left:auto;text-align:right;white-space:nowrap}
@@ -165,23 +172,25 @@
     <div class="scanpad" id="pad">
       <div class="icon" id="padIcon">▣</div>
       <div class="big" id="padBig">Scan tracking</div>
-      <div class="code" id="padCode"></div>
-      <div class="hint" id="padHint">Pull the trigger on the main barcode, then take the photo.</div>
+      <div class="hint" id="padHint">Pull the trigger on the main barcode.</div>
     </div>
+
+    <div class="quick" id="quick" hidden></div>
+
     <button class="btn go cam" id="camBtn">📷 Photo of the label</button>
-    <button class="link" id="noScanBtn">No barcode to scan? Take the photo anyway</button>
-  </section>
 
-  <!-- ── waiting ─────────────────────────────────────────────────────── -->
-  <section id="vWait" hidden>
-    <div class="card wait">
-      <div class="spin"></div>
-      <div class="l1" id="waitL1">Uploading photo…</div>
-      <div class="l2" id="waitL2">Keep the box here a few seconds.</div>
+    <div class="card mt">
+      <h2>Queue &amp; today <span class="chip mut" id="todayCount">0</span></h2>
+      <ul class="list" id="todayList"><li class="empty">Nothing yet.</li></ul>
+    </div>
+
+    <div class="card">
+      <h2>Test results so far</h2>
+      <div class="stats" id="stats"><div class="empty" style="grid-column:1/-1">Loading…</div></div>
     </div>
   </section>
 
-  <!-- ── result ──────────────────────────────────────────────────────── -->
+  <!-- ── result (check one read) ─────────────────────────────────────── -->
   <section id="vRes" hidden>
     <div id="resNotes"></div>
     <div class="prop" id="prop">
@@ -224,20 +233,9 @@
       </div>
       <div class="row">
         <button class="btn ok" id="saveBtn">✓ Save check</button>
-        <button class="btn ghost" id="skipBtn">Skip</button>
+        <button class="btn ghost slim" id="printBtn" title="Print the inbound label">🖨</button>
       </div>
-    </div>
-  </section>
-
-  <!-- ── today ───────────────────────────────────────────────────────── -->
-  <section id="vList" hidden>
-    <div class="card">
-      <h2>Test results so far</h2>
-      <div class="stats" id="stats"><div class="empty" style="grid-column:1/-1">Loading…</div></div>
-    </div>
-    <div class="card">
-      <h2>My reads today <span class="chip mut" id="todayCount">0</span></h2>
-      <ul class="list" id="todayList"><li class="empty">Nothing yet.</li></ul>
+      <button class="btn ghost mt" id="backBtn">‹ Back to scanning</button>
     </div>
   </section>
 </main>
@@ -251,24 +249,26 @@ const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({'&':'&
 
 const S = {
   operator: null,
-  clients: [],          // [{id, code, label}]
-  scannedRaw: null,     // what the trigger typed for the current package
-  read: null,           // current wh_label_reads row
-  busy: false,
+  clients: [],          // [{id, code, name, label}]
+  scannedRaw: null,     // trigger scan for the package in front of the operator
+  probe: null,          // instant answer for that scan
+  probeSeq: 0,          // ignore late answers from an older scan
+  jobs: [],             // photos being uploaded / read in the background
+  recent: [],           // today's reads from the server
+  open: null,           // read shown in the result view
 };
 
 /* ---------- small UI helpers ---------- */
 let toastT = null;
 function toast(msg){
   const t = $('toast'); t.textContent = msg; t.classList.add('up');
-  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('up'), 2600);
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('up'), 2800);
 }
 function show(view){
-  ['vGate','vCap','vWait','vRes','vList'].forEach((v) => { $(v).hidden = true; });
-  if(view === 'gate'){ $('vGate').hidden = false; return; }
-  if(view === 'cap'){ $('vCap').hidden = false; $('vList').hidden = false; focusCap(); }
-  if(view === 'wait'){ $('vWait').hidden = false; }
-  if(view === 'res'){ $('vRes').hidden = false; }
+  ['vGate','vCap','vRes'].forEach((v) => { $(v).hidden = true; });
+  if(view === 'gate') $('vGate').hidden = false;
+  if(view === 'cap'){ $('vCap').hidden = false; focusCap(); }
+  if(view === 'res') $('vRes').hidden = false;
   window.scrollTo(0, 0);
 }
 function beep(ok){
@@ -280,6 +280,13 @@ function beep(ok){
   }catch(e){}
   if(navigator.vibrate) navigator.vibrate(ok ? 40 : [80, 60, 80]);
 }
+async function api(path, opts){
+  const r = await fetch(`${API}/${path}`, opts);
+  const j = await r.json().catch(() => ({}));
+  if(!r.ok){ const e = new Error(j.message || j.error || ('HTTP ' + r.status)); e.code = j.error; throw e; }
+  return j;
+}
+const post = (path, body) => api(path, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
 
 // Mirror of fr_norm_tracking() in Supabase / normTracking() in the functions.
 function normTracking(raw){
@@ -295,6 +302,20 @@ function normTracking(raw){
   if(/^96\d{32}$/.test(t)) return t.slice(-12);
   return t;
 }
+const tail = (t) => (t ? '…' + String(t).slice(-6) : '(no scan)');
+
+const METHOD_TEXT = {
+  dropshipment:     'Announced DropShipment (email already received)',
+  outbound_return:  'Our own DropShipment label coming back',
+  return_label:     'Return label we created',
+  client_order:     'Order number printed on the label',
+  ra_prefix:        'Amazon RA# prefix of this seller',
+  code_on_label:    'Client code printed on the label',
+  alias_on_label:   'Client alias printed on the label',
+  company_on_label: 'Company name printed on the label',
+  contact_on_label: 'Contact name printed on the label',
+  sibling_box:      'Same shipment as a box already received',
+};
 
 /* ---------- operator session (shared with FR Mobile) ---------- */
 function enter(op){
@@ -321,30 +342,114 @@ $('cap').addEventListener('keydown', (e) => {
   if(v.trim()) onScan(v);
 });
 document.addEventListener('click', (e) => {
-  if(captureActive() && !e.target.closest('select,input,button')) focusCap();
+  if(captureActive() && !e.target.closest('select,input,button,li')) focusCap();
 });
 $('pad').onclick = focusCap;
 
-function onScan(raw){
+/* ---------- 1. instant answer from the scan ---------- */
+async function onScan(raw){
   S.scannedRaw = raw;
+  S.probe = null;
+  const seq = ++S.probeSeq;
   const clean = normTracking(raw);
   $('pad').className = 'scanpad ok';
   $('padIcon').textContent = '✓';
   $('padBig').textContent = clean || raw;
-  $('padCode').textContent = clean && clean !== raw.replace(/[\u001d\u001e]/g, '') ? 'scanned: ' + raw.replace(/[\u001d\u001e]/g, '·') : '';
-  $('padHint').textContent = 'Now take the photo of the whole label — flat, all four corners in.';
+  $('padHint').textContent = 'Checking our records…';
+  renderQuick({ loading: true });
   beep(true);
+  try{
+    const p = await api(`label-reads?probe=${encodeURIComponent(raw)}`);
+    if(seq !== S.probeSeq) return;               // a newer scan already replaced this one
+    S.probe = p;
+    renderQuick(p);
+  }catch(err){
+    if(seq !== S.probeSeq) return;
+    renderQuick({ error: err.message });
+  }
 }
-function resetPad(){
-  S.scannedRaw = null;
+
+function renderQuick(p){
+  const q = $('quick');
+  q.hidden = false;
+  if(p.loading){
+    q.className = 'quick';
+    q.innerHTML = '<div class="msg">Checking our records…</div>';
+    $('camBtn').textContent = '📷 Photo of the label';
+    return;
+  }
+  if(p.error){
+    q.className = 'quick';
+    q.innerHTML = `<div class="msg">Could not check (${esc(p.error)}).</div><div class="sub">Take the photo.</div>`;
+    $('padHint').textContent = 'Take the photo of the whole label.';
+    return;
+  }
+  const res = p.resolution || {};
+  const loggedLine = p.logged
+    ? `<div class="sub" style="${p.instant ? 'color:#D6E2EE' : ''}">In Receiving as <b>${esc(p.logged.client_code || '?')}</b> · ${esc(p.logged.type || '')}</div>` : '';
+  const printBtn = p.logged ? '<button class="btn ghost slim" id="qPrint" title="Print the inbound label">🖨</button>' : '';
+
+  if(p.instant){
+    q.className = 'quick hit';
+    const cand = (res.candidates || []).find((x) => x.method === res.method) || {};
+    q.innerHTML = `
+      <div class="lbl">Known from the tracking</div>
+      <div class="client">${esc(res.client_code || '—')}</div>
+      <div class="cname">${esc(res.client_name || '')} · ${esc(res.suggested_type || '')}</div>
+      <div class="why">${esc(METHOD_TEXT[res.method] || res.method)}${cand.detail ? ' — ' + esc(cand.detail) : ''}</div>
+      ${res.route === 'dropshipments' ? '<div class="why">DropShipment — receive it in the DropShipments app.</div>' : ''}
+      ${loggedLine}
+      <div class="row mt">
+        <button class="btn ok" id="qSave">✓ Save — no photo</button>
+        ${printBtn}
+      </div>`;
+    $('qSave').onclick = saveScanOnly;
+    $('camBtn').textContent = '📷 Photo anyway';
+    $('padHint').textContent = 'Known package: save it, no photo needed.';
+  }else{
+    q.className = 'quick';
+    q.innerHTML = `
+      <div class="msg"><b>Not in our records yet.</b> Take the photo — it is read in the background.</div>
+      ${loggedLine}
+      ${printBtn ? '<div class="row mt"><div style="flex:1"></div>' + printBtn + '</div>' : ''}`;
+    $('camBtn').textContent = '📷 Photo of the label';
+    $('padHint').textContent = 'Take the photo of the whole label — flat, four corners in.';
+  }
+  const qp = $('qPrint');
+  if(qp) qp.onclick = () => printInbound(p.logged, p.tracking);
+}
+
+function resetCapture(){
+  S.scannedRaw = null; S.probe = null; S.probeSeq++;
   $('pad').className = 'scanpad';
   $('padIcon').textContent = '▣';
   $('padBig').textContent = 'Scan tracking';
-  $('padCode').textContent = '';
-  $('padHint').textContent = 'Pull the trigger on the main barcode, then take the photo.';
+  $('padHint').textContent = 'Pull the trigger on the main barcode.';
+  $('quick').hidden = true;
+  $('camBtn').textContent = '📷 Photo of the label';
+  focusCap();
 }
 
-/* ---------- photo → upload → read ---------- */
+async function saveScanOnly(){
+  const raw = S.scannedRaw; const p = S.probe;
+  if(!raw || !p || !p.instant) return;
+  const btn = $('qSave'); if(btn) btn.disabled = true;
+  try{
+    const j = await post('label-reads', { action: 'scan_only', scanned_raw: raw, operator: S.operator });
+    const r = j.read;
+    // Saving IS the operator saying "this is right": record it as confirmed.
+    await post('label-reads', { action: 'confirm', read_id: r.id, client_id: r.suggested_client_id,
+      type: r.suggested_type, carrier: r.suggested_carrier || r.carrier, operator: S.operator });
+    toast(`${tail(r.tracking)} → ${(r.resolution && r.resolution.client_code) || ''} saved`);
+    resetCapture();
+    loadToday(); loadSummary();
+  }catch(err){
+    toast('Not saved: ' + err.message);
+    if(btn) btn.disabled = false;
+  }
+}
+
+/* ---------- 2. photo, read in the background ---------- */
 function compressImage(file, maxDim, quality){
   return new Promise((resolve, reject) => {
     const img = new Image(); const url = URL.createObjectURL(file);
@@ -361,98 +466,173 @@ function compressImage(file, maxDim, quality){
   });
 }
 
-function openCamera(){
-  if(S.busy) return;
+$('camBtn').onclick = () => {
   const inp = document.createElement('input');
   inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment';
   inp.style.display = 'none'; document.body.appendChild(inp);
-  inp.onchange = async () => {
+  inp.onchange = () => {
     const file = inp.files && inp.files[0]; inp.remove();
-    if(file) await processPhoto(file); else focusCap();
+    if(!file){ focusCap(); return; }
+    // Hand the photo to the queue and free the operator immediately.
+    const job = { key: 'j' + Date.now() + Math.random().toString(36).slice(2, 6), file,
+                  scannedRaw: S.scannedRaw, tracking: normTracking(S.scannedRaw),
+                  status: 'uploading', readId: null, read: null, error: null, t: new Date() };
+    S.jobs.unshift(job);
+    resetCapture();
+    toast('Reading in the background — scan the next one');
+    renderList();
+    pumpUploads();
   };
   inp.click();
-}
-$('camBtn').onclick = openCamera;
-$('noScanBtn').onclick = () => { resetPad(); openCamera(); };
-
-async function processPhoto(file){
-  S.busy = true;
-  show('wait'); $('waitL1').textContent = 'Uploading photo…'; $('waitL2').textContent = 'Keep the box here a few seconds.';
-  try{
-    // Labels carry small print (RA#, refs): keep more pixels than the condition photos.
-    const dataUrl = await compressImage(file, 2000, 0.82);
-    const folder = 'v2_' + (normTracking(S.scannedRaw) || 'noscan');
-    // attach:false — NEVER touch the shipments_general row in test mode.
-    const up = await fetch(`${API}/shipment-photos-proxy`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ tracking: folder, photo_data_urls: [dataUrl], attach: false }),
-    });
-    const uj = await up.json().catch(() => ({}));
-    if(!up.ok || !uj.photo_urls || !uj.photo_urls[0]) throw new Error(uj.error || ('upload HTTP ' + up.status));
-
-    $('waitL1').textContent = 'Reading the label…';
-    const st = await fetch(`${API}/label-reads`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ action: 'start', photo_url: uj.photo_urls[0], scanned_raw: S.scannedRaw, operator: S.operator }),
-    });
-    const sj = await st.json().catch(() => ({}));
-    if(!st.ok || !sj.read_id) throw new Error(sj.error || ('start HTTP ' + st.status));
-
-    // Background function: answers 202 immediately, works for as long as it needs.
-    fetch(`${API}/label-extract-background`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ read_id: sj.read_id }), keepalive: true,
-    }).catch(() => {});
-
-    const read = await pollRead(sj.read_id);
-    S.read = read;
-    renderResult(read);
-  }catch(err){
-    beep(false);
-    toast('Failed: ' + (err.message || 'try again'));
-    show('cap');
-  }finally{
-    S.busy = false;
-  }
-}
-
-async function pollRead(id){
-  const t0 = Date.now();
-  const msgs = [[4000,'Checking our records…'],[9000,'Almost there…'],[18000,'Taking longer than usual…']];
-  while(Date.now() - t0 < 60000){
-    await new Promise((r) => setTimeout(r, 1500));
-    const el = Date.now() - t0;
-    for(const [ms, m] of msgs) if(el > ms) $('waitL1').textContent = m;
-    try{
-      const r = await fetch(`${API}/label-reads?id=${encodeURIComponent(id)}`);
-      if(!r.ok) continue;
-      const j = await r.json();
-      if(j.read && j.read.status !== 'pending') return j.read;
-    }catch(e){ /* keep polling */ }
-  }
-  throw new Error('no answer after 60 s — the photo is saved, try again later');
-}
-
-/* ---------- result ---------- */
-const METHOD_TEXT = {
-  dropshipment:     'Announced DropShipment (email already received)',
-  outbound_return:  'Our own DropShipment label coming back',
-  return_label:     'Return label we created',
-  client_order:     'Order number printed on the label',
-  ra_prefix:        'Amazon RA# prefix of this seller',
-  code_on_label:    'Client code printed on the label',
-  alias_on_label:   'Client alias printed on the label',
-  company_on_label: 'Company name printed on the label',
-  contact_on_label: 'Contact name printed on the label',
-  sibling_box:      'Same shipment as a box already received',
 };
 
-function clientLabel(id){
-  const c = S.clients.find((x) => x.id === id);
-  return c ? c : null;
+// Uploads go one at a time so a handheld on warehouse wifi is not choked by
+// five photos at once; the reading itself runs in parallel on the server.
+let uploading = false;
+async function pumpUploads(){
+  if(uploading) return;
+  uploading = true;
+  try{
+    let job;
+    while((job = S.jobs.find((j) => j.status === 'uploading'))){
+      try{
+        const dataUrl = await compressImage(job.file, 1600, 0.78);
+        const folder = 'v2_' + (job.tracking || 'noscan');
+        // attach:false — NEVER touch the shipments_general row in test mode.
+        const up = await post('shipment-photos-proxy', { tracking: folder, photo_data_urls: [dataUrl], attach: false });
+        if(!up.photo_urls || !up.photo_urls[0]) throw new Error('upload returned no URL');
+        const st = await post('label-reads', { action: 'start', photo_url: up.photo_urls[0],
+                                               scanned_raw: job.scannedRaw, operator: S.operator });
+        job.readId = st.read_id;
+        job.status = 'reading';
+        job.file = null;
+        // Background function: answers 202 at once, works as long as it needs.
+        fetch(`${API}/label-extract-background`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ read_id: st.read_id }), keepalive: true,
+        }).catch(() => {});
+      }catch(err){
+        job.status = 'failed'; job.error = err.message; job.file = null;
+        beep(false);
+        toast(`${tail(job.tracking)}: upload failed — ${err.message}`);
+      }
+      renderList();
+    }
+  }finally{
+    uploading = false;
+  }
+  startPolling();
 }
 
-function renderResult(r){
+let pollT = null;
+function startPolling(){
+  if(pollT) return;
+  pollT = setInterval(pollJobs, 2000);
+}
+async function pollJobs(){
+  const reading = S.jobs.filter((j) => j.status === 'reading' && j.readId);
+  if(!reading.length){ clearInterval(pollT); pollT = null; return; }
+  if(reading.some((j) => Date.now() - j.t > 90000)){
+    reading.filter((j) => Date.now() - j.t > 90000).forEach((j) => { j.status = 'failed'; j.error = 'no answer after 90 s'; });
+  }
+  try{
+    const j = await api(`label-reads?ids=${reading.map((x) => x.readId).join(',')}`);
+    let changed = false;
+    for(const r of (j.reads || [])){
+      if(r.status === 'pending') continue;
+      const job = S.jobs.find((x) => x.readId === r.id);
+      if(!job || job.status !== 'reading') continue;
+      job.status = 'ready'; job.read = r; changed = true;
+      const code = r.resolution && r.resolution.client_code;
+      if(r.status === 'ok' && code){ beep(true); toast(`${tail(r.tracking)} → ${code} · tap to check`); }
+      else { beep(false); toast(`${tail(r.tracking || job.tracking)} needs you — tap it in the list`); }
+    }
+    if(changed){ renderList(); loadToday(); }
+  }catch(e){ /* keep polling */ }
+}
+
+/* ---------- list: queue + today ---------- */
+function renderList(){
+  const doneIds = new Set(S.recent.map((r) => r.id));
+  // Local jobs still in flight (or failed before the server knew them).
+  const local = S.jobs.filter((j) => !j.readId || !doneIds.has(j.readId) || j.status === 'reading');
+  const shownIds = new Set(local.map((j) => j.readId).filter(Boolean));
+  const server = S.recent.filter((r) => !shownIds.has(r.id));
+  const n = local.length + server.length;
+  $('todayCount').textContent = n;
+  if(!n){ $('todayList').innerHTML = '<li class="empty">Nothing yet.</li>'; return; }
+
+  const time = (d) => new Date(d).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const rows = [];
+  for(const j of local){
+    const r = j.read;
+    let chip, right = '';
+    if(j.status === 'uploading') chip = '<span class="chip run">uploading…</span>';
+    else if(j.status === 'reading') chip = '<span class="chip run">reading…</span>';
+    else if(j.status === 'failed') chip = '<span class="chip err">failed</span>';
+    else {
+      const code = r && r.resolution && r.resolution.client_code;
+      right = `<div class="l1">${esc(code || '—')}</div>`;
+      chip = '<span class="chip warn">check</span>';
+    }
+    rows.push(`<li data-job="${esc(j.key)}" class="${j.status === 'ready' ? 'attn' : ''}">
+      <div><div class="l1 mono">${esc((r && r.tracking) || j.tracking || '(no scan)')}</div>
+      <div class="l2">${esc(time(j.t))}${j.error ? ' · ' + esc(j.error) : ''}</div></div>
+      <div class="right">${right}${chip}</div></li>`);
+  }
+  for(const x of server){
+    const res = x.resolution || {};
+    const conf = x.status === 'pending' ? '<span class="chip run">reading…</span>'
+      : x.confirmed_client_id
+        ? (x.confirmed_client_id === x.suggested_client_id ? '<span class="chip ok">✓ right</span>' : '<span class="chip err">corrected</span>')
+        : '<span class="chip warn">check</span>';
+    rows.push(`<li data-id="${esc(x.id)}" class="${!x.confirmed_client_id && x.status !== 'pending' ? 'attn' : ''}">
+      <div><div class="l1 mono">${esc(x.tracking || x.scanned_tracking || '(no tracking)')}</div>
+      <div class="l2">${esc(time(x.created_at))} · ${esc(x.carrier || '?')} · ${x.source === 'scan' ? 'scan only' : esc(x.status)}</div></div>
+      <div class="right"><div class="l1">${esc(res.client_code || '—')}</div>${conf}</div></li>`);
+  }
+  $('todayList').innerHTML = rows.join('');
+  $('todayList').querySelectorAll('li[data-job]').forEach((li) => {
+    li.onclick = () => {
+      const j = S.jobs.find((x) => x.key === li.dataset.job);
+      if(j && j.read) openRead(j.read);
+      else if(j && j.status === 'failed') toast('That photo did not go through — scan and photograph it again');
+      else toast('Still reading — it beeps when ready');
+    };
+  });
+  $('todayList').querySelectorAll('li[data-id]').forEach((li) => {
+    li.onclick = async () => {
+      try{ const j = await api(`label-reads?id=${li.dataset.id}`); openRead(j.read); }
+      catch(e){ toast('Could not open: ' + e.message); }
+    };
+  });
+}
+
+async function loadToday(){
+  try{
+    const j = await api(`label-reads?recent=1&operator=${encodeURIComponent(S.operator || '')}`);
+    S.recent = j.reads || [];
+    renderList();
+  }catch(e){ /* the list is a convenience */ }
+}
+
+async function loadSummary(){
+  try{
+    const j = await api('label-reads?summary=1');
+    const s = j.summary || {};
+    const pct = (v) => (v == null ? '—' : v + '%');
+    $('stats').innerHTML = `
+      <div><div class="n">${esc(s.reads || 0)}</div><div class="t">labels read</div></div>
+      <div><div class="n">${esc(pct(s.client_accuracy_pct))}</div><div class="t">client right<br>(vs. Receiving)</div></div>
+      <div><div class="n">${esc(pct(s.coverage_pct))}</div><div class="t">with a proposal</div></div>`;
+  }catch(e){
+    $('stats').innerHTML = '<div class="empty" style="grid-column:1/-1">Not available</div>';
+  }
+}
+
+/* ---------- result: check one read ---------- */
+function openRead(r){
+  S.open = r;
   const res = r.resolution || {};
   const notes = [];
 
@@ -462,17 +642,16 @@ function renderResult(r){
   if(r.status === 'low_confidence' && r.tracking_match !== false) notes.push('<div class="note"><b>Hard to read.</b> Check the fields below; a flat photo with all four corners works best.</div>');
   if(r.route === 'dropshipments') notes.push('<div class="note info"><b>This is a DropShipment.</b> It was announced by email — receive it in the DropShipments app, not in Receiving.</div>');
   if(r.ship_from_is_fr) notes.push('<div class="note info"><b>Our own label came back</b> (sender is FR-Logistics). Treat as a return to sender.</div>');
-  if(res.already_logged) notes.push(`<div class="note info">Already received in FR Mobile as <b>${esc(res.already_logged.client_code || '?')}</b> · ${esc(res.already_logged.type || '')}.</div>`);
+  if(r.logged) notes.push(`<div class="note info">In Receiving as <b>${esc(r.logged.client_code || '?')}</b> · ${esc(r.logged.type || '')}.</div>`);
+  else notes.push('<div class="note">Not in Receiving yet — receive it there too (that is the official record).</div>');
   if(r.piece_total > 1) notes.push(`<div class="note info">Box <b>${esc(r.piece_no || '?')} of ${esc(r.piece_total)}</b>${r.master_tracking ? ' · master ' + esc(r.master_tracking) : ''}. Expect ${esc(r.piece_total - 1)} more.</div>`);
   $('resNotes').innerHTML = notes.join('');
 
-  // proposal banner
   const p = $('prop');
   if(r.suggested_client_id){
-    const c = clientLabel(r.suggested_client_id);
     p.className = 'prop';
-    $('propClient').textContent = res.client_code || (c && c.code) || '—';
-    $('propName').textContent = res.client_name || (c && c.name) || '';
+    $('propClient').textContent = res.client_code || '—';
+    $('propName').textContent = res.client_name || '';
     const cand = (res.candidates || []).find((x) => x.method === res.method) || {};
     $('propWhy').innerHTML = esc(METHOD_TEXT[res.method] || res.method) + (cand.detail ? ' — <span class="mono">' + esc(cand.detail) + '</span>' : '');
   }else if(res.method === 'conflict'){
@@ -487,80 +666,92 @@ function renderResult(r){
     $('propWhy').textContent = 'Pick it below — the next boxes of the same shipment will be recognized from this one.';
   }
 
-  // details
   const conf = r.confidence != null ? Math.round(r.confidence * 100) + '%' : '—';
   const statusChip = { ok: 'ok', low_confidence: 'warn', not_label: 'err', failed: 'err' }[r.status] || 'mut';
-  const matchChip = r.tracking_match === true ? '<span class="chip ok">matches scan</span>'
+  const matchChip = r.source === 'scan' ? '<span class="chip ok">scan</span>'
+                  : r.tracking_match === true ? '<span class="chip ok">matches scan</span>'
                   : r.tracking_match === false ? '<span class="chip err">≠ scan</span>'
                   : '<span class="chip mut">no scan</span>';
   const rows = [
     ['Tracking', r.tracking ? `<span class="mono">${esc(r.tracking)}</span>${matchChip}` : '—'],
     ['Carrier', esc(r.carrier || '—') + (r.service ? ' · ' + esc(r.service) : '')],
-    ['From', esc([r.ship_from_name, r.ship_from_city, r.ship_from_state].filter(Boolean).join(', ') || '—')],
-    ['RA#', r.ra_number ? `<span class="mono">${esc(r.ra_number)}</span>` : '—'],
-    ['Refs', (r.refs && r.refs.length) ? `<span class="mono">${esc(r.refs.join(' · '))}</span>` : '—'],
-    ['Weight', r.weight_lb ? esc(r.weight_lb) + ' lb' : '—'],
-    ['Reading', `<span class="chip ${statusChip}">${esc(r.status)}</span> ${esc(conf)}`],
   ];
-  if(r.description) rows.splice(5, 0, ['Contents', esc(r.description)]);
+  if(r.source !== 'scan'){
+    rows.push(
+      ['From', esc([r.ship_from_name, r.ship_from_city, r.ship_from_state].filter(Boolean).join(', ') || '—')],
+      ['RA#', r.ra_number ? `<span class="mono">${esc(r.ra_number)}</span>` : '—'],
+      ['Refs', (r.refs && r.refs.length) ? `<span class="mono">${esc(r.refs.join(' · '))}</span>` : '—'],
+    );
+    if(r.description) rows.push(['Contents', esc(r.description)]);
+    rows.push(['Weight', r.weight_lb ? esc(r.weight_lb) + ' lb' : '—']);
+  }
+  rows.push(['Reading', r.source === 'scan' ? '<span class="chip ok">from our records</span>' : `<span class="chip ${statusChip}">${esc(r.status)}</span> ${esc(conf)}`]);
   $('resKv').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 
-  // confirm form, pre-filled with the proposal
   $('cClient').value = r.confirmed_client_id || r.suggested_client_id || '';
   $('cType').value = r.confirmed_type || r.suggested_type || 'Inbound (General)';
   $('cCarrier').value = r.confirmed_carrier || r.suggested_carrier || r.carrier || 'Other';
-
-  beep(r.status === 'ok' && !!r.suggested_client_id);
+  $('printBtn').disabled = !r.logged;
+  $('printBtn').title = r.logged ? 'Print the inbound label' : 'Receive it in Receiving first, then print';
   show('res');
 }
 
 $('saveBtn').onclick = async () => {
-  if(!S.read) return;
+  const r = S.open; if(!r) return;
   const client_id = $('cClient').value;
   if(!client_id){ toast('Pick the client'); return; }
   $('saveBtn').disabled = true;
   try{
-    const r = await fetch(`${API}/label-reads`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ action: 'confirm', read_id: S.read.id, client_id,
-        type: $('cType').value, carrier: $('cCarrier').value, operator: S.operator }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if(!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
-    const fixed = client_id !== S.read.suggested_client_id;
-    let msg = fixed ? 'Saved — correction noted' : 'Saved ✓';
+    const j = await post('label-reads', { action: 'confirm', read_id: r.id, client_id,
+      type: $('cType').value, carrier: $('cCarrier').value, operator: S.operator });
+    let msg = client_id !== r.suggested_client_id ? 'Saved — correction noted' : 'Saved ✓';
     if(j.ra_note === 'learned') msg += ` · RA ${j.ra_prefix} learned`;
     if(j.ra_note === 'conflict') msg += ` · RA ${j.ra_prefix} belongs to another client — tell Jose`;
     toast(msg);
-    next();
+    S.jobs = S.jobs.filter((x) => x.readId !== r.id);   // checked: drop it from the local queue
+    backToScan();
   }catch(err){
-    toast('Not saved: ' + (err.message || 'try again'));
+    toast('Not saved: ' + err.message);
   }finally{
     $('saveBtn').disabled = false;
   }
 };
-$('skipBtn').onclick = next;
+$('printBtn').onclick = () => { if(S.open && S.open.logged) printInbound(S.open.logged, S.open.tracking); };
+$('backBtn').onclick = backToScan;
 
-function next(){
-  S.read = null;
-  resetPad();
+function backToScan(){
+  S.open = null;
   show('cap');
   loadToday(); loadSummary();
+}
+
+/* ---------- 🖨 print: same label and same queue as Receiving ---------- */
+// The MUNBYN speaks raw TSPL over TCP 9100; no browser can reach it. The job is
+// queued in frm-print and the tab on the warehouse PC prints it — exactly the
+// path Receiving's 🖨 uses, for the shipments_general row Receiving created.
+async function printInbound(logged, tracking){
+  if(!logged || !logged.id){ toast('Receive it in Receiving first, then print'); return; }
+  try{
+    await post('frm-print', { action: 'queue_print', kind: 'inbound_label', actor: S.operator || '', copies: 1, ref_id: logged.id });
+    toast(`${tail(tracking)} sent to the printer`);
+    beep(true);
+  }catch(err){
+    toast('Could not queue the label: ' + err.message);
+    beep(false);
+  }
 }
 
 /* ---------- clients ---------- */
 async function loadClients(){
   try{
-    const r = await fetch(`${API}/clients-list`);
-    if(!r.ok) throw new Error('HTTP ' + r.status);
-    const data = await r.json();
+    const data = await api('clients-list');
     const rows = Array.isArray(data) ? data : (data.clients || data.data || []);
     S.clients = rows
       .filter((c) => c.active !== false && c.type !== 'Internal' && (c.status || '') !== 'Internal')
       .map((c) => {
         const name = (c.company && c.company.trim()) || c.name || '';
         const code = (c.client_code || '').trim();
-        return { id: c.id, code, name, label: (c.display && c.display.trim() && code ? code + ' · ' + c.display.trim() : (code ? code + ' · ' + name : name)) };
+        return { id: c.id, code, name, label: code ? code + ' · ' + name : name };
       })
       .filter((c) => c.name)
       .sort((a, b) => a.label.localeCompare(b.label));
@@ -569,46 +760,6 @@ async function loadClients(){
   }catch(e){
     $('cClient').innerHTML = '<option value="">Error loading clients</option>';
     toast('Could not load clients');
-  }
-}
-
-/* ---------- today + accuracy ---------- */
-async function loadToday(){
-  try{
-    const r = await fetch(`${API}/label-reads?recent=1&operator=${encodeURIComponent(S.operator || '')}`);
-    const j = await r.json();
-    const reads = j.reads || [];
-    $('todayCount').textContent = reads.length;
-    if(!reads.length){ $('todayList').innerHTML = '<li class="empty">Nothing yet.</li>'; return; }
-    $('todayList').innerHTML = reads.map((x) => {
-      const res = x.resolution || {};
-      const sug = res.client_code || '—';
-      const conf = x.confirmed_client_id
-        ? (x.confirmed_client_id === x.suggested_client_id ? '<span class="chip ok">✓ right</span>' : '<span class="chip err">corrected</span>')
-        : '<span class="chip mut">not checked</span>';
-      const t = new Date(x.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-      return `<li data-id="${esc(x.id)}"><div><div class="l1 mono">${esc(x.tracking || x.scanned_tracking || '(no tracking)')}</div>
-        <div class="l2">${esc(t)} · ${esc(x.carrier || '?')} · ${esc(x.status)}</div></div>
-        <div class="right"><div class="l1">${esc(sug)}</div>${conf}</div></li>`;
-    }).join('');
-    $('todayList').querySelectorAll('li[data-id]').forEach((li) => {
-      li.onclick = () => { const x = reads.find((y) => y.id === li.dataset.id); if(x){ S.read = x; renderResult(x); } };
-    });
-  }catch(e){ /* the list is a convenience */ }
-}
-
-async function loadSummary(){
-  try{
-    const r = await fetch(`${API}/label-reads?summary=1`);
-    const j = await r.json();
-    const s = j.summary || {};
-    const pct = (v) => (v == null ? '—' : v + '%');
-    $('stats').innerHTML = `
-      <div><div class="n">${esc(s.reads || 0)}</div><div class="t">labels read</div></div>
-      <div><div class="n">${esc(pct(s.client_accuracy_pct))}</div><div class="t">client right<br>(vs. Receiving)</div></div>
-      <div><div class="n">${esc(pct(s.coverage_pct))}</div><div class="t">with a proposal</div></div>`;
-  }catch(e){
-    $('stats').innerHTML = '<div class="empty" style="grid-column:1/-1">Not available</div>';
   }
 }
 
