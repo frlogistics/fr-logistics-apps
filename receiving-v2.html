@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0B2545">
+<title>Receiving v2 — FR-Logistics</title>
+<!--
+  Receiving v2 — label reading by photo. SHADOW MODE.
+
+  Standalone page on purpose (same reason as fba-count.html): it lives beside
+  the Receiving module in fr-mobile.html without touching it, and can be
+  retired or promoted without a single change to fr-mobile.html.
+
+  SHADOW MODE: this page NEVER registers a package. It photographs the label,
+  reads it, and records what it WOULD propose (client, carrier, tracking, type)
+  in wh_label_reads. The package is still received in FR Mobile → Receiving,
+  which keeps driving shipments_general and billing. Supabase compares both in
+  v_label_shadow / v_label_shadow_summary, and that number decides the cut-over.
+
+  Flow per package:
+    1. Scan the tracking with the trigger (optional but recommended — it is the
+       exact number the photo is checked against).
+    2. Take the photo of the whole label.
+    3. Wait a few seconds: the proposal appears. Tap "Correct" or fix it.
+
+  Shares the operator session with FR Mobile via localStorage (frm_op/frm_ok).
+
+  Backend: shipment-photos-proxy (upload, attach:false — never touches the
+  shipments_general row), label-reads (start / poll / confirm / recent /
+  summary), label-extract-background (vision + client resolution).
+  No new env vars.
+-->
+<style>
+  :root{
+    --navy:#0B2545; --teal:#1C7293; --amber:#F4A261; --red:#B4232C; --green:#15803D;
+    --line:#E2E8F0; --bg:#F1F5F9; --muted:#64748B; --ink:#0F172A;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       color:var(--ink);background:var(--bg);padding-bottom:40px}
+
+  .top{background:var(--navy);color:#fff;padding:13px 16px;display:flex;
+       align-items:center;gap:12px;position:sticky;top:0;z-index:20}
+  .top h1{font-size:17px;margin:0;font-weight:600;flex:1}
+  .top a.back{color:#fff;text-decoration:none;font-size:20px;line-height:1;opacity:.85}
+  .who{background:rgba(255,255,255,.15);border-radius:14px;padding:4px 11px;font-size:12px}
+
+  .shadow{background:#FFF7ED;border-bottom:1px solid #FED7AA;color:#9A3412;font-size:12.5px;
+          padding:8px 16px;text-align:center}
+  .shadow b{font-weight:700}
+
+  main{max-width:640px;margin:0 auto;padding:14px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+  .card h2{margin:0 0 12px;font-size:15px;font-weight:600}
+
+  .field{margin-bottom:12px}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+        color:var(--muted);margin-bottom:5px;font-weight:600}
+  input,select{width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;
+               font-size:16px;font-family:inherit;background:#fff;color:var(--ink)}
+  input:focus,select:focus{outline:2px solid var(--teal);outline-offset:-1px}
+
+  .btn{display:block;width:100%;padding:13px;border:0;border-radius:8px;background:var(--navy);
+       color:#fff;font-size:15px;font-weight:600;font-family:inherit;cursor:pointer}
+  .btn.go{background:var(--teal)}
+  .btn.ok{background:var(--green)}
+  .btn.ghost{background:#fff;color:var(--navy);border:1px solid var(--line)}
+  .btn.cam{font-size:17px;padding:16px}
+  .btn:disabled{opacity:.5}
+  .row{display:flex;gap:9px}
+  .row .btn{flex:1}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .link{background:none;border:0;color:var(--teal);font:inherit;font-size:13px;padding:8px 0 0;
+        cursor:pointer;text-decoration:underline;display:block;margin:0 auto}
+
+  .scanpad{background:#fff;border:2px dashed var(--line);border-radius:10px;padding:20px 14px;
+           text-align:center;margin-bottom:12px;cursor:text}
+  .scanpad.ok{border-color:var(--green);background:#F0FDF4}
+  .scanpad.warn{border-color:var(--amber);background:#FFF7ED}
+  .scanpad .icon{font-size:26px;line-height:1}
+  .scanpad .big{font-size:17px;font-weight:600;margin-top:7px}
+  .scanpad .code{font-family:Consolas,monospace;font-size:13px;color:var(--muted);margin-top:5px;word-break:break-all}
+  .scanpad .hint{font-size:12px;color:var(--muted);margin-top:6px}
+  #cap{position:absolute;left:-9999px;opacity:0;height:1px;width:1px}
+
+  .wait{text-align:center;padding:26px 10px}
+  .spin{width:34px;height:34px;border:4px solid var(--line);border-top-color:var(--teal);border-radius:50%;
+        margin:0 auto 12px;animation:sp 0.9s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .wait .l1{font-weight:600}
+  .wait .l2{font-size:12px;color:var(--muted)}
+
+  .prop{border-radius:10px;padding:14px;margin-bottom:12px;color:#fff;background:var(--navy)}
+  .prop.none{background:#475569}
+  .prop.conflict{background:#9A3412}
+  .prop .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#B9CCE0}
+  .prop .client{font-size:22px;font-weight:700;line-height:1.2;margin-top:2px}
+  .prop .cname{font-size:13px;color:#D6E2EE}
+  .prop .why{font-size:12px;margin-top:8px;background:rgba(255,255,255,.12);border-radius:6px;padding:6px 9px}
+
+  dl.kv{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;margin:0;font-size:14px}
+  dl.kv dt{color:var(--muted);font-size:12px;padding-top:1px}
+  dl.kv dd{margin:0;word-break:break-word}
+  .mono{font-family:Consolas,monospace}
+
+  .chip{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;
+        letter-spacing:.03em;vertical-align:1px;margin-left:4px}
+  .chip.ok{background:#DCFCE7;color:#166534}
+  .chip.warn{background:#FEF3C7;color:#92400E}
+  .chip.err{background:#FEE2E2;color:#991B1B}
+  .chip.mut{background:#F1F5F9;color:var(--muted)}
+
+  .note{border-left:3px solid var(--amber);background:#FFF7ED;padding:10px 12px;border-radius:0 6px 6px 0;
+        font-size:13px;margin-bottom:10px}
+  .note.info{border-color:var(--teal);background:#ECFEFF}
+  .note.red{border-color:var(--red);background:#FEF2F2}
+
+  ul.list{list-style:none;margin:0;padding:0}
+  ul.list li{display:flex;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line);cursor:pointer}
+  ul.list li:last-child{border-bottom:0}
+  .l1{font-weight:600;font-size:14px;word-break:break-word}
+  .l2{font-size:12px;color:var(--muted)}
+  .right{margin-left:auto;text-align:right;white-space:nowrap}
+  .empty{text-align:center;color:var(--muted);font-size:13px;padding:12px 0}
+
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
+  .stats .n{font-size:20px;font-weight:700;color:var(--navy)}
+  .stats .t{font-size:11px;color:var(--muted)}
+
+  #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(90px);
+         background:var(--navy);color:#fff;padding:11px 18px;border-radius:22px;font-size:14px;
+         max-width:88vw;text-align:center;transition:transform .22s;z-index:60;pointer-events:none}
+  #toast.up{transform:translateX(-50%) translateY(0)}
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <a class="back" href="/fr-mobile.html" title="Back">‹</a>
+  <h1>Receiving v2</h1>
+  <span class="who" id="who" hidden></span>
+</div>
+<div class="shadow"><b>TEST MODE</b> — this does not receive the package. Keep receiving it in FR Mobile → Receiving.</div>
+
+<input id="cap" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="none">
+
+<main>
+  <!-- ── sign in ─────────────────────────────────────────────────────── -->
+  <section id="vGate" hidden>
+    <div class="card">
+      <h2>Who is receiving?</h2>
+      <div class="field">
+        <label for="opname">Your name</label>
+        <input id="opname" type="text" placeholder="e.g. Joe Raymond" autocomplete="name">
+      </div>
+      <button class="btn go" id="gateBtn">Start</button>
+    </div>
+  </section>
+
+  <!-- ── capture ─────────────────────────────────────────────────────── -->
+  <section id="vCap" hidden>
+    <div class="scanpad" id="pad">
+      <div class="icon" id="padIcon">▣</div>
+      <div class="big" id="padBig">Scan tracking</div>
+      <div class="code" id="padCode"></div>
+      <div class="hint" id="padHint">Pull the trigger on the main barcode, then take the photo.</div>
+    </div>
+    <button class="btn go cam" id="camBtn">📷 Photo of the label</button>
+    <button class="link" id="noScanBtn">No barcode to scan? Take the photo anyway</button>
+  </section>
+
+  <!-- ── waiting ─────────────────────────────────────────────────────── -->
+  <section id="vWait" hidden>
+    <div class="card wait">
+      <div class="spin"></div>
+      <div class="l1" id="waitL1">Uploading photo…</div>
+      <div class="l2" id="waitL2">Keep the box here a few seconds.</div>
+    </div>
+  </section>
+
+  <!-- ── result ──────────────────────────────────────────────────────── -->
+  <section id="vRes" hidden>
+    <div id="resNotes"></div>
+    <div class="prop" id="prop">
+      <div class="lbl">Proposed client</div>
+      <div class="client" id="propClient">—</div>
+      <div class="cname" id="propName"></div>
+      <div class="why" id="propWhy"></div>
+    </div>
+
+    <div class="card">
+      <dl class="kv" id="resKv"></dl>
+    </div>
+
+    <div class="card" id="confirmCard">
+      <h2>Is this right?</h2>
+      <div class="field">
+        <label for="cClient">Client</label>
+        <select id="cClient"></select>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="cType">Type</label>
+          <select id="cType">
+            <option>Inbound (General)</option>
+            <option>Inbound (Amazon FBA)</option>
+            <option>Inbound (Drop-Shipment)</option>
+            <option>Inbound (Prep Service)</option>
+            <option>Overstock</option>
+            <option>RMA (Returns)</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="cCarrier">Carrier</label>
+          <select id="cCarrier">
+            <option>Amazon</option><option>UPS</option><option>USPS</option>
+            <option>FedEx</option><option>Walmart</option><option>Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn ok" id="saveBtn">✓ Save check</button>
+        <button class="btn ghost" id="skipBtn">Skip</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── today ───────────────────────────────────────────────────────── -->
+  <section id="vList" hidden>
+    <div class="card">
+      <h2>Test results so far</h2>
+      <div class="stats" id="stats"><div class="empty" style="grid-column:1/-1">Loading…</div></div>
+    </div>
+    <div class="card">
+      <h2>My reads today <span class="chip mut" id="todayCount">0</span></h2>
+      <ul class="list" id="todayList"><li class="empty">Nothing yet.</li></ul>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const API = 'https://apps.fr-logistics.net/.netlify/functions';
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+const S = {
+  operator: null,
+  clients: [],          // [{id, code, label}]
+  scannedRaw: null,     // what the trigger typed for the current package
+  read: null,           // current wh_label_reads row
+  busy: false,
+};
+
+/* ---------- small UI helpers ---------- */
+let toastT = null;
+function toast(msg){
+  const t = $('toast'); t.textContent = msg; t.classList.add('up');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('up'), 2600);
+}
+function show(view){
+  ['vGate','vCap','vWait','vRes','vList'].forEach((v) => { $(v).hidden = true; });
+  if(view === 'gate'){ $('vGate').hidden = false; return; }
+  if(view === 'cap'){ $('vCap').hidden = false; $('vList').hidden = false; focusCap(); }
+  if(view === 'wait'){ $('vWait').hidden = false; }
+  if(view === 'res'){ $('vRes').hidden = false; }
+  window.scrollTo(0, 0);
+}
+function beep(ok){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.frequency.value = ok ? 880 : 300; o.connect(g); g.connect(ctx.destination);
+    g.gain.value = 0.08; o.start(); o.stop(ctx.currentTime + (ok ? 0.08 : 0.25));
+  }catch(e){}
+  if(navigator.vibrate) navigator.vibrate(ok ? 40 : [80, 60, 80]);
+}
+
+// Mirror of fr_norm_tracking() in Supabase / normTracking() in the functions.
+function normTracking(raw){
+  if(raw == null) return null;
+  let t = String(raw).replace(/[\s()\-\u001d\u001e]/g, '').toUpperCase();
+  if(!t) return null;
+  if(/^12[0-9A-Z]{16}$/.test(t) && /[A-Z]/.test(t)) t = '1Z' + t.slice(2);
+  const routed = t.match(/^420(?:\d{5}|\d{9})(9[2-5]\d{20})$/);
+  if(routed) return routed[1];
+  if(/^9[2-5]\d{20}$/.test(t)) return t;
+  if(/^1Z[0-9A-Z]{16}$/.test(t)) return t;
+  if(/^TBA\d{9,15}$/.test(t)) return t;
+  if(/^96\d{32}$/.test(t)) return t.slice(-12);
+  return t;
+}
+
+/* ---------- operator session (shared with FR Mobile) ---------- */
+function enter(op){
+  S.operator = op;
+  try{ localStorage.setItem('frm_op', op); localStorage.setItem('frm_ok', '1'); }catch(e){}
+  $('who').textContent = op; $('who').hidden = false;
+  show('cap');
+  loadClients(); loadToday(); loadSummary();
+}
+$('gateBtn').onclick = () => {
+  const op = ($('opname').value || '').trim();
+  if(!op){ toast('Type your name'); return; }
+  enter(op);
+};
+$('opname').addEventListener('keydown', (e) => { if(e.key === 'Enter') $('gateBtn').click(); });
+
+/* ---------- trigger capture (keystroke wedge, no on-screen keyboard) ---------- */
+function captureActive(){ return !$('vCap').hidden; }
+function focusCap(){ if(captureActive()) $('cap').focus({preventScroll:true}); }
+$('cap').addEventListener('keydown', (e) => {
+  if(e.key !== 'Enter') return;
+  e.preventDefault();
+  const v = $('cap').value; $('cap').value = '';
+  if(v.trim()) onScan(v);
+});
+document.addEventListener('click', (e) => {
+  if(captureActive() && !e.target.closest('select,input,button')) focusCap();
+});
+$('pad').onclick = focusCap;
+
+function onScan(raw){
+  S.scannedRaw = raw;
+  const clean = normTracking(raw);
+  $('pad').className = 'scanpad ok';
+  $('padIcon').textContent = '✓';
+  $('padBig').textContent = clean || raw;
+  $('padCode').textContent = clean && clean !== raw.replace(/[\u001d\u001e]/g, '') ? 'scanned: ' + raw.replace(/[\u001d\u001e]/g, '·') : '';
+  $('padHint').textContent = 'Now take the photo of the whole label — flat, all four corners in.';
+  beep(true);
+}
+function resetPad(){
+  S.scannedRaw = null;
+  $('pad').className = 'scanpad';
+  $('padIcon').textContent = '▣';
+  $('padBig').textContent = 'Scan tracking';
+  $('padCode').textContent = '';
+  $('padHint').textContent = 'Pull the trigger on the main barcode, then take the photo.';
+}
+
+/* ---------- photo → upload → read ---------- */
+function compressImage(file, maxDim, quality){
+  return new Promise((resolve, reject) => {
+    const img = new Image(); const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if(Math.max(w, h) > maxDim){ const s = maxDim / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad image')); };
+    img.src = url;
+  });
+}
+
+function openCamera(){
+  if(S.busy) return;
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment';
+  inp.style.display = 'none'; document.body.appendChild(inp);
+  inp.onchange = async () => {
+    const file = inp.files && inp.files[0]; inp.remove();
+    if(file) await processPhoto(file); else focusCap();
+  };
+  inp.click();
+}
+$('camBtn').onclick = openCamera;
+$('noScanBtn').onclick = () => { resetPad(); openCamera(); };
+
+async function processPhoto(file){
+  S.busy = true;
+  show('wait'); $('waitL1').textContent = 'Uploading photo…'; $('waitL2').textContent = 'Keep the box here a few seconds.';
+  try{
+    // Labels carry small print (RA#, refs): keep more pixels than the condition photos.
+    const dataUrl = await compressImage(file, 2000, 0.82);
+    const folder = 'v2_' + (normTracking(S.scannedRaw) || 'noscan');
+    // attach:false — NEVER touch the shipments_general row in test mode.
+    const up = await fetch(`${API}/shipment-photos-proxy`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ tracking: folder, photo_data_urls: [dataUrl], attach: false }),
+    });
+    const uj = await up.json().catch(() => ({}));
+    if(!up.ok || !uj.photo_urls || !uj.photo_urls[0]) throw new Error(uj.error || ('upload HTTP ' + up.status));
+
+    $('waitL1').textContent = 'Reading the label…';
+    const st = await fetch(`${API}/label-reads`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ action: 'start', photo_url: uj.photo_urls[0], scanned_raw: S.scannedRaw, operator: S.operator }),
+    });
+    const sj = await st.json().catch(() => ({}));
+    if(!st.ok || !sj.read_id) throw new Error(sj.error || ('start HTTP ' + st.status));
+
+    // Background function: answers 202 immediately, works for as long as it needs.
+    fetch(`${API}/label-extract-background`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ read_id: sj.read_id }), keepalive: true,
+    }).catch(() => {});
+
+    const read = await pollRead(sj.read_id);
+    S.read = read;
+    renderResult(read);
+  }catch(err){
+    beep(false);
+    toast('Failed: ' + (err.message || 'try again'));
+    show('cap');
+  }finally{
+    S.busy = false;
+  }
+}
+
+async function pollRead(id){
+  const t0 = Date.now();
+  const msgs = [[4000,'Checking our records…'],[9000,'Almost there…'],[18000,'Taking longer than usual…']];
+  while(Date.now() - t0 < 60000){
+    await new Promise((r) => setTimeout(r, 1500));
+    const el = Date.now() - t0;
+    for(const [ms, m] of msgs) if(el > ms) $('waitL1').textContent = m;
+    try{
+      const r = await fetch(`${API}/label-reads?id=${encodeURIComponent(id)}`);
+      if(!r.ok) continue;
+      const j = await r.json();
+      if(j.read && j.read.status !== 'pending') return j.read;
+    }catch(e){ /* keep polling */ }
+  }
+  throw new Error('no answer after 60 s — the photo is saved, try again later');
+}
+
+/* ---------- result ---------- */
+const METHOD_TEXT = {
+  dropshipment:     'Announced DropShipment (email already received)',
+  outbound_return:  'Our own DropShipment label coming back',
+  return_label:     'Return label we created',
+  client_order:     'Order number printed on the label',
+  ra_prefix:        'Amazon RA# prefix of this seller',
+  code_on_label:    'Client code printed on the label',
+  alias_on_label:   'Client alias printed on the label',
+  company_on_label: 'Company name printed on the label',
+  contact_on_label: 'Contact name printed on the label',
+  sibling_box:      'Same shipment as a box already received',
+};
+
+function clientLabel(id){
+  const c = S.clients.find((x) => x.id === id);
+  return c ? c : null;
+}
+
+function renderResult(r){
+  const res = r.resolution || {};
+  const notes = [];
+
+  if(r.status === 'failed') notes.push(`<div class="note red"><b>Could not read it.</b> ${esc(r.error || '')}<br>Pick the client by hand below.</div>`);
+  if(r.status === 'not_label') notes.push('<div class="note red"><b>That does not look like a shipping label.</b> Retake the photo of the label only.</div>');
+  if(r.tracking_match === false) notes.push(`<div class="note"><b>Scan and label do not match.</b> Scanned ${esc(r.scanned_tracking)}, label reads ${esc(r.tracking_read)}. Did you scan another barcode?</div>`);
+  if(r.status === 'low_confidence' && r.tracking_match !== false) notes.push('<div class="note"><b>Hard to read.</b> Check the fields below; a flat photo with all four corners works best.</div>');
+  if(r.route === 'dropshipments') notes.push('<div class="note info"><b>This is a DropShipment.</b> It was announced by email — receive it in the DropShipments app, not in Receiving.</div>');
+  if(r.ship_from_is_fr) notes.push('<div class="note info"><b>Our own label came back</b> (sender is FR-Logistics). Treat as a return to sender.</div>');
+  if(res.already_logged) notes.push(`<div class="note info">Already received in FR Mobile as <b>${esc(res.already_logged.client_code || '?')}</b> · ${esc(res.already_logged.type || '')}.</div>`);
+  if(r.piece_total > 1) notes.push(`<div class="note info">Box <b>${esc(r.piece_no || '?')} of ${esc(r.piece_total)}</b>${r.master_tracking ? ' · master ' + esc(r.master_tracking) : ''}. Expect ${esc(r.piece_total - 1)} more.</div>`);
+  $('resNotes').innerHTML = notes.join('');
+
+  // proposal banner
+  const p = $('prop');
+  if(r.suggested_client_id){
+    const c = clientLabel(r.suggested_client_id);
+    p.className = 'prop';
+    $('propClient').textContent = res.client_code || (c && c.code) || '—';
+    $('propName').textContent = res.client_name || (c && c.name) || '';
+    const cand = (res.candidates || []).find((x) => x.method === res.method) || {};
+    $('propWhy').innerHTML = esc(METHOD_TEXT[res.method] || res.method) + (cand.detail ? ' — <span class="mono">' + esc(cand.detail) + '</span>' : '');
+  }else if(res.method === 'conflict'){
+    p.className = 'prop conflict';
+    $('propClient').textContent = 'Two possible clients';
+    $('propName').textContent = 'Pick the right one below.';
+    $('propWhy').innerHTML = (res.candidates || []).map((x) => esc(x.client_code) + ': ' + esc(METHOD_TEXT[x.method] || x.method)).join('<br>');
+  }else{
+    p.className = 'prop none';
+    $('propClient').textContent = 'No proposal';
+    $('propName').textContent = 'Nothing on this label identifies the client.';
+    $('propWhy').textContent = 'Pick it below — the next boxes of the same shipment will be recognized from this one.';
+  }
+
+  // details
+  const conf = r.confidence != null ? Math.round(r.confidence * 100) + '%' : '—';
+  const statusChip = { ok: 'ok', low_confidence: 'warn', not_label: 'err', failed: 'err' }[r.status] || 'mut';
+  const matchChip = r.tracking_match === true ? '<span class="chip ok">matches scan</span>'
+                  : r.tracking_match === false ? '<span class="chip err">≠ scan</span>'
+                  : '<span class="chip mut">no scan</span>';
+  const rows = [
+    ['Tracking', r.tracking ? `<span class="mono">${esc(r.tracking)}</span>${matchChip}` : '—'],
+    ['Carrier', esc(r.carrier || '—') + (r.service ? ' · ' + esc(r.service) : '')],
+    ['From', esc([r.ship_from_name, r.ship_from_city, r.ship_from_state].filter(Boolean).join(', ') || '—')],
+    ['RA#', r.ra_number ? `<span class="mono">${esc(r.ra_number)}</span>` : '—'],
+    ['Refs', (r.refs && r.refs.length) ? `<span class="mono">${esc(r.refs.join(' · '))}</span>` : '—'],
+    ['Weight', r.weight_lb ? esc(r.weight_lb) + ' lb' : '—'],
+    ['Reading', `<span class="chip ${statusChip}">${esc(r.status)}</span> ${esc(conf)}`],
+  ];
+  if(r.description) rows.splice(5, 0, ['Contents', esc(r.description)]);
+  $('resKv').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+
+  // confirm form, pre-filled with the proposal
+  $('cClient').value = r.confirmed_client_id || r.suggested_client_id || '';
+  $('cType').value = r.confirmed_type || r.suggested_type || 'Inbound (General)';
+  $('cCarrier').value = r.confirmed_carrier || r.suggested_carrier || r.carrier || 'Other';
+
+  beep(r.status === 'ok' && !!r.suggested_client_id);
+  show('res');
+}
+
+$('saveBtn').onclick = async () => {
+  if(!S.read) return;
+  const client_id = $('cClient').value;
+  if(!client_id){ toast('Pick the client'); return; }
+  $('saveBtn').disabled = true;
+  try{
+    const r = await fetch(`${API}/label-reads`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ action: 'confirm', read_id: S.read.id, client_id,
+        type: $('cType').value, carrier: $('cCarrier').value, operator: S.operator }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if(!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    const fixed = client_id !== S.read.suggested_client_id;
+    let msg = fixed ? 'Saved — correction noted' : 'Saved ✓';
+    if(j.ra_note === 'learned') msg += ` · RA ${j.ra_prefix} learned`;
+    if(j.ra_note === 'conflict') msg += ` · RA ${j.ra_prefix} belongs to another client — tell Jose`;
+    toast(msg);
+    next();
+  }catch(err){
+    toast('Not saved: ' + (err.message || 'try again'));
+  }finally{
+    $('saveBtn').disabled = false;
+  }
+};
+$('skipBtn').onclick = next;
+
+function next(){
+  S.read = null;
+  resetPad();
+  show('cap');
+  loadToday(); loadSummary();
+}
+
+/* ---------- clients ---------- */
+async function loadClients(){
+  try{
+    const r = await fetch(`${API}/clients-list`);
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const rows = Array.isArray(data) ? data : (data.clients || data.data || []);
+    S.clients = rows
+      .filter((c) => c.active !== false && c.type !== 'Internal' && (c.status || '') !== 'Internal')
+      .map((c) => {
+        const name = (c.company && c.company.trim()) || c.name || '';
+        const code = (c.client_code || '').trim();
+        return { id: c.id, code, name, label: (c.display && c.display.trim() && code ? code + ' · ' + c.display.trim() : (code ? code + ' · ' + name : name)) };
+      })
+      .filter((c) => c.name)
+      .sort((a, b) => a.label.localeCompare(b.label));
+    $('cClient').innerHTML = '<option value="">— Select client —</option>' +
+      S.clients.map((c) => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('');
+  }catch(e){
+    $('cClient').innerHTML = '<option value="">Error loading clients</option>';
+    toast('Could not load clients');
+  }
+}
+
+/* ---------- today + accuracy ---------- */
+async function loadToday(){
+  try{
+    const r = await fetch(`${API}/label-reads?recent=1&operator=${encodeURIComponent(S.operator || '')}`);
+    const j = await r.json();
+    const reads = j.reads || [];
+    $('todayCount').textContent = reads.length;
+    if(!reads.length){ $('todayList').innerHTML = '<li class="empty">Nothing yet.</li>'; return; }
+    $('todayList').innerHTML = reads.map((x) => {
+      const res = x.resolution || {};
+      const sug = res.client_code || '—';
+      const conf = x.confirmed_client_id
+        ? (x.confirmed_client_id === x.suggested_client_id ? '<span class="chip ok">✓ right</span>' : '<span class="chip err">corrected</span>')
+        : '<span class="chip mut">not checked</span>';
+      const t = new Date(x.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      return `<li data-id="${esc(x.id)}"><div><div class="l1 mono">${esc(x.tracking || x.scanned_tracking || '(no tracking)')}</div>
+        <div class="l2">${esc(t)} · ${esc(x.carrier || '?')} · ${esc(x.status)}</div></div>
+        <div class="right"><div class="l1">${esc(sug)}</div>${conf}</div></li>`;
+    }).join('');
+    $('todayList').querySelectorAll('li[data-id]').forEach((li) => {
+      li.onclick = () => { const x = reads.find((y) => y.id === li.dataset.id); if(x){ S.read = x; renderResult(x); } };
+    });
+  }catch(e){ /* the list is a convenience */ }
+}
+
+async function loadSummary(){
+  try{
+    const r = await fetch(`${API}/label-reads?summary=1`);
+    const j = await r.json();
+    const s = j.summary || {};
+    const pct = (v) => (v == null ? '—' : v + '%');
+    $('stats').innerHTML = `
+      <div><div class="n">${esc(s.reads || 0)}</div><div class="t">labels read</div></div>
+      <div><div class="n">${esc(pct(s.client_accuracy_pct))}</div><div class="t">client right<br>(vs. Receiving)</div></div>
+      <div><div class="n">${esc(pct(s.coverage_pct))}</div><div class="t">with a proposal</div></div>`;
+  }catch(e){
+    $('stats').innerHTML = '<div class="empty" style="grid-column:1/-1">Not available</div>';
+  }
+}
+
+/* ---------- boot ---------- */
+(function boot(){
+  let saved = null, ok = null;
+  try{ saved = localStorage.getItem('frm_op'); ok = localStorage.getItem('frm_ok'); }catch(e){}
+  if(saved) $('opname').value = saved;
+  if(saved && ok === '1') enter(saved); else show('gate');
+})();
+</script>
+</body>
+</html>
