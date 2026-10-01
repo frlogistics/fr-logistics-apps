@@ -3,6 +3,17 @@
 // Inserts one inbound scan into shipments_general using the service key
 // (bypasses RLS, same fetch pattern as clients-list.js). Decoupled from
 // Inbound_Outbound so changes to one never affect the other.
+//
+// 1-Oct-2026 — duplicate guard on the NORMALISED tracking. The unique index on
+// shipments_general.tracking compares raw text, so the same USPS package saved
+// as a raw GS1 scan "(420)33172(92)0019…" here and as the clean 22 digits
+// somewhere else (desktop, Receiving v2) would pass as two packages — and bill
+// twice. Before inserting, fr_find_shipment() looks the package up by its
+// normalised number. Same 409 {error:'duplicate'} as before, so FR Mobile needs
+// no change; the response now also says which row already has it.
+// Receiving v2 registers through this same function, on purpose: one writer,
+// one contract (client text, client_id, the "Scanned via FR Mobile — <operator>"
+// note that the Client Portal and Lookup both parse).
 
 const ALLOWED_ORIGINS = [
   'https://apps.fr-logistics.net',
@@ -84,6 +95,27 @@ exports.handler = async (event) => {
   };
 
   try {
+    // Normalised duplicate check (see header). If the lookup itself fails we
+    // fall through to the insert: the raw unique index still protects exact
+    // repeats, and receiving must never stop because of this extra check.
+    try {
+      const dupRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fr_find_shipment`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ p_tracking: tracking }),
+      });
+      if (dupRes.ok) {
+        const existing = await dupRes.json();
+        if (existing && existing.id) {
+          return { statusCode: 409, headers, body: JSON.stringify({ error: 'duplicate', existing }) };
+        }
+      }
+    } catch (_) { /* fall through to the insert */ }
+
     const resp = await fetch(`${SUPABASE_URL}/rest/v1/shipments_general`, {
       method: 'POST',
       headers: {
