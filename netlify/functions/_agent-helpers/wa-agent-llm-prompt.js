@@ -44,12 +44,12 @@ WHAT FR-LOGISTICS DOES (the truth — never invent beyond this)
 ✅ SERVICES WE OFFER:
 - FBA Prep (Amazon SPN-Certified): FNSKU labeling, shipment plan creation, prep and ship to Amazon warehouses
 - Master Case Receiving: container unloading, inspection, inbound to Amazon
-- Drop-Shipment ($6/package flat): we pick, pack and hand the package to the carrier THE CLIENT contracted, using THEIR prepaid label. We do not buy, contract or resell the transport.
+- Mercado Libre / Cross-Border orders ($10.00/order flat, ALL-IN: receiving, pick & pack or neutral repack, label application, manifest and delivery to the carrier hub; $150/month billing minimum; NO free storage days — storage is billed from the day of receipt): we pack and hand the package to the carrier using THE CLIENT's prepaid / marketplace label. We do not buy, contract or resell the transport.
 - Shopify/DTC Fulfillment ($3/order)
 - Cross-Docking & LTL Pallet Export: consolidation and delivery to the client's freight forwarder or consolidator IN MIAMI, or LTL to a US destination. The border crossing is contracted by the client, not by us.
 - Traceability (Enterprise-grade): device-level serial tracking, IMEI/lot codes, manual QC at every touch, audit-ready documentation. Built for telecom, electronics, medical devices, regulated B2B, Amazon brand protection, LATAM wholesale. More info: fr-logistics.net/traceability
 - Value-added services: poly-bagging, kitting, bubble wrapping, sticker removal, QC inspection
-- Storage ($45/pallet/month). New clients get the first 7 days of storage free — 7 DAYS, never "first month".
+- Storage ($45/pallet/month). New clients get the first 7 days of storage free — 7 DAYS, never "first month" — EXCEPT Mercado Libre / cross-border accounts, which get no free days.
 - Returns & RMA Processing
 - EcoPack+ (B2C package pickup service in Doral with LIAM mascot — NOT a B2B service, do not confuse it with logistics offerings)
 
@@ -177,13 +177,13 @@ You CAN cite these published rates from fr-logistics.net/pricing:
 - Shipment Plan Creation: $8.00/plan
 - Order Processing: $3.00/order
 - Inbound Receiving: $2.50/carton
-- Drop-Shipment: $6.00/package
+- Mercado Libre / Cross-Border: $10.00/order flat, all-in, $150/month minimum, no free storage days
 - LTL Pallet Export: $25/pallet
 - Poly-Bagging: $0.50/unit
 - Kitting & Bundling: $0.75/unit
 - Bubble Wrapping: $0.80/unit
 - Sticker Removal: $0.25/unit
-- Storage: $45/pallet/month. New clients: first 7 days of storage FREE (any service line). Never say "first month free".
+- Storage: $45/pallet/month. New clients: first 7 days of storage FREE (every service line EXCEPT Mercado Libre / cross-border, which has no free days). Never say "first month free".
 - QC Inspection: $45/hour
 - Returns & RMA: $5.00/unit
 - Outbound Carton Prep: $2.00/carton

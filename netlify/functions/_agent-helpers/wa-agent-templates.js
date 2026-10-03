@@ -38,7 +38,7 @@ Estoy aquí 24/7 para ayudarte.
 
 ⚠️ *Importante antes de empezar:*
 FR-Logistics es un *almacén/3PL de pago* en Doral, Miami.
-✅ Cobramos *desde $0.55/unidad* o *$6/paquete* por nuestros servicios.
+✅ Cobramos *desde $0.55/unidad* o *$10/orden* por nuestros servicios.
 ❌ NO ofrecemos empleo · NO pagamos por dropshipping · NO damos cursos.
 
 Si buscas servicio logístico, perfecto. Podemos hablar de:
@@ -58,7 +58,7 @@ I'm here 24/7 to help you.
 
 ⚠️ *Important before we start:*
 FR-Logistics is a *paid 3PL warehouse* in Doral, Miami.
-✅ We charge *from $0.55/unit* or *$6/package* for our services.
+✅ We charge *from $0.55/unit* or *$10/order* for our services.
 ❌ NOT a job offer · We do NOT pay for dropshipping · NOT a course.
 
 If you need logistics service, perfect. We can talk about:
@@ -85,7 +85,7 @@ Reply EN or ES?`,
   confirm_en: () =>
 `Got it! I'll continue in English. 👍
 
-⚠️ *Quick clarification:* FR-Logistics is a *paid B2B 3PL warehouse* — we charge from $0.55/unit or $6/package. We're not a job, not a course, and we don't pay for dropshipping.
+⚠️ *Quick clarification:* FR-Logistics is a *paid B2B 3PL warehouse* — we charge from $0.55/unit or $10/order. We're not a job, not a course, and we don't pay for dropshipping.
 
 If you need logistics service, we can talk about:
 1️⃣ FBA Prep
@@ -100,7 +100,7 @@ How can I help?`,
   confirm_es: () =>
 `¡Perfecto! Sigo en español. 👍
 
-⚠️ *Aclaración rápida:* FR-Logistics es un *almacén/3PL de pago B2B* — cobramos desde $0.55/unidad o $6/paquete. No es empleo, no es curso, y no pagamos por dropshipping.
+⚠️ *Aclaración rápida:* FR-Logistics es un *almacén/3PL de pago B2B* — cobramos desde $0.55/unidad o $10/orden. No es empleo, no es curso, y no pagamos por dropshipping.
 
 Si buscas servicio logístico, podemos hablar de:
 1️⃣ FBA Prep
@@ -168,14 +168,14 @@ To give you the best info on *Master Case Receiving*, let me ask you 3 quick que
   qualify_intro_dropship_es: () =>
 `¡Genial! 🚚
 
-⚠️ *Importante:* Dropshipment es un *servicio de pago desde $6/paquete* — NO pagamos por hacer dropshipping ni damos cursos. Tú nos contratas a nosotros.
+⚠️ *Importante:* Dropshipment es un *servicio de pago de $10/orden* — NO pagamos por hacer dropshipping ni damos cursos. Tú nos contratas a nosotros.
 
 Para darte la mejor info sobre *Dropshipment*, déjame hacerte 3 preguntas rápidas. Después te conecto con nuestro equipo para una cotización.`,
 
   qualify_intro_dropship_en: () =>
 `Awesome! 🚚
 
-⚠️ *Important:* Dropshipment is a *paid service from $6/package* — we do NOT pay for dropshipping, no courses. You hire us, not the other way around.
+⚠️ *Important:* Dropshipment is a *paid service at $10/order* — we do NOT pay for dropshipping, no courses. You hire us, not the other way around.
 
 To give you the best info on *Dropshipment*, let me ask you 3 quick questions. Then I'll connect you with our team for a quote.`,
 
