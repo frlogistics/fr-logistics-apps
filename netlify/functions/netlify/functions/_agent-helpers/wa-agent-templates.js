@@ -1,0 +1,440 @@
+// netlify/functions/_agent-helpers/wa-agent-templates.js
+//
+// Hardcoded message templates for Liam, FR-Logistics WhatsApp agent.
+// These DO NOT call the LLM — they're deterministic templates.
+// Used by: wa-agent-router.js, wa-agent-greet.js, wa-agent-state.js
+//
+// All templates are locked per Sprint 1 spec.
+// Tone: professional + friendly. Personality: Liam.
+// Brand voice: warm, capable, never overpromising.
+//
+// SPANISH STYLE (locked v2 — May 2026):
+//   - Neutral LATAM Spanish — works for MX, CO, AR, PE, CL, VE, EC, ES.
+//   - Tuteo with "tú" implicit: puedes, tienes, quieres, necesitas, avísame.
+//   - NEVER rioplatense: no vos, podés, tenés, querés, sos.
+//   - NEVER vosotros (Spain): no tenéis, podéis.
+//   - No regional slang: no chévere, vale, bárbaro, padre.
+//   - "aquí" not "acá".
+//
+// DISQUALIFIER UPDATE (Sprint 6.1 — June 2026):
+//   - All greeting templates now include a B2B disqualifier line.
+//   - Prevents job-seekers, "make money" leads, and dropshipping commission
+//     hunters from progressing through the qualification flow.
+//   - Triggered by Google Ads lead quality crisis where Mercado Libre/dropship
+//     keywords attracted non-target audiences (Zoe, Isaías, Fernanda, etc.).
+
+// ─────────────────────────────────────────────────────────────────────
+// INITIAL GREETINGS (Sprint 1 + 6.1 disqualifier)
+// ─────────────────────────────────────────────────────────────────────
+
+export const TEMPLATES = {
+
+  // When language is detected confidently
+  greet_es: () =>
+`¡Hola! 👋
+
+Soy Liam, asistente logístico de FR-Logistics Miami.
+Estoy aquí 24/7 para ayudarte.
+
+⚠️ *Importante antes de empezar:*
+FR-Logistics es un *almacén/3PL de pago* en Doral, Miami.
+✅ Cobramos *desde $0.55/unidad* o *$10/orden* por nuestros servicios.
+❌ NO ofrecemos empleo · NO pagamos por dropshipping · NO damos cursos.
+
+Si buscas servicio logístico, perfecto. Podemos hablar de:
+1️⃣ FBA Prep (preparación para Amazon)
+2️⃣ Master Case (recepción de contenedores)
+3️⃣ Dropshipment (sin inventario)
+4️⃣ EcoPack+ (envíos sostenibles)
+5️⃣ Otro / hablar con nuestro equipo
+
+¿Cómo te puedo ayudar hoy?`,
+
+  greet_en: () =>
+`Hi there! 👋
+
+I'm Liam, FR-Logistics Miami's virtual assistant.
+I'm here 24/7 to help you.
+
+⚠️ *Important before we start:*
+FR-Logistics is a *paid 3PL warehouse* in Doral, Miami.
+✅ We charge *from $0.55/unit* or *$10/order* for our services.
+❌ NOT a job offer · We do NOT pay for dropshipping · NOT a course.
+
+If you need logistics service, perfect. We can talk about:
+1️⃣ FBA Prep (Amazon prep services)
+2️⃣ Master Case (container receiving)
+3️⃣ Dropshipment (no inventory)
+4️⃣ EcoPack+ (sustainable shipping)
+5️⃣ Other / talk to our team
+
+How can I help you today?`,
+
+  // When language is UNKNOWN → bilingual short greeting
+  greet_bilingual: () =>
+`👋 Hi / Hola
+
+I'm Liam — FR-Logistics assistant (paid 3PL warehouse in Miami).
+Soy Liam — asistente de FR-Logistics (almacén/3PL de pago en Miami).
+
+⚠️ This is *not a job offer* / *no es oferta de empleo*.
+
+Reply EN or ES?`,
+
+  // After user picks EN explicitly
+  confirm_en: () =>
+`Got it! I'll continue in English. 👍
+
+⚠️ *Quick clarification:* FR-Logistics is a *paid B2B 3PL warehouse* — we charge from $0.55/unit or $10/order. We're not a job, not a course, and we don't pay for dropshipping.
+
+If you need logistics service, we can talk about:
+1️⃣ FBA Prep
+2️⃣ Master Case
+3️⃣ Dropshipment
+4️⃣ EcoPack+
+5️⃣ Other / talk to our team
+
+How can I help?`,
+
+  // After user picks ES explicitly
+  confirm_es: () =>
+`¡Perfecto! Sigo en español. 👍
+
+⚠️ *Aclaración rápida:* FR-Logistics es un *almacén/3PL de pago B2B* — cobramos desde $0.55/unidad o $10/orden. No es empleo, no es curso, y no pagamos por dropshipping.
+
+Si buscas servicio logístico, podemos hablar de:
+1️⃣ FBA Prep
+2️⃣ Master Case
+3️⃣ Dropshipment
+4️⃣ EcoPack+
+5️⃣ Otro / hablar con nuestro equipo
+
+¿Cómo te puedo ayudar?`,
+
+  // If user replies to bilingual greeting with something we can't parse
+  retry_language_choice: () =>
+`Sorry, didn't catch that — please reply EN or ES.
+Perdón, no entendí — responde EN o ES.`,
+
+  // After 2 failed retries, default to English
+  fallback_to_en: () =>
+`No problem! I'll continue in English. If you prefer Spanish at any time, just type "ES".
+
+⚠️ *Quick clarification:* FR-Logistics is a paid B2B 3PL warehouse — not a job offer, not a course.
+
+1️⃣ FBA Prep
+2️⃣ Master Case
+3️⃣ Dropshipment
+4️⃣ EcoPack+
+5️⃣ Other / talk to our team
+
+How can I help?`,
+
+  // ───────────────────────────────────────────────────────────────
+  // QUALIFICATION FLOW (Sprint 2) — intros + transitions
+  // The actual questions live in wa-agent-qualify.js (one per service).
+  // These templates wrap the flow with friendly text.
+  // ───────────────────────────────────────────────────────────────
+
+  // After user picks 1-4 from main menu — intro to the 3 questions
+  qualify_intro_fba_prep_es: () =>
+`¡Excelente elección! 📦
+
+⚠️ *Recordatorio:* FBA Prep es un *servicio de pago desde $0.55/unidad* (no empleo, no curso).
+
+Para darte la mejor info sobre *FBA Prep*, déjame hacerte 3 preguntas rápidas. Después te conecto con nuestro equipo para que te dé una cotización personalizada.`,
+
+  qualify_intro_fba_prep_en: () =>
+`Excellent choice! 📦
+
+⚠️ *Quick reminder:* FBA Prep is a *paid service from $0.55/unit* (not a job, not a course).
+
+To give you the best info on *FBA Prep*, let me ask you 3 quick questions. Then I'll connect you with our team for a personalized quote.`,
+
+  qualify_intro_master_case_es: () =>
+`¡Excelente! 📥
+
+⚠️ *Recordatorio:* Master Case es un *servicio de pago desde $2.50/cartón* (no empleo, no curso).
+
+Para darte la mejor info sobre *Master Case Receiving*, déjame hacerte 3 preguntas rápidas. Después te conecto con nuestro equipo para una cotización.`,
+
+  qualify_intro_master_case_en: () =>
+`Excellent! 📥
+
+⚠️ *Quick reminder:* Master Case is a *paid service from $2.50/carton* (not a job, not a course).
+
+To give you the best info on *Master Case Receiving*, let me ask you 3 quick questions. Then I'll connect you with our team for a quote.`,
+
+  qualify_intro_dropship_es: () =>
+`¡Genial! 🚚
+
+⚠️ *Importante:* Dropshipment es un *servicio de pago de $10/orden* — NO pagamos por hacer dropshipping ni damos cursos. Tú nos contratas a nosotros.
+
+Para darte la mejor info sobre *Dropshipment*, déjame hacerte 3 preguntas rápidas. Después te conecto con nuestro equipo para una cotización.`,
+
+  qualify_intro_dropship_en: () =>
+`Awesome! 🚚
+
+⚠️ *Important:* Dropshipment is a *paid service at $10/order* — we do NOT pay for dropshipping, no courses. You hire us, not the other way around.
+
+To give you the best info on *Dropshipment*, let me ask you 3 quick questions. Then I'll connect you with our team for a quote.`,
+
+  qualify_intro_ecopack_es: () =>
+`¡Me encanta! 🌱
+
+⚠️ *Recordatorio:* EcoPack+ es un *servicio de pago* (no empleo, no curso).
+
+Para darte la mejor info sobre *EcoPack+*, déjame hacerte 3 preguntas rápidas. Después te conecto con nuestro equipo para una cotización.`,
+
+  qualify_intro_ecopack_en: () =>
+`Love it! 🌱
+
+⚠️ *Quick reminder:* EcoPack+ is a *paid service* (not a job, not a course).
+
+To give you the best info on *EcoPack+*, let me ask you 3 quick questions. Then I'll connect you with our team for a quote.`,
+
+  // After Q3 answered — bridge to contact capture
+  qualify_done_es: () =>
+`¡Perfecto, gracias! 🙏
+
+Ya tengo lo que necesito para que nuestro equipo te prepare una propuesta personalizada.
+
+¿Me dejas tu nombre y email para que te contacte?`,
+
+  qualify_done_en: () =>
+`Perfect, thanks! 🙏
+
+I have everything our team needs to prepare a personalized proposal for you.
+
+Could you share your name and email so he can reach out?`,
+
+  // ───────────────────────────────────────────────────────────────
+  // FAQ FOLLOW-UP (Sprint 3)
+  // After Liam answers a free-text question with a FAQ, re-offer
+  // the main menu to keep the lead engaged toward conversion.
+  // ───────────────────────────────────────────────────────────────
+
+  faq_followup_menu_es: () =>
+`¿Hay algo más en lo que te pueda ayudar? 🤝
+
+1️⃣ FBA Prep — Amazon SPN-Certified
+2️⃣ Master Case — Recepción de contenedores
+3️⃣ Dropshipment — Sellers sin inventario
+4️⃣ EcoPack+ — Envíos sostenibles
+5️⃣ Hablar con nuestro equipo
+
+_(O escríbeme tu pregunta y te respondo)_`,
+
+  faq_followup_menu_en: () =>
+`Anything else I can help with? 🤝
+
+1️⃣ FBA Prep — Amazon SPN-Certified
+2️⃣ Master Case — Container receiving
+3️⃣ Dropshipment — Sellers without inventory
+4️⃣ EcoPack+ — Sustainable shipping
+5️⃣ Talk to our team
+
+_(Or just ask me anything)_`,
+
+  // ───────────────────────────────────────────────────────────────
+  // MENU DECAY (added 2026-07-31)
+  // The full menu above is sent ONCE per conversation. From the second
+  // time onward we use this one-liner, and from the third time we send
+  // nothing at all. Repeating the full menu after every single answer
+  // is what made Liam read as spam — 11 different people received the
+  // identical menu block between 3 and 9 times in a single day.
+  // ───────────────────────────────────────────────────────────────
+
+  faq_followup_short_es: () =>
+`¿Te ayudo con algo más? Escríbeme tu pregunta, o pon *5* si prefieres hablar con nuestro equipo.`,
+
+  faq_followup_short_en: () =>
+`Anything else? Just type your question, or reply *5* to talk to our team.`,
+
+  // ───────────────────────────────────────────────────────────────
+  // MEDIA RECEIVED (added 2026-07-31)
+  // The webhook stores non-text messages as "[image]" / "[audio]" etc.
+  // Liam cannot see the file, so he must NOT run it through the capture
+  // or qualification logic — he acknowledges and hands off to a human.
+  // ───────────────────────────────────────────────────────────────
+
+  media_ack_es: (kind = "archivo") =>
+`Recibí tu ${kind === "image" ? "imagen" : kind === "audio" ? "audio" : kind === "document" ? "documento" : "archivo"} 📎
+
+No puedo abrirlo desde aquí, pero ya se lo paso al equipo para que lo revise. Te responden en breve.
+
+Si quieres adelantar algo, escríbemelo en texto y te ayudo de una vez.`,
+
+  media_ack_en: (kind = "file") =>
+`Got your ${kind === "image" ? "image" : kind === "audio" ? "voice note" : kind === "document" ? "document" : "file"} 📎
+
+I can't open it from here, but I'm passing it to the team to review. They'll get back to you shortly.
+
+If there's anything I can help with in the meantime, just type it out.`,
+
+  // ───────────────────────────────────────────────────────────────
+  // CONVERSATION CLOSE (added 2026-07-31)
+  // "Gracias" / "Ok" / "Listo" end a conversation. They are not answers
+  // to whatever slot we were waiting on, and they must never restart a
+  // flow or trigger another menu.
+  // ───────────────────────────────────────────────────────────────
+
+  closing_ack_es: () =>
+`¡Con gusto! Aquí estoy si necesitas algo más. 🤝`,
+
+  closing_ack_en: () =>
+`Happy to help! I'm here if you need anything else. 🤝`,
+
+  // ───────────────────────────────────────────────────────────────
+  // HANDOFF TO JOSE (option 5 or explicit request)
+  // ───────────────────────────────────────────────────────────────
+
+  handoff_jose_ack_es: () =>
+`Perfecto, le paso tu información a nuestro equipo ahora mismo.
+
+Mientras tanto, ¿puedes dejarme tu nombre y email para que él pueda contactarte?`,
+
+  handoff_jose_ack_en: () =>
+`Got it — I'm passing your info to our team right now.
+
+In the meantime, could you share your name and email so he can reach out?`,
+
+  handoff_jose_ask_name_es: () =>
+`¿Cuál es tu nombre?`,
+
+  handoff_jose_ask_name_en: () =>
+`What's your name?`,
+
+  handoff_jose_ask_email_es: (name) =>
+`Gracias, ${name}. ¿Cuál es tu email?`,
+
+  handoff_jose_ask_email_en: (name) =>
+`Thanks, ${name}. What's your email?`,
+
+  handoff_jose_complete_es: (name) =>
+`Listo, ${name}. Nuestro equipo te contactará lo antes posible al email que dejaste. 🤝`,
+
+  handoff_jose_complete_en: (name) =>
+`All set, ${name}. Our team will reach out asap to the email you provided. 🤝`,
+
+  // ───────────────────────────────────────────────────────────────
+  // KILL SWITCH — agent disabled (monthly cap reached)
+  // ───────────────────────────────────────────────────────────────
+
+  kill_switch_es: () =>
+`¡Hola! Soy Liam de FR-Logistics.
+
+En este momento estamos con alta demanda.
+Nuestro equipo te contactará pronto a través de info@fr-logistics.net.
+
+Si es urgente, escríbenos a info@fr-logistics.net`,
+
+  kill_switch_en: () =>
+`Hi! I'm Liam from FR-Logistics.
+
+We're experiencing high demand right now.
+Our team will contact you shortly via info@fr-logistics.net.
+
+If urgent, email us at info@fr-logistics.net`,
+
+  // ───────────────────────────────────────────────────────────────
+  // EXISTING CLIENT — bot doesn't qualify, redirects to human inbox
+  // (full operational client flow is Sprint 7+, v2)
+  // ───────────────────────────────────────────────────────────────
+
+  existing_client_redirect_es: (clientName) =>
+`¡Hola ${clientName}! 👋
+
+Tu mensaje fue recibido. El equipo de FR-Logistics te responderá pronto.
+
+Si es urgente, escríbenos a warehouse@fr-logistics.net`,
+
+  existing_client_redirect_en: (clientName) =>
+`Hi ${clientName}! 👋
+
+We received your message. The FR-Logistics team will reply soon.
+
+If urgent, email us at warehouse@fr-logistics.net`,
+
+  // ───────────────────────────────────────────────────────────────
+  // PAUSED — Jose took over manually
+  // ───────────────────────────────────────────────────────────────
+
+  paused_silent: () => null,  // No message sent; agent just stops responding.
+
+  // ───────────────────────────────────────────────────────────────
+  // INACTIVITY TIMEOUT (24h)
+  // ───────────────────────────────────────────────────────────────
+
+  timeout_es: () =>
+`Veo que no pudimos continuar la conversación.
+
+Cuando estés listo para retomarla, solo escríbeme aquí y te ayudo.
+Mientras tanto, puedes visitar fr-logistics.net`,
+
+  timeout_en: () =>
+`Looks like we couldn't continue the conversation.
+
+Whenever you're ready to pick it back up, just message me here.
+Meanwhile, you can visit fr-logistics.net`,
+};
+
+// ─────────────────────────────────────────────────────────────────────
+// HELPER: pick template based on language code
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns the right template for the language.
+ * @param {string} key - Template key without _es/_en suffix (e.g. 'greet')
+ * @param {string} language - 'ES' or 'EN'
+ * @param {...any} args - Args to pass to the template fn
+ * @returns {string}
+ */
+export function pickTemplate(key, language, ...args) {
+  const suffix = language === 'ES' ? '_es' : '_en';
+  const fn = TEMPLATES[key + suffix];
+  if (!fn) {
+    throw new Error(`Template not found: ${key}${suffix}`);
+  }
+  return fn(...args);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// MENU PARSER — interpret user reply to greeting menu (1-5)
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Parses user's reply to the greeting menu into a service intent.
+ *
+ * Sprint 4 fix: keyword fallback ONLY activates on SHORT messages (≤60 chars).
+ * Long messages are natural-language questions that should reach the LLM
+ * (e.g. "tengo una marca de cremas y quiero entrar a Amazon US con labeling")
+ * — those should NOT be intercepted as "FBA Prep" just because they contain
+ * the word "Amazon".
+ *
+ * @param {string} text - User's reply
+ * @returns {string|null} 'fba_prep'|'master_case'|'dropship'|'ecopack'|'jose_handoff'|null
+ */
+export function parseMenuChoice(text) {
+  const raw = text || '';
+  const lower = raw.toLowerCase().trim();
+
+  // ──── Number replies — always match (specific by design) ────
+  if (/^1\b/.test(lower) || /1️⃣/.test(text)) return 'fba_prep';
+  if (/^2\b/.test(lower) || /2️⃣/.test(text)) return 'master_case';
+  if (/^3\b/.test(lower) || /3️⃣/.test(text)) return 'dropship';
+  if (/^4\b/.test(lower) || /4️⃣/.test(text)) return 'ecopack';
+  if (/^5\b/.test(lower) || /5️⃣/.test(text)) return 'jose_handoff';
+
+  // ──── Keyword fallback — ONLY for short messages (≤60 chars) ────
+  // Long messages are natural-language; let the LLM handle them.
+  if (raw.length > 60) return null;
+
+  if (/\bfba\b|prep|amazon/i.test(text)) return 'fba_prep';
+  if (/master ?case|container|contenedor/i.test(text)) return 'master_case';
+  if (/drop ?ship/i.test(text)) return 'dropship';
+  if (/eco ?pack/i.test(text)) return 'ecopack';
+  if (/jose|hablar|talk to|human|humano|persona|owner/i.test(text)) return 'jose_handoff';
+
+  return null;
+}
