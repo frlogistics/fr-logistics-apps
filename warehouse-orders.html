@@ -110,6 +110,36 @@
   .msg-success { background: #dcfce7; color: var(--fr-green); }
   .msg-warn { background: #fef3c7; color: var(--fr-orange); }
   .hidden { display: none; }
+
+  /* ── Verificación contra ShipStation (oct-2026) ── */
+  .ss-banner { margin-bottom: 16px; border-radius: 10px; padding: 14px 18px; font-size: 13px; line-height: 1.5; }
+  .ss-banner.alert { background: var(--fr-red); color: #fff; box-shadow: 0 0 0 3px rgba(185,28,28,.18); animation: ssPulse 2s ease-in-out 3; }
+  .ss-banner.waiting { background: #fef3c7; color: var(--fr-orange); border: 1px solid #fcd34d; }
+  .ss-banner.error { background: #fef3c7; color: var(--fr-orange); border: 1px dashed #f59e0b; }
+  .ss-banner.ok { background: #f0fdf4; color: var(--fr-green); border: 1px solid #bbf7d0; padding: 8px 14px; font-size: 12px; }
+  .ss-banner .ss-title { font-size: 15px; font-weight: 800; display: block; margin-bottom: 4px; }
+  .ss-banner .ss-orders { font-family: Consolas, 'Courier New', monospace; font-weight: 700; }
+  .ss-banner button { margin-top: 10px; margin-right: 8px; border: none; border-radius: 6px; padding: 7px 14px; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .ss-banner.alert button { background: #fff; color: var(--fr-red); }
+  .ss-banner.waiting button { background: var(--fr-orange); color: #fff; }
+  @keyframes ssPulse { 0%,100% { transform: none; } 50% { transform: scale(1.01); } }
+  .ss-chip { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .ss-chip.found { background: #dcfce7; color: var(--fr-green); }
+  .ss-chip.missing { background: var(--fr-red); color: #fff; }
+  .ss-chip.waiting { background: #fef3c7; color: var(--fr-orange); }
+  .ss-chip.unchecked { background: #f3f4f6; color: var(--fr-gray); }
+  .ss-sub { display: block; font-size: 10px; color: var(--fr-gray); margin-top: 3px; }
+  .order-row.ss-alert-row { background: #fef2f2; }
+  .order-row.ss-alert-row:hover { background: #fde8e8; }
+  .order-row.ss-alert-row td:first-child { box-shadow: inset 4px 0 0 var(--fr-red); }
+  .btn-requeue {
+    background: #fff; color: var(--fr-red); border: 1px solid var(--fr-red);
+    padding: 10px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .btn-requeue:hover { background: var(--fr-red-bg); }
+  .btn-requeue:disabled { opacity: 0.4; cursor: not-allowed; }
+  .toolbar-right { display: flex; gap: 10px; flex-wrap: wrap; }
+  .ss-last-check { font-size: 11px; color: var(--fr-gray); }
   .muted { color: var(--fr-gray); }
 
   /* Responsive — iPhone & iPad */
@@ -125,7 +155,8 @@
     .brand-text h1 { font-size: 16px; }
     .toolbar { flex-wrap: wrap; gap: 10px; }
     .toolbar-left { flex-wrap: wrap; gap: 8px; }
-    .btn-export, .btn-refresh, select { width: 100%; }
+    .btn-export, .btn-refresh, .btn-requeue, select { width: 100%; }
+    .toolbar-right { width: 100%; }
     .toolbar-left { width: 100%; }
     table { font-size: 13px; }
     table th, table td { padding: 8px 6px !important; }
@@ -147,8 +178,9 @@
 
 <main>
   <h2 class="page-title">Client Orders</h2>
-  <p class="page-sub">Review incoming client orders and export pending ones to a ShipStation CSV.</p>
+  <p class="page-sub">Review incoming client orders and export pending ones to a ShipStation CSV. Exported orders are verified against ShipStation automatically.</p>
 
+  <div id="ss-banner"></div>
   <div id="msg"></div>
 
   <div class="toolbar">
@@ -157,12 +189,17 @@
         <option value="pending">Pending</option>
         <option value="processing">Processing</option>
         <option value="exported">Exported</option>
+        <option value="not_in_ss">⚠ Not in ShipStation</option>
         <option value="all">All statuses</option>
       </select>
       <button class="btn-refresh" id="refresh-btn">Refresh</button>
       <span class="selection-info" id="selection-info">0 selected</span>
+      <span class="ss-last-check" id="ss-last-check"></span>
     </div>
-    <button class="btn-export" id="export-btn" disabled>Export Selected to CSV</button>
+    <div class="toolbar-right">
+      <button class="btn-requeue" id="requeue-btn" disabled title="Only for exported orders that are NOT in ShipStation">Return to Pending</button>
+      <button class="btn-export" id="export-btn" disabled>Export Selected to CSV</button>
+    </div>
   </div>
 
   <div class="panel">
@@ -174,6 +211,7 @@
           <th>Order #</th>
           <th>Client</th>
           <th>Status</th>
+          <th>ShipStation</th>
           <th>Recipient</th>
           <th>Destination</th>
           <th>Items</th>
@@ -182,7 +220,7 @@
         </tr>
       </thead>
       <tbody id="orders-tbody">
-        <tr><td colspan="9" class="empty-state">Loading orders…</td></tr>
+        <tr><td colspan="10" class="empty-state">Loading orders…</td></tr>
       </tbody>
     </table>
     </div>
@@ -200,19 +238,28 @@
   // Who is exporting — shown in exported_by. Adjust if the portal has a real
   // logged-in operator identity available; for now this is the ops account.
   const EXPORTED_BY = 'warehouse';
+  // Verificación contra ShipStation (oct-2026). 'Exported' solo significa que
+  // se descargó el CSV; client-orders-ss-check busca cada orden en la API de
+  // ShipStation y escribe ss_state / ss_order_id en client_orders.
+  const GRACE_HOURS = 2;                  // igual que en la función
+  const RECHECK_MS = 5 * 60 * 1000;       // re-verificar cada 5 min con la pantalla abierta
 
   // ---------- State ----------
   let ordersCache = [];
   const selected = new Set();
+  let ssCheckRunning = false;
 
   // ---------- Elements ----------
   const tbody = document.getElementById('orders-tbody');
   const statusFilter = document.getElementById('status-filter');
   const selectAll = document.getElementById('select-all');
   const exportBtn = document.getElementById('export-btn');
+  const requeueBtn = document.getElementById('requeue-btn');
   const refreshBtn = document.getElementById('refresh-btn');
   const selectionInfo = document.getElementById('selection-info');
   const msg = document.getElementById('msg');
+  const ssBanner = document.getElementById('ss-banner');
+  const ssLastCheck = document.getElementById('ss-last-check');
 
   function showMsg(text, kind) {
     msg.innerHTML = `<div class="msg-box msg-${kind}">${text}</div>`;
@@ -225,26 +272,79 @@
     ));
   }
 
+  // Lee la respuesta como texto antes de parsear: si la función devuelve un
+  // error en texto plano ("Internal Error"), se muestra en vez de reventar.
+  async function readJson(res) {
+    const text = await res.text();
+    try { return JSON.parse(text); }
+    catch { throw new Error(`HTTP ${res.status}: ${text.slice(0, 160) || 'empty response'}`); }
+  }
+
+  function hoursSince(iso) {
+    if (!iso) return null;
+    return (Date.now() - new Date(iso).getTime()) / 3600000;
+  }
+  function fmtAge(h) {
+    if (h == null) return '';
+    if (h < 1) return `${Math.max(1, Math.round(h * 60))} min`;
+    if (h < 48) return `${Math.round(h * 10) / 10} h`;
+    return `${Math.round(h / 24)} days`;
+  }
+
+  // Estado ShipStation de una orden: found | missing | waiting | unchecked | none
+  function ssInfo(o) {
+    if (o.status !== 'exported') return { key: 'none' };
+    if (o.ss_order_id != null) return { key: 'found' };
+    const age = hoursSince(o.exported_at);
+    if (o.ss_state === 'missing') {
+      return { key: age != null && age >= GRACE_HOURS ? 'missing' : 'waiting', age };
+    }
+    return { key: 'unchecked', age };
+  }
+
+  function ssCell(o) {
+    const i = ssInfo(o);
+    switch (i.key) {
+      case 'found':
+        return `<span class="ss-chip found">✓ In ShipStation</span>` +
+          (o.ss_order_status ? `<span class="ss-sub">${esc(String(o.ss_order_status).replace(/_/g, ' '))}</span>` : '');
+      case 'missing':
+        return `<span class="ss-chip missing">✕ NOT IN SHIPSTATION</span><span class="ss-sub">exported ${esc(fmtAge(i.age))} ago</span>`;
+      case 'waiting':
+        return `<span class="ss-chip waiting">Not imported yet</span><span class="ss-sub">exported ${esc(fmtAge(i.age))} ago</span>`;
+      case 'unchecked':
+        return `<span class="ss-chip unchecked">Checking…</span>`;
+      default:
+        return '<span class="muted">—</span>';
+    }
+  }
+
   // ---------- Load orders ----------
-  async function loadOrders() {
+  async function loadOrders(opts = {}) {
     const status = statusFilter.value;
-    tbody.innerHTML = '<tr><td colspan="9" class="empty-state">Loading orders…</td></tr>';
-    selected.clear();
-    updateSelectionUI();
+    if (!opts.silent) {
+      tbody.innerHTML = '<tr><td colspan="10" class="empty-state">Loading orders…</td></tr>';
+      selected.clear();
+      updateSelectionUI();
+    }
     try {
       const res = await fetch(`${API_BASE}/portal-warehouse-orders?action=list&status=${encodeURIComponent(status)}`);
-      const json = await res.json();
+      const json = await readJson(res);
       if (!res.ok) throw new Error(json.error || 'Failed to load orders');
       ordersCache = json.orders || [];
+      // Al recargar en silencio, conservar solo selecciones que sigan existiendo.
+      const ids = new Set(ordersCache.map((o) => o.id));
+      Array.from(selected).forEach((id) => { if (!ids.has(id)) selected.delete(id); });
       renderOrders();
+      updateSelectionUI();
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="9" class="empty-state">${esc(err.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" class="empty-state">${esc(err.message)}</td></tr>`;
     }
   }
 
   function renderOrders() {
     if (ordersCache.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No orders to show.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No orders to show.</td></tr>';
       selectAll.checked = false;
       return;
     }
@@ -254,17 +354,22 @@
       const itemCount = items.reduce((s, it) => s + (it.item_quantity || 0), 0);
       const created = o.created_at ? new Date(o.created_at).toLocaleDateString() : '—';
       const dest = [o.city, o.state, o.country_code].filter(Boolean).join(', ');
-      const isPending = o.status === 'pending';
+      const ss = ssInfo(o).key;
+      const selectable = o.status === 'pending' || ss === 'missing' || ss === 'waiting';
+      const title = o.status === 'pending'
+        ? ''
+        : (selectable ? 'title="Not in ShipStation — can be returned to Pending"' : 'title="Only pending orders can be exported"');
 
       const tr = document.createElement('tr');
-      tr.className = 'order-row';
+      tr.className = 'order-row' + (ss === 'missing' ? ' ss-alert-row' : '');
       tr.innerHTML = `
         <td class="col-check">
-          <input type="checkbox" data-id="${esc(o.id)}" ${isPending ? '' : 'disabled title="Only pending orders can be exported"'} />
+          <input type="checkbox" data-id="${esc(o.id)}" ${selectable ? '' : 'disabled'} ${title} ${selected.has(o.id) ? 'checked' : ''} />
         </td>
-        <td><strong>${esc(o.order_number)}</strong></td>
+        <td><strong>${esc(o.order_number)}</strong>${o.requeue_count ? `<span class="ss-sub">re-exported ×${esc(o.requeue_count)}</span>` : ''}</td>
         <td>${esc(o.client_name)}</td>
         <td><span class="status-badge ${esc(o.status)}">${esc(o.status)}</span></td>
+        <td>${ssCell(o)}</td>
         <td>${esc(o.recipient_name)}</td>
         <td>${esc(dest)}</td>
         <td>${itemCount} (${items.length} SKU${items.length === 1 ? '' : 's'})</td>
@@ -274,7 +379,7 @@
 
       const detail = document.createElement('tr');
       detail.className = 'item-detail hidden';
-      detail.innerHTML = `<td colspan="9"><div class="item-detail-inner">${itemsTable(items, o)}</div></td>`;
+      detail.innerHTML = `<td colspan="10"><div class="item-detail-inner">${itemsTable(items, o)}</div></td>`;
 
       const cb = tr.querySelector('input[type="checkbox"]');
       cb.addEventListener('change', () => {
@@ -300,6 +405,13 @@
     let html = `<p style="font-size:12px;margin-bottom:8px;" class="muted">Ship to: ${esc(addr)}`;
     if (order.shipping_service) html += ` &nbsp;|&nbsp; ${esc(order.shipping_service)}`;
     html += `</p>`;
+    if (order.exported_at) {
+      html += `<p style="font-size:12px;margin-bottom:8px;" class="muted">Exported ${esc(new Date(order.exported_at).toLocaleString())}` +
+        `${order.exported_by ? ' by ' + esc(order.exported_by) : ''}` +
+        `${order.ss_order_id ? ' &nbsp;|&nbsp; ShipStation order ID ' + esc(order.ss_order_id) : ''}` +
+        `${order.ss_checked_at ? ' &nbsp;|&nbsp; last checked ' + esc(new Date(order.ss_checked_at).toLocaleTimeString()) : ''}` +
+        `${order.ss_alerted_at ? ' &nbsp;|&nbsp; alert e-mailed ' + esc(new Date(order.ss_alerted_at).toLocaleString()) : ''}</p>`;
+    }
     if (order.internal_notes) {
       html += `<p style="font-size:12px;margin-bottom:8px;" class="muted">Internal notes: ${esc(order.internal_notes)}</p>`;
     }
@@ -319,9 +431,19 @@
   }
 
   // ---------- Selection ----------
+  function selectedOrders() {
+    return ordersCache.filter((o) => selected.has(o.id));
+  }
   function updateSelectionUI() {
+    const sel = selectedOrders();
+    const pending = sel.filter((o) => o.status === 'pending').length;
+    const requeueable = sel.filter((o) => ['missing', 'waiting'].includes(ssInfo(o).key)).length;
     selectionInfo.textContent = `${selected.size} selected`;
-    exportBtn.disabled = selected.size === 0;
+    exportBtn.disabled = pending === 0;
+    exportBtn.textContent = pending && pending !== sel.length
+      ? `Export ${pending} Pending to CSV` : 'Export Selected to CSV';
+    requeueBtn.disabled = requeueable === 0;
+    requeueBtn.textContent = requeueable ? `Return ${requeueable} to Pending` : 'Return to Pending';
   }
 
   selectAll.addEventListener('change', () => {
@@ -335,14 +457,75 @@
     updateSelectionUI();
   });
 
-  statusFilter.addEventListener('change', loadOrders);
-  refreshBtn.addEventListener('click', loadOrders);
+  statusFilter.addEventListener('change', () => loadOrders());
+  refreshBtn.addEventListener('click', async () => {
+    await runSsCheck();
+    await loadOrders();
+  });
+
+  // ---------- Verificación contra ShipStation ----------
+  function renderBanner(result) {
+    const missing = result.missing || [];
+    const alerts = missing.filter((m) => m.severity === 'alert' && m.verified);
+    const waiting = missing.filter((m) => !(m.severity === 'alert' && m.verified));
+    const list = (arr) => arr.map((m) =>
+      `<span class="ss-orders">${esc(m.order_number)}</span> (${esc(m.client)} · ${esc(fmtAge(m.hours_since_export))})`
+    ).join('<br>');
+
+    if (alerts.length) {
+      ssBanner.innerHTML = `<div class="ss-banner alert">
+        <span class="ss-title">⚠ ${alerts.length} exported order${alerts.length === 1 ? '' : 's'} NOT in ShipStation</span>
+        These were downloaded to CSV more than ${GRACE_HOURS} h ago and were not found in ShipStation.
+        They will <strong>not ship</strong> until the CSV is imported.<br><br>
+        ${list(alerts)}
+        <br><button type="button" data-ss="show">Show them</button>
+        <span style="font-size:12px;opacity:.9">Lost the CSV? Select them and use <em>Return to Pending</em>, then export again.</span>
+        ${waiting.length ? `<br><span style="font-size:12px;opacity:.9">+ ${waiting.length} more recently exported, waiting for import.</span>` : ''}
+      </div>`;
+    } else if (waiting.length) {
+      ssBanner.innerHTML = `<div class="ss-banner waiting">
+        <span class="ss-title">${waiting.length} exported order${waiting.length === 1 ? '' : 's'} waiting to be imported into ShipStation</span>
+        ${list(waiting)}<br>
+        Import the CSV now — if they are still missing ${GRACE_HOURS} h after export, an alert is e-mailed.
+      </div>`;
+    } else {
+      ssBanner.innerHTML = `<div class="ss-banner ok">✓ All exported orders from the last ${esc(result.lookback_days)} days are in ShipStation.</div>`;
+    }
+    const btn = ssBanner.querySelector('[data-ss="show"]');
+    if (btn) btn.addEventListener('click', () => { statusFilter.value = 'not_in_ss'; loadOrders(); });
+
+    if (result.errors && result.errors.length) {
+      ssBanner.insertAdjacentHTML('beforeend', `<div class="ss-banner error">Some orders could not be checked in ShipStation: ${esc(result.errors.map((e) => e.order_number).join(', '))}. ${esc(result.errors[0].error)}</div>`);
+    }
+    if (result.rate_limited) {
+      ssBanner.insertAdjacentHTML('beforeend', `<div class="ss-banner error">ShipStation rate limit reached — remaining orders will be checked on the next refresh.</div>`);
+    }
+  }
+
+  async function runSsCheck() {
+    if (ssCheckRunning) return;
+    ssCheckRunning = true;
+    ssLastCheck.textContent = 'Checking ShipStation…';
+    try {
+      const res = await fetch(`${API_BASE}/client-orders-ss-check`);
+      const json = await readJson(res);
+      if (!res.ok || !json.ok) throw new Error(json.error || 'ShipStation check failed');
+      renderBanner(json);
+      ssLastCheck.textContent = `ShipStation checked ${new Date(json.checked_at).toLocaleTimeString()}`;
+    } catch (err) {
+      // Nunca fallar en silencio: si no se pudo verificar, decirlo.
+      ssBanner.innerHTML = `<div class="ss-banner error"><span class="ss-title">Could not verify orders against ShipStation</span>${esc(err.message)}<br>Exported orders may not be in ShipStation — check manually.</div>`;
+      ssLastCheck.textContent = 'ShipStation check failed';
+    } finally {
+      ssCheckRunning = false;
+    }
+  }
 
   // ---------- Export ----------
   exportBtn.addEventListener('click', async () => {
-    if (selected.size === 0) return;
+    const ids = selectedOrders().filter((o) => o.status === 'pending').map((o) => o.id);
+    if (ids.length === 0) return;
     clearMsg();
-    const ids = Array.from(selected);
     exportBtn.disabled = true;
     exportBtn.textContent = 'Exporting…';
     try {
@@ -351,7 +534,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order_ids: ids, exported_by: EXPORTED_BY }),
       });
-      const json = await res.json();
+      const json = await readJson(res);
       if (!res.ok) throw new Error(json.error || 'Export failed');
 
       // Trigger CSV download in the browser.
@@ -366,19 +549,61 @@
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      let text = `Exported ${json.exported_count} order(s) to CSV. They are now marked as exported.`;
+      let text = `Exported ${json.exported_count} order(s) to CSV. ` +
+        `<strong>Import the file into ShipStation now</strong> — this page checks ShipStation automatically and ` +
+        `an alert is e-mailed if they are not found within ${GRACE_HOURS} h.`;
       if (json.skipped && json.skipped.length) {
-        text += ` Skipped (not pending): ${json.skipped.join(', ')}.`;
+        text += ` Skipped (not pending): ${esc(json.skipped.join(', '))}.`;
         showMsg(text, 'warn');
       } else {
         showMsg(text, 'success');
       }
+      selected.clear();
+      await runSsCheck();
       await loadOrders();
     } catch (err) {
       showMsg(esc(err.message), 'error');
     } finally {
-      exportBtn.disabled = selected.size === 0;
-      exportBtn.textContent = 'Export Selected to CSV';
+      updateSelectionUI();
+    }
+  });
+
+  // ---------- Return to Pending (orden exportada que NO está en ShipStation) ----------
+  requeueBtn.addEventListener('click', async () => {
+    const targets = selectedOrders().filter((o) => ['missing', 'waiting'].includes(ssInfo(o).key));
+    if (targets.length === 0) return;
+    const names = targets.map((o) => o.order_number).join('\n');
+    if (!confirm(
+      `Return ${targets.length} order(s) to Pending so they can be exported again?\n\n${names}\n\n` +
+      `Only do this if they are NOT in ShipStation. If you still have the CSV, import it instead.`
+    )) return;
+    clearMsg();
+    requeueBtn.disabled = true;
+    requeueBtn.textContent = 'Working…';
+    try {
+      const res = await fetch(`${API_BASE}/portal-warehouse-orders?action=requeue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_ids: targets.map((o) => o.id) }),
+      });
+      const json = await readJson(res);
+      if (!res.ok && !(json.rejected && json.rejected.length)) throw new Error(json.error || 'Return to pending failed');
+      let text = json.requeued_count
+        ? `${json.requeued_count} order(s) returned to Pending: ${esc(json.requeued_order_numbers.join(', '))}. Export them again and import the CSV into ShipStation.`
+        : esc(json.error || 'Nothing was changed.');
+      const rej = json.rejected || [];
+      if (rej.length) {
+        text += `<br>Not changed: ${esc(rej.map((r) => `${r.order_number} (${r.reason === 'ALREADY_IN_SHIPSTATION' ? 'already in ShipStation' : r.reason})`).join(', '))}.`;
+      }
+      showMsg(text, rej.length ? 'warn' : 'success');
+      selected.clear();
+      statusFilter.value = 'pending';
+      await runSsCheck();
+      await loadOrders();
+    } catch (err) {
+      showMsg(esc(err.message), 'error');
+    } finally {
+      updateSelectionUI();
     }
   });
 
@@ -386,6 +611,12 @@
 
   // ---------- Init ----------
   loadOrders();
+  runSsCheck().then(() => loadOrders({ silent: true }));
+  setInterval(async () => {
+    if (document.hidden) return;
+    await runSsCheck();
+    await loadOrders({ silent: true });
+  }, RECHECK_MS);
 
 })();
 </script>
