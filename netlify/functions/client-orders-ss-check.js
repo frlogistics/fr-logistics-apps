@@ -35,6 +35,14 @@ const SS = 'https://ssapi.shipstation.com';
 const LOOKBACK_DAYS = 30;
 // Tope de consultas a ShipStation por corrida (la API v1 permite 40/min).
 const MAX_LOOKUPS_PER_RUN = 30;
+// Presupuesto de tiempo por llamada HTTP. Netlify corta una función síncrona
+// a los ~10 s con "504 Inactivity Timeout" (pasó el 7-oct-2026 en la carga
+// inicial de 68 órdenes, consultadas de a una). Al agotarse el presupuesto se
+// devuelve lo hecho y `backlog` dice cuántas faltan; la pantalla vuelve a
+// llamar sola. La función programada pasa un presupuesto mayor (límite 30 s).
+const DEFAULT_TIME_BUDGET_MS = 7000;
+// Consultas simultáneas a ShipStation.
+const CONCURRENCY = 4;
 // Horas desde la exportación a partir de las cuales una orden 'missing'
 // se considera ALERTA (antes de eso es normal: el operador está importando).
 const GRACE_HOURS = 2;
@@ -112,6 +120,8 @@ function hoursSince(iso) {
 // options.dryRun = true -> consulta ShipStation pero no escribe en Supabase.
 async function runCheck(options = {}) {
   const dryRun = !!options.dryRun;
+  const startedAt = Date.now();
+  const timeBudgetMs = Number(options.timeBudgetMs) > 0 ? Number(options.timeBudgetMs) : DEFAULT_TIME_BUDGET_MS;
   const auth = ssAuth();
   const sinceIso = new Date(Date.now() - LOOKBACK_DAYS * 86400000).toISOString();
 
@@ -122,12 +132,13 @@ async function runCheck(options = {}) {
   (await cr.json()).forEach((c) => { clientName[c.id] = (c.company && c.company.trim()) || c.name; });
 
   // Pendientes de verificar: exportadas, sin ss_order_id, dentro de la ventana.
-  // Primero las nunca revisadas, después las revisadas hace más tiempo.
+  // Primero las nunca revisadas y, dentro de eso, las exportadas MÁS RECIENTES
+  // (son las urgentes: las viejas casi siempre ya se despacharon).
   const q =
     'client_orders?select=id,client_id,order_number,recipient_name,exported_at,exported_by,' +
     'ss_state,ss_checked_at,ss_alerted_at' +
     `&status=eq.exported&ss_order_id=is.null&exported_at=gte.${encodeURIComponent(sinceIso)}` +
-    '&order=ss_checked_at.asc.nullsfirst,exported_at.asc&limit=200';
+    '&order=ss_checked_at.asc.nullsfirst,exported_at.desc&limit=200';
   const pr = await sbFetch(q);
   if (!pr.ok) throw new Error(`client_orders: ${pr.status} ${await pr.text()}`);
   const toCheck = await pr.json();
@@ -138,46 +149,57 @@ async function runCheck(options = {}) {
   let checked = 0;
   let rateLimited = false;
 
-  for (const o of toCheck) {
-    if (checked >= MAX_LOOKUPS_PER_RUN) break;
+  // Verifica UNA orden y escribe el resultado. Devuelve 'found' | 'missing' | 'rate_limited' | 'error'.
+  async function checkOne(o) {
     let res;
     try {
       res = await ssFindOrder(o.order_number, auth);
     } catch (e) {
       errors.push({ order_number: o.order_number, error: String(e.message || e) });
-      continue;
+      return 'error';
     }
-    if (res.rateLimited) { rateLimited = true; break; }
+    if (res.rateLimited) return 'rate_limited';
     checked++;
     const nowIso = new Date().toISOString();
-
-    if (res.order) {
-      const rec = {
-        id: o.id,
-        order_number: o.order_number,
-        client: clientName[o.client_id] || '(unknown client)',
-        ss_order_id: res.order.orderId,
-        ss_order_status: res.order.orderStatus,
-        duplicates_in_shipstation: res.duplicates > 1 ? res.duplicates : undefined,
-      };
-      found.push(rec);
-      if (!dryRun) {
-        await sbPatchOrder(o.id, {
-          ss_state: 'found',
+    try {
+      if (res.order) {
+        found.push({
+          id: o.id,
+          order_number: o.order_number,
+          client: clientName[o.client_id] || '(unknown client)',
           ss_order_id: res.order.orderId,
           ss_order_status: res.order.orderStatus,
-          ss_checked_at: nowIso,
-          ss_found_at: nowIso,
+          duplicates_in_shipstation: res.duplicates > 1 ? res.duplicates : undefined,
         });
-      }
-    } else {
-      if (!dryRun) {
+        if (!dryRun) {
+          await sbPatchOrder(o.id, {
+            ss_state: 'found',
+            ss_order_id: res.order.orderId,
+            ss_order_status: res.order.orderStatus,
+            ss_checked_at: nowIso,
+            ss_found_at: nowIso,
+          });
+        }
+      } else if (!dryRun) {
         await sbPatchOrder(o.id, { ss_state: 'missing', ss_checked_at: nowIso });
       }
+    } catch (e) {
+      errors.push({ order_number: o.order_number, error: String(e.message || e) });
+      return 'error';
     }
-
     // Respetar el rate limit si ShipStation avisa que quedan pocas consultas.
-    if (Number.isFinite(res.remaining) && res.remaining <= 2) { rateLimited = true; break; }
+    if (Number.isFinite(res.remaining) && res.remaining <= CONCURRENCY) return 'rate_limited';
+    return res.order ? 'found' : 'missing';
+  }
+
+  let processed = 0;
+  let timedOut = false;
+  while (processed < toCheck.length && checked < MAX_LOOKUPS_PER_RUN) {
+    if (Date.now() - startedAt > timeBudgetMs) { timedOut = true; break; }
+    const batch = toCheck.slice(processed, processed + CONCURRENCY);
+    processed += batch.length;
+    const outcomes = await Promise.all(batch.map(checkOne));
+    if (outcomes.includes('rate_limited')) { rateLimited = true; break; }
   }
 
   // Estado final de TODAS las que siguen sin aparecer (incluye las que no se
@@ -216,10 +238,14 @@ async function runCheck(options = {}) {
     lookback_days: LOOKBACK_DAYS,
     candidates: toCheck.length,
     lookups: checked,
+    // Órdenes que quedaron sin consultar en esta corrida (se siguen en la próxima).
+    backlog: missing.filter((m) => !m.verified).length,
+    timed_out: timedOut,
+    elapsed_ms: Date.now() - startedAt,
     rate_limited: rateLimited,
     found,
     missing,
-    alert_count: missing.filter((m) => m.severity === 'alert').length,
+    alert_count: missing.filter((m) => m.severity === 'alert' && m.verified).length,
     errors,
   };
 }
