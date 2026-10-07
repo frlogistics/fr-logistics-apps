@@ -128,6 +128,7 @@
   .ss-chip.missing { background: var(--fr-red); color: #fff; }
   .ss-chip.waiting { background: #fef3c7; color: var(--fr-orange); }
   .ss-chip.unchecked { background: #f3f4f6; color: var(--fr-gray); }
+  .ss-chip.dismissed { background: #f3f4f6; color: var(--fr-dark); border: 1px solid var(--fr-border); }
   .ss-sub { display: block; font-size: 10px; color: var(--fr-gray); margin-top: 3px; }
   .order-row.ss-alert-row { background: #fef2f2; }
   .order-row.ss-alert-row:hover { background: #fde8e8; }
@@ -197,6 +198,7 @@
       <span class="ss-last-check" id="ss-last-check"></span>
     </div>
     <div class="toolbar-right">
+      <button class="btn-requeue" id="dismiss-btn" disabled title="The order will never be in ShipStation (e.g. replaced by another order number). Stops the alert.">Mark Resolved</button>
       <button class="btn-requeue" id="requeue-btn" disabled title="Only for exported orders that are NOT in ShipStation">Return to Pending</button>
       <button class="btn-export" id="export-btn" disabled>Export Selected to CSV</button>
     </div>
@@ -257,6 +259,7 @@
   const selectAll = document.getElementById('select-all');
   const exportBtn = document.getElementById('export-btn');
   const requeueBtn = document.getElementById('requeue-btn');
+  const dismissBtn = document.getElementById('dismiss-btn');
   const refreshBtn = document.getElementById('refresh-btn');
   const selectionInfo = document.getElementById('selection-info');
   const msg = document.getElementById('msg');
@@ -304,6 +307,7 @@
   function ssInfo(o) {
     if (o.status !== 'exported') return { key: 'none' };
     if (o.ss_order_id != null) return { key: 'found' };
+    if (o.ss_state === 'dismissed') return { key: 'dismissed' };
     const age = hoursSince(o.exported_at);
     if (o.ss_state === 'missing') {
       return { key: age != null && age >= GRACE_HOURS ? 'missing' : 'waiting', age };
@@ -321,6 +325,9 @@
         return `<span class="ss-chip missing">✕ NOT IN SHIPSTATION</span><span class="ss-sub">exported ${esc(fmtAge(i.age))} ago</span>`;
       case 'waiting':
         return `<span class="ss-chip waiting">Not imported yet</span><span class="ss-sub">exported ${esc(fmtAge(i.age))} ago</span>`;
+      case 'dismissed':
+        return `<span class="ss-chip dismissed">Resolved manually</span>` +
+          (o.ss_dismissed_note ? `<span class="ss-sub" title="${esc(o.ss_dismissed_note)}">${esc(o.ss_dismissed_note.length > 40 ? o.ss_dismissed_note.slice(0, 40) + '…' : o.ss_dismissed_note)}</span>` : '');
       case 'unchecked':
         return `<span class="ss-chip unchecked">Checking…</span>`;
       default:
@@ -420,6 +427,9 @@
         `${order.ss_order_id ? ' &nbsp;|&nbsp; ShipStation order ID ' + esc(order.ss_order_id) : ''}` +
         `${order.ss_checked_at ? ' &nbsp;|&nbsp; last checked ' + esc(new Date(order.ss_checked_at).toLocaleTimeString()) : ''}` +
         `${order.ss_alerted_at ? ' &nbsp;|&nbsp; alert e-mailed ' + esc(new Date(order.ss_alerted_at).toLocaleString()) : ''}</p>`;
+      if (order.ss_dismissed_note) {
+        html += `<p style="font-size:12px;margin-bottom:8px;" class="muted">Resolved manually${order.ss_dismissed_at ? ' ' + esc(new Date(order.ss_dismissed_at).toLocaleString()) : ''}: ${esc(order.ss_dismissed_note)}</p>`;
+      }
     }
     if (order.internal_notes) {
       html += `<p style="font-size:12px;margin-bottom:8px;" class="muted">Internal notes: ${esc(order.internal_notes)}</p>`;
@@ -453,6 +463,8 @@
       ? `Export ${pending} Pending to CSV` : 'Export Selected to CSV';
     requeueBtn.disabled = requeueable === 0;
     requeueBtn.textContent = requeueable ? `Return ${requeueable} to Pending` : 'Return to Pending';
+    dismissBtn.disabled = requeueable === 0;
+    dismissBtn.textContent = requeueable ? `Mark ${requeueable} Resolved` : 'Mark Resolved';
   }
 
   selectAll.addEventListener('change', () => {
@@ -620,6 +632,39 @@
       statusFilter.value = 'pending';
       await runSsCheck();
       await loadOrders();
+    } catch (err) {
+      showMsg(esc(err.message), 'error');
+    } finally {
+      updateSelectionUI();
+    }
+  });
+
+  // ---------- Mark Resolved (la orden nunca va a estar en ShipStation) ----------
+  dismissBtn.addEventListener('click', async () => {
+    const targets = selectedOrders().filter((o) => ['missing', 'waiting'].includes(ssInfo(o).key));
+    if (targets.length === 0) return;
+    const note = prompt(
+      `Mark ${targets.length} order(s) as resolved? They will stop being checked and alerted.\n\n` +
+      `${targets.map((o) => o.order_number).join('\n')}\n\n` +
+      `Reason (required) — e.g. "Replaced by order XYZ-1, already shipped":`
+    );
+    if (note === null) return;
+    if (note.trim().length < 5) { showMsg('A reason is required to mark an order as resolved.', 'error'); return; }
+    clearMsg();
+    dismissBtn.disabled = true;
+    dismissBtn.textContent = 'Working…';
+    try {
+      const res = await fetch(`${API_BASE}/portal-warehouse-orders?action=dismiss`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_ids: targets.map((o) => o.id), note: note.trim() }),
+      });
+      const json = await readJson(res);
+      if (!res.ok) throw new Error(json.error || 'Mark resolved failed');
+      showMsg(`${json.dismissed_count} order(s) marked as resolved: ${esc(json.dismissed_order_numbers.join(', '))}.`, 'success');
+      selected.clear();
+      await runSsCheck();
+      await loadOrders({ silent: true });
     } catch (err) {
       showMsg(esc(err.message), 'error');
     } finally {
