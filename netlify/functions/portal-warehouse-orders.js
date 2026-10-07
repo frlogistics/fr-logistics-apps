@@ -9,6 +9,14 @@
 // Endpoints (single function, ?action= switch):
 //   GET  ?action=list&status=pending      -> orders for the queue
 //   POST ?action=export  body:{order_ids:[...], exported_by:"..."}  -> CSV + mark exported
+//   GET  ?action=list&status=not_in_ss -> exportadas que ShipStation NO tiene (oct-2026)
+//   POST ?action=requeue body:{order_ids:[...]} -> devuelve a 'pending' una exportada
+//        que NO está en ShipStation, para re-exportarla (oct-2026)
+//
+// Verificación contra ShipStation (7-oct-2026): 'exported' solo significa
+// "se descargó el CSV". Las columnas ss_* las escribe client-orders-ss-check.js
+// consultando la API de ShipStation; client-orders-ss-alert.js (programada)
+// manda correo si una orden lleva más de 2 h exportada sin aparecer.
 //
 // CSV defaults per client (added June 2026):
 //   Two of the four fixed-per-client headers — "Custom Field 1" and
@@ -203,7 +211,7 @@ exports.handler = async (event) => {
   // ---------- LIST: orders for the warehouse queue ----------
   if (action === 'list' && event.httpMethod === 'GET') {
     const status = (event.queryStringParameters || {}).status || 'pending';
-    if (!VALID_STATUSES.includes(status) && status !== 'all') {
+    if (!VALID_STATUSES.includes(status) && status !== 'all' && status !== 'not_in_ss') {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid status filter' }) };
     }
     try {
@@ -223,9 +231,15 @@ exports.handler = async (event) => {
         'client_orders?select=id,client_id,order_number,status,recipient_name,recipient_phone,' +
         'address_line1,address_line2,city,state,postal_code,country_code,shipping_service,' +
         'notes_to_buyer,internal_notes,created_at,exported_at,exported_by,' +
+        'ss_state,ss_order_id,ss_order_status,ss_checked_at,ss_alerted_at,requeue_count,' +
         'client_order_items(id,item_sku,item_name,item_quantity,item_unit_price,sku_validated)' +
         '&order=created_at.desc';
-      if (status !== 'all') query += `&status=eq.${status}`;
+      if (status === 'not_in_ss') {
+        // Exportadas que la verificación NO encontró en ShipStation.
+        query += '&status=eq.exported&ss_state=eq.missing';
+      } else if (status !== 'all') {
+        query += `&status=eq.${status}`;
+      }
 
       const ordersRes = await sbFetch(query);
       if (!ordersRes.ok) {
@@ -337,6 +351,77 @@ exports.handler = async (event) => {
           exported_count: exportable.length,
           exported_order_numbers: exportable.map((o) => o.order_number),
           skipped, // order numbers that were not pending and were left untouched
+        }),
+      };
+    } catch (err) {
+      return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server error', detail: String(err) }) };
+    }
+  }
+
+  // ---------- REQUEUE: devolver a 'pending' una orden exportada que NO está en ShipStation ----------
+  // Caso de uso: se descargó el CSV, nunca se importó y el archivo se perdió.
+  // Guard del lado servidor: SOLO órdenes 'exported' sin ss_order_id. Si la
+  // verificación ya la encontró en ShipStation, se rechaza (re-exportarla la
+  // duplicaría allá y se despacharía dos veces).
+  if (action === 'requeue' && event.httpMethod === 'POST') {
+    let payload;
+    try {
+      payload = JSON.parse(event.body || '{}');
+    } catch {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON body' }) };
+    }
+    const orderIds = Array.isArray(payload.order_ids) ? payload.order_ids : [];
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (orderIds.length === 0 || !orderIds.every((id) => uuidRe.test(String(id)))) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'order_ids must be a non-empty list of UUIDs' }) };
+    }
+    try {
+      const idList = orderIds.map((id) => `"${id}"`).join(',');
+      const r = await sbFetch(
+        `client_orders?select=id,order_number,status,ss_state,ss_order_id,requeue_count&id=in.(${idList})`
+      );
+      if (!r.ok) {
+        return { statusCode: 502, headers, body: JSON.stringify({ error: 'Orders fetch failed', detail: await r.text() }) };
+      }
+      const orders = await r.json();
+      const eligible = orders.filter((o) => o.status === 'exported' && o.ss_order_id == null);
+      const rejected = orders
+        .filter((o) => !eligible.includes(o))
+        .map((o) => ({
+          order_number: o.order_number,
+          reason: o.ss_order_id != null ? 'ALREADY_IN_SHIPSTATION' : `STATUS_${String(o.status).toUpperCase()}`,
+        }));
+      if (eligible.length === 0) {
+        return { statusCode: 409, headers, body: JSON.stringify({ error: 'None of the selected orders can be returned to pending', rejected }) };
+      }
+      const nowIso = new Date().toISOString();
+      // Una fila a la vez para incrementar requeue_count de cada una.
+      for (const o of eligible) {
+        const u = await sbFetch(`client_orders?id=eq.${o.id}&status=eq.exported&ss_order_id=is.null`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            status: 'pending',
+            exported_at: null,
+            exported_by: null,
+            ss_state: null,
+            ss_checked_at: null,
+            ss_alerted_at: null,
+            requeued_at: nowIso,
+            requeue_count: (o.requeue_count || 0) + 1,
+          }),
+        });
+        if (!u.ok) {
+          return { statusCode: 502, headers, body: JSON.stringify({ error: `Could not requeue ${o.order_number}`, detail: await u.text() }) };
+        }
+      }
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          requeued_count: eligible.length,
+          requeued_order_numbers: eligible.map((o) => o.order_number),
+          rejected,
         }),
       };
     } catch (err) {
