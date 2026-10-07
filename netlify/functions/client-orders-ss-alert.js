@@ -114,7 +114,8 @@ function buildHtml(rows) {
 
 exports.handler = async () => {
   try {
-    const result = await runCheck({ dryRun: false });
+    // Programada: límite de Netlify de 30 s, se le da más presupuesto que a la HTTP.
+    const result = await runCheck({ dryRun: false, timeBudgetMs: 20000 });
     // Solo las que pasaron la gracia, fueron consultadas de verdad y no se avisaron aún.
     const toAlert = result.missing.filter(
       (m) => m.severity === 'alert' && m.verified && !m.ss_alerted_at
