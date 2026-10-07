@@ -36,6 +36,12 @@
 [functions."wa-followups"]
   schedule = "0 14 * * *"
 
+# Client Orders: alerta si una orden exportada a CSV no aparece en ShipStation.
+# Cada hora de 12:25 a 23:25 UTC (8:25 AM–7:25 PM EDT), lunes a sábado.
+# La versión HTTP para el navegador es client-orders-ss-check (sin schedule).
+[functions."client-orders-ss-alert"]
+  schedule = "25 12-23 * * 1-6"
+
 # ─── Redirects ──────────────────────────────────────────────────────────────
 
 [[redirects]]
