@@ -43,6 +43,10 @@ const MAX_LOOKUPS_PER_RUN = 30;
 const DEFAULT_TIME_BUDGET_MS = 7000;
 // Consultas simultáneas a ShipStation.
 const CONCURRENCY = 4;
+// Órdenes que alguien dio por resueltas a mano (ss_state='dismissed', p.ej. la
+// orden se recreó con otro número) no se verifican ni alertan más.
+// Se escribe con or= porque `neq` en PostgREST excluye también los NULL.
+const NOT_DISMISSED = '&or=(ss_state.is.null,ss_state.eq.missing)';
 // Horas desde la exportación a partir de las cuales una orden 'missing'
 // se considera ALERTA (antes de eso es normal: el operador está importando).
 const GRACE_HOURS = 2;
@@ -138,6 +142,7 @@ async function runCheck(options = {}) {
     'client_orders?select=id,client_id,order_number,recipient_name,exported_at,exported_by,' +
     'ss_state,ss_checked_at,ss_alerted_at' +
     `&status=eq.exported&ss_order_id=is.null&exported_at=gte.${encodeURIComponent(sinceIso)}` +
+    NOT_DISMISSED +
     '&order=ss_checked_at.asc.nullsfirst,exported_at.desc&limit=200';
   const pr = await sbFetch(q);
   if (!pr.ok) throw new Error(`client_orders: ${pr.status} ${await pr.text()}`);
@@ -208,6 +213,7 @@ async function runCheck(options = {}) {
     'client_orders?select=id,client_id,order_number,recipient_name,city,state,exported_at,' +
     'exported_by,ss_state,ss_checked_at,ss_alerted_at' +
     `&status=eq.exported&ss_order_id=is.null&exported_at=gte.${encodeURIComponent(sinceIso)}` +
+    NOT_DISMISSED +
     '&order=exported_at.asc'
   );
   if (!mr.ok) throw new Error(`client_orders (missing): ${mr.status} ${await mr.text()}`);
