@@ -248,6 +248,8 @@
   let ordersCache = [];
   const selected = new Set();
   let ssCheckRunning = false;
+  let backlogTimer = null;
+  const BACKLOG_RETRY_MS = 45 * 1000;     // si quedó cola, seguir en 45 s (ShipStation permite 40 consultas/min)
 
   // ---------- Elements ----------
   const tbody = document.getElementById('orders-tbody');
@@ -277,7 +279,14 @@
   async function readJson(res) {
     const text = await res.text();
     try { return JSON.parse(text); }
-    catch { throw new Error(`HTTP ${res.status}: ${text.slice(0, 160) || 'empty response'}`); }
+    catch {
+      if (res.status === 504 || /timeout/i.test(text)) {
+        throw new Error(`The server took too long to answer (HTTP ${res.status} timeout).`);
+      }
+      // Respuesta HTML: quitar etiquetas para no pintar el código crudo.
+      const plain = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      throw new Error(`HTTP ${res.status}: ${plain.slice(0, 160) || 'empty response'}`);
+    }
   }
 
   function hoursSince(iso) {
@@ -497,6 +506,9 @@
     if (result.errors && result.errors.length) {
       ssBanner.insertAdjacentHTML('beforeend', `<div class="ss-banner error">Some orders could not be checked in ShipStation: ${esc(result.errors.map((e) => e.order_number).join(', '))}. ${esc(result.errors[0].error)}</div>`);
     }
+    if (result.backlog > 0) {
+      ssBanner.insertAdjacentHTML('beforeend', `<div class="ss-banner ok" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe">Still verifying ${esc(result.backlog)} order(s) against ShipStation — continuing automatically…</div>`);
+    }
     if (result.rate_limited) {
       ssBanner.insertAdjacentHTML('beforeend', `<div class="ss-banner error">ShipStation rate limit reached — remaining orders will be checked on the next refresh.</div>`);
     }
@@ -512,6 +524,14 @@
       if (!res.ok || !json.ok) throw new Error(json.error || 'ShipStation check failed');
       renderBanner(json);
       ssLastCheck.textContent = `ShipStation checked ${new Date(json.checked_at).toLocaleTimeString()}`;
+      // Cola pendiente (carga inicial grande o rate limit): seguir en tandas.
+      clearTimeout(backlogTimer);
+      if (json.backlog > 0) {
+        backlogTimer = setTimeout(async () => {
+          await runSsCheck();
+          await loadOrders({ silent: true });
+        }, json.rate_limited ? 60 * 1000 : BACKLOG_RETRY_MS);
+      }
     } catch (err) {
       // Nunca fallar en silencio: si no se pudo verificar, decirlo.
       ssBanner.innerHTML = `<div class="ss-banner error"><span class="ss-title">Could not verify orders against ShipStation</span>${esc(err.message)}<br>Exported orders may not be in ShipStation — check manually.</div>`;
