@@ -12,6 +12,8 @@
 //   GET  ?action=list&status=not_in_ss -> exportadas que ShipStation NO tiene (oct-2026)
 //   POST ?action=requeue body:{order_ids:[...]} -> devuelve a 'pending' una exportada
 //        que NO está en ShipStation, para re-exportarla (oct-2026)
+//   POST ?action=dismiss body:{order_ids:[...], note:"..."} -> da por resuelta a mano
+//        una exportada que nunca va a estar en ShipStation (oct-2026)
 //
 // Verificación contra ShipStation (7-oct-2026): 'exported' solo significa
 // "se descargó el CSV". Las columnas ss_* las escribe client-orders-ss-check.js
@@ -232,6 +234,7 @@ exports.handler = async (event) => {
         'address_line1,address_line2,city,state,postal_code,country_code,shipping_service,' +
         'notes_to_buyer,internal_notes,created_at,exported_at,exported_by,' +
         'ss_state,ss_order_id,ss_order_status,ss_checked_at,ss_alerted_at,requeue_count,' +
+        'ss_dismissed_at,ss_dismissed_note,' +
         'client_order_items(id,item_sku,item_name,item_quantity,item_unit_price,sku_validated)' +
         '&order=created_at.desc';
       if (status === 'not_in_ss') {
@@ -407,6 +410,8 @@ exports.handler = async (event) => {
             ss_state: null,
             ss_checked_at: null,
             ss_alerted_at: null,
+            ss_dismissed_at: null,
+            ss_dismissed_note: null,
             requeued_at: nowIso,
             requeue_count: (o.requeue_count || 0) + 1,
           }),
@@ -422,6 +427,55 @@ exports.handler = async (event) => {
           requeued_count: eligible.length,
           requeued_order_numbers: eligible.map((o) => o.order_number),
           rejected,
+        }),
+      };
+    } catch (err) {
+      return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server error', detail: String(err) }) };
+    }
+  }
+
+  // ---------- DISMISS: dar por resuelta una orden exportada que NO está en ShipStation ----------
+  // Caso real (7-oct-2026): "114-2186745-4827468 Anna" se recreó como "…Anna-1",
+  // que sí se despachó; la original nunca va a aparecer en ShipStation.
+  // Exige una nota (queda en ss_dismissed_note); la orden deja de verificarse
+  // y de alertar. Solo órdenes 'exported' sin ss_order_id.
+  if (action === 'dismiss' && event.httpMethod === 'POST') {
+    let payload;
+    try {
+      payload = JSON.parse(event.body || '{}');
+    } catch {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON body' }) };
+    }
+    const orderIds = Array.isArray(payload.order_ids) ? payload.order_ids : [];
+    const note = String(payload.note || '').trim().slice(0, 500);
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (orderIds.length === 0 || !orderIds.every((id) => uuidRe.test(String(id)))) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'order_ids must be a non-empty list of UUIDs' }) };
+    }
+    if (note.length < 5) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'A reason is required (e.g. "Replaced by order X, already shipped")' }) };
+    }
+    try {
+      const idList = orderIds.map((id) => `"${id}"`).join(',');
+      const u = await sbFetch(
+        `client_orders?id=in.(${idList})&status=eq.exported&ss_order_id=is.null&select=order_number`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+          body: JSON.stringify({ ss_state: 'dismissed', ss_dismissed_at: new Date().toISOString(), ss_dismissed_note: note }),
+        }
+      );
+      if (!u.ok) {
+        return { statusCode: 502, headers, body: JSON.stringify({ error: 'Could not mark orders as resolved', detail: await u.text() }) };
+      }
+      const done = await u.json();
+      return {
+        statusCode: done.length ? 200 : 409,
+        headers,
+        body: JSON.stringify({
+          dismissed_count: done.length,
+          dismissed_order_numbers: done.map((o) => o.order_number),
+          error: done.length ? undefined : 'None of the selected orders can be marked resolved (already in ShipStation or not exported)',
         }),
       };
     } catch (err) {
