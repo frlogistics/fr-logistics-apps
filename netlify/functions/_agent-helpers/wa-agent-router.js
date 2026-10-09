@@ -40,6 +40,7 @@ import {
   pauseConversation,
   parseAddress,
   sendWebOutbound,
+  isBlocked,
 } from "./wa-agent-db.js";
 import { sendAndRecord as sendWhatsAppAndRecord, sendAgentFlow, recordOutboundInBlobs } from "./wa-agent-send.js";
 import {
@@ -127,6 +128,8 @@ async function sendOnce(args) {
 const WA_FLOW_IDS = { ES: "2325583131526236", EN: "1670919591296203" };
 // How long a human-owned (paused) thread keeps Liam silent after its last activity.
 const PAUSE_HOLD_MS = 72 * 60 * 60 * 1000;
+// [2026-10-08] Ventana del tope de saludo (ver handleNewLeadMessage).
+const GREETING_CAP_MS = 24 * 60 * 60 * 1000;
 const FLOW_SUBMIT_MARK = "[flow-submit]";
 
 const FLOW_LABELS = {
@@ -269,6 +272,15 @@ export async function routeIncomingMessage(msg) {
     // En web/Instagram va vacio para que detectLanguage caiga al texto en
     // vez de leer digitos de un uuid como si fueran un pais.
     const fromE164 = phonePrefixOf(from);
+
+    // ─── STEP -1: Blocklist [2026-10-08] ──────────────────────────
+    // Numeros marcados desde el inbox como Vendor pitch / Noise (tabla
+    // wa_blocklist). Silencio total: ni saludo, ni conversacion, ni lead.
+    // El mensaje ya quedo guardado en wa_messages por el webhook.
+    if (await isBlocked(from)) {
+      console.log(`[agent-router] ${from} is blocked (wa_blocklist) — agent silent`);
+      return;
+    }
 
     // ─── STEP 0: Human shortcut ───────────────────────────────────
     // If user types "humano" / "human" / "quiero hablar con jose" from ANY
@@ -632,6 +644,21 @@ async function handleNewLeadMessage(msg) {
   const lang = detected.language === "UNKNOWN" ? null : detected.language;
   const source = detected.source;
 
+  // [2026-10-08] TOPE DE SALUDO: un solo saludo de bienvenida por contacto
+  // cada GREETING_CAP_MS. Si ya hubo una conversacion de este numero creada
+  // en esa ventana y LIAM ya le escribio, no se abre otra ni se re-saluda:
+  // se anota la actividad en la anterior y LIAM calla. Corta los choques
+  // bot-contra-bot (auto-respuestas que disparan otro saludo, que dispara
+  // otra auto-respuesta...) y evita el menu repetido a un humano que vuelve
+  // a escribir tras cerrar. El webhook igual avisa por push/correo.
+  const lastAny = await getLastConversationAny(from);
+  if (lastAny?.created_at && lastAny.last_agent_message_at &&
+      (Date.now() - new Date(lastAny.created_at).getTime()) < GREETING_CAP_MS) {
+    console.log(`[agent-router] greeting cap: ${from} already greeted in conv ${lastAny.id} (${lastAny.state}) — no new greeting`);
+    await updateConversationOnUserMessage(lastAny.id);
+    return;
+  }
+
   // Create conversation (with language if known, null if UNKNOWN)
   const conv = await createConversation({
     waNumber: from,
@@ -644,15 +671,18 @@ async function handleNewLeadMessage(msg) {
   });
   if (!conv) return;
 
-  // Create lead row and link
-  const leadId = await createLeadFromConversation({
-    waNumber: from,
-    waProfileName: clientName,
-    language: lang || "en",
-    firstMessage: text,
-  });
-  if (leadId) {
-    await linkConversationToLead(conv.id, leadId);
+  // Create lead row and link — salvo que la conversacion ya haya heredado
+  // el lead de una sesion anterior (antes se creaba otro igual).
+  if (!conv.lead_id) {
+    const leadId = await createLeadFromConversation({
+      waNumber: from,
+      waProfileName: clientName,
+      language: lang || "en",
+      firstMessage: text,
+    });
+    if (leadId) {
+      await linkConversationToLead(conv.id, leadId);
+    }
   }
 
   // Send appropriate greeting
