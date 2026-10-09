@@ -114,6 +114,18 @@ function sameTracking(a, b) {
   return s.length >= 10 && l.includes(s);
 }
 
+// Does a tracking READ FROM THE PHOTO have the shape its carrier always uses?
+// Only the families we are sure of are checked; anything else passes.
+// 8-Oct (DLM): with no scan, the photo gave TBA33520961613319 (17) and
+// TBA3352212429064 (16) for TBA335209613319 / TBA335212429064. Real Amazon
+// trackings are TBA + 12 digits (379 of 388 in the log).
+function trackingShapeOk(t) {
+  if (!t) return false;
+  if (/^TBA/.test(t)) return /^TBA\d{12}$/.test(t);
+  if (/^1Z/.test(t)) return /^1Z[0-9A-Z]{16}$/.test(t);
+  return true;
+}
+
 // The model sometimes returns almost-JSON (a trailing comma, a // comment, a
 // sentence after the object). Every failed parse used to cost a second model
 // call — 8-10 s more on the handheld — so repair the common slips first and
@@ -146,11 +158,12 @@ function toNum(v) { const n = Number(v); return Number.isFinite(n) && n > 0 && n
 function toDate(v) { return /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? v : null; }
 
 // Decide status from what came back. Pure, so it can be unit-tested.
-function decideStatus(parsed, trackingMatch, tracking) {
+function decideStatus(parsed, trackingMatch, tracking, scanned) {
   if (parsed.is_label === false) return 'not_label';
   const conf = Number(parsed.confidence);
   if (!tracking) return 'low_confidence';
   if (trackingMatch === false) return 'low_confidence';
+  if (!scanned && !trackingShapeOk(tracking)) return 'low_confidence';
   if (!Number.isFinite(conf) || conf < MIN_CONFIDENCE) return 'low_confidence';
   return 'ok';
 }
@@ -198,6 +211,41 @@ How to read each field:
 
 Rules: never invent a value — if a field is not legible, use null (or [] for lists). If the photo is not a shipping label at all, set is_label to false and everything else null/[] with your confidence.`;
 
+// 8-Oct: 9 of 12 photos failed with "model did not return JSON" / a broken
+// JSON string. The answer now comes back through a forced tool call, so the
+// API hands us an object instead of text we have to parse. Text is only the
+// fallback, and when even that fails the error keeps what the model said.
+const S = (t) => ({ type: [t, 'null'] });
+const LABEL_TOOL = {
+  name: 'record_label',
+  description: 'Record the fields read from the shipping label in the photo.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      is_label: { type: 'boolean' },
+      carrier: S('string'),
+      service: S('string'),
+      tracking: S('string'),
+      master_tracking: S('string'),
+      piece_no: S('number'),
+      piece_total: S('number'),
+      ship_from: {
+        type: 'object',
+        properties: { name: S('string'), city: S('string'), state: S('string'), is_fr_logistics: { type: 'boolean' } },
+      },
+      recipient_lines: { type: 'array', items: { type: 'string' } },
+      ra_number: S('string'),
+      origin_fc: S('string'),
+      refs: { type: 'array', items: { type: 'string' } },
+      weight_lb: S('number'),
+      label_date: S('string'),
+      description: S('string'),
+      confidence: { type: 'number' },
+    },
+    required: ['is_label', 'tracking', 'recipient_lines', 'confidence'],
+  },
+};
+
 async function askModel(contentType, b64, extra) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -205,18 +253,27 @@ async function askModel(contentType, b64, extra) {
     body: JSON.stringify({
       model: MODEL,
       max_tokens: MAX_TOKENS,
+      tools: [LABEL_TOOL],
+      tool_choice: { type: 'tool', name: LABEL_TOOL.name },
       messages: [{
         role: 'user',
         content: [
           { type: 'image', source: { type: 'base64', media_type: contentType, data: b64 } },
-          { type: 'text', text: PROMPT + (extra || '') },
+          { type: 'text', text: PROMPT + '\n\nAnswer by calling record_label.' + (extra || '') },
         ],
       }],
     }),
   });
   if (!res.ok) throw new Error(`anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const j = await res.json();
-  return (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+  const tool = (j.content || []).find((b) => b.type === 'tool_use' && b.input && typeof b.input === 'object');
+  if (tool) return tool.input;
+  const text = (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+  try {
+    return parseModelJson(text);
+  } catch (e) {
+    throw new Error(`${e.message} [stop=${j.stop_reason || '?'}] ${text.replace(/\s+/g, ' ').slice(0, 200)}`);
+  }
 }
 
 async function patchRead(id, patch) {
@@ -250,15 +307,15 @@ exports.handler = async (event) => {
     const contentType = img.headers.get('content-type') || 'image/jpeg';
     const b64 = Buffer.from(await img.arrayBuffer()).toString('base64');
 
-    // 2. Model, with one retry on malformed JSON.
+    // 2. Model (structured answer through the tool), one retry if it still fails.
     let parsed;
     let attempts = 1;
     try {
-      parsed = parseModelJson(await askModel(contentType, b64));
+      parsed = await askModel(contentType, b64);
     } catch (e) {
       attempts = 2;
-      parsed = parseModelJson(await askModel(contentType, b64,
-        '\n\nIMPORTANT: your previous reply was not valid JSON. Reply with the JSON object only.'));
+      parsed = await askModel(contentType, b64,
+        '\n\nIMPORTANT: your previous answer could not be read. Call record_label with the fields.');
     }
 
     // 3. Tracking: the scan is exact, the photo is not.
@@ -308,7 +365,10 @@ exports.handler = async (event) => {
     }
 
     const carrier = carrierFromTracking(tracking) || mapCarrier(parsed.carrier);
-    const status = decideStatus(parsed, trackingMatch, tracking);
+    const status = decideStatus(parsed, trackingMatch, tracking, scanned);
+    if (!scanned && tracking && !trackingShapeOk(tracking)) {
+      resolution = { ...(resolution || {}), tracking_suspect: true };
+    }
     const confidence = Number(parsed.confidence);
 
     // 5. Write it all back.
@@ -359,4 +419,4 @@ exports.handler = async (event) => {
 };
 
 // Exported for tests only.
-exports._test = { normTracking, carrierFromTracking, mapCarrier, sameTracking, parseModelJson, decideStatus, cleanList };
+exports._test = { normTracking, carrierFromTracking, mapCarrier, sameTracking, parseModelJson, decideStatus, cleanList, trackingShapeOk };
