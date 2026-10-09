@@ -123,6 +123,15 @@ function normTracking(raw) {
   return t;
 }
 
+// Same check as label-extract-background.js: Amazon is TBA + 12 digits, UPS is
+// 1Z + 16. Other families are not checked.
+function trackingShapeOk(t) {
+  if (!t) return false;
+  if (/^TBA/.test(t)) return /^TBA\d{12}$/.test(t);
+  if (/^1Z/.test(t)) return /^1Z[0-9A-Z]{16}$/.test(t);
+  return true;
+}
+
 // Mirror of public.fr_tracking_carrier().
 function carrierFromTracking(t) {
   if (!t) return null;
@@ -142,7 +151,7 @@ const CARD_COLUMNS = [
   'ra_number', 'origin_fc', 'refs', 'weight_lb', 'description',
   'suggested_client_id', 'suggested_type', 'suggested_carrier', 'match_method', 'route', 'resolution',
   'confirmed_client_id', 'confirmed_type', 'confirmed_carrier', 'confirmed_by', 'confirmed_at',
-  'photo_url', 'shipment_id', 'registered', 'voided_at', 'voided_by', 'slip_status',
+  'photo_url', 'shipment_id', 'registered', 'voided_at', 'voided_by', 'slip_status', 'mode',
 ].join(',');
 
 // Earlier v2 reads of the same package. Scanning a box twice used to pass in
@@ -301,7 +310,7 @@ exports.handler = async (event) => {
         // -04:00 is midnight in EDT and 11 PM the day before in EST: never misses a
         // morning read; at worst shows one from late last night in winter.
         const since = new Date(`${miamiDay}T00:00:00-04:00`).toISOString();
-        let path = `wh_label_reads?created_at=gte.${encodeURIComponent(since)}&select=${CARD_COLUMNS}&order=created_at.desc&limit=40`;
+        let path = `wh_label_reads?created_at=gte.${encodeURIComponent(since)}&select=${CARD_COLUMNS}&order=created_at.desc&limit=150`;
         if (q.operator) path += `&operator=eq.${encodeURIComponent(q.operator)}`;
         const r = await sb(path);
         const rows = await r.json();
@@ -400,6 +409,83 @@ exports.handler = async (event) => {
       return json(200, { read: (await withLogged([shaped]))[0] });
     }
 
+    // ─── batch_scan (one client, many boxes) ─────────────────────────────
+    // 9-Oct, Jose: "Inbound/Outbound picks the client once and every code goes
+    // to it" — 33 DLM boxes are one decision, not 33 photos. The operator picks
+    // client + type once on the handheld; each trigger scan is registered here
+    // at once, no photo. The scan is exact, so the tracking is never a misread.
+    // Guards: same package twice (DUPLICATE), a DropShipment (its own app), a
+    // tracking our records tie to ANOTHER client, or a row already in the log
+    // under another client — those are refused and the handheld buzzes.
+    if (body.action === 'batch_scan') {
+      const scannedRaw = String(body.scanned_raw || '').slice(0, 200);
+      const tracking = normTracking(scannedRaw);
+      const clientId = String(body.client_id || '');
+      if (!tracking) return json(400, { error: 'scan a tracking first' });
+      if (!UUID_RE.test(clientId)) return json(400, { error: 'pick a client first' });
+      const type = TYPES.includes(body.type) ? body.type : 'Inbound (General)';
+      const client = await loadClient(clientId);
+      if (!client) return json(400, { error: 'unknown client' });
+
+      const [previous, resolution, logged] = await Promise.all([
+        previousReads(tracking),
+        rpc('fr_resolve_label', { p_tracking: tracking }),
+        rpc('fr_find_shipment', { p_tracking: tracking }),
+      ]);
+      if (previous.length) return duplicate(previous);
+      const res = resolution || {};
+      if (res.route === 'dropshipments') {
+        return json(409, { error: 'DROPSHIP', message: `${tracking} is an announced DropShipment — receive it in the DropShipments app.` });
+      }
+      const STRONG = ['dropshipment', 'outbound_return', 'return_label', 'client_order'];
+      if (res.client_id && res.client_id !== clientId && STRONG.includes(res.method)) {
+        return json(409, { error: 'CLIENT_MISMATCH', message: `${tracking} belongs to ${res.client_code || 'another client'} in our records — not saved to ${client.client_code}.`, resolution: res });
+      }
+      if (logged && logged.client_code && logged.client_code !== client.client_code) {
+        return json(409, { error: 'LOGGED_OTHER_CLIENT', message: `${tracking} is already in the log as ${logged.client_code} — not changed.`, logged });
+      }
+
+      const carrier = carrierFromTracking(tracking) || (CARRIERS.includes(body.carrier) ? body.carrier : 'Other');
+      const ins = await sb('wh_label_reads', {
+        method: 'POST',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify([{
+          photo_url: null,
+          source: 'scan',
+          scanned_raw: scannedRaw,
+          scanned_tracking: tracking,
+          tracking,
+          operator,
+          mode: 'batch',
+          status: 'ok',
+          confidence: 1,
+          completed_at: new Date().toISOString(),
+          carrier,
+          suggested_carrier: carrier,
+          suggested_client_id: res.client_id || null,
+          suggested_type: res.suggested_type || null,
+          match_method: res.method || 'batch',
+          route: res.route || null,
+          resolution: { ...res, batch: { client_id: clientId, client_code: client.client_code, type } },
+        }]),
+      });
+      const rows = await ins.json();
+      if (!ins.ok || !Array.isArray(rows) || !rows.length) return json(500, { error: 'could not save', detail: rows });
+
+      // Same path as a Save on the handheld: record, link or register.
+      const reg = await exports.handler({
+        httpMethod: 'POST',
+        headers: event.headers,
+        body: JSON.stringify({ action: 'register', read_id: rows[0].id, client_id: clientId, type, carrier, operator }),
+      });
+      const rj = JSON.parse(reg.body || '{}');
+      if (reg.statusCode >= 300) {
+        // Nothing reached the log: drop the read so a re-scan is not a "duplicate".
+        await sb(`wh_label_reads?id=eq.${rows[0].id}&shipment_id=is.null`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+      }
+      return json(reg.statusCode, { ...rj, read_id: rows[0].id, tracking, carrier });
+    }
+
     // ─── confirm ────────────────────────────────────────────────────────
     if (body.action === 'confirm') {
       const readId = String(body.read_id || '');
@@ -446,6 +532,12 @@ exports.handler = async (event) => {
       if (read.voided_at) return json(409, { error: 'VOIDED', message: 'This read was undone. Scan the package again.' });
       const tracking = read.tracking || read.scanned_tracking;
       if (!tracking) return json(400, { error: 'NO_TRACKING', message: 'No tracking on this read — scan the barcode and try again.' });
+      // A tracking that only came from the photo and does not have its
+      // carrier's shape is a misread (8-Oct: TBA33520961613319 for
+      // TBA335209613319). Never put it in the log: ask for the barcode.
+      if (!read.scanned_tracking && !read.shipment_id && !trackingShapeOk(tracking)) {
+        return json(422, { error: 'TRACKING_SUSPECT', message: `The photo read ${tracking}, which is not a valid tracking. Scan the barcode instead.` });
+      }
       const client = await loadClient(clientId);
       if (!client) return json(400, { error: 'unknown client' });
 
