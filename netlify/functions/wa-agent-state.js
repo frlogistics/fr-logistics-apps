@@ -62,8 +62,13 @@ async function sb(path, init = {}) {
     const t = await r.text().catch(() => "");
     throw new Error(`Supabase ${r.status}: ${t.slice(0, 200)}`);
   }
-  if (init.headers?.Prefer === "return=minimal") return null;
-  return r.json();
+  // [2026-10-09] Supabase responde con cuerpo vacio en return=minimal (y en
+  // "resolution=merge-duplicates,return=minimal" del upsert del bloqueo).
+  // Antes solo se saltaba el parse con "return=minimal" exacto y el upsert
+  // reventaba con "Unexpected end of JSON input" a mitad del bloqueo.
+  const text = await r.text();
+  if (!text) return null;
+  try { return JSON.parse(text); } catch { return null; }
 }
 
 const CONV_COLS = [
