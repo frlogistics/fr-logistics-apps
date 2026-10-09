@@ -252,6 +252,20 @@ export default async function handler(req) {
 // ───────────────────────────────── Out-of-band notifications
 async function notifyOutOfBand(messages, agentMessages) {
   if (!messages?.length) return;
+  // [2026-10-08] Numeros en wa_blocklist (Vendor pitch / Noise marcados desde
+  // el inbox): el mensaje ya quedo guardado, pero no avisa por correo ni
+  // push y no llega a LIAM. Las bajas/altas (STOP/ALTA) si se procesan.
+  const blocked = await blockedNumbers(messages);
+  if (blocked.size) {
+    console.log('[webhook] blocked numbers, no notify/agent: ' + [...blocked].join(','));
+    const optMsgs = messages.filter(m => m.isOptOut || m.isOptIn);
+    messages = messages.filter(m => !blocked.has(String(m.from || '').replace(/[^0-9]/g, '')));
+    agentMessages = (agentMessages || []).filter(m => !blocked.has(String(m.from || '').replace(/[^0-9]/g, '')));
+    if (!messages.length) {
+      await handleOptOutsAndIns(optMsgs).catch(e => console.error('[webhook] optout error:', e?.message || e));
+      return;
+    }
+  }
   console.log('[webhook] notifyOutOfBand: ' + messages.length + ' messages, ' + (agentMessages?.length || 0) + ' for agent');
   await Promise.allSettled([
     sendEmail(messages).catch(e => console.error('[webhook] email error:', e?.message || e)),
@@ -570,6 +584,28 @@ async function isOptedOut(fromNumber) {
     console.error("[webhook] isOptedOut error:", e?.message || e);
     return false;
   }
+}
+
+// [2026-10-08] Set de numeros (digitos) del lote que estan en wa_blocklist
+// activa. Fail-open: ante error devuelve vacio y todo sigue como antes.
+async function blockedNumbers(messages) {
+  const out = new Set();
+  const creds = sbRest();
+  if (!creds) return out;
+  const nums = [...new Set((messages || []).map(m => String(m.from || '').replace(/[^0-9]/g, '')).filter(Boolean))];
+  if (!nums.length) return out;
+  try {
+    const r = await fetch(
+      `${creds.sbUrl}/rest/v1/wa_blocklist?channel=eq.whatsapp&unblocked_at=is.null&channel_user_id=in.(${nums.join(',')})&select=channel_user_id`,
+      { headers: { apikey: creds.sbKey, Authorization: `Bearer ${creds.sbKey}` } }
+    );
+    if (!r.ok) return out;
+    const rows = await r.json().catch(() => []);
+    for (const row of rows || []) out.add(String(row.channel_user_id));
+  } catch (e) {
+    console.error('[webhook] blockedNumbers error:', e?.message || e);
+  }
+  return out;
 }
 
 // Registra la baja (upsert por wa_number) y pausa conversaciones del agente.
