@@ -174,7 +174,11 @@ export async function getLastConversationAny(address) {
 
   const { data, error } = await sb()
     .from("wa_agent_conversations")
-    .select("id, captured_name, captured_email, captured_service, lead_id, is_existing_client, client_id, language, channel, channel_user_id")
+    // [2026-10-08] paused_by_human / paused_by / updated_at faltaban aqui, y la
+    // Branch A2 del router los lee: lastAny.paused_by_human salia siempre
+    // undefined, A2 nunca disparaba y cada mensaje nuevo tras pausar desde el
+    // inbox abria conversacion nueva con saludo (caso Hanseatica, 7 en 1 h).
+    .select("id, state, paused_by_human, paused_by, updated_at, created_at, last_agent_message_at, menu_sent_count, captured_name, captured_email, captured_service, lead_id, is_existing_client, client_id, language, channel, channel_user_id")
     .eq("channel", addr.channel)
     .eq("channel_user_id", addr.id)
     .order("updated_at", { ascending: false })
@@ -468,17 +472,67 @@ export async function createLeadFromConversation({
     captured_by: "Liam (agent)",
   };
 
+  // [2026-10-08] Un lead por contacto, no uno por conversacion. Antes cada
+  // sesion nueva del mismo numero insertaba otra fila en wa_leads (Hanseatica
+  // tenia 8, Jesica 9). Si ya existe un lead para este telefono / placeholder
+  // se reutiliza; el primero que se creo es el canonico.
+  try {
+    let q = sb().from("wa_leads").select("id, dq_flag").order("created_at", { ascending: true }).limit(5);
+    q = row.phone ? q.eq("phone", row.phone) : q.eq("email", row.email);
+    const { data: prev } = await q;
+    const keep = (prev || []).find((l) => l.dq_flag !== "duplicate") || prev?.[0];
+    if (keep?.id) {
+      console.log(`[agent-db] createLeadFromConversation: reusing lead ${keep.id} for ${addr.channel}:${addr.id}`);
+      return keep.id;
+    }
+  } catch (e) {
+    console.error("[agent-db] lead reuse lookup error:", e?.message || e);
+  }
+
   const { data, error } = await sb()
     .from("wa_leads")
     .insert(row)
     .select("id")
-    .single();
+    .maybeSingle();
 
   if (error) {
     console.error("[agent-db] createLeadFromConversation error:", error.message);
     return null;
   }
+  // data null = el trigger trg_wa_leads_skip_blocked descarto la fila
+  // (numero en wa_blocklist). No es error.
+  if (!data) console.log(`[agent-db] lead not created for ${addr.channel}:${addr.id} (blocked)`);
   return data?.id || null;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// BLOCKLIST [2026-10-08]
+// Numeros marcados desde el inbox como Vendor pitch o Noise / spam. LIAM no
+// les contesta, no se les crea lead y no generan avisos. Fail-open: si la
+// consulta falla se trata como NO bloqueado, para no callar a un cliente
+// real por un blip de red.
+// ─────────────────────────────────────────────────────────────────────
+
+export async function isBlocked(address) {
+  const addr = parseAddress(address);
+  if (!addr.id) return false;
+  try {
+    const { data, error } = await sb()
+      .from("wa_blocklist")
+      .select("reason")
+      .eq("channel", addr.channel)
+      .eq("channel_user_id", addr.id)
+      .is("unblocked_at", null)
+      .limit(1);
+    if (error) {
+      console.error("[agent-db] isBlocked error:", error.message);
+      return false;
+    }
+    return !!data?.length;
+  } catch (e) {
+    console.error("[agent-db] isBlocked error:", e?.message || e);
+    return false;
+  }
 }
 
 /**
