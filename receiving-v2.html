@@ -111,6 +111,15 @@
   .quick.dup .lbl{color:#9A3412;font-weight:700}
   .quick.hit .btn.ghost{background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.35)}
 
+  .batchbar{display:flex;gap:12px;align-items:center;background:var(--green);color:#fff;border-radius:10px;
+            padding:12px 14px;margin-bottom:12px}
+  .batchbar .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#DCFCE7}
+  .batchbar .bcode{font-size:21px;font-weight:700;line-height:1.2}
+  .batchbar .btype{font-size:13px;color:#DCFCE7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .batchbar .bn{font-size:26px;font-weight:700;line-height:1}
+  .batchbar .bend{margin-top:6px;padding:6px 14px;width:auto;background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.4)}
+  .quick.bad{background:#FEF2F2;border:2px solid var(--red)}
+  .quick.good{background:#F0FDF4;border:2px solid var(--green)}
   .prop{border-radius:10px;padding:14px;margin-bottom:12px;color:#fff;background:var(--navy)}
   .prop.none{background:#475569}
   .prop.conflict{background:#9A3412}
@@ -189,9 +198,47 @@
       <div class="hint" id="padHint">Pull the trigger on the main barcode.</div>
     </div>
 
+    <div class="batchbar" id="batchBar" hidden>
+      <div style="flex:1;min-width:0">
+        <div class="lbl">Batch · every scan is saved to</div>
+        <div class="bcode" id="batchCode">—</div>
+        <div class="btype" id="batchType"></div>
+      </div>
+      <div style="text-align:right">
+        <div class="bn" id="batchN">0</div>
+        <div class="lbl">saved</div>
+        <button class="btn ghost bend" id="batchEnd">End</button>
+      </div>
+    </div>
+
     <div class="quick" id="quick" hidden></div>
 
     <button class="btn go cam" id="camBtn">📷 Photo of the label</button>
+    <button class="btn ghost mt" id="batchOpen">📦 Batch — one client, many boxes</button>
+
+    <div class="card mt" id="batchSetup" hidden>
+      <h2>📦 Batch receiving</h2>
+      <p class="l2" style="margin:0 0 12px">Pick the client once. Every barcode you scan after that is saved to it right away — no photo. Anything our records tie to another client, a DropShipment or a repeat is refused with a buzz.</p>
+      <div class="field">
+        <label for="bClient">Client</label>
+        <select id="bClient"></select>
+      </div>
+      <div class="field">
+        <label for="bType">Type</label>
+        <select id="bType">
+          <option>Inbound (General)</option>
+          <option>Inbound (Amazon FBA)</option>
+          <option>Inbound (Prep Service)</option>
+          <option>Overstock</option>
+          <option>RMA (Returns)</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="btn ok" id="batchGo">Start batch</button>
+        <button class="btn ghost" id="batchCancel">Cancel</button>
+      </div>
+    </div>
 
     <div class="card mt">
       <h2>Queue &amp; today <span class="chip mut" id="todayCount">0</span></h2>
@@ -354,6 +401,7 @@ function enter(op){
   try{ localStorage.setItem('frm_op', op); localStorage.setItem('frm_ok', '1'); }catch(e){}
   $('who').textContent = op; $('who').hidden = false;
   show('cap');
+  restoreBatch();
   loadClients(); loadToday(); loadSummary();
 }
 $('gateBtn').onclick = () => {
@@ -379,6 +427,7 @@ $('pad').onclick = focusCap;
 
 /* ---------- 1. instant answer from the scan ---------- */
 async function onScan(raw){
+  if(S.batch){ batchQueue(raw); return; }
   S.scannedRaw = raw;
   S.probe = null;
   S.force = false;
@@ -489,6 +538,7 @@ function resetCapture(){
   $('padHint').textContent = 'Pull the trigger on the main barcode.';
   $('quick').hidden = true;
   $('camBtn').textContent = '📷 Photo of the label';
+  if(S.batch) renderBatch();
   focusCap();
 }
 
@@ -746,6 +796,7 @@ function renderList(){
     const res = x.resolution || {};
     const conf = x.voided_at ? '<span class="chip mut">undone</span>'
       : x.status === 'pending' ? '<span class="chip run">reading…</span>'
+      : x.mode === 'batch' && x.shipment_id ? '<span class="chip ok">✓ batch</span>'
       : x.confirmed_client_id && x.registered ? (x.confirmed_client_id === x.suggested_client_id ? '<span class="chip ok">✓ registered</span>' : '<span class="chip err">corrected · reg.</span>')
       : x.confirmed_client_id && x.shipment_id ? (x.confirmed_client_id === x.suggested_client_id ? '<span class="chip ok">✓ linked</span>' : '<span class="chip err">corrected · linked</span>')
       : x.confirmed_client_id
@@ -754,7 +805,7 @@ function renderList(){
     rows.push(`<li data-id="${esc(x.id)}" class="${!x.confirmed_client_id && x.status !== 'pending' && !x.voided_at ? 'attn' : ''}" style="${x.voided_at ? 'opacity:.5' : ''}">
       <div><div class="l1 mono">${esc(x.tracking || x.scanned_tracking || '(no tracking)')}</div>
       <div class="l2">${esc(time(x.created_at))} · ${esc(x.carrier || '?')} · ${x.source === 'scan' ? 'scan only' : esc(x.status)}${x._reads > 1 ? ` · read ×${x._reads}` : ''}</div></div>
-      <div class="right"><div class="l1">${esc(res.client_code || '—')}</div>${conf}</div></li>`);
+      <div class="right"><div class="l1">${esc((res.batch && res.batch.client_code) || res.client_code || '—')}</div>${conf}</div></li>`);
   }
   $('todayList').innerHTML = rows.join('');
   $('todayList').querySelectorAll('li[data-job]').forEach((li) => {
@@ -802,6 +853,8 @@ function openRead(r){
   const notes = [];
 
   if(r.status === 'failed') notes.push(`<div class="note red"><b>Could not read it.</b> ${esc(r.error || '')}<br>Pick the client by hand below.</div>`);
+  if(r.resolution && r.resolution.tracking_suspect && !r.scanned_tracking) notes.push(`<div class="note red"><b>Tracking misread.</b> The photo gave ${esc(r.tracking || '')}, which is not a valid tracking. Go back, <b>scan the barcode</b> and take the photo again.</div>`);
+  else if(!r.scanned_tracking && r.source !== 'scan' && !r.shipment_id && !r.voided_at && r.status !== 'failed') notes.push('<div class="note"><b>No barcode scan on this one.</b> The tracking comes from the photo only — check it against the label before you save.</div>');
   if(r.status === 'not_label') notes.push('<div class="note red"><b>That does not look like a shipping label.</b> Retake the photo of the label only.</div>');
   if(r.tracking_match === false) notes.push(`<div class="note"><b>Scan and label do not match.</b> Scanned ${esc(r.scanned_tracking)}, label reads ${esc(r.tracking_read)}. Did you scan another barcode?</div>`);
   if(r.status === 'low_confidence' && r.tracking_match !== false) notes.push('<div class="note"><b>Hard to read.</b> Check the fields below; a flat photo with all four corners works best.</div>');
@@ -953,6 +1006,103 @@ async function printInbound(logged, tracking){
 }
 
 function clientById(id){ return id ? S.clients.find((c) => c.id === id) : null; }
+
+/* ---------- batch: one client, many boxes ---------- */
+// 9-Oct, Jose: Inbound/Outbound lets you pick the client once and scan every
+// box to it. Same here: pick client + type, then each trigger scan is saved by
+// the server (action batch_scan) with no photo. The scan is exact, so there is
+// no misread tracking. Scans are queued and sent one by one, so a fast trigger
+// never loses a box. The batch survives a page reload for the rest of the day.
+const todayKey = () => new Date().toLocaleDateString('en-CA');
+function saveBatch(){
+  try{
+    if(S.batch) localStorage.setItem('v2_batch', JSON.stringify(S.batch));
+    else localStorage.removeItem('v2_batch');
+  }catch(e){}
+}
+function restoreBatch(){
+  try{
+    const b = JSON.parse(localStorage.getItem('v2_batch') || 'null');
+    if(b && b.day === todayKey() && b.client_id && b.operator === S.operator) S.batch = b;
+  }catch(e){}
+  renderBatch();
+}
+function renderBatch(){
+  const on = !!S.batch;
+  $('batchBar').hidden = !on;
+  $('camBtn').hidden = on;
+  $('batchOpen').hidden = on;
+  if(on){
+    $('batchSetup').hidden = true;
+    $('batchCode').textContent = S.batch.code || '—';
+    $('batchType').textContent = (S.batch.name ? S.batch.name + ' · ' : '') + S.batch.type;
+    $('batchN').textContent = S.batch.n || 0;
+    $('padBig').textContent = 'Scan boxes';
+    $('padHint').textContent = 'Each scan is saved to ' + (S.batch.code || 'the client') + ' — no photo.';
+  }
+}
+$('batchOpen').onclick = () => {
+  $('bClient').innerHTML = $('cClient').innerHTML;
+  $('batchSetup').hidden = false;
+  $('batchOpen').hidden = true;
+};
+$('batchCancel').onclick = () => { $('batchSetup').hidden = true; $('batchOpen').hidden = false; focusCap(); };
+$('batchGo').onclick = () => {
+  const c = clientById($('bClient').value);
+  if(!c){ toast('Pick the client'); return; }
+  S.batch = { client_id: c.id, code: c.code, name: c.name, type: $('bType').value, n: 0, day: todayKey(), operator: S.operator };
+  saveBatch();
+  resetCapture();
+  renderBatch();
+  toast('Batch on: scan the boxes');
+};
+let endArmed = 0;
+$('batchEnd').onclick = () => {
+  if(Date.now() - endArmed > 3000){ endArmed = Date.now(); toast('Tap End again to finish the batch'); return; }
+  const n = S.batch ? S.batch.n : 0, code = S.batch ? S.batch.code : '';
+  S.batch = null; saveBatch();
+  resetCapture(); renderBatch();
+  toast(`Batch closed — ${n} box${n === 1 ? '' : 'es'} saved to ${code}`);
+};
+
+S.bq = [];
+let bBusy = false;
+function batchQueue(raw){
+  S.bq.push(raw);
+  $('padHint').textContent = S.bq.length > 1 ? `Saving… ${S.bq.length} in line` : 'Saving…';
+  batchPump();
+}
+async function batchPump(){
+  if(bBusy) return;
+  bBusy = true;
+  while(S.bq.length && S.batch){
+    const raw = S.bq.shift();
+    const b = S.batch;
+    const clean = normTracking(raw) || raw;
+    $('padBig').textContent = clean;
+    try{
+      const j = await post('label-reads', { action: 'batch_scan', scanned_raw: raw, client_id: b.client_id, type: b.type, operator: S.operator });
+      b.n = (b.n || 0) + 1; saveBatch();
+      $('batchN').textContent = b.n;
+      showBatchResult(true, j.linked ? `${clean} — already in the log, linked ✓` : `${clean} → ${b.code} ✓`);
+      beep(true);
+    }catch(err){
+      const msg = err.code === 'DUPLICATE' ? `${clean} — already scanned, not saved again` : err.message;
+      showBatchResult(false, msg);
+      beep(false);
+    }
+  }
+  bBusy = false;
+  if(S.batch){ $('padHint').textContent = 'Each scan is saved to ' + S.batch.code + ' — no photo.'; loadToday(); }
+}
+function showBatchResult(ok, text){
+  const q = $('quick');
+  q.hidden = false;
+  q.className = 'quick ' + (ok ? 'good' : 'bad');
+  q.innerHTML = `<div class="lbl">${ok ? 'Saved' : 'Not saved'}</div><div class="msg"><b>${esc(text)}</b></div>`;
+  $('pad').className = 'scanpad ' + (ok ? 'ok' : 'warn');
+  $('padIcon').textContent = ok ? '✓' : '⚠';
+}
 
 /* ---------- clients ---------- */
 async function loadClients(){
