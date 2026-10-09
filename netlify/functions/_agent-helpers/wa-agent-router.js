@@ -1,742 +1,1646 @@
-// netlify/functions-helpers/wa-agent-db.js
+// netlify/functions/_agent-helpers/wa-agent-router.js
 //
-// Supabase helpers for the WhatsApp Agent (Liam).
-// All DB access from agent code goes through here so we have one place
-// to enforce conventions, handle errors, and audit queries.
+// THE AGENT ROUTER — called for every inbound WhatsApp message after
+// the webhook has persisted to Blobs and fired email/push.
 //
-// Used by: wa-agent-router.js, wa-agent-greet.js, web-chat.js.
-// Imports: only @supabase/supabase-js (already in package.json).
+// Sprint 1 scope:
+//   1. Kill switch check → send canned "high demand" message and exit
+//   2. Existing client? → polite acknowledgment, no qualification
+//   3. New lead, has active conversation? → handle in current state
+//   4. New lead, no conversation? → detect language + greet
 //
-// MULTICANAL (2026-08-22). La identidad ya no es el telefono: es el par
-// (channel, channel_user_id). Las funciones que antes recibian `waNumber`
-// ahora reciben una DIRECCION, que puede ser:
-//    "13055551234"          -> WhatsApp (retrocompatible, sin prefijo)
-//    "web:<uuid-sesion>"    -> chat del sitio
-//    "ig:<IGSID>"           -> Instagram Direct (fase 3)
-// parseAddress() es el unico lugar que interpreta ese formato.
+// Sprints 2-4 will add: qualification flow, FAQ matching, LLM calls.
+//
+// This function is BEST-EFFORT. It must NEVER throw. If anything fails,
+// it returns silently — the webhook already handled Blobs/email/push.
+//
+// MULTICANAL (2026-08-22). El router NO se forkea por canal: la maquina de
+// estados, el visit guard, el decay de menu, los reintentos y la politica
+// de handoff son los mismos para WhatsApp, chat web e Instagram.
+// Lo unico que cambia es POR DONDE SALE la respuesta, y eso se resuelve en
+// los dos despachadores de abajo (sendAndRecord / sendOnce) leyendo el
+// prefijo de la direccion. Por eso las ~30 llamadas de envio que hay en
+// este archivo quedaron intactas.
+//
+// msg.from puede ser: "13055551234" (WhatsApp), "web:<sesion>", "ig:<IGSID>".
 
-import { createClient } from "@supabase/supabase-js";
+import { detectLanguage, parseLanguageChoice } from "./wa-language-detect.js";
+import { TEMPLATES, parseMenuChoice } from "./wa-agent-templates.js";
+import {
+  lookupExistingClient,
+  getActiveConversation,
+  getLastConversationAny,
+  createConversation,
+  updateConversationOnUserMessage,
+  recordAgentMessage,
+  isAgentDisabled,
+  createLeadFromConversation,
+  linkConversationToLead,
+  markHandoff,
+  pauseConversation,
+  parseAddress,
+  sendWebOutbound,
+  isBlocked,
+} from "./wa-agent-db.js";
+import { sendAndRecord as sendWhatsAppAndRecord, sendAgentFlow, recordOutboundInBlobs } from "./wa-agent-send.js";
+import {
+  extractEmail,
+  isValidEmail,
+  looksLikeName,
+  cleanName,
+  isCancellation,
+  isHumanRequest,
+  extractBoth,
+} from "./wa-agent-capture.js";
+import { sendHandoffEmail } from "./wa-agent-email-handoff.js";
+import { buildHandoffSummary } from "./wa-agent-summary.js";
+import {
+  QUALIFY_SEQUENCES,
+  parseQualifyReply,
+  getNextQuestion,
+  getQuestionByIndex,
+  getSequenceLength,
+  buildQualificationSummary,
+} from "./wa-agent-qualify.js";
+import { matchFAQ, getFAQAnswer, getFAQQuestion, topNFAQs } from "./wa-agent-faq-match.js";
+import { askLLM } from "./wa-agent-llm.js";
+import {
+  isMediaPlaceholder,
+  mediaKind,
+  isClosing,
+  sendOnce as sendWhatsAppOnce,
+  bumpRetry,
+  resetRetry,
+  maxedOut,
+  nextMenuMode,
+  MENU_FULL,
+  MENU_SHORT,
+} from "./wa-agent-guards.js";
 
 // ─────────────────────────────────────────────────────────────────────
-// CLIENT FACTORY — lazy singleton
+// DESPACHADORES DE ENVIO
+//
+// Toda salida del router pasa por aqui. El canal se deduce del prefijo de
+// `to`, no de estado compartido del modulo: dos invocaciones concurrentes
+// en el mismo contenedor Lambda (una de WhatsApp y una del sitio) no se
+// pueden pisar, porque cada una lleva su canal dentro del propio valor.
+//
+// Contrato de retorno, identico para los tres canales:
+//   { ok: boolean, suppressed?: boolean }
 // ─────────────────────────────────────────────────────────────────────
 
-let _client = null;
+async function sendAndRecord(args) {
+  const { channel } = parseAddress(args.to);
+  if (channel === "whatsapp") return await sendWhatsAppAndRecord(args);
+  if (channel === "web") return await sendWebOutbound({ ...args, once: false });
+  console.error(`[agent-router] sin transporte para el canal ${channel}`);
+  return { ok: false, suppressed: false };
+}
 
-function sb() {
-  if (_client) return _client;
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_KEY;
-  if (!url || !key) {
-    throw new Error("[agent-db] SUPABASE_URL / SUPABASE_SERVICE_KEY missing");
+async function sendOnce(args) {
+  const { channel } = parseAddress(args.to);
+  if (channel === "whatsapp") return await sendWhatsAppOnce(args);
+  if (channel === "web") return await sendWebOutbound({ ...args, once: true });
+  console.error(`[agent-router] sin transporte para el canal ${channel}`);
+  return { ok: false, suppressed: false };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// WHATSAPP FLOWS — native in-chat lead form  [2026-09-18]
+//
+// Published in WhatsApp Manager (WABA "FR-Logistics Miami"):
+//   FR Lead Capture ES → 2325583131526236
+//   FR Lead Capture EN → 1670919591296203
+// Both end with a "complete" action whose payload is:
+//   { name, company, email, service, volume, timing, product, lang }
+//
+// How it plugs in (deliberately minimal):
+//   - Every place that used to start the text capture (sub_state
+//     awaiting_name) still sends its ack text, then ALSO sends the Flow.
+//     The person can tap the form or just type — both paths work.
+//   - A submitted form arrives from the webhook as
+//     "[flow-submit] {json}". handleFlowSubmit() fills the captured_*
+//     columns + wa_leads and calls completeHandoff(). It is checked in
+//     STEP 3.8, before any state branch, so a late submit never falls
+//     into the FAQ/LLM path.
+//   - Web/Instagram channels never get a Flow (WhatsApp only).
+// ─────────────────────────────────────────────────────────────────────
+const WA_FLOW_IDS = { ES: "2325583131526236", EN: "1670919591296203" };
+// How long a human-owned (paused) thread keeps Liam silent after its last activity.
+const PAUSE_HOLD_MS = 72 * 60 * 60 * 1000;
+// [2026-10-08] Ventana del tope de saludo (ver handleNewLeadMessage).
+const GREETING_CAP_MS = 24 * 60 * 60 * 1000;
+const FLOW_SUBMIT_MARK = "[flow-submit]";
+
+const FLOW_LABELS = {
+  service: {
+    fba_prep: "Amazon FBA prep", fulfillment: "Shopify / DTC fulfillment",
+    removal: "Removal orders / returns", storage: "Storage / consolidation",
+    dropship: "Casillero / DropShipments", other: "Other",
+  },
+  volume: {
+    lt100: "Under 100 units/month", "100_500": "100–500 units/month",
+    "500_2000": "500–2,000 units/month", gt2000: "Over 2,000 units/month",
+    pallets: "Measured in pallets / boxes", unknown: "Not sure yet",
+  },
+  timing: {
+    now: "This week", month: "This month", quarter: "In 1–3 months", exploring: "Just exploring",
+  },
+};
+
+function extractFlowSubmit(text) {
+  const t = String(text || "");
+  const idx = t.indexOf(FLOW_SUBMIT_MARK);
+  if (idx < 0) return null;
+  const rest = t.slice(idx + FLOW_SUBMIT_MARK.length).trim();
+  const line = rest.split("\n")[0].trim();
+  try {
+    const data = JSON.parse(line);
+    return data && typeof data === "object" ? data : null;
+  } catch {
+    return null;
   }
-  _client = createClient(url, key, { auth: { persistSession: false } });
-  return _client;
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// 1. EXISTING CLIENT LOOKUP
-// Normalizes phone and matches against fr_clients.wa_number.
-// Returns { clientId, clientName, preferredLanguage } or null.
-// ─────────────────────────────────────────────────────────────────────
+// Sends the lead-capture Flow. Best-effort: never throws, WhatsApp only.
+async function offerLeadForm(conv, from, language) {
+  try {
+    if (parseAddress(from).channel !== "whatsapp") return;
+    const lang = (language || "EN").toUpperCase() === "ES" ? "ES" : "EN";
+    const flowId = WA_FLOW_IDS[lang];
+    if (!flowId) return;
 
-function normalizePhone(raw) {
-  return String(raw || "").replace(/[^\d]/g, "");
+    const copy = lang === "ES"
+      ? { header: "Formulario rápido", body: "Si prefieres, completa este formulario de 1 minuto y nuestro equipo te responde con una cotización real.", cta: "Completar", footer: "FR-Logistics · Miami" }
+      : { header: "Quick form", body: "If you prefer, fill out this 1-minute form and our team will reply with a real quote.", cta: "Open form", footer: "FR-Logistics · Miami" };
+
+    const res = await sendAgentFlow(from, {
+      flowId,
+      header: copy.header,
+      body: copy.body,
+      cta: copy.cta,
+      footer: copy.footer,
+      screen: "LEAD_CAPTURE",
+      flowToken: `lead-${conv?.id || "noconv"}-${Date.now()}`,
+    });
+    if (res.ok) {
+      // Inbox shows that a form was offered (the Flow itself is not text)
+      await recordOutboundInBlobs({ to: from, text: `📋 Lead form sent (${lang})`, messageId: res.messageId, clientName: "Liam" });
+      if (conv?.id) await recordAgentMessage(conv.id);
+      console.log(`[agent-router] lead form (${lang}) sent to ${from}`);
+    } else {
+      console.error(`[agent-router] lead form send failed: ${res.error}`);
+    }
+  } catch (e) {
+    console.error("[agent-router] offerLeadForm error:", e?.message || e);
+  }
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// ADDRESSING — el unico interprete del formato de direccion
-// ─────────────────────────────────────────────────────────────────────
+// A submitted form: fill everything we can and close the handoff.
+async function handleFlowSubmit(conv, msg, data) {
+  const { from } = msg;
+  const language = (conv.language || data.lang || "en").toUpperCase();
+  await updateConversationOnUserMessage(conv.id);
 
-const CHANNEL_PREFIX = { "web:": "web", "ig:": "instagram" };
+  const name    = String(data.name || "").trim();
+  const email   = String(data.email || "").trim().toLowerCase();
+  const company = String(data.company || "").trim();
+  const product = String(data.product || "").trim();
+  const service = String(data.service || "").trim();
+  const volume  = String(data.volume || "").trim();
+  const timing  = String(data.timing || "").trim();
+
+  // Conversation columns
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
+    const patch = {};
+    if (name && isPlausibleName(name)) patch.captured_name = name;
+    if (email && isValidEmail(email)) patch.captured_email = email;
+    if (service) { patch.captured_service = service; }
+    if (volume)  { patch.captured_volume = FLOW_LABELS.volume[volume] || volume; patch.captured_volume_raw = volume; }
+    if (timing)  { patch.captured_stage = FLOW_LABELS.timing[timing] || timing; patch.captured_stage_raw = timing; }
+    if (product) { patch.captured_product_type = product.slice(0, 200); patch.captured_product_type_raw = product.slice(0, 500); }
+    const noteBits = [company ? `Company: ${company}` : null, "Source: WhatsApp Flow"].filter(Boolean);
+    patch.internal_notes = [conv.internal_notes, noteBits.join(" · ")].filter(Boolean).join("\n");
+    if (!conv.handoff_required) { patch.handoff_required = true; patch.handoff_reason = "flow_submitted"; patch.handoff_at = new Date().toISOString(); }
+    await sb.from("wa_agent_conversations").update(patch).eq("id", conv.id);
+
+    // Lead columns
+    if (conv.lead_id) {
+      const lp = {};
+      if (name && isPlausibleName(name)) lp.name = name;
+      if (email && isValidEmail(email)) lp.email = email;
+      if (volume)  lp.monthly_volume = FLOW_LABELS.volume[volume] || volume;
+      if (product) lp.product_type = product.slice(0, 200);
+      if (service) lp.service_detail = FLOW_LABELS.service[service] || service;
+      const notes = [company ? `Company: ${company}` : null, timing ? `Start: ${FLOW_LABELS.timing[timing] || timing}` : null].filter(Boolean).join(" · ");
+      if (notes) {
+        const { data: cur } = await sb.from("wa_leads").select("notes").eq("id", conv.lead_id).single();
+        lp.notes = [cur?.notes, notes].filter(Boolean).join("\n");
+      }
+      if (Object.keys(lp).length) await sb.from("wa_leads").update(lp).eq("id", conv.lead_id);
+    }
+  } catch (e) {
+    console.error("[agent-router] handleFlowSubmit persist error:", e?.message || e);
+  }
+
+  await resetRetry(conv.id);
+  const finalName  = (name && isPlausibleName(name)) ? name : (conv.captured_name || msg.clientName || "Lead");
+  const finalEmail = (email && isValidEmail(email)) ? email : (conv.captured_email || "(no proporcionado)");
+  return await completeHandoff({ ...conv, language: language.toLowerCase(), handoff_reason: conv.handoff_reason || "flow_submitted" }, msg, finalName, finalEmail);
+}
 
 /**
- * Convierte una direccion en { channel, id, waNumber }.
- * Sin prefijo conocido = WhatsApp, para que todo el codigo desplegado
- * (whatsapp-webhook.js pasa digitos pelados) siga funcionando igual.
- * waNumber sale null en los canales que no son telefonicos: es lo que
- * impide que un uuid de sesion termine guardado como si fuera un numero.
+ * Main entry point — called per inbound message.
+ * 
+ * @param {object} msg - The parsed inbound message
+ * @param {string} msg.from - E.164 without + (e.g. "15551234567")
+ * @param {string} msg.text - The message body
+ * @param {string} msg.clientName - WhatsApp profile name (or 'from' as fallback)
+ * @param {string} msg.id - Meta message ID
  */
-export function parseAddress(addr) {
-  const raw = String(addr || "").trim();
-  for (const [prefix, channel] of Object.entries(CHANNEL_PREFIX)) {
-    if (raw.toLowerCase().startsWith(prefix)) {
-      return { channel, id: raw.slice(prefix.length), waNumber: null, address: raw };
+export async function routeIncomingMessage(msg) {
+  try {
+    const { from, text, clientName } = msg;
+    if (!from || !text) {
+      console.log("[agent-router] missing from or text, skipping");
+      return;
+    }
+
+    // El prefijo telefonico solo sirve para detectar idioma en WhatsApp.
+    // En web/Instagram va vacio para que detectLanguage caiga al texto en
+    // vez de leer digitos de un uuid como si fueran un pais.
+    const fromE164 = phonePrefixOf(from);
+
+    // ─── STEP -1: Blocklist [2026-10-08] ──────────────────────────
+    // Numeros marcados desde el inbox como Vendor pitch / Noise (tabla
+    // wa_blocklist). Silencio total: ni saludo, ni conversacion, ni lead.
+    // El mensaje ya quedo guardado en wa_messages por el webhook.
+    if (await isBlocked(from)) {
+      console.log(`[agent-router] ${from} is blocked (wa_blocklist) — agent silent`);
+      return;
+    }
+
+    // ─── STEP 0: Human shortcut ───────────────────────────────────
+    // If user types "humano" / "human" / "quiero hablar con jose" from ANY
+    // state, jump straight to handoff. This is a safety valve for users
+    // who don't want to navigate menus.
+    if (isHumanRequest(text)) {
+      console.log("[agent-router] human shortcut triggered");
+      return await handleHumanShortcut(msg);
+    }
+
+    // ─── STEP 1: Kill switch ──────────────────────────────────────
+    const disabled = await isAgentDisabled();
+    if (disabled) {
+      console.log("[agent-router] kill switch active, sending canned response");
+      // Try to detect language for the canned message; fallback to bilingual
+      const lang = detectLanguage(text, fromE164).language;
+      const message =
+        lang === "ES"
+          ? TEMPLATES.kill_switch_es()
+          : lang === "EN"
+            ? TEMPLATES.kill_switch_en()
+            : TEMPLATES.greet_bilingual();   // unknown → bilingual short
+      await sendAndRecord({ to: from, text: message, clientName: "Liam (high demand)" });
+      return;
+    }
+
+    // ─── STEP 2: Existing client lookup ───────────────────────────
+    const existingClient = await lookupExistingClient(from);
+
+    // ─── STEP 3: Active conversation? ─────────────────────────────
+    const existingConv = await getActiveConversation(from);
+
+    // ─── STEP 3.8: FLOW SUBMIT ────────────────────────────────────
+    // [2026-09-18] A completed lead form wins over any state — including a
+    // PAUSED conversation, which is why this runs before Branch A: the
+    // form was offered by the bot and its data must land in the CRM even
+    // if a human already took the thread. If there is no conversation at
+    // all (form submitted long after the session expired) we open one
+    // straight in handoff and close it.
+    const flowData = extractFlowSubmit(text);
+    if (flowData) {
+      let conv = existingConv;
+      if (!conv) {
+        const lang = (flowData.lang || "en").toUpperCase() === "ES" ? "ES" : "EN";
+        conv = await createConversation({
+          waNumber: from,
+          waProfileName: clientName,
+          firstMessage: "[lead form]",
+          language: lang,
+          languageSource: "flow_payload",
+          isExistingClient: !!existingClient,
+          clientId: existingClient?.clientId || null,
+        });
+        if (!conv) return;
+        if (!existingClient) {
+          const leadId = await createLeadFromConversation({ waNumber: from, waProfileName: clientName, language: lang.toLowerCase(), firstMessage: "[lead form]" });
+          if (leadId) { await linkConversationToLead(conv.id, leadId); conv.lead_id = leadId; }
+        }
+        await markHandoff(conv.id, "flow_submitted", "handoff_jose");
+      }
+      console.log(`[agent-router] flow submit received for conv ${conv.id}`);
+      return await handleFlowSubmit(conv, msg, flowData);
+    }
+
+    // Branch A: paused (human took over) — agent stays silent
+    if (existingConv?.paused_by_human) {
+      console.log("[agent-router] conversation paused by human, agent silent");
+      await updateConversationOnUserMessage(existingConv.id);
+      return;
+    }
+
+    // Branch A2 [2026-09-18]: no ACTIVE conversation, but the last one for
+    // this contact is paused by a human and still warm. getActiveConversation
+    // excludes state='paused' on purpose (so the bot never reopens a thread a
+    // human took), which meant the NEXT customer message found nothing and
+    // Liam started a brand-new conversation on top of the human's reply —
+    // bilingual greeting and all. Now: while the human's thread is younger
+    // than PAUSE_HOLD_MS, Liam stays silent and just stamps the activity.
+    // After that window a fresh conversation is fine (it inherits name/email).
+    if (!existingConv) {
+      const lastAny = await getLastConversationAny(from);
+      if (lastAny?.paused_by_human && lastAny.updated_at &&
+          (Date.now() - new Date(lastAny.updated_at).getTime()) < PAUSE_HOLD_MS) {
+        console.log(`[agent-router] last conversation ${lastAny.id} is human-owned (paused_by=${lastAny.paused_by}) — agent silent`);
+        await updateConversationOnUserMessage(lastAny.id);
+        return;
+      }
+    }
+
+    // ─── STEP 3.5: MEDIA GUARD ────────────────────────────────────
+    // Added 2026-07-31. The webhook persists non-text messages as a
+    // literal placeholder ("[image]", "[audio]", ...) in `body`. Without
+    // this branch the router feeds that string into the capture flow and
+    // tries to validate "[image]" as an email address — which is exactly
+    // how a client ended up with ten identical "invalid email" replies.
+    // Liam cannot see the file, so the only honest move is: acknowledge,
+    // flag for a human, and stop.
+    if (isMediaPlaceholder(text)) {
+      const kind = mediaKind(text);
+      console.log(`[agent-router] media message (${kind}) — acknowledging, no slot-filling`);
+
+      const lang = (existingConv?.language || detectLanguage(text, fromE164).language || "en").toUpperCase();
+      const ack = lang === "ES" ? TEMPLATES.media_ack_es(kind) : TEMPLATES.media_ack_en(kind);
+
+      await sendOnce({ to: from, text: ack, clientName: "Liam" });
+
+      if (existingConv) {
+        await updateConversationOnUserMessage(existingConv.id);
+        await resetRetry(existingConv.id);
+        if (!existingConv.handoff_required) {
+          await markHandoff(existingConv.id, `media_received_${kind}`, existingConv.state);
+        }
+      }
+      return;
+    }
+
+    // ─── STEP 3.6: CLOSING GUARD ──────────────────────────────────
+    // "Gracias" / "Ok" / "Me quedó claro" are conversation enders, not
+    // answers to whatever slot we are waiting on. Acknowledge once and
+    // stay quiet — never re-ask, never re-send the menu.
+    if (existingConv && isClosing(text)) {
+      console.log("[agent-router] closing phrase detected — soft acknowledgment, no re-ask");
+      const lang = (existingConv.language || "en").toUpperCase();
+      const bye = lang === "ES" ? TEMPLATES.closing_ack_es() : TEMPLATES.closing_ack_en();
+      await sendOnce({ to: from, text: bye, clientName: "Liam" });
+      await updateConversationOnUserMessage(existingConv.id);
+      await resetRetry(existingConv.id);
+      return;
+    }
+
+    // ─── STEP 3.7: VISIT GUARD ────────────────────────────────────
+    // Added 2026-08-11 after Liam offered a prospect a next-day tour of
+    // the Doral facility and handed him the Discovery Call link labelled
+    // as "your visit". FR-Logistics does NOT receive prospects on site —
+    // first contact is always the remote Discovery Call, and any on-site
+    // visit is Jose's call, made personally, never promised in chat.
+    // This runs BEFORE the FAQ matcher and before the LLM on purpose:
+    // it is deterministic, so it cannot be talked around by a model that
+    // is trying to be helpful.
+    if (existingConv && isVisitRequest(text)) {
+      const lang = (existingConv.language || detectLanguage(text, fromE164).language || "en").toUpperCase();
+      console.log(`[agent-router] visit request detected — policy reply, no LLM (conv=${existingConv.id})`);
+
+      const reply = existingClient
+        ? visitReplyClient(lang)
+        : visitPolicyText(lang);
+
+      await sendOnce({ to: from, text: reply, clientName: "Liam" });
+      await updateConversationOnUserMessage(existingConv.id);
+      await resetRetry(existingConv.id);
+
+      // Someone asking to come see the warehouse is a live lead. Flag it
+      // so it surfaces in the inbox — but do NOT pause: Liam can still
+      // answer the rest of their questions.
+      if (!existingConv.handoff_required) {
+        await markHandoff(existingConv.id, "visit_request", existingConv.state);
+      }
+      return;
+    }
+
+    // Branch B: active conversation in pending_language state
+    //   → user is replying to bilingual greeting with EN/ES choice
+    if (existingConv?.state === "pending_language") {
+      return await handlePendingLanguageReply(existingConv, msg);
+    }
+
+    // Branch C: active conversation in greeted state
+    //   → user is replying to menu (1-5)
+    if (existingConv?.state === "greeted") {
+      return await handleMenuReply(existingConv, msg);
+    }
+
+    // Branch C2: active conversation in qualifying state (Sprint 2)
+    //   → user is answering a qualification question
+    if (existingConv?.state === "qualifying") {
+      return await handleQualifyReply(existingConv, msg);
+    }
+
+    // Branch D: active conversation in handoff_jose state
+    //   → Day 3: capture name + email, then email info@
+    if (existingConv?.state === "handoff_jose") {
+      return await handleHandoffCapture(existingConv, msg);
+    }
+
+    // Branch D2: handoff already completed (handoff_email or completed)
+    //   → soft acknowledgment, no further automated action
+    if (existingConv && ["handoff_email", "completed"].includes(existingConv.state)) {
+      console.log(`[agent-router] conv already in terminal state '${existingConv.state}', acknowledging silently`);
+      await updateConversationOnUserMessage(existingConv.id);
+      return;
+    }
+
+    // Branch D3: active conversation in another state (qualifying, etc.)
+    //   → Sprint 2+ will handle these. For Sprint 1: silent, just log.
+    if (existingConv) {
+      console.log(`[agent-router] conv in state '${existingConv.state}', Sprint 1 does not handle yet`);
+      await updateConversationOnUserMessage(existingConv.id);
+      return;
+    }
+
+    // Branch E: NEW conversation
+    //   → existing client path: simple acknowledgment, no qualification
+    if (existingClient) {
+      return await handleNewExistingClientMessage(existingClient, msg);
+    }
+
+    // Branch F: NEW conversation, NEW lead
+    return await handleNewLeadMessage(msg);
+
+  } catch (err) {
+    // Safety net — NEVER let the router throw, webhook already returned 200
+    console.error("[agent-router] uncaught error:", err?.message || err);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// HANDLER: existing client sends first message
+// Sprint 1: polite acknowledgment in their preferred language. No qualif.
+// (Full client operational flow is v2 / Sprint 7+.)
+// ─────────────────────────────────────────────────────────────────────
+async function handleNewExistingClientMessage(existingClient, msg) {
+  const { from, text, clientName } = msg;
+  const fromE164 = phonePrefixOf(from);
+
+  // Use stored preferred_language if available; otherwise detect
+  let language = existingClient.preferredLanguage;   // 'ES' | 'EN' | null
+  let languageSource = "client_preference";
+
+  if (!language || (language !== "ES" && language !== "EN")) {
+    const detected = detectLanguage(text, fromE164);
+    language = detected.language === "UNKNOWN" ? "EN" : detected.language;
+    languageSource = detected.source || "fallback";
+  }
+
+  const conv = await createConversation({
+    waNumber: from,
+    waProfileName: clientName,
+    firstMessage: text,
+    language,
+    languageSource,
+    isExistingClient: true,
+    clientId: existingClient.clientId,
+  });
+  if (!conv) return;
+
+  const message =
+    language === "ES"
+      ? TEMPLATES.existing_client_redirect_es(existingClient.clientName)
+      : TEMPLATES.existing_client_redirect_en(existingClient.clientName);
+
+  const send = await sendAndRecord({
+    to: from,
+    text: message,
+    clientName: "Liam",
+  });
+
+  if (send.ok) {
+    // Existing clients don't go through qualification flow — mark completed
+    await recordAgentMessage(conv.id, "completed");
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// HANDLER: human shortcut — user typed "humano"/"human"/"hablar con jose"
+// Works from ANY state. If conversation exists, transitions to handoff_jose
+// and starts capture. If no conversation, creates new one straight in handoff_jose.
+// ─────────────────────────────────────────────────────────────────────
+async function handleHumanShortcut(msg) {
+  const { from, text, clientName } = msg;
+  const fromE164 = phonePrefixOf(from);
+
+  // Look up existing conversation (any state, not just active)
+  const existingConv = await getActiveConversation(from);
+
+  // Detect language from this message or use existing conv's
+  let language;
+  if (existingConv?.language) {
+    language = existingConv.language.toUpperCase();
+  } else {
+    const d = detectLanguage(text, fromE164);
+    language = d.language === "UNKNOWN" ? "EN" : d.language;
+  }
+
+  // If conversation exists, transition it to handoff
+  if (existingConv) {
+    // If already in handoff capture, treat this as normal capture message
+    if (existingConv.state === "handoff_jose") {
+      return await handleHandoffCapture(existingConv, msg);
+    }
+
+    // Otherwise transition to handoff_jose
+    await updateConversationOnUserMessage(existingConv.id);
+    await markHandoff(existingConv.id, "human_shortcut", "handoff_jose");
+
+    const ack =
+      language === "ES"
+        ? TEMPLATES.handoff_jose_ack_es()
+        : TEMPLATES.handoff_jose_ack_en();
+    const send = await sendAndRecord({ to: from, text: ack, clientName: "Liam" });
+    if (send.ok) {
+      await recordAgentMessage(existingConv.id, "handoff_jose");
+      await setSubStateAndService(existingConv.id, "awaiting_name", "jose_handoff");
+      await offerLeadForm(existingConv, from, language);
+    }
+    return;
+  }
+
+  // No conversation — create one straight in handoff_jose
+  // El STEP 0 (atajo humano) corre antes del lookup de cliente del STEP 2,
+  // asi que esta rama necesita consultarlo por su cuenta. Sin esto, un
+  // cliente activo que escribe "hablar con Jose" se registra como lead nuevo.
+  const existingClient = await lookupExistingClient(from);
+
+  const conv = await createConversation({
+    waNumber: from,
+    waProfileName: clientName,
+    firstMessage: text,
+    language,
+    languageSource: existingConv?.language ? "existing_conv" : "text_detect",
+    isExistingClient: !!existingClient,
+    clientId: existingClient?.clientId || null,
+  });
+  if (!conv) return;
+
+  // Lead row solo si NO es un cliente existente
+  if (!existingClient) {
+    const leadId = await createLeadFromConversation({
+      waNumber: from,
+      waProfileName: clientName,
+      language: language.toLowerCase(),
+      firstMessage: text,
+    });
+    if (leadId) await linkConversationToLead(conv.id, leadId);
+  }
+
+  await markHandoff(conv.id, "human_shortcut", "handoff_jose");
+
+  const ack =
+    language === "ES"
+      ? TEMPLATES.handoff_jose_ack_es()
+      : TEMPLATES.handoff_jose_ack_en();
+  const send = await sendAndRecord({ to: from, text: ack, clientName: "Liam" });
+  if (send.ok) {
+    await recordAgentMessage(conv.id, "handoff_jose");
+    await setSubStateAndService(conv.id, "awaiting_name", "jose_handoff");
+    await offerLeadForm(conv, from, language);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// HANDLER: new lead, first message ever
+// Detect language → greet OR bilingual prompt.
+// ─────────────────────────────────────────────────────────────────────
+async function handleNewLeadMessage(msg) {
+  const { from, text, clientName } = msg;
+  const fromE164 = phonePrefixOf(from);
+
+  const detected = detectLanguage(text, fromE164);
+  // detected.language: 'ES' | 'EN' | 'UNKNOWN'
+
+  const lang = detected.language === "UNKNOWN" ? null : detected.language;
+  const source = detected.source;
+
+  // [2026-10-08] TOPE DE SALUDO: un solo saludo de bienvenida por contacto
+  // cada GREETING_CAP_MS. Si ya hubo una conversacion de este numero creada
+  // en esa ventana y LIAM ya le escribio, no se abre otra ni se re-saluda:
+  // se anota la actividad en la anterior y LIAM calla. Corta los choques
+  // bot-contra-bot (auto-respuestas que disparan otro saludo, que dispara
+  // otra auto-respuesta...) y evita el menu repetido a un humano que vuelve
+  // a escribir tras cerrar. El webhook igual avisa por push/correo.
+  const lastAny = await getLastConversationAny(from);
+  if (lastAny?.created_at && lastAny.last_agent_message_at &&
+      (Date.now() - new Date(lastAny.created_at).getTime()) < GREETING_CAP_MS) {
+    console.log(`[agent-router] greeting cap: ${from} already greeted in conv ${lastAny.id} (${lastAny.state}) — no new greeting`);
+    await updateConversationOnUserMessage(lastAny.id);
+    return;
+  }
+
+  // Create conversation (with language if known, null if UNKNOWN)
+  const conv = await createConversation({
+    waNumber: from,
+    waProfileName: clientName,
+    firstMessage: text,
+    language: lang,
+    languageSource: source,
+    isExistingClient: false,
+    clientId: null,
+  });
+  if (!conv) return;
+
+  // Create lead row and link — salvo que la conversacion ya haya heredado
+  // el lead de una sesion anterior (antes se creaba otro igual).
+  if (!conv.lead_id) {
+    const leadId = await createLeadFromConversation({
+      waNumber: from,
+      waProfileName: clientName,
+      language: lang || "en",
+      firstMessage: text,
+    });
+    if (leadId) {
+      await linkConversationToLead(conv.id, leadId);
     }
   }
-  const digits = normalizePhone(raw);
-  return { channel: "whatsapp", id: digits, waNumber: digits || null, address: digits };
-}
 
-/** Inverso de parseAddress: arma la direccion a partir del par. */
-export function formatAddress(channel, id) {
-  if (channel === "web") return `web:${id}`;
-  if (channel === "instagram") return `ig:${id}`;
-  return normalizePhone(id);
-}
-
-export async function lookupExistingClient(address) {
-  const addr = parseAddress(address);
-  // fr_clients solo tiene wa_number. Un visitante web o un IGSID no se
-  // pueden cruzar contra esa columna, y hacerlo con los digitos sueltos
-  // de un uuid daria falsos positivos. Se resuelve en el canal, no aqui.
-  if (addr.channel !== "whatsapp") return null;
-  const normalized = addr.id;
-  if (!normalized) return null;
-
-  // fr_clients es la fuente canonica de clientes de todo el ecosistema.
-  // wa_clients quedo obsoleta (duplicados) y ademas no tiene preferred_language,
-  // lo que hacia fallar la consulta entera y devolver null siempre.
-  const { data, error } = await sb()
-    .from("fr_clients")
-    .select("id, company, wa_number, lang, active")
-    .eq("active", true);
-
-  if (error) {
-    console.error("[agent-db] lookupExistingClient error:", error.message);
-    return null;
-  }
-  if (!data?.length) return null;
-
-  // fr_clients tiene duplicados historicos (mismo wa_number en dos filas).
-  // Recolectamos TODOS los matches y, si hay mas de uno, preferimos el que
-  // trae mas datos (company + lang), en vez del .find() que devolvia el
-  // primero del arreglo a ciegas.
-  const matches = data.filter(
-    (c) => c.wa_number && normalizePhone(c.wa_number) === normalized
-  );
-  if (!matches.length) return null;
-
-  const match =
-    matches.length === 1
-      ? matches[0]
-      : matches
-          .slice()
-          .sort(
-            (a, b) =>
-              (b.company ? 1 : 0) + (b.lang ? 1 : 0) -
-              ((a.company ? 1 : 0) + (a.lang ? 1 : 0))
-          )[0];
-
-  if (matches.length > 1) {
-    console.warn(
-      `[agent-db] lookupExistingClient: ${matches.length} fr_clients rows share wa_number ${normalized}; picked id=${match.id}`
-    );
+  // Send appropriate greeting
+  let greeting;
+  let nextState;
+  if (lang === "ES") {
+    greeting = TEMPLATES.greet_es();
+    nextState = "greeted";
+  } else if (lang === "EN") {
+    greeting = TEMPLATES.greet_en();
+    nextState = "greeted";
+  } else {
+    greeting = TEMPLATES.greet_bilingual();
+    nextState = "pending_language";
   }
 
-  return {
-    clientId: match.id,
-    clientName: match.company || "Cliente",
-    preferredLanguage: (match.lang || "").toUpperCase() || null,
+  const send = await sendAndRecord({
+    to: from,
+    text: greeting,
+    clientName: "Liam",
+  });
+
+  if (send.ok) {
+    await recordAgentMessage(conv.id, nextState);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// HANDLER: user replied to bilingual greeting
+// Parse their choice → confirm and show menu.
+// ─────────────────────────────────────────────────────────────────────
+async function handlePendingLanguageReply(conv, msg) {
+  const { from, text } = msg;
+
+  // Update message_count and last_user_message_at
+  await updateConversationOnUserMessage(conv.id);
+
+  const choice = parseLanguageChoice(text);
+
+  // Couldn't parse → retry once
+  if (!choice) {
+    // Check if we've already retried — if so, default to EN
+    // (We use message_count as proxy: if >=4 messages exchanged, give up)
+    if (conv.message_count >= 3) {
+      const send = await sendAndRecord({
+        to: from,
+        text: TEMPLATES.fallback_to_en(),
+        clientName: "Liam",
+      });
+      if (send.ok) {
+        await recordAgentMessage(conv.id, "greeted");
+        await updateConversationLanguage(conv.id, "en", "fallback");
+      }
+      return;
+    }
+
+    // First retry
+    const send = await sendAndRecord({
+      to: from,
+      text: TEMPLATES.retry_language_choice(),
+      clientName: "Liam",
+    });
+    if (send.ok) {
+      await recordAgentMessage(conv.id);  // stay in pending_language
+    }
+    return;
+  }
+
+  // Got a clear choice — confirm + show menu
+  const confirmation =
+    choice === "ES" ? TEMPLATES.confirm_es() : TEMPLATES.confirm_en();
+
+  const send = await sendAndRecord({
+    to: from,
+    text: confirmation,
+    clientName: "Liam",
+  });
+
+  if (send.ok) {
+    await recordAgentMessage(conv.id, "greeted");
+    await updateConversationLanguage(conv.id, choice.toLowerCase(), "user_choice");
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// HANDLER: user replied to greeting menu (1-5)
+// Sprint 1: only handle option 5 (Jose handoff). Options 1-4 acknowledge
+// but defer the real qualification to Sprint 2.
+// ─────────────────────────────────────────────────────────────────────
+async function handleMenuReply(conv, msg) {
+  const { from, text } = msg;
+  const language = (conv.language || "en").toUpperCase();  // 'ES' | 'EN'
+
+  await updateConversationOnUserMessage(conv.id);
+
+  const choice = parseMenuChoice(text);
+
+  // Option 5 — Jose handoff (FULLY implemented in Sprint 1)
+  if (choice === "jose_handoff") {
+    const ack =
+      language === "ES"
+        ? TEMPLATES.handoff_jose_ack_es()
+        : TEMPLATES.handoff_jose_ack_en();
+
+    const send = await sendAndRecord({
+      to: from,
+      text: ack,
+      clientName: "Liam",
+    });
+
+    if (send.ok) {
+      await recordAgentMessage(conv.id, "handoff_jose");
+      await markHandoff(conv.id, "user_request_jose", "handoff_jose");
+      // Day 3: enter capture flow waiting for name
+      await setSubStateAndService(conv.id, "awaiting_name", "jose_handoff");
+      await offerLeadForm(conv, from, language);
+    }
+    return;
+  }
+
+  // Options 1-4 — services. Sprint 2: enter qualification flow.
+  if (choice && ["fba_prep", "master_case", "dropship", "ecopack"].includes(choice)) {
+    // Send intro template for the chosen service
+    const introKey = `qualify_intro_${choice}`;
+    const introMsg =
+      language === "ES"
+        ? TEMPLATES[`${introKey}_es`]()
+        : TEMPLATES[`${introKey}_en`]();
+
+    const sendIntro = await sendAndRecord({
+      to: from,
+      text: introMsg,
+      clientName: "Liam",
+    });
+
+    if (!sendIntro.ok) {
+      console.error("[router] failed to send qualify intro, aborting");
+      return;
+    }
+
+    // Send Q1 immediately after the intro
+    const q1 = getQuestionByIndex(choice, 1);
+    const q1Msg = language === "ES" ? q1.prompts.es : q1.prompts.en;
+    const sendQ1 = await sendAndRecord({
+      to: from,
+      text: q1Msg,
+      clientName: "Liam",
+    });
+
+    if (sendQ1.ok) {
+      // Transition: state = 'qualifying', sub_state = 'awaiting_q1', captured_service = choice
+      await recordAgentMessage(conv.id, "qualifying");
+      await setSubStateAndService(conv.id, "awaiting_q1", choice);
+    }
+    return;
+  }
+
+  // ───────────────────────────────────────────────────────────────
+  // Sprint 3: free-text reply (not 1-5) — try FAQ match before re-asking
+  // ───────────────────────────────────────────────────────────────
+  const langLower = language.toLowerCase();
+  const faqHit = await matchFAQ(text, langLower);
+
+  if (faqHit) {
+    console.log(`[router] FAQ matched in greeted state: id=${faqHit.id} score=${faqHit.score} q="${getFAQQuestion(faqHit, langLower)}"`);
+
+    const answer = getFAQAnswer(faqHit, langLower);
+    const sendAns = await sendAndRecord({ to: from, text: answer, clientName: "Liam" });
+    if (!sendAns.ok) {
+      console.error("[router] FAQ answer send failed");
+      return;
+    }
+
+    // After the FAQ answer, offer the menu — but with DECAY.
+    // Full menu once, then a one-liner, then nothing. Re-sending the full
+    // block after every answer is what made Liam read as spam: 11 people
+    // received the identical menu 3-9 times in a single day.
+    const followup = await buildFollowup(conv.id, language);
+    if (followup) {
+      const sendMenu = await sendOnce({ to: from, text: followup, clientName: "Liam" });
+      if (sendMenu.ok && !sendMenu.suppressed) await recordAgentMessage(conv.id);
+    }
+    await updateConversationFAQHit(conv.id, faqHit.id);
+    return;
+  }
+
+  // ───────────────────────────────────────────────────────────────
+  // Sprint 4: FAQ matcher didn't find a strong match. Try LLM.
+  // LLM is invisible to the lead — same Liam voice.
+  // If LLM is gated (kill switch) or errors, fall through to re-ask.
+  // ───────────────────────────────────────────────────────────────
+  
+  // Build LLM context: top 3 FAQ candidates + lead data + history
+  const llmTopFAQs = await topNFAQs(text, langLower, 3);
+  const llmHistory = await loadRecentHistory(from, 5);
+  const llmLeadData = {
+    name:       conv.captured_name || null,
+    email:      conv.captured_email || null,
+    service:    conv.captured_service || null,
+    volume:     conv.captured_volume || conv.captured_volume_raw || null,
+    country:    conv.captured_country || conv.captured_country_raw || null,
+    platforms:  conv.captured_platforms || conv.captured_platforms_raw || null,
   };
-}
 
-// ─────────────────────────────────────────────────────────────────────
-// 2. CONVERSATION LIFECYCLE
-// ─────────────────────────────────────────────────────────────────────
-
-/**
- * Returns the active conversation for a WhatsApp number, or null.
- * "Active" means: not in 'lost'/'completed'/'paused' state, updated <24h ago.
- * Paused conversations are excluded so a human-owned thread is never
- * reopened by the agent; the router checks paused_by_human separately.
- */
-export async function getActiveConversation(address) {
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const addr = parseAddress(address);
-
-  const { data, error } = await sb()
-    .from("wa_agent_conversations")
-    .select("*")
-    .eq("channel", addr.channel)
-    .eq("channel_user_id", addr.id)
-    .not("state", "in", "(lost,completed,paused)")
-    .gte("updated_at", cutoff)
-    .order("updated_at", { ascending: false })
-    .limit(1);
-
-  if (error) {
-    console.error("[agent-db] getActiveConversation error:", error.message);
-    return null;
-  }
-  return data?.[0] || null;
-}
-
-/**
- * Returns the most recent conversation for a number REGARDLESS of state or
- * age (paused, completed, old — all count). Used to inherit already-captured
- * contact data into a fresh conversation so we never re-ask a lead for a
- * name/email they already gave in a previous session.
- * Returns the row or null.
- */
-export async function getLastConversationAny(address) {
-  const addr = parseAddress(address);
-
-  const { data, error } = await sb()
-    .from("wa_agent_conversations")
-    // [2026-10-08] paused_by_human / paused_by / updated_at faltaban aqui, y la
-    // Branch A2 del router los lee: lastAny.paused_by_human salia siempre
-    // undefined, A2 nunca disparaba y cada mensaje nuevo tras pausar desde el
-    // inbox abria conversacion nueva con saludo (caso Hanseatica, 7 en 1 h).
-    .select("id, state, paused_by_human, paused_by, updated_at, created_at, last_agent_message_at, menu_sent_count, captured_name, captured_email, captured_service, lead_id, is_existing_client, client_id, language, channel, channel_user_id")
-    .eq("channel", addr.channel)
-    .eq("channel_user_id", addr.id)
-    .order("updated_at", { ascending: false })
-    .limit(1);
-
-  if (error) {
-    console.error("[agent-db] getLastConversationAny error:", error.message);
-    return null;
-  }
-  return data?.[0] || null;
-}
-
-/**
- * Creates a new conversation row. Returns the inserted row or null on error.
- *
- * Inherits captured contact data (name, email, service, lead_id) from the
- * number's most recent prior conversation when the caller doesn't override
- * it. This is the fix for a lead being asked for their name/email again on
- * every new 24h session — the data lived on the previous (now completed or
- * paused) row and was lost.
- */
-export async function createConversation({
-  waNumber,          // direccion: digitos (WhatsApp), "web:…" o "ig:…"
-  waProfileName,
-  firstMessage,
-  language,           // 'ES' | 'EN' | null
-  languageSource,     // 'text_detect' | 'phone_prefix' | 'client_preference' | null
-  isExistingClient,
-  clientId,
-}) {
-  // Map UPPERCASE to lowercase for the enum
-  const langLower = language ? language.toLowerCase() : null;
-
-  const initialState = language
-    ? "greeted"               // We can greet directly
-    : "pending_language";     // Need bilingual prompt first
-
-  // Pull forward anything we already know about this number.
-  const prior = await getLastConversationAny(waNumber);
-  const addr = parseAddress(waNumber);
-
-  const row = {
-    channel: addr.channel,
-    channel_user_id: addr.id,
-    channel_display: waProfileName || null,
-    // Solo WhatsApp escribe wa_number. El CHECK de la base exige que este
-    // presente cuando channel='whatsapp' y lo deja nulo en los demas.
-    wa_number: addr.waNumber,
-    wa_profile_name: waProfileName || null,
-    first_message: firstMessage || null,
-    state: initialState,
+  const llmResult = await askLLM({
+    userMessage: text,
     language: langLower,
-    language_source: languageSource || null,
-    is_existing_client: !!isExistingClient || !!prior?.is_existing_client,
-    client_id: clientId || prior?.client_id || null,
-    last_user_message_at: new Date().toISOString(),
-    message_count: 1,
-    // Inherited contact data — only carried over, never invented.
-    captured_name: prior?.captured_name || null,
-    captured_email: prior?.captured_email || null,
-    captured_service: prior?.captured_service || null,
-    lead_id: prior?.lead_id || null,
-  };
+    history: llmHistory,
+    faqContext: llmTopFAQs,
+    leadData: llmLeadData,
+    conversationId: conv.id,
+    waNumber: from,
+  });
 
-  const { data, error } = await sb()
-    .from("wa_agent_conversations")
-    .insert(row)
-    .select("*")
-    .single();
+  if (llmResult.text) {
+    // Backstop for the visit policy. STEP 3.7 catches the question; this
+    // catches the answer — an LLM can drift into offering a tour while
+    // replying to something else entirely (it did exactly that on
+    // 2026-08-11: "Jose is the one who coordinates visits to our Doral
+    // facility"). If the draft offers a visit, the whole reply is
+    // replaced by the policy text rather than edited.
+    const llmText = stripVisitOffer(llmResult.text, language);
 
-  if (error) {
-    console.error("[agent-db] createConversation error:", error.message);
-    return null;
+    // LLM produced a reply — send it, then re-offer menu (Sprint 3 pattern)
+    const sendLlm = await sendAndRecord({ to: from, text: llmText, clientName: "Liam" });
+    if (!sendLlm.ok) {
+      console.error("[router] LLM reply send failed");
+      return;
+    }
+
+    // Offer the menu with the same decay rule as the FAQ path.
+    const followup = await buildFollowup(conv.id, language);
+    if (followup) {
+      const sendMenu = await sendOnce({ to: from, text: followup, clientName: "Liam" });
+      if (sendMenu.ok && !sendMenu.suppressed) await recordAgentMessage(conv.id);
+    }
+    return;
   }
 
-  if (prior && (prior.captured_name || prior.captured_email)) {
-    console.log(
-      `[agent-db] new ${addr.channel} conv for ${addr.id} inherited contact data from prior conv ${prior.id}`
+  console.log(`[router] LLM unavailable (reason=${llmResult.reason}), falling back to re-ask`);
+
+  // LLM not available — gentle re-ask (original Sprint 3 fallback)
+  const retry =
+    language === "ES"
+      ? "No te entendí 🤔 Responde 1, 2, 3, 4 o 5 para continuar."
+      : "Didn't catch that 🤔 Reply 1, 2, 3, 4 or 5 to continue.";
+
+  const send = await sendAndRecord({ to: from, text: retry, clientName: "Liam" });
+  if (send.ok) {
+    await recordAgentMessage(conv.id);  // stay in greeted
+  }
+}
+
+// Returns the follow-up text for this conversation, or null when the menu
+// has already been shown enough times. Full menu → short nudge → silence.
+async function buildFollowup(conversationId, language) {
+  const mode = await nextMenuMode(conversationId);
+  if (mode === MENU_FULL) {
+    return language === "ES"
+      ? TEMPLATES.faq_followup_menu_es()
+      : TEMPLATES.faq_followup_menu_en();
+  }
+  if (mode === MENU_SHORT) {
+    return language === "ES"
+      ? TEMPLATES.faq_followup_short_es()
+      : TEMPLATES.faq_followup_short_en();
+  }
+  return null;  // already nudged twice — say nothing
+}
+
+// Load the last N user/assistant messages from wa_messages for LLM context.
+// Se filtra por la DIRECCION en from_number/to_number, que ahora puede ser
+// un numero, "web:<sesion>" o "ig:<IGSID>" — el filtro es el mismo para los
+// tres porque el canal ya viene embebido en el valor.
+async function loadRecentHistory(waNumber, n = 5) {
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const sb = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY,
+      { auth: { persistSession: false } }
     );
-  }
-  return data;
-}
-
-/**
- * Updates conversation fields. Always bumps message_count by 1 and
- * sets last_user_message_at to now.
- */
-export async function updateConversationOnUserMessage(conversationId, patch = {}) {
-  const updates = {
-    ...patch,
-    last_user_message_at: new Date().toISOString(),
-  };
-
-  // We can't do "message_count = message_count + 1" via the supabase-js
-  // table builder, so we fetch current, increment, write back.
-  const { data: current } = await sb()
-    .from("wa_agent_conversations")
-    .select("message_count")
-    .eq("id", conversationId)
-    .single();
-
-  updates.message_count = (current?.message_count || 0) + 1;
-
-  const { data, error } = await sb()
-    .from("wa_agent_conversations")
-    .update(updates)
-    .eq("id", conversationId)
-    .select("*")
-    .single();
-
-  if (error) {
-    console.error("[agent-db] updateConversationOnUserMessage error:", error.message);
-    return null;
-  }
-  return data;
-}
-
-/**
- * Records that the agent just sent a message back.
- */
-export async function recordAgentMessage(conversationId, newState = null) {
-  const updates = {
-    last_agent_message_at: new Date().toISOString(),
-  };
-  if (newState) updates.state = newState;
-
-  const { error } = await sb()
-    .from("wa_agent_conversations")
-    .update(updates)
-    .eq("id", conversationId);
-
-  if (error) {
-    console.error("[agent-db] recordAgentMessage error:", error.message);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// NAME VALIDATION — reject junk before it becomes a chat title
-//
-// captured_name has repeatedly stored whole paragraphs (a lead pasting
-// "My name is X and my email is Y and I'd prefer to..." lands verbatim in
-// captured_name, and the inbox then titles the chat with that paragraph).
-// A real name is short: a few words, no @, no line breaks, no question
-// marks, no long sentences. When the reply isn't a plausible name we store
-// NOTHING rather than garbage — the router can re-ask or fall back to the
-// WhatsApp profile name.
-// ─────────────────────────────────────────────────────────────────────
-
-export function looksLikeValidName(raw) {
-  const s = String(raw || "").trim();
-  if (!s) return false;
-  if (s.length > 40) return false;              // real names are short
-  if (/[\n\r]/.test(s)) return false;           // multi-line = pasted blob
-  if (/[@?]/.test(s)) return false;             // email / a question, not a name
-  if (/\d{3,}/.test(s)) return false;           // phone numbers etc.
-  const words = s.split(/\s+/).filter(Boolean);
-  if (words.length > 4) return false;           // "my name is Juan Viton" style blobs
-  return true;
-}
-
-/**
- * Cleans a raw reply into a storable name, or returns null if it doesn't
- * look like a name. Strips a leading "mi nombre es " / "my name is " /
- * "soy " / "me llamo " so those common lead-ins don't blow the word count.
- */
-export function extractName(raw) {
-  let s = String(raw || "").trim();
-  s = s.replace(
-    /^(mi nombre es|me llamo|soy|my name is|i am|i'm|this is)\s+/i,
-    ""
-  ).trim();
-  // Drop a trailing email if they wrote "Juan juan@x.com" on one line.
-  s = s.replace(/\s*\S+@\S+.*$/, "").trim();
-  return looksLikeValidName(s) ? s : null;
-}
-
-/**
- * Sets captured_name ONLY if the value looks like a real name.
- * Returns the stored name, or null if it was rejected (caller can re-ask).
- */
-export async function setCapturedName(conversationId, rawName) {
-  const clean = extractName(rawName);
-  if (!clean) {
-    console.log(`[agent-db] setCapturedName rejected junk for conv ${conversationId}`);
-    return null;
-  }
-  const { error } = await sb()
-    .from("wa_agent_conversations")
-    .update({ captured_name: clean })
-    .eq("id", conversationId);
-  if (error) {
-    console.error("[agent-db] setCapturedName error:", error.message);
-    return null;
-  }
-  return clean;
-}
-
-/**
- * Marks a conversation as paused (human took over).
- */
-export async function pauseConversation(conversationId, pausedBy = "jose") {
-  const { error } = await sb()
-    .from("wa_agent_conversations")
-    .update({
-      paused_by_human: true,
-      paused_at: new Date().toISOString(),
-      paused_by: pausedBy,
-      state: "paused",
-    })
-    .eq("id", conversationId);
-  if (error) console.error("[agent-db] pauseConversation error:", error.message);
-}
-
-/**
- * Marks a conversation as needing handoff.
- */
-export async function markHandoff(conversationId, reason, newState = "handoff_jose") {
-  const { error } = await sb()
-    .from("wa_agent_conversations")
-    .update({
-      handoff_required: true,
-      handoff_reason: reason,
-      handoff_at: new Date().toISOString(),
-      state: newState,
-    })
-    .eq("id", conversationId);
-  if (error) console.error("[agent-db] markHandoff error:", error.message);
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// 3. KILL SWITCH
-// ─────────────────────────────────────────────────────────────────────
-
-/**
- * Returns true if the agent is currently disabled (cap reached or manual).
- */
-export async function isAgentDisabled() {
-  const { data, error } = await sb()
-    .from("wa_agent_kill_switch")
-    .select("is_disabled, current_month_spend_usd, monthly_cap_usd")
-    .eq("id", 1)
-    .single();
-
-  if (error) {
-    console.error("[agent-db] isAgentDisabled error:", error.message);
-    // Fail OPEN — if we can't read kill switch, let the agent run.
-    // Safer than blocking real leads due to a DB blip.
-    return false;
-  }
-  return !!data?.is_disabled;
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// 4. LEAD CREATION (link to existing wa_leads table)
-// ─────────────────────────────────────────────────────────────────────
-
-/**
- * Creates a wa_leads row from a new conversation. Returns lead_id or null.
- */
-export async function createLeadFromConversation({
-  waNumber,
-  waProfileName,
-  language,
-  firstMessage,
-}) {
-  const addr = parseAddress(waNumber);
-
-  const SOURCE_BY_CHANNEL = {
-    whatsapp: "whatsapp_agent",
-    web: "web_chat_agent",
-    instagram: "instagram_agent",
-  };
-  const FALLBACK_NAME = {
-    whatsapp: "WhatsApp Lead",
-    web: "Web Chat Lead",
-    instagram: "Instagram Lead",
-  };
-
-  const row = {
-    name: waProfileName || FALLBACK_NAME[addr.channel] || "Lead",
-    // Placeholder unico por canal — se reemplaza cuando el lead da el suyo.
-    email: `pending+${addr.channel}-${addr.id}@fr-logistics.net`.slice(0, 250),
-    // phone quedo nullable en la migracion multicanal: un visitante web no
-    // tiene telefono y guardar uno falso envenena el matcher de clientes.
-    phone: addr.waNumber ? `+${addr.waNumber}` : null,
-    language: (language || "en").toLowerCase(),
-    service: "other",
-    service_detail: firstMessage?.slice(0, 500) || null,
-    status: "new",
-    source: SOURCE_BY_CHANNEL[addr.channel] || "whatsapp_agent",
-    captured_by: "Liam (agent)",
-  };
-
-  // [2026-10-08] Un lead por contacto, no uno por conversacion. Antes cada
-  // sesion nueva del mismo numero insertaba otra fila en wa_leads (Hanseatica
-  // tenia 8, Jesica 9). Si ya existe un lead para este telefono / placeholder
-  // se reutiliza; el primero que se creo es el canonico.
-  try {
-    let q = sb().from("wa_leads").select("id, dq_flag").order("created_at", { ascending: true }).limit(5);
-    q = row.phone ? q.eq("phone", row.phone) : q.eq("email", row.email);
-    const { data: prev } = await q;
-    const keep = (prev || []).find((l) => l.dq_flag !== "duplicate") || prev?.[0];
-    if (keep?.id) {
-      console.log(`[agent-db] createLeadFromConversation: reusing lead ${keep.id} for ${addr.channel}:${addr.id}`);
-      return keep.id;
-    }
-  } catch (e) {
-    console.error("[agent-db] lead reuse lookup error:", e?.message || e);
-  }
-
-  const { data, error } = await sb()
-    .from("wa_leads")
-    .insert(row)
-    .select("id")
-    .maybeSingle();
-
-  if (error) {
-    console.error("[agent-db] createLeadFromConversation error:", error.message);
-    return null;
-  }
-  // data null = el trigger trg_wa_leads_skip_blocked descarto la fila
-  // (numero en wa_blocklist). No es error.
-  if (!data) console.log(`[agent-db] lead not created for ${addr.channel}:${addr.id} (blocked)`);
-  return data?.id || null;
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// BLOCKLIST [2026-10-08]
-// Numeros marcados desde el inbox como Vendor pitch o Noise / spam. LIAM no
-// les contesta, no se les crea lead y no generan avisos. Fail-open: si la
-// consulta falla se trata como NO bloqueado, para no callar a un cliente
-// real por un blip de red.
-// ─────────────────────────────────────────────────────────────────────
-
-export async function isBlocked(address) {
-  const addr = parseAddress(address);
-  if (!addr.id) return false;
-  try {
-    const { data, error } = await sb()
-      .from("wa_blocklist")
-      .select("reason")
-      .eq("channel", addr.channel)
-      .eq("channel_user_id", addr.id)
-      .is("unblocked_at", null)
-      .limit(1);
-    if (error) {
-      console.error("[agent-db] isBlocked error:", error.message);
-      return false;
-    }
-    return !!data?.length;
-  } catch (e) {
-    console.error("[agent-db] isBlocked error:", e?.message || e);
-    return false;
-  }
-}
-
-/**
- * Links a conversation to its lead row.
- */
-export async function linkConversationToLead(conversationId, leadId) {
-  const { error } = await sb()
-    .from("wa_agent_conversations")
-    .update({ lead_id: leadId })
-    .eq("id", conversationId);
-  if (error) console.error("[agent-db] linkConversationToLead error:", error.message);
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// 5. MENSAJERIA DE CANALES NO-META (chat web)
-//
-// WhatsApp sale por wa-agent-send.js (Cloud API). El chat web no tiene
-// API externa: "enviar" es escribir la fila en wa_messages y que el widget
-// la recoja en su siguiente sondeo. Estas funciones son ese transporte.
-//
-// Convencion de direcciones en wa_messages para el canal web:
-//   entrante:  from_number = "web:<sesion>"   to_number = FR_NODE
-//   saliente:  from_number = FR_NODE          to_number = "web:<sesion>"
-// Asi el `.or(from_number.eq.X,to_number.eq.X)` que ya usa el router para
-// cargar historial sigue funcionando sin cambios.
-// ─────────────────────────────────────────────────────────────────────
-
-const FR_NODE = "fr-logistics";
-const WEB_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
-
-function newMsgId(prefix) {
-  const rand =
-    typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
-  return `${prefix}:${rand}`;
-}
-
-/**
- * Persiste un mensaje ENTRANTE de un canal no-Meta.
- * Devuelve la fila insertada o null.
- */
-export async function recordInboundMessage({
-  address,
-  text,
-  clientName,
-  conversationId = null,
-}) {
-  const addr = parseAddress(address);
-  const row = {
-    wa_msg_id: newMsgId(`${addr.channel}-in`),
-    direction: "inbound",
-    from_number: addr.address,
-    to_number: FR_NODE,
-    client_name: clientName || "",
-    body: text || "",
-    msg_type: "text",
-    channel: addr.channel,
-    conversation_id: conversationId,
-    timestamp: new Date().toISOString(),
-    read: false,
-  };
-
-  const { data, error } = await sb()
-    .from("wa_messages")
-    .insert(row)
-    .select("*")
-    .single();
-
-  if (error) {
-    console.error("[agent-db] recordInboundMessage error:", error.message);
-    return null;
-  }
-  return data;
-}
-
-/**
- * "Envia" un mensaje al chat web escribiendolo en wa_messages.
- * Devuelve { ok, suppressed, id } — misma forma que sendAndRecord/sendOnce
- * de WhatsApp, para que el router no tenga que distinguir.
- *
- * Con once=true replica la semantica de sendOnce: si el mismo texto ya se
- * mando a esta sesion en los ultimos 10 minutos, no se repite. Ese guard
- * es el que evita que el menu se reenvie una y otra vez.
- */
-export async function sendWebOutbound({ to, text, clientName, once = false }) {
-  const addr = parseAddress(to);
-  const body = String(text || "");
-  if (!body) return { ok: false, suppressed: false, error: "empty body" };
-
-  if (once) {
-    const since = new Date(Date.now() - WEB_DEDUPE_WINDOW_MS).toISOString();
-    const { data: dupes } = await sb()
+    // Inbound = from lead; outbound = from Liam. Filter by the lead's number on
+    // either side of the conversation. Last N*2 messages, then take last N
+    // (oldest first for LLM context).
+    const { data, error } = await sb
       .from("wa_messages")
-      .select("id")
-      .eq("to_number", addr.address)
-      .eq("direction", "outbound")
-      .eq("body", body)
-      .gte("timestamp", since)
-      .limit(1);
-    if (dupes?.length) {
-      console.log(`[agent-db] sendWebOutbound suppressed duplicate for ${addr.address}`);
-      return { ok: true, suppressed: true };
-    }
-  }
+      .select("direction, body, from_number, to_number, timestamp")
+      .or(`from_number.eq.${waNumber},to_number.eq.${waNumber}`)
+      .order("timestamp", { ascending: false })
+      .limit(n * 2);
 
-  // Cuelga el mensaje de la conversacion vigente si ya existe.
-  const conv = await getLastConversationAny(addr.address);
+    if (error || !data) return [];
 
-  const row = {
-    wa_msg_id: newMsgId(`${addr.channel}-out`),
-    direction: "outbound",
-    from_number: FR_NODE,
-    to_number: addr.address,
-    client_name: clientName || "Liam",
-    body,
-    msg_type: "text",
-    channel: addr.channel,
-    conversation_id: conv?.id || null,
-    timestamp: new Date().toISOString(),
-    read: true,
-  };
-
-  const { data, error } = await sb()
-    .from("wa_messages")
-    .insert(row)
-    .select("id")
-    .single();
-
-  if (error) {
-    console.error("[agent-db] sendWebOutbound error:", error.message);
-    return { ok: false, suppressed: false, error: error.message };
-  }
-  return { ok: true, suppressed: false, id: data?.id };
-}
-
-/**
- * Mensajes de una sesion para el widget. Por defecto solo los SALIENTES:
- * el widget ya pinta en pantalla lo que el visitante escribio, y devolverle
- * su propio texto lo duplicaria.
- */
-export async function getChannelMessages(address, { after = null, direction = "outbound", limit = 30 } = {}) {
-  const addr = parseAddress(address);
-
-  let q = sb()
-    .from("wa_messages")
-    .select("id, direction, body, timestamp")
-    .eq("channel", addr.channel)
-    .order("timestamp", { ascending: true })
-    .limit(limit);
-
-  q = direction === "outbound"
-    ? q.eq("to_number", addr.address).eq("direction", "outbound")
-    : q.or(`from_number.eq.${addr.address},to_number.eq.${addr.address}`);
-
-  if (after) q = q.gt("timestamp", after);
-
-  const { data, error } = await q;
-  if (error) {
-    console.error("[agent-db] getChannelMessages error:", error.message);
+    return data
+      .reverse()
+      .map(m => ({
+        role: m.direction === "inbound" ? "user" : "assistant",
+        text: m.body || "",
+      }))
+      .filter(m => m.text)
+      .slice(-n);
+  } catch (e) {
+    console.log(`[router] history load failed: ${e.message}`);
     return [];
   }
-  return (data || []).map((m) => ({
-    id: m.id,
-    direction: m.direction === "inbound" ? "out" : "in",   // 'in' = lo ve el visitante como recibido
-    body: m.body || "",
-    ts: m.timestamp,
-  }));
 }
 
-/**
- * Cuelga de la conversacion las filas de esta direccion que quedaron sin
- * conversation_id (el mensaje entrante se guarda ANTES de que el router
- * cree la conversacion). Idempotente.
- */
-export async function attachOrphanMessages(address, conversationId) {
-  if (!conversationId) return;
-  const addr = parseAddress(address);
-  const { error } = await sb()
-    .from("wa_messages")
-    .update({ conversation_id: conversationId })
-    .is("conversation_id", null)
-    .eq("channel", addr.channel)
-    .or(`from_number.eq.${addr.address},to_number.eq.${addr.address}`);
-  if (error) console.error("[agent-db] attachOrphanMessages error:", error.message);
-}
-
-/**
- * Cuenta los mensajes entrantes de una direccion en una ventana de tiempo.
- * El endpoint web es publico y sin sesion: esto es lo que evita que alguien
- * gaste la cuota de la API de Anthropic en un bucle.
- */
-export async function countRecentInbound(address, windowMs) {
-  const addr = parseAddress(address);
-  const since = new Date(Date.now() - windowMs).toISOString();
-  const { count, error } = await sb()
-    .from("wa_messages")
-    .select("id", { count: "exact", head: true })
-    .eq("from_number", addr.address)
-    .eq("direction", "inbound")
-    .gte("timestamp", since);
-  if (error) {
-    console.error("[agent-db] countRecentInbound error:", error.message);
-    return 0;   // fail-open: no bloquear a un visitante real por un fallo de DB
+// Lightweight audit — track the last FAQ Liam served (if column exists)
+// Soft-fail if the column isn't there yet (migration optional).
+async function updateConversationFAQHit(conversationId, faqId) {
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const sb = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY,
+      { auth: { persistSession: false } }
+    );
+    await sb
+      .from("wa_agent_conversations")
+      .update({ last_faq_id: faqId })
+      .eq("id", conversationId);
+  } catch (e) {
+    // Column may not exist yet — non-fatal, audit only
+    console.log(`[router] last_faq_id update skipped: ${e.message}`);
   }
-  return count || 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────
+
+// Devuelve la direccion en E.164 SOLO si el canal es telefonico.
+// detectLanguage() usa el prefijo de pais como pista; alimentarlo con los
+// digitos sueltos de un uuid de sesion web daria un idioma al azar.
+function phonePrefixOf(address) {
+  const addr = parseAddress(address);
+  if (addr.channel !== "whatsapp" || !addr.waNumber) return "";
+  return `+${addr.waNumber}`;
+}
+
+function labelService(key, lang) {
+  const map = {
+    fba_prep:    { ES: "FBA Prep",        EN: "FBA Prep" },
+    master_case: { ES: "Master Case",     EN: "Master Case" },
+    dropship:    { ES: "Dropshipment",    EN: "Dropshipment" },
+    ecopack:     { ES: "EcoPack+",        EN: "EcoPack+" },
+  };
+  return map[key]?.[lang] || key;
+}
+
+// Direct DB update for language (used after pending_language is resolved)
+async function updateConversationLanguage(conversationId, lang, source) {
+  // Inline because wa-agent-db doesn't export this specific helper
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
+    { auth: { persistSession: false } }
+  );
+  await sb
+    .from("wa_agent_conversations")
+    .update({ language: lang, language_source: source })
+    .eq("id", conversationId);
+}
+
+// Sets sub_state + captured_service in one call (Day 3 capture flow)
+async function setSubStateAndService(conversationId, subState, service) {
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
+    { auth: { persistSession: false } }
+  );
+  await sb
+    .from("wa_agent_conversations")
+    .update({ sub_state: subState, captured_service: service })
+    .eq("id", conversationId);
+}
+
+// Sets just sub_state
+async function setSubState(conversationId, subState) {
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
+    { auth: { persistSession: false } }
+  );
+  await sb
+    .from("wa_agent_conversations")
+    .update({ sub_state: subState })
+    .eq("id", conversationId);
+}
+
+// Updates captured name + email on the conversation
+// Reject junk names before they become the chat title. captured_name has
+// stored whole pasted paragraphs ("Sure! My name is X and my email is...")
+// which the inbox then shows as the conversation title. A real name is
+// short: <=40 chars, <=4 words, no @, no line breaks, no "?" and no long
+// digit runs. When the value isn't a plausible name we skip it (keep any
+// existing name) rather than overwrite with garbage.
+function isPlausibleName(raw) {
+  // Delegates to the capture module so the router and the parser can never
+  // disagree about what a name is.
+  return looksLikeName(String(raw || "").trim());
+}
+
+async function setCapturedNameEmail(conversationId, name, email) {
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
+    { auth: { persistSession: false } }
+  );
+  const patch = {};
+  if (name && isPlausibleName(name)) patch.captured_name = name;
+  else if (name) console.log(`[router] setCapturedNameEmail: rejected junk name for conv ${conversationId}`);
+  if (email) patch.captured_email = email;
+  if (Object.keys(patch).length === 0) return;
+  await sb
+    .from("wa_agent_conversations")
+    .update(patch)
+    .eq("id", conversationId);
+}
+
+// Updates the linked wa_leads row with real name + email (replacing placeholder)
+async function updateLeadFromCapture(leadId, { name, email }) {
+  if (!leadId) return;
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
+    { auth: { persistSession: false } }
+  );
+  const patch = {};
+  // Same guard as setCapturedNameEmail. Without it wa_leads.name accepted
+  // whatever the parser returned, which is how entire messages ended up as
+  // lead names while wa_agent_conversations stayed clean.
+  if (name && isPlausibleName(name)) patch.name = name;
+  else if (name) console.log(`[router] updateLeadFromCapture: rejected junk name for lead ${leadId}`);
+  if (email) patch.email = email;
+  if (Object.keys(patch).length === 0) return;
+  await sb
+    .from("wa_leads")
+    .update(patch)
+    .eq("id", leadId);
+}
+
+// Marks the email_sent_at timestamp (idempotency: don't email twice)
+async function markInfoEmailSent(conversationId) {
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
+    { auth: { persistSession: false } }
+  );
+  await sb
+    .from("wa_agent_conversations")
+    .update({
+      info_email_sent_at: new Date().toISOString(),
+      sub_state: "completed",
+      state: "handoff_email",
+    })
+    .eq("id", conversationId);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// HANDLER: capture flow — user is in handoff_jose state
+// We track sub_state: 'awaiting_name' → 'awaiting_email' → completed.
+// ─────────────────────────────────────────────────────────────────────
+async function handleHandoffCapture(conv, msg) {
+  const { from, text } = msg;
+  const language = (conv.language || "en").toUpperCase();
+
+  await updateConversationOnUserMessage(conv.id);
+
+  // Cancellation → graceful exit, partial email if any data captured
+  if (isCancellation(text)) {
+    const farewell =
+      language === "ES"
+        ? "Entendido. Si cambias de opinión, escríbeme cuando quieras."
+        : "Got it. If you change your mind, message me anytime.";
+    await sendAndRecord({ to: from, text: farewell, clientName: "Liam" });
+
+    // Send partial-info email so Jose knows someone reached out
+    if (!conv.info_email_sent_at) {
+      await sendHandoffEmail({
+        waNumber: from,
+        name: conv.captured_name || msg.clientName || "Lead (no name)",
+        email: conv.captured_email || "(no proporcionado)",
+        language: language.toLowerCase(),
+        serviceInterest: conv.captured_service || "other",
+        firstMessage: conv.first_message || "",
+        handoffReason: `${conv.handoff_reason || "user_request_jose"}_cancelled_capture`,
+        conversationId: conv.id,
+      });
+      await markInfoEmailSent(conv.id);
+    }
+    return;
+  }
+
+  // Try to extract both name and email from the message at once
+  const both = extractBoth(text);
+
+  // ─── SUB-STATE: awaiting_name ───────────────────────────────────
+  if (!conv.sub_state || conv.sub_state === "awaiting_name") {
+    // If user sent ONLY an email (no name yet), capture email and ask for name
+    if (both.email && !both.name) {
+      await setCapturedNameEmail(conv.id, null, both.email);
+      const askName =
+        language === "ES"
+          ? `Gracias. Solo me falta tu nombre, ¿cuál es?`
+          : `Thanks. I just need your name now — what is it?`;
+      const send = await sendAndRecord({ to: from, text: askName, clientName: "Liam" });
+      if (send.ok) {
+        await recordAgentMessage(conv.id);
+        await setSubState(conv.id, "awaiting_name_after_email");
+      }
+      return;
+    }
+
+    // If user sent BOTH name and email in one message — jackpot, finish
+    if (both.name && both.email) {
+      await setCapturedNameEmail(conv.id, both.name, both.email);
+      await updateLeadFromCapture(conv.lead_id, { name: both.name, email: both.email });
+      return await completeHandoff(conv, msg, both.name, both.email);
+    }
+
+    // Only a name? Save it and ask for email
+    if (both.name) {
+      await resetRetry(conv.id);
+      await setCapturedNameEmail(conv.id, both.name, null);
+      await updateLeadFromCapture(conv.lead_id, { name: both.name });
+      const askEmail =
+        language === "ES"
+          ? TEMPLATES.handoff_jose_ask_email_es(both.name)
+          : TEMPLATES.handoff_jose_ask_email_en(both.name);
+      const send = await sendAndRecord({ to: from, text: askEmail, clientName: "Liam" });
+      if (send.ok) {
+        await recordAgentMessage(conv.id);
+        await setSubState(conv.id, "awaiting_email");
+      }
+      return;
+    }
+
+    // Couldn't extract anything → re-ask politely, AT MOST twice.
+    const triesName = await bumpRetry(conv.id);
+    if (maxedOut(triesName)) {
+      return await escalateToHuman(conv, msg, language, "name_capture_failed");
+    }
+    const reAsk =
+      language === "ES"
+        ? "¿Puedes darme tu nombre completo, por favor?"
+        : "Could you share your full name, please?";
+    const send = await sendOnce({ to: from, text: reAsk, clientName: "Liam" });
+    if (send.ok && !send.suppressed) await recordAgentMessage(conv.id);
+    return;
+  }
+
+  // ─── SUB-STATE: awaiting_name_after_email ───────────────────────
+  // We already have email, just need name
+  if (conv.sub_state === "awaiting_name_after_email") {
+    if (both.name) {
+      await setCapturedNameEmail(conv.id, both.name, null);
+      await updateLeadFromCapture(conv.lead_id, { name: both.name });
+      return await completeHandoff(conv, msg, both.name, conv.captured_email);
+    }
+
+    const triesAfter = await bumpRetry(conv.id);
+    if (maxedOut(triesAfter)) {
+      return await escalateToHuman(conv, msg, language, "name_capture_failed");
+    }
+    const reAsk =
+      language === "ES"
+        ? "Solo necesito tu nombre, ¿puedes escribírmelo?"
+        : "I just need your name — could you type it out?";
+    const send = await sendOnce({ to: from, text: reAsk, clientName: "Liam" });
+    if (send.ok && !send.suppressed) await recordAgentMessage(conv.id);
+    return;
+  }
+
+  // ─── SUB-STATE: awaiting_email ──────────────────────────────────
+  if (conv.sub_state === "awaiting_email") {
+    if (both.email && isValidEmail(both.email)) {
+      await resetRetry(conv.id);
+      await setCapturedNameEmail(conv.id, null, both.email);
+      await updateLeadFromCapture(conv.lead_id, { email: both.email });
+      return await completeHandoff(conv, msg, conv.captured_name, both.email);
+    }
+
+    // No email or invalid format — re-ask, but AT MOST twice.
+    // This is the loop that sent one client ten identical replies on
+    // 2026-07-31: she was asking an operational question, not giving an
+    // email, and every single message got the same validation error.
+    const tries = await bumpRetry(conv.id);
+    if (maxedOut(tries)) {
+      return await escalateToHuman(conv, msg, language, "email_capture_failed");
+    }
+
+    const reAsk =
+      language === "ES"
+        ? "No reconozco eso como un email válido. ¿Puedes verificarlo? (ej. nombre@empresa.com)"
+        : "I don't recognize that as a valid email. Could you double-check? (e.g. name@company.com)";
+    const send = await sendOnce({ to: from, text: reAsk, clientName: "Liam" });
+    if (send.ok && !send.suppressed) await recordAgentMessage(conv.id);
+    return;
+  }
+
+  // ─── SUB-STATE: completed or unknown ────────────────────────────
+  // Already finished capture — just acknowledge and stay silent
+  console.log(`[agent-router] handoff_jose with sub_state '${conv.sub_state}' — no action`);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// HANDLER: qualification flow — user is in state='qualifying'
+// Tracks sub_state: awaiting_q1 → awaiting_q2 → awaiting_q3 → 
+//   transition to handoff_jose with sub_state='awaiting_name'
+// Cancellation at any point → graceful exit + partial email to info@
+// Human shortcut at any point → already handled by STEP 0 in router
+// ─────────────────────────────────────────────────────────────────────
+async function handleQualifyReply(conv, msg) {
+  const { from, text } = msg;
+  const language = (conv.language || "en").toUpperCase();
+  const service = conv.captured_service;
+
+  await updateConversationOnUserMessage(conv.id);
+
+  // Cancellation — partial email, graceful exit
+  if (isCancellation(text)) {
+    const farewell =
+      language === "ES"
+        ? "Entendido. Si cambias de opinión, escríbeme cuando quieras."
+        : "Got it. If you change your mind, message me anytime.";
+    await sendAndRecord({ to: from, text: farewell, clientName: "Liam" });
+
+    if (!conv.info_email_sent_at) {
+      const summary = buildQualificationSummary(conv);
+      await sendHandoffEmail({
+        waNumber: from,
+        name: conv.captured_name || msg.clientName || "Lead (no name)",
+        email: conv.captured_email || "(no proporcionado)",
+        language: language.toLowerCase(),
+        serviceInterest: service || "other",
+        firstMessage: conv.first_message || "",
+        handoffReason: `${service}_cancelled_qualify`,
+        conversationId: conv.id,
+        qualification: summary,
+      });
+      await markInfoEmailSent(conv.id);
+    }
+    return;
+  }
+
+  // Determine which question we're answering
+  const subState = conv.sub_state || "awaiting_q1";
+  if (!subState.startsWith("awaiting_q")) {
+    console.error(`[router] unexpected sub_state '${subState}' in qualifying`);
+    return;
+  }
+  const currentIdx = parseInt(subState.replace("awaiting_q", ""), 10);
+  const currentQuestion = getQuestionByIndex(service, currentIdx);
+  if (!currentQuestion) {
+    console.error(`[router] no question at index ${currentIdx} for service ${service}`);
+    return;
+  }
+
+  // Parse the reply: { normalized, raw }
+  const { normalized, raw } = parseQualifyReply(text, currentQuestion);
+
+  // Persist the answer (both normalized and raw)
+  await saveQualifyField(conv.id, currentQuestion.field, currentQuestion.rawField, normalized, raw);
+
+  // Get the next question (or null if sequence complete)
+  const nextQuestion = getNextQuestion(service, subState);
+
+  if (nextQuestion) {
+    // Send next question
+    const nextMsg = language === "ES" ? nextQuestion.prompts.es : nextQuestion.prompts.en;
+    const send = await sendAndRecord({ to: from, text: nextMsg, clientName: "Liam" });
+    if (send.ok) {
+      await recordAgentMessage(conv.id);
+      await setSubState(conv.id, `awaiting_${nextQuestion.id}`);
+    }
+    return;
+  }
+
+  // Sequence complete → bridge to contact capture
+  const doneMsg =
+    language === "ES" ? TEMPLATES.qualify_done_es() : TEMPLATES.qualify_done_en();
+  const send = await sendAndRecord({ to: from, text: doneMsg, clientName: "Liam" });
+  if (send.ok) {
+    await recordAgentMessage(conv.id, "handoff_jose");
+    await markHandoff(conv.id, `qualified_${service}`, "handoff_jose");
+    await setSubState(conv.id, "awaiting_name");
+    await offerLeadForm(conv, from, language);
+  }
+}
+
+// DB helper — save a captured qualify field + its _raw companion
+async function saveQualifyField(conversationId, field, rawField, normalizedValue, rawValue) {
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
+    { auth: { persistSession: false } }
+  );
+  const patch = {};
+  if (normalizedValue !== null && normalizedValue !== undefined) {
+    patch[field] = normalizedValue;
+  }
+  if (rawValue) {
+    patch[rawField] = rawValue;
+  }
+  if (Object.keys(patch).length === 0) return;
+  await sb
+    .from("wa_agent_conversations")
+    .update(patch)
+    .eq("id", conversationId);
+}
+
+// Final step of the capture flow: send confirmation + email info@
+// ─────────────────────────────────────────────────────────────────────
+// ESCALATION (added 2026-07-31)
+// ─────────────────────────────────────────────────────────────────────
+// VISIT POLICY (added 2026-08-11)
+//
+// Business rule, from Jose: FR-Logistics does not receive any client or
+// prospect on site on first contact — and never next-day. First contact
+// is ALWAYS the remote Discovery Call. An on-site visit is not a
+// decision made up front; it can come up during that call, and only
+// Jose Fuentes handles it, personally. Liam never offers one.
+// ─────────────────────────────────────────────────────────────────────
+
+// Unambiguous: the person is asking about coming here in person.
+const VISIT_STRONG = [
+  /\bvisit(a|as|ar|arlos|arlas|arte|arnos|amos|aremos|ando|[aá]ndolos)\b/i,
+  /\bvisit(s|ed|ing)?\b/i,
+  /\bwalk[-\s]?ins?\b/i,
+  /\bsin\s+cita\b/i,
+  /\bcita\s+presencial\b/i,
+  /\bpresencial(mente)?\b/i,
+  /\ben\s+persona\b/i,
+  /\bin\s+person\b/i,
+  /\brecorrido\b/i,
+  /\btours?\b/i,
+  /\bwithout\s+an?\s+appointment\b/i,
+  /\b(conocer|ver|visitar)\s+(la|el|su|sus|tu|tus)?\s*(bodega|almac[eé]n|warehouse|instalaciones|operaci[oó]n|oficina|planta)\b/i,
+  /\b(ir|pasar|llegar|acercar(me|nos)|venir)\s+(por|a|hasta|al)\s+(la|el|su|sus|tu)?\s*(bodega|almac[eé]n|warehouse|oficina|instalaciones|local|planta)\b/i,
+  /\bpuedo\s+(ir|pasar|llegar|venir|visitar|acercarme)\b/i,
+  /\bpodemos\s+(ir|pasar|llegar|venir|visitar|acercarnos)\b/i,
+  /\b(see|check\s+out)\s+(the|your)\s+(warehouse|facility|operation|place)\b/i,
+  /\b(stop|drop|come|swing)\s+by\b/i,
+];
+
+// Suggestive but not conclusive — "can you see me tomorrow?" is usually a
+// walk-in question here, but it is also how someone asks for service. These
+// only fire when the message is NOT about moving freight.
+const VISIT_WEAK = [
+  /\b(me|nos)\s+(pueden|puede|podr[ií]an|podr[ií]a)\s+atender\b/i,
+  /\b(atenderme|atendernos|atendernos)\b/i,
+  /\bon[-\s]?site\b/i,
+  /\bconocer(los|las|te|nos)\b/i,
+  /\bcome\s+(over|in)\b/i,
+  /\bmeet\s+in\s+person\b/i,
+];
+
+// An active client asking where to send a pallet is not asking for a tour.
+const FREIGHT_CONTEXT =
+  /\b(env[ií]\w*|enviar|mandar|manda|despach\w*|remit\w*|carga|mercanc[ií]a|shipment|inbound|contenedor|pallet|paquete|caja|tracking|etiqueta|label|fnsku)\b/i;
+
+// Phrases that mean Liam is OFFERING a visit — used to filter LLM drafts.
+const VISIT_OFFER = [
+  /\bvisita\s+(a\s+)?(nuestras?|las?|tus?|sus?)\s*(instalaciones|oficinas|bodega)\b/i,
+  /\bvisita\s+presencial\b/i,
+  /\b(coordinar|agendar|programar)\s+(una|la|tu)\s+visita\b/i,
+  /\bcoordina\s+las\s+visitas\b/i,
+  /\bmostrarte\s+la\s+operaci[oó]n\b/i,
+  /\bte\s+esperamos\s+en\s+(la\s+)?(bodega|doral|nuestras)\b/i,
+  /\b(schedule|arrange|book|coordinate)\s+(a|your|the)\s+(visit|tour|walkthrough)\b/i,
+  /\bin[-\s]person\s+(visit|meeting|tour)\b/i,
+  /\bfacility\s+tour\b/i,
+  /\bshow\s+you\s+(the|our)\s+(warehouse|facility|operation)\b/i,
+];
+
+/**
+ * True when the inbound message is asking to come to the facility.
+ * Fail-safe by design: a false positive costs one canned (and correct)
+ * policy answer; a false negative is what put a prospect on our doorstep.
+ */
+function isVisitRequest(text) {
+  if (!text || typeof text !== "string") return false;
+  const t = text.trim();
+  if (!t || t.length > 600) return false;
+
+  if (VISIT_STRONG.some((re) => re.test(t))) return true;
+  if (FREIGHT_CONTEXT.test(t)) return false;   // freight question, not a tour
+  return VISIT_WEAK.some((re) => re.test(t));
+}
+
+// The one answer Liam gives about visits. No "maybe later", no "Jose
+// coordinates visits" — those are the exact phrasings that created the
+// misunderstanding.
+function visitPolicyText(language) {
+  return (language || "EN").toUpperCase() === "ES"
+    ? "El primer contacto siempre es una videollamada de Discovery Call con nuestro equipo 📹\n\n" +
+        "No agendamos visitas a nuestras instalaciones por este chat. Nuestra dirección en Doral es el punto de recepción de mercancía de clientes activos, no atendemos walk-ins.\n\n" +
+        "Déjame tu nombre y email y nuestro equipo te contacta para coordinar la llamada, donde revisamos tu operación, volúmenes, servicios y costos."
+    : "First contact is always a Discovery Call over video with our team 📹\n\n" +
+        "We don't schedule on-site appointments through this chat. Our Doral address is the receiving point for active clients' freight — we don't take walk-ins.\n\n" +
+        "Share your name and email and our team will reach out to set up the call, where we go over your operation, volumes, services and pricing.";
+}
+
+// Same rule for an existing client, minus the sales link: it goes to Jose.
+function visitReplyClient(language) {
+  return (language || "EN").toUpperCase() === "ES"
+    ? "Eso lo coordina nuestro equipo directamente 🤝 Le paso tu mensaje ahora y te confirman por aquí."
+    : "That's coordinated by our team directly 🤝 I'm passing your message along now and they'll confirm here.";
+}
+
+/**
+ * Backstop on generated text. If a draft offers a visit, the entire reply
+ * is swapped for the policy text — editing a sentence out of an LLM reply
+ * tends to leave the promise implied somewhere else.
+ */
+function stripVisitOffer(text, language) {
+  if (!text) return text;
+  if (!VISIT_OFFER.some((re) => re.test(text))) return text;
+  console.warn("[agent-router] LLM draft offered a facility visit — replaced with policy text");
+  return visitPolicyText(language);
+}
+
+// Called when a capture slot has been re-asked MAX_RETRIES times without
+// a usable answer. Instead of asking forever, Liam explains himself,
+// emails what he has to info@, and goes silent so a human can take over.
+//
+// Setting paused_by_human here is deliberate: STEP 3 Branch A in
+// routeIncomingMessage() already honours that flag, so this single write
+// guarantees the agent stops talking to this person immediately.
+// ─────────────────────────────────────────────────────────────────────
+async function escalateToHuman(conv, msg, language, reason) {
+  const { from } = msg;
+  console.warn(`[agent-router] ESCALATING to human: conv=${conv.id} reason=${reason}`);
+
+  const note =
+    language === "ES"
+      ? "Disculpa, creo que no te estoy entendiendo bien. Le paso tu mensaje al equipo para que te responda una persona directamente. 🤝"
+      : "Sorry — I don't think I'm understanding you correctly. I'm passing your message to the team so a person can reply directly. 🤝";
+
+  await sendOnce({ to: from, text: note, clientName: "Liam" });
+
+  // [2026-09-18] Summary + score BEFORE the email so the human gets the
+  // 3-line brief in the inbox and in the mail. Best-effort: null on failure.
+  const escSummary = await buildHandoffSummary({ ...conv, handoff_reason: reason });
+
+  try {
+    if (!conv.info_email_sent_at) {
+      await sendHandoffEmail({
+        waNumber: from,
+        name: conv.captured_name || msg.clientName || "Lead (no name)",
+        email: conv.captured_email || "(no proporcionado)",
+        language: (language || "en").toLowerCase(),
+        serviceInterest: conv.captured_service || "other",
+        firstMessage: conv.first_message || "",
+        handoffReason: reason,
+        conversationId: conv.id,
+        summary: escSummary,
+      });
+      await markInfoEmailSent(conv.id);
+    }
+  } catch (e) {
+    console.error(`[agent-router] escalation email failed: ${e.message}`);
+  }
+
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const sb = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY,
+      { auth: { persistSession: false } }
+    );
+    await sb
+      .from("wa_agent_conversations")
+      .update({
+        handoff_required: true,
+        handoff_reason: reason,
+        handoff_at: new Date().toISOString(),
+        sub_state: "completed",
+        paused_by_human: true,
+        paused_at: new Date().toISOString(),
+        paused_by: "agent_escalation",
+        retry_count: 0,
+      })
+      .eq("id", conv.id);
+  } catch (e) {
+    console.error(`[agent-router] escalation state update failed: ${e.message}`);
+  }
+}
+
+async function completeHandoff(conv, msg, name, email) {
+  const { from } = msg;
+  const language = (conv.language || "en").toUpperCase();
+
+  // 1. Send final confirmation to user
+  const done =
+    language === "ES"
+      ? TEMPLATES.handoff_jose_complete_es(name)
+      : TEMPLATES.handoff_jose_complete_en(name);
+  await sendAndRecord({ to: from, text: done, clientName: "Liam" });
+
+  // 2. Email info@fr-logistics.net (idempotency check)
+  if (!conv.info_email_sent_at) {
+    // Refetch conv to get latest captured_* values
+    const { createClient } = await import("@supabase/supabase-js");
+    const sb = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY,
+      { auth: { persistSession: false } }
+    );
+    const { data: freshConv } = await sb
+      .from("wa_agent_conversations")
+      .select("*")
+      .eq("id", conv.id)
+      .single();
+    const summary = freshConv ? buildQualificationSummary(freshConv) : {};
+
+    // [2026-09-18] 3-line brief + hot/warm/cold score for the human.
+    // Written to wa_agent_conversations + wa_leads, and shown in the email.
+    const brief = await buildHandoffSummary(freshConv || conv);
+
+    const emailResult = await sendHandoffEmail({
+      waNumber: from,
+      name,
+      email,
+      language: language.toLowerCase(),
+      serviceInterest: conv.captured_service || "other",
+      firstMessage: conv.first_message || "",
+      handoffReason: conv.handoff_reason || "user_request_jose",
+      conversationId: conv.id,
+      qualification: summary,
+      summary: brief,
+    });
+
+    if (emailResult.ok) {
+      console.log(`[agent-router] handoff email sent for conv ${conv.id}`);
+    } else {
+      console.error(`[agent-router] handoff email FAILED for conv ${conv.id}: ${emailResult.error}`);
+    }
+  } else {
+    console.log(`[agent-router] info_email already sent for conv ${conv.id}, skipping`);
+  }
+
+  // 3. Mark conversation as completed (state=handoff_email, sub_state=completed)
+  //    AND pause the agent. The farewell above has already been sent, so
+  //    setting paused_by_human here silences Liam without swallowing the
+  //    goodbye. This is the code-level fix for the 2026-08-20 regression:
+  //    handoff_required alone never stopped the bot, so Liam and a human
+  //    could both message the same prospect. STEP 3 Branch A in the router
+  //    honors paused_by_human, so this is what actually enforces silence.
+  await markInfoEmailSent(conv.id);
+  await pauseConversation(conv.id, "handoff_complete");
 }
