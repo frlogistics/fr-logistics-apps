@@ -350,8 +350,13 @@ const FILTERS = [
   {id:'hot',label:'Hot leads',cls:'bad'},
   {id:'paused',label:'LIAM paused'},
   {id:'web',label:'Website'},
+  {id:'blocked',label:'Blocked',cls:'bad'},
 ];
 function matches(t,f){
+  // Blocked contacts (Noise / Vendor) only show under the Blocked chip
+  const b = !!t.agent?.blocked;
+  if(f==='blocked') return b;
+  if(b) return false;
   switch(f){
     case 'unread': return t.unread>0;
     case 'wait': return t.waiting && t.window!=='closed';
@@ -591,9 +596,16 @@ function renderPanel(){
     <div class="card">
       <h3>Lead classification</h3>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        ${[['real','Real lead'],['noise','Noise / spam'],['duplicate','Duplicate'],['vendor','Vendor pitch']].map(([v,l])=>`<button class="btn ${a?.lead_dq===v?'p':''}" onclick="setDq('${v}')" ${a?.lead_id?'':'disabled'}>${l}</button>`).join('')}
+        ${[['real','Real lead'],['noise','Noise / spam'],['duplicate','Duplicate'],['vendor','Vendor pitch']].map(([v,l])=>{
+          const blockBtn = v==='noise'||v==='vendor';
+          const on = a?.blocked ? a.blocked===v : a?.lead_dq===v;
+          const enabled = a && (blockBtn ? !a.blocked : (a.lead_id && !a.blocked));
+          return `<button class="btn ${on?'p':''}" onclick="setDq('${v}')" ${enabled?'':'disabled'}>${l}</button>`;
+        }).join('')}
       </div>
-      <div style="color:var(--muted);font-size:12px;margin-top:8px">Only leads marked <b>Real</b> get automatic follow-ups (3 and 7 days of silence).</div>
+      ${a?.blocked
+        ? `<div style="margin-top:10px;padding:10px;border-radius:8px;background:#FEE2E2;color:#991B1B;font-size:13px"><b>Blocked as ${a.blocked==='vendor'?'Vendor pitch':'Noise / spam'}.</b> LIAM stays silent, no new leads, no follow-ups, no alerts. Messages are still saved here.<div style="margin-top:8px"><button class="btn" onclick="unblockContact()">Unblock</button></div></div>`
+        : `<div style="color:var(--muted);font-size:12px;margin-top:8px">Only leads marked <b>Real</b> get automatic follow-ups (3 and 7 days of silence). <b>Noise / spam</b> and <b>Vendor pitch</b> block the number.</div>`}
     </div>
     <div class="card na">
       <h3>Next action</h3>
@@ -626,9 +638,29 @@ async function saveNote(){
   if(r.ok){ t.agent.next_action=$('naText').value.trim(); t.agent.next_action_date=$('naDate').value||null; toast('Next action saved'); } else toast('Could not save');
 }
 async function setDq(v){
-  const t=threads.get(activeKey); if(!t?.agent?.lead_id) return;
+  const t=threads.get(activeKey); if(!t?.agent) return;
+  if(v==='noise'||v==='vendor'){
+    const label = v==='vendor'?'Vendor pitch':'Noise / spam';
+    if(!confirm(`Block ${t.name} as ${label}?\n\nLIAM will stay silent, no new leads, no follow-ups and no alerts for this number. You can unblock it later.`)) return;
+    const r=await fetch(API.agent,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'block',phone:t.key,reason:v})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||j.error){ toast(j.error||'Could not block'); return; }
+    t.agent.blocked=v; t.agent.lead_dq=v; t.agent.paused=true;
+    toast(`Blocked as ${label}. Find it under the Blocked chip.`);
+    render(); renderPanel(); return;
+  }
+  if(!t.agent.lead_id) return;
   const r=await fetch(API.agent,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'note',phone:t.key,dq_flag:v})});
   if(r.ok){ t.agent.lead_dq=v; toast('Lead marked as '+v); renderPanel(); } else toast('Could not save');
+}
+async function unblockContact(){
+  const t=threads.get(activeKey); if(!t?.agent) return;
+  const r=await fetch(API.agent,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'unblock',phone:t.key})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok||j.error){ toast(j.error||'Could not unblock'); return; }
+  t.agent.blocked=null;
+  toast('Unblocked. LIAM stays paused until you hand it back.');
+  render(); renderPanel();
 }
 function openQuote(){ const t=threads.get(activeKey); const url=QUOTE_APP+(t?.agent?.lead_id?'#lead='+encodeURIComponent(t.agent.lead_id):''); openApp(url,'Quote Builder'); }
 function openApp(url,name){ try{ if(window.parent && window.parent!==window && typeof window.parent.openApp==='function'){ window.parent.openApp(url,name); return; } }catch{} window.open(url,'_blank'); }
