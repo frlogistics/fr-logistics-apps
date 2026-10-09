@@ -11,6 +11,14 @@
 // POST /wa-agent-state { action: "pause",  phone }   → human takes over (LIAM silent)
 // POST /wa-agent-state { action: "resume", phone }   → hand back to LIAM
 // POST /wa-agent-state { action: "note",   phone, next_action, next_action_date } → CRM next step on wa_leads
+// POST /wa-agent-state { action: "block",   phone, reason: "vendor"|"noise" } → wa_blocklist + LIAM silent + leads flagged
+// POST /wa-agent-state { action: "unblock", phone }  → lifts the block (LIAM stays paused until "Hand back")
+//
+// [2026-10-08] Blocklist: Noise / spam y Vendor pitch bloquean el numero.
+// Funciona aunque el contacto no tenga lead (antes los botones quedaban
+// deshabilitados sin lead_id). Bloqueado = LIAM no contesta, no se crean
+// leads nuevos (trigger trg_wa_leads_skip_blocked), no hay seguimientos ni
+// avisos, y el inbox lo esconde bajo el chip "Blocked".
 //
 // Same trust model as wa-messages.js: the portal is behind login and the
 // function runs with the service key. No env vars added.
@@ -114,6 +122,67 @@ function shape(c, lead) {
 
 const json_ = (o, status) => new Response(JSON.stringify(o), { status, headers: HEADERS });
 
+// key "1786..." | "web:<id>" | "ig:<id>" → { channel, id }
+function splitKey(key) {
+  if (key.startsWith("web:")) return { channel: "web", id: key.slice(4) };
+  if (key.startsWith("ig:")) return { channel: "instagram", id: key.slice(3) };
+  return { channel: "whatsapp", id: key };
+}
+function keyOf(channel, id) {
+  if (channel === "web") return `web:${id}`;
+  if (channel === "instagram") return `ig:${id}`;
+  return normalizePhone(id);
+}
+
+// Active blocks → { key: { reason, blocked_at } }. Fail-open.
+async function loadBlocks() {
+  try {
+    const rows = await sb(`wa_blocklist?select=channel,channel_user_id,reason,blocked_at&unblocked_at=is.null`);
+    const map = {};
+    for (const r of rows || []) map[keyOf(r.channel, r.channel_user_id)] = { reason: r.reason, blocked_at: r.blocked_at };
+    return map;
+  } catch (e) {
+    console.error("[wa-agent-state] blocklist read error:", e.message);
+    return {};
+  }
+}
+
+async function blockContact(key, reason, note) {
+  const { channel, id } = splitKey(key);
+  const now = new Date().toISOString();
+  await sb(`wa_blocklist?on_conflict=channel,channel_user_id`, {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({ channel, channel_user_id: id, reason, note: note || null, blocked_at: now, blocked_by: "portal", unblocked_at: null }),
+  });
+  // LIAM silent on every conversation of the contact
+  const convFilter = `channel=eq.${channel}&channel_user_id=eq.${encodeURIComponent(id)}`;
+  await sb(`wa_agent_conversations?${convFilter}`, {
+    method: "PATCH", headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ paused_by_human: true, paused_by: "blocklist", paused_at: now, state: "paused" }),
+  });
+  // Flag every lead of the contact so it drops out of the CRM pipeline
+  const convs = await sb(`wa_agent_conversations?select=lead_id&${convFilter}`);
+  const ids = [...new Set((convs || []).map((c) => c.lead_id).filter(Boolean))];
+  const ors = [];
+  if (ids.length) ors.push(`id.in.(${ids.join(",")})`);
+  if (channel === "whatsapp") ors.push(`phone.eq.${encodeURIComponent("+" + id)}`);
+  if (ors.length) {
+    await sb(`wa_leads?or=(${ors.join(",")})`, {
+      method: "PATCH", headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ dq_flag: reason, dq_note: `portal: blocked as ${reason} ${now.slice(0, 10)}` }),
+    });
+  }
+}
+
+async function unblockContact(key) {
+  const { channel, id } = splitKey(key);
+  await sb(`wa_blocklist?channel=eq.${channel}&channel_user_id=eq.${encodeURIComponent(id)}&unblocked_at=is.null`, {
+    method: "PATCH", headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ unblocked_at: new Date().toISOString() }),
+  });
+}
+
 async function loadLeads(ids) {
   const list = [...new Set(ids.filter(Boolean))];
   if (!list.length) return {};
@@ -142,8 +211,9 @@ export default async function handler(req) {
         const convs = await sb(`wa_agent_conversations?select=${CONV_COLS}&${filter}&order=updated_at.desc&limit=1`);
         const c = convs?.[0];
         if (!c) return new Response(JSON.stringify({ contact: null, quotes: [] }), { status: 200, headers: HEADERS });
-        const leads = await loadLeads([c.lead_id]);
+        const [leads, blocks] = await Promise.all([loadLeads([c.lead_id]), loadBlocks()]);
         const contact = shape(c, leads[c.lead_id]);
+        contact.blocked = blocks[contact.key]?.reason || null;
 
         // Quotes: by lead, else by email
         let quotes = [];
@@ -162,12 +232,12 @@ export default async function handler(req) {
 
       // Bulk: latest conversation per contact (last 400 conversations)
       const convs = await sb(`wa_agent_conversations?select=${CONV_COLS}&order=updated_at.desc&limit=400`);
-      const leads = await loadLeads((convs || []).map((c) => c.lead_id));
+      const [leads, blocks] = await Promise.all([loadLeads((convs || []).map((c) => c.lead_id)), loadBlocks()]);
       const out = {};
       for (const c of convs || []) {
         const s = shape(c, leads[c.lead_id]);
         if (!s.key) continue;
-        if (!out[s.key]) out[s.key] = s;   // first = most recent
+        if (!out[s.key]) { s.blocked = blocks[s.key]?.reason || null; out[s.key] = s; }   // first = most recent
       }
       return new Response(JSON.stringify(out), { status: 200, headers: HEADERS });
     }
@@ -206,7 +276,24 @@ export default async function handler(req) {
         return new Response(JSON.stringify({ ok: true, paused: false }), { status: 200, headers: HEADERS });
       }
 
+      if (body.action === "block") {
+        const reason = body.reason;
+        if (!["vendor", "noise"].includes(reason)) return json_({ error: "reason must be vendor or noise" }, 400);
+        await blockContact(key, reason, body.note);
+        return json_({ ok: true, blocked: reason }, 200);
+      }
+
+      if (body.action === "unblock") {
+        await unblockContact(key);
+        return json_({ ok: true, blocked: null }, 200);
+      }
+
       if (body.action === "note") {
+        // Noise / Vendor = block (works with or without a lead)
+        if (["vendor", "noise"].includes(body.dq_flag)) {
+          await blockContact(key, body.dq_flag, null);
+          return json_({ ok: true, blocked: body.dq_flag }, 200);
+        }
         if (!c?.lead_id) return new Response(JSON.stringify({ error: "no lead" }), { status: 404, headers: HEADERS });
         const patch = {};
         if (body.next_action !== undefined) patch.next_action = String(body.next_action || "").slice(0, 200) || null;
