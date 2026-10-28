@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0c2a3e">
+<title>FR Recon — DLM Ventures</title>
+<style>
+  :root{
+    --navy:#0c2a3e; --navy-2:#123a54; --teal:#0aa3a3; --teal-d:#087f7f;
+    --red:#e0483d; --amber:#f2a900; --green:#22a06b; --green-d:#1a8657;
+    --ink:#0d1b26; --paper:#f4f6f7; --line:#d5dde2; --muted:#5f7280;
+    --white:#fff; --shadow:0 2px 10px rgba(12,42,62,.10); --tap:56px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--paper);color:var(--ink);font-size:17px;line-height:1.35;overscroll-behavior:none;user-select:none}
+  #app{display:flex;flex-direction:column;height:100dvh;max-width:640px;margin:0 auto}
+  header.bar{background:var(--navy);color:#fff;display:flex;align-items:center;gap:10px;padding:10px 12px;min-height:52px;flex:0 0 auto}
+  header.bar h1{font-size:17px;margin:0;font-weight:650;flex:1}
+  header.bar .op{font-size:13px;background:rgba(255,255,255,.14);padding:5px 10px;border-radius:20px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #main{flex:1 1 auto;overflow:auto;padding:12px;-webkit-overflow-scrolling:touch}
+  .prog{background:var(--navy-2);color:#fff;border-radius:12px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;font-size:14px}
+  .prog b{font-size:20px}
+  .barwrap{height:8px;background:rgba(255,255,255,.2);border-radius:4px;margin-top:8px;overflow:hidden}
+  .barfill{height:100%;background:var(--teal);width:0}
+  .scanpad{margin-top:12px;border:2px dashed var(--line);border-radius:14px;padding:16px 14px;text-align:center;background:#fff;min-height:118px}
+  .scanpad .icon{font-size:30px;line-height:1}
+  .scanpad .big{font-size:21px;font-weight:700;margin-top:4px}
+  .scanpad .code{font-family:ui-monospace,Menlo,monospace;font-size:14px;color:var(--muted);margin-top:4px;word-break:break-all}
+  .scanpad .hint{font-size:13px;color:var(--muted);margin-top:6px}
+  .scanpad.ok{background:#e7f6ef;border-color:var(--green);border-style:solid} .scanpad.ok .big{color:var(--green-d)}
+  .scanpad.dup{background:#fff6e0;border-color:var(--amber);border-style:solid} .scanpad.dup .big{color:#8a5b00}
+  .scanpad.err{background:#fdeceb;border-color:var(--red);border-style:solid} .scanpad.err .big{color:var(--red)}
+  .scanpad.ask{background:#e8f4fb;border-color:var(--teal);border-style:solid} .scanpad.ask .big{color:var(--teal-d)}
+  .card{background:#fff;border-radius:14px;box-shadow:var(--shadow);padding:14px;margin-top:12px}
+  .card .meta{display:flex;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-bottom:10px}
+  .card .meta span{background:var(--paper);padding:4px 8px;border-radius:8px}
+  .card .exp{font-size:15px;margin-bottom:8px}
+  .card .exp b{font-size:26px;color:var(--navy)}
+  .qty{display:flex;gap:10px;align-items:center}
+  .qty input{flex:1;font-size:34px;font-weight:700;text-align:center;height:68px;border:2px solid var(--teal);border-radius:12px;background:#fff;color:var(--ink)}
+  .btn{height:var(--tap);border:0;border-radius:12px;font-size:17px;font-weight:650;padding:0 18px;color:#fff;background:var(--teal)}
+  .btn.ghost{background:#fff;color:var(--navy);border:2px solid var(--line)}
+  .btn.red{background:var(--red)}
+  .btn.wide{width:100%;margin-top:10px}
+  .warn{background:#fff6e0;border-left:4px solid var(--amber);padding:8px 10px;border-radius:8px;font-size:14px;margin-bottom:10px}
+  .warn.red{background:#fdeceb;border-left-color:var(--red)}
+  footer{flex:0 0 auto;display:flex;gap:8px;padding:10px 12px;background:#fff;border-top:1px solid var(--line)}
+  footer .btn{flex:1;padding:0;font-size:15px}
+  .list{margin-top:12px}
+  .row{display:flex;align-items:center;gap:8px;background:#fff;border-radius:10px;padding:9px 12px;margin-bottom:6px;box-shadow:var(--shadow);font-size:14px}
+  .row .t{font-family:ui-monospace,Menlo,monospace;flex:1;word-break:break-all}
+  .row .n{font-weight:700;min-width:44px;text-align:right}
+  .row.var{border-left:4px solid var(--red)} .row.okv{border-left:4px solid var(--green)} .row.na{border-left:4px solid var(--amber)}
+  .row.miss{border-left:4px solid var(--red);opacity:.9}
+  .ro{font-size:12px;color:var(--muted);min-width:76px}
+  h3{margin:14px 0 6px;font-size:15px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .manual{display:flex;gap:8px;margin-top:12px}
+  .manual input{flex:1;height:48px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font-size:16px;font-family:ui-monospace,Menlo,monospace}
+  .manual button{height:48px;padding:0 14px;border-radius:10px;border:0;background:var(--navy);color:#fff;font-weight:600}
+  #toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%;text-align:center}
+  #toast.show{opacity:.95}
+  #capture{position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0}
+  /* gate */
+  #gate{position:fixed;inset:0;background:var(--navy);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
+  #gate .box{background:#fff;border-radius:16px;padding:22px;width:100%;max-width:360px}
+  #gate h2{margin:0 0 6px;color:var(--navy);font-size:20px} #gate p{margin:0 0 14px;color:var(--muted);font-size:14px}
+  #gate input{width:100%;height:50px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font-size:17px;margin-bottom:10px}
+  #gate .err{color:var(--red);font-size:14px;min-height:20px}
+  .view{display:none} .view.active{display:block}
+</style>
+</head>
+<body>
+<div id="gate">
+  <div class="box">
+    <h2>FR Recon</h2>
+    <p>Physical count of a client's Removal Order pallet against the ASN.</p>
+    <input id="opname" type="text" placeholder="Your name (operator)" autocomplete="off">
+    <input id="pin" type="password" placeholder="PIN" autocomplete="off">
+    <div class="err" id="loginErr"></div>
+    <button class="btn wide" id="loginBtn">Start</button>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header class="bar">
+    <h1 id="title">Recon · DLM Ventures</h1>
+    <div class="op" id="opBadge"></div>
+  </header>
+  <div id="main">
+    <div id="v-scan" class="view active">
+      <div class="prog">
+        <div>Packages<br><b id="pPk">0</b> / <span id="pPkT">0</span></div>
+        <div>Units counted<br><b id="pUn">0</b> / <span id="pUnT">0</span></div>
+        <div>Missing<br><b id="pMiss" style="color:#ffb3ad">0</b></div>
+      </div>
+      <div class="barwrap"><div class="barfill" id="pBar"></div></div>
+
+      <div class="scanpad" id="scanpad">
+        <div class="icon" id="sIcon">▣</div>
+        <div class="big" id="sBig">Ready</div>
+        <div class="code" id="sCode"></div>
+        <div class="hint" id="sHint">Pull the trigger on the carton's carrier label.</div>
+      </div>
+
+      <div class="card" id="qcard" hidden>
+        <div class="meta"><span id="qRo"></span><span id="qCar"></span><span id="qStat"></span></div>
+        <div id="qWarn"></div>
+        <div class="exp">ASN says <b id="qExp">—</b> units in this carton</div>
+        <div class="qty">
+          <input id="qty" type="number" inputmode="numeric" min="0" step="1">
+          <button class="btn" id="saveBtn">Save</button>
+        </div>
+        <button class="btn ghost wide" id="cancelBtn">Cancel</button>
+      </div>
+
+      <div class="manual">
+        <input id="manual" placeholder="Type tracking if label won't scan" autocomplete="off">
+        <button id="manualBtn">Go</button>
+      </div>
+
+      <h3>Last scans</h3>
+      <div class="list" id="recent"></div>
+    </div>
+
+    <div id="v-missing" class="view">
+      <h3>Not yet scanned (<span id="mCount">0</span> cartons · <span id="mUnits">0</span> units)</h3>
+      <div class="list" id="missing"></div>
+    </div>
+
+    <div id="v-all" class="view">
+      <div class="warn" id="aSum"></div>
+      <h3>Scanned cartons</h3>
+      <div class="list" id="all"></div>
+    </div>
+  </div>
+  <footer>
+    <button class="btn ghost" id="fScan">Scan</button>
+    <button class="btn ghost" id="fMissing">Missing</button>
+    <button class="btn ghost" id="fAll">Summary</button>
+    <button class="btn" id="fCsv">CSV ⬇</button>
+  </footer>
+</div>
+<input id="capture" inputmode="none" autocomplete="off" aria-hidden="true">
+<div id="toast"></div>
+
+<script>
+/* ============================================================
+   PROJECT CONFIG — one block per reconciliation job.
+   To reuse this page for another client: change PROJECT, CLIENT,
+   CLIENT_ID, CLIENT_CODE and the EXPECTED list (tracking, RO, units, carrier).
+   ============================================================ */
+const API_BASE='https://apps.fr-logistics.net/.netlify/functions';
+const APP_PIN='frlogistics2024';
+const PROJECT='DLM_VENT-RO-OCT26';
+const CLIENT='DLM VENTURES LLC';
+const CLIENT_ID='9be0815c-93a3-485b-90a0-943c39851843';
+const CLIENT_CODE='DLM_VENT';
+const RECEIVE_TYPE='Overstock';     // how these cartons go into shipments_general if missing there
+
+// ASN consolidated from Daniel's emails (1-oct → 21-oct-2026): 61 cartons, 433 units
+const EXPECTED=[
+  ["TBA335126312528","DLM_VENT01",1,"Amazon"],
+  ["TBA335140005946","DLM_VENT01",1,"Amazon"],
+  ["TBA335123677943","DLM_VENT01",2,"Amazon"],
+  ["TBA335155857367","DLM_VENT01",1,"Amazon"],
+  ["TBA335149948452","DLM_VENT01",22,"Amazon"],
+  ["TBA335155213223","DLM_VENT01",23,"Amazon"],
+  ["TBA335160901795","DLM_VENT01",24,"Amazon"],
+  ["TBA335173109300","DLM_VENT01",1,"Amazon"],
+  ["TBA335203929124","DLM_VENT01",1,"Amazon"],
+  ["387097605","DLM_VENT01",48,"PAAF"],
+  ["TBA335186962948","DLM_VENT01",3,"Amazon"],
+  ["TBA335188101411","DLM_VENT01",3,"Amazon"],
+  ["TBA335190052144","DLM_VENT01",15,"Amazon"],
+  ["TBA335188392147","DLM_VENT01",9,"Amazon"],
+  ["TBA335209013546","DLM_VENT01",1,"Amazon"],
+  ["TBA335212429064","DLM_VENT01",1,"Amazon"],
+  ["TBA335203577593","DLM_VENT01",1,"Amazon"],
+  ["TBA335185923571","DLM_VENT01",1,"Amazon"],
+  ["TBA335210028679","DLM_VENT01",1,"Amazon"],
+  ["TBA335204509256","DLM_VENT01",1,"Amazon"],
+  ["TBA335202882697","DLM_VENT01",2,"Amazon"],
+  ["TBA335215680353","DLM_VENT01",2,"Amazon"],
+  ["TBA335212581045","DLM_VENT01",3,"Amazon"],
+  ["TBA335246405393","DLM_VENT01",23,"Amazon"],
+  ["TBA335235988132","DLM_VENT01",1,"Amazon"],
+  ["TBA335243298538","DLM_VENT01",5,"Amazon"],
+  ["TBA335226364910","DLM_VENT01",1,"Amazon"],
+  ["TBA335242036904","DLM_VENT01",23,"Amazon"],
+  ["TBA335244437733","DLM_VENT01",22,"Amazon"],
+  ["TBA335209613319","DLM_VENT01",3,"Amazon"],
+  ["TBA335213455937","DLM_VENT01",1,"Amazon"],
+  ["TBA335245365194","DLM_VENT01",1,"Amazon"],
+  ["TBA335231936531","DLM_VENT01",1,"Amazon"],
+  ["TBA335209765038","DLM_VENT01",2,"Amazon"],
+  ["TBA335214422454","DLM_VENT01",9,"Amazon"],
+  ["TBA335244220828","DLM_VENT01",23,"Amazon"],
+  ["TBA335241981843","DLM_VENT01",23,"Amazon"],
+  ["TBA335216610617","DLM_VENT02",1,"Amazon"],
+  ["TBA335214453752","DLM_VENT02",5,"Amazon"],
+  ["1ZY392E60379188556","DLM_VENT01",11,"UPS"],
+  ["1Z2446Y40334313050","DLM_VENT01",10,"UPS"],
+  ["TBA335258899559","DLM_VENT01",1,"Amazon"],
+  ["TBA335277891066","DLM_VENT01",1,"Amazon"],
+  ["TBA335285023201","DLM_VENT01",2,"Amazon"],
+  ["TBA335287146686","DLM_VENT01",1,"Amazon"],
+  ["TBA335326168935","DLM_VENT01",1,"Amazon"],
+  ["TBA335296994884","DLM_VENT01",1,"Amazon"],
+  ["TBA335282254218","DLM_VENT02",1,"Amazon"],
+  ["TBA335408583347","DLM_VENT02",1,"Amazon"],
+  ["TBA335403987339","DLM_VENT02",1,"Amazon"],
+  ["TBA335422043918","DLM_VENT02",2,"Amazon"],
+  ["TBA335426921804","DLM_VENT02",2,"Amazon"],
+  ["TBA335424536157","DLM_VENT02",2,"Amazon"],
+  ["TBA335408019454","DLM_VENT04",2,"Amazon"],
+  ["TBA335444155295","DLM_VENT02",1,"Amazon"],
+  ["TBA335448241606","DLM_VENT02",3,"Amazon"],
+  ["TBA335631551285","DLM_VENT06",24,"Amazon"],
+  ["1Z2446Y40334543445","DLM_VENT05",9,"UPS"],
+  ["TBA335694776964","DLM_VENT07",2,"Amazon"],
+  ["TBA335694711115","DLM_VENT07",22,"Amazon"],
+  ["TBA335702823076","DLM_VENT07",22,"Amazon"]
+];
+
+/* ---------- state ---------- */
+const $=id=>document.getElementById(id);
+const S={operator:null, view:'scan', pending:null, scans:new Map()};   // scans: tracking -> row
+const EXP=new Map(EXPECTED.map(([t,ro,u,c])=>[t.toUpperCase(),{tracking:t,ro,units:u,carrier:c}]));
+const EXP_PK=EXPECTED.length, EXP_UN=EXPECTED.reduce((a,x)=>a+x[2],0);
+
+/* ---------- feedback ---------- */
+function buzz(p){ if(navigator.vibrate) navigator.vibrate(p); }
+let AC=null;
+function beep(type){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+  const seq=type==='ok'?[[880,0,.09]]:type==='dup'?[[660,0,.07],[660,.12,.07]]:[[200,0,.22]];
+  seq.forEach(([f,t,d])=>{const o=AC.createOscillator(),g=AC.createGain();o.frequency.value=f;o.connect(g);g.connect(AC.destination);
+    const s=AC.currentTime+t;g.gain.setValueAtTime(.001,s);g.gain.exponentialRampToValueAtTime(.25,s+.01);g.gain.exponentialRampToValueAtTime(.001,s+d);o.start(s);o.stop(s+d+.02);});}catch(e){} }
+function feedback(k){ if(k==='ok'){buzz(40);beep('ok');} else if(k==='dup'){buzz([40,60,40]);beep('dup');} else {buzz(200);beep('err');} }
+let toastT=null; function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2200); }
+
+/* ---------- tracking normalisation ---------- */
+// Amazon TBA labels sometimes scan with extra prefix/suffix; UPS 1Z is clean;
+// PAAF/other freight labels are plain digits. We keep the raw scan but match
+// against the ASN by the longest known token contained in it.
+function normalize(raw){
+  let s=String(raw||'').trim().toUpperCase().replace(/\s+/g,'');
+  if(EXP.has(s)) return s;
+  const m=s.match(/TBA\d{12}|1Z[A-Z0-9]{16}|\d{9,22}/);
+  if(m && EXP.has(m[0])) return m[0];
+  // USPS/GS1 wrapped 1Z or TBA inside a longer string
+  for(const k of EXP.keys()){ if(s.endsWith(k)||s.includes(k)) return k; }
+  return s;
+}
+function carrierOf(t){ if(/^TBA/.test(t)) return 'Amazon'; if(/^1Z/.test(t)) return 'UPS'; if(/^\d{20,22}$/.test(t)||/^9[234]\d{20}$/.test(t)) return 'USPS'; return 'Other'; }
+function setPad(state,big,hint,code){ const p=$('scanpad'); p.className='scanpad'+(state?' '+state:''); $('sBig').textContent=big; $('sCode').textContent=code||''; $('sHint').textContent=hint||"Pull the trigger on the carton's carrier label."; $('sIcon').textContent=state==='ok'?'✓':state==='dup'?'!':state==='err'?'✕':state==='ask'?'#':'▣'; }
+
+/* ---------- capture engine (keyboard wedge) ---------- */
+let capBuf='', capTimer=null;
+function focusCap(){ if(S.view!=='scan'||S.pending) return; const c=$('capture'); if(document.activeElement!==c) c.focus({preventScroll:true}); }
+function isFormField(el){ return el && (el.tagName==='SELECT'||(el.tagName==='INPUT'&&el.id!=='capture')); }
+document.addEventListener('keydown',e=>{
+  if(!S.operator) return;
+  if(isFormField(document.activeElement)){
+    // scanner fired while the qty box is focused: treat it as "save and move on"
+    if(document.activeElement.id==='qty' && e.key==='Enter'){ e.preventDefault(); saveScan(); }
+    return;
+  }
+  if(e.key==='Enter'){ const code=capBuf.trim(); if(code) onScan(code); capBuf=''; e.preventDefault(); return; }
+  if(e.key.length===1){ capBuf+=e.key; clearTimeout(capTimer); capTimer=setTimeout(()=>{capBuf='';},150); }
+},true);
+document.addEventListener('click',e=>{ if(!isFormField(e.target)&&e.target.tagName!=='BUTTON') focusCap(); });
+
+/* ---------- scan flow ---------- */
+function onScan(raw){
+  if(S.view!=='scan') go('scan');
+  if(S.pending){ toast('Save or cancel the open carton first'); feedback('dup'); return; }
+  const t=normalize(raw);
+  const exp=EXP.get(t);
+  const prev=S.scans.get(t);
+  S.pending={tracking:t, raw, exp, prev};
+  $('qcard').hidden=false;
+  $('qRo').textContent=exp?exp.ro:'NOT IN ASN';
+  $('qCar').textContent=exp?exp.carrier:carrierOf(t);
+  $('qStat').textContent=prev?('Scanned before: '+prev.counted_units+' u'):'New';
+  $('qExp').textContent=exp?exp.units:'?';
+  let w='';
+  if(!exp) w='<div class="warn red">This tracking is NOT in Daniel\'s ASN. Count it anyway — it will be flagged for the client.</div>';
+  if(prev) w+='<div class="warn">Already counted ('+prev.counted_units+' u by '+(prev.operator||'?')+'). Saving REPLACES that count.</div>';
+  $('qWarn').innerHTML=w;
+  $('qty').value=prev?prev.counted_units:(exp?exp.units:'');
+  setPad(exp?'ask':'err', exp?('Carton '+exp.ro.replace('DLM_VENT','RO ')):'Not in ASN', 'Confirm the units in this carton, then Save.', t);
+  feedback(exp?'ok':'err');
+  setTimeout(()=>{ const q=$('qty'); q.focus(); q.select(); },80);
+}
+function cancelScan(){ S.pending=null; $('qcard').hidden=true; setPad('', 'Ready','',''); focusCap(); }
+async function saveScan(){
+  const p=S.pending; if(!p) return;
+  const n=Number($('qty').value);
+  if(!Number.isInteger(n)||n<0){ toast('Enter a whole number of units'); $('qty').focus(); return; }
+  if(p.exp && n!==p.exp.units && !confirm('ASN says '+p.exp.units+' but you counted '+n+'.\nSave the VARIANCE?')){ $('qty').focus(); return; }
+  $('saveBtn').disabled=true;
+  const row={ action:'save', project:PROJECT, tracking:p.tracking, counted_units:n,
+    expected_units:p.exp?p.exp.units:null, removal_order:p.exp?p.exp.ro:null,
+    carrier:p.exp?p.exp.carrier:carrierOf(p.tracking), in_asn:!!p.exp,
+    client_code:CLIENT_CODE, client_id:CLIENT_ID, operator:S.operator||'',
+    notes:(p.raw!==p.tracking?('raw scan: '+p.raw):null) };
+  try{
+    const r=await fetch(API_BASE+'/frm-recon',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+    S.scans.set(p.tracking, j.row||{...row});
+    setPad(n===(p.exp?p.exp.units:n)?'ok':'dup', (p.exp?'Saved':'Saved (not in ASN)'), n+' units'+(p.exp&&n!==p.exp.units?(' — variance '+(n-p.exp.units>0?'+':'')+(n-p.exp.units)):''), p.tracking);
+    feedback('ok'); renderProgress(); renderRecent();
+    registerInLog(p.tracking, p.exp?p.exp.carrier:carrierOf(p.tracking));   // best-effort, never blocks the count
+  }catch(err){ toast('⚠ Not saved: '+err.message); feedback('err'); $('saveBtn').disabled=false; return; }
+  $('saveBtn').disabled=false; S.pending=null; $('qcard').hidden=true; focusCap();
+}
+// Make sure the carton also exists in shipments_general (the Receiving log).
+// 409 = already there, which is the normal case; anything else is only logged.
+async function registerInLog(tracking, carrier){
+  try{
+    const c=['Amazon','UPS','USPS','FedEx','Walmart'].includes(carrier)?carrier:'Other';
+    const r=await fetch(API_BASE+'/frm-receive',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({tracking, client:CLIENT, client_id:CLIENT_ID, type:RECEIVE_TYPE, carrier:c, direction:'Inbound', operator:S.operator||''})});
+    if(r.status===200) toast('Also added to Receiving log: …'+tracking.slice(-8));
+  }catch(e){}
+}
+
+/* ---------- views ---------- */
+function go(v){ S.view=v; document.querySelectorAll('.view').forEach(x=>x.classList.remove('active')); $('v-'+v).classList.add('active');
+  ['fScan','fMissing','fAll'].forEach(id=>$(id).className='btn ghost'); $({scan:'fScan',missing:'fMissing',all:'fAll'}[v]).className='btn';
+  if(v==='missing') renderMissing(); if(v==='all') renderAll(); if(v==='scan') focusCap(); $('main').scrollTop=0; }
+function renderProgress(){
+  let pk=0,un=0; for(const [t,r] of S.scans){ pk++; un+=r.counted_units; }
+  const inAsn=[...S.scans.keys()].filter(t=>EXP.has(t)).length;
+  $('pPk').textContent=pk; $('pPkT').textContent=EXP_PK; $('pUn').textContent=un; $('pUnT').textContent=EXP_UN;
+  $('pMiss').textContent=EXP_PK-inAsn; $('pBar').style.width=Math.min(100,Math.round(inAsn/EXP_PK*100))+'%';
+}
+function rowHtml(r,cls){ const v=r.expected_units==null?'':(r.counted_units-r.expected_units);
+  return '<div class="row '+cls+'"><span class="ro">'+(r.removal_order||'—').replace('DLM_VENT','RO ')+'</span><span class="t">'+r.tracking+'</span><span class="n">'+r.counted_units+(r.expected_units!=null?'/'+r.expected_units:'')+'</span>'+(v!==''&&v!==0?'<span class="n" style="color:var(--red)">'+(v>0?'+':'')+v+'</span>':'')+'</div>'; }
+function cls(r){ return !r.in_asn?'na':(r.expected_units===r.counted_units?'okv':'var'); }
+function renderRecent(){ const rows=[...S.scans.values()].sort((a,b)=>(b.updated_at||b.scanned_at||'').localeCompare(a.updated_at||a.scanned_at||'')).slice(0,8); $('recent').innerHTML=rows.map(r=>rowHtml(r,cls(r))).join('')||'<div class="warn">Nothing scanned yet in this project.</div>'; }
+function renderMissing(){ const miss=EXPECTED.filter(([t])=>!S.scans.has(t.toUpperCase())); $('mCount').textContent=miss.length; $('mUnits').textContent=miss.reduce((a,x)=>a+x[2],0);
+  $('missing').innerHTML=miss.map(([t,ro,u,c])=>'<div class="row miss"><span class="ro">'+ro.replace('DLM_VENT','RO ')+'</span><span class="t">'+t+'<br><small style="color:var(--muted)">'+c+'</small></span><span class="n">'+u+'</span></div>').join('')||'<div class="warn" style="border-left-color:var(--green)">All 61 ASN cartons scanned. 🎉</div>'; }
+function renderAll(){ const rows=[...S.scans.values()].sort((a,b)=>(a.removal_order||'~').localeCompare(b.removal_order||'~')||a.tracking.localeCompare(b.tracking));
+  const un=rows.reduce((a,r)=>a+r.counted_units,0), vr=rows.filter(r=>r.in_asn&&r.expected_units!==r.counted_units).length, na=rows.filter(r=>!r.in_asn).length;
+  $('aSum').innerHTML='<b>'+rows.length+'</b> cartons · <b>'+un+'</b> units counted · <b>'+vr+'</b> with variance · <b>'+na+'</b> not in ASN'; $('all').innerHTML=rows.map(r=>rowHtml(r,cls(r))).join(''); }
+
+/* ---------- load existing scans ---------- */
+async function loadScans(){
+  try{ const r=await fetch(API_BASE+'/frm-recon?project='+encodeURIComponent(PROJECT)); const j=await r.json(); (j.rows||[]).forEach(x=>S.scans.set(x.tracking.toUpperCase(),x)); }
+  catch(e){ toast('Could not load previous scans'); }
+  renderProgress(); renderRecent();
+}
+
+/* ---------- gate ---------- */
+function doLogin(){ const op=$('opname').value.trim(), pin=$('pin').value;
+  if(!op){ $('loginErr').textContent='Enter your name'; return; }
+  if(pin!==APP_PIN){ $('loginErr').textContent='Wrong PIN'; $('pin').value=''; return; }
+  S.operator=op; localStorage.setItem('frm_op',op); localStorage.setItem('frm_ok','1'); enterApp(); }
+function enterApp(){ $('gate').style.display='none'; $('app').hidden=false; $('opBadge').textContent=S.operator; loadScans(); setTimeout(focusCap,100); }
+$('loginBtn').onclick=doLogin; $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+(function(){ const saved=localStorage.getItem('frm_op'); if(saved) $('opname').value=saved; if(saved&&localStorage.getItem('frm_ok')==='1'){ S.operator=saved; enterApp(); } })();
+
+/* ---------- wiring ---------- */
+$('saveBtn').onclick=saveScan; $('cancelBtn').onclick=cancelScan;
+// If the trigger is pulled while the qty box has focus, the scanner types the
+// tracking into it. A real count never has more than 4 digits, so anything
+// longer is a scan: discard it and remind the operator to save first.
+$('qty').addEventListener('input',()=>{ const q=$('qty'); if(q.value.length>4){ q.value=S.pending&&S.pending.exp?S.pending.exp.units:''; toast('Save or cancel this carton before scanning the next one'); feedback('dup'); q.select(); } });
+$('manualBtn').onclick=()=>{ const v=$('manual').value.trim(); if(v){ $('manual').value=''; onScan(v); } };
+$('manual').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('manualBtn').click(); } });
+$('fScan').onclick=()=>go('scan'); $('fMissing').onclick=()=>go('missing'); $('fAll').onclick=()=>go('all');
+$('fCsv').onclick=()=>window.open(API_BASE+'/frm-recon?project='+encodeURIComponent(PROJECT)+'&format=csv','_blank');
+</script>
+</body>
+</html>
