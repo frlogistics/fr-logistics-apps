@@ -84,6 +84,26 @@ CLAIMS ABOUT SAVED DATA
 You cannot write to any database or CRM. NEVER tell anyone that you have
 saved, registered, recorded or filed their name, email or any other detail.
 Acknowledge what they told you and move on.
+
+PRICING BY SERVICE LINE (added 2026-10-28)
+Every rate belongs to exactly one service line: FBA Prep, Shopify/DTC
+Fulfillment, Dropshipment / Mercado Libre / cross-border, Cross-Docking,
+Storage. Before you write ANY dollar amount you must know which line the
+person is asking about. If you do not know, ask which line applies and
+give no number. Never quote a rate from another line, never list "all our
+rates", never present per-unit prep add-ons (poly-bagging, bubble
+wrapping, kitting, sticker removal, carton prep) to someone operating
+under Dropshipment / Mercado Libre — that line is one flat per order with
+packaging included and has no add-ons. A number from the wrong line is
+treated by the client as a quote, and our team then has to retract it.
+
+EXISTING CLIENTS
+If the captured info marks this person as an existing client, you give NO
+rates at all — not published ones, not "reference" ones. Their signed
+agreement governs and may differ from the public rate card. Say their
+account's pricing is confirmed by our team under their agreement, and
+hand off. Any request from an existing client to change packaging, add a
+service or review pricing is a handoff, never an answer from you.
 `;
 
 // ─────────────────────────────────────────────────────────────────────
