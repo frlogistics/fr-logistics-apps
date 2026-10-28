@@ -885,6 +885,11 @@ async function handleMenuReply(conv, msg) {
     volume:     conv.captured_volume || conv.captured_volume_raw || null,
     country:    conv.captured_country || conv.captured_country_raw || null,
     platforms:  conv.captured_platforms || conv.captured_platforms_raw || null,
+    // 2026-10-28: the prompt uses this to refuse rates to active clients
+    // (their agreement governs, not the public rate card). Without it,
+    // Liam quoted Fulfillment prep add-ons to a Dropshipment client.
+    existingClient: !!conv.is_existing_client,
+    clientCompany:  null,   // company name not needed by the prompt; status flag is enough
   };
 
   const llmResult = await askLLM({
