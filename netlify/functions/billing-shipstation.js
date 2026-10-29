@@ -1,7 +1,8 @@
 // netlify/functions/billing-shipstation.js
 // Mode 1 (store): filter shipments by storeId from stores list
-// Mode 2 (cf1):   get ALL recent orders, filter by advancedOptions.customField1 client-side,
-//                 then cross-reference with period shipments by orderId
+// Mode 2 (cf1):   get orders modified within/after the period, filter by
+//                 advancedOptions.customField1 client-side, then cross-reference
+//                 with period shipments by orderId
 //
 // billed_orders (Sprint 1):
 // When client_id is provided, queries billed_orders table and excludes order_ids
@@ -35,6 +36,17 @@
 // exactly as before. The response adds `storesMatched` ({storeName: count})
 // and each orderIds entry carries `store`, both purely additive.
 //
+// CF1 order window (2026-10-29):
+// Mode 2 used to fetch EVERY shipped order of the account (no date filter) and
+// fetchAllPages caps at 10 pages × 500 = 5,000 orders. Once the account passed
+// that many shipped orders, the newest ones fell outside the batch, no CF1
+// match was found for the period and the function returned count: 0 (MXS
+// Overseas, Oct 16–31 2026). Now the orders query is bounded by
+// modifyDateStart = period start (any order shipped inside the period changed
+// status — and therefore modifyDate — inside the period), sorted by ModifyDate
+// DESC, with the page cap raised to 20. The shipments query is unchanged.
+// A `cf1Window` block is added to the response for diagnostics.
+//
 // WHY client-side filter on orders (not shipments):
 // - ShipStation /orders?customField1= API filter does NOT work
 // - shipments.advancedOptions.customField1 is captured at label-creation time
@@ -47,6 +59,10 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 // ─── Pick & Pack weight tier thresholds (pounds) ────────────────────────────
 // Keep in sync with billing-rates.js PP_TIER.thresholds.
 const PP_THRESHOLDS = { small_max: 1.50, standard_max: 3.00 };
+
+// Page caps for ShipStation list endpoints (pageSize=500 each).
+const MAX_PAGES_SHIPMENTS = 10;   // unchanged
+const MAX_PAGES_ORDERS    = 20;   // raised from 10 (2026-10-29)
 
 // Normalize a ShipStation weight object { value, units } to pounds.
 // ShipStation units are one of: 'pounds', 'ounces', 'grams'. Anything missing
@@ -91,7 +107,7 @@ async function ssGet(url, auth) {
   return r.json();
 }
 
-async function fetchAllPages(url, auth) {
+async function fetchAllPages(url, auth, maxPages = MAX_PAGES_SHIPMENTS) {
   let page = 1, pages = 1, out = [];
   do {
     const sep = url.includes('?') ? '&' : '?';
@@ -99,8 +115,8 @@ async function fetchAllPages(url, auth) {
     out   = out.concat(d.shipments || d.orders || []);
     pages = d.pages || 1;
     page++;
-  } while (page <= pages && page <= 10);
-  return out;
+  } while (page <= pages && page <= maxPages);
+  return { items: out, pages, truncated: pages > maxPages };
 }
 
 // Fetch billed order_ids for a client from Supabase.
@@ -159,11 +175,12 @@ exports.handler = async (event) => {
 
   try {
     // Fetch shipments + stores list + billed orders set in parallel
-    const [allShipments, storeList, billedSet] = await Promise.all([
-      fetchAllPages(`${SS}/shipments?shipDateStart=${start}&shipDateEnd=${end}`, auth),
+    const [shipRes, storeList, billedSet] = await Promise.all([
+      fetchAllPages(`${SS}/shipments?shipDateStart=${start}&shipDateEnd=${end}`, auth, MAX_PAGES_SHIPMENTS),
       ssGet(`${SS}/stores?showInactive=false`, auth).catch(() => []),
       getBilledOrderIds(clientId),
     ]);
+    const allShipments = shipRes.items;
 
     // Build storeId → storeName map
     const storeMap = {};
@@ -227,12 +244,29 @@ exports.handler = async (event) => {
     }
 
     // ══ MODE 2: Custom Field 1 filter ══════════════════════════════════════
-    const allOrders = await fetchAllPages(`${SS}/orders?orderStatus=shipped`, auth);
+    // Only orders modified on/after the period start can have been shipped
+    // inside the period (shipping changes orderStatus → modifyDate). Bounding
+    // the query this way keeps the batch small and immune to the account's
+    // total order count. Sorted newest-first so a truncated batch still holds
+    // the period's orders.
+    const ordersUrl =
+      `${SS}/orders?orderStatus=shipped` +
+      `&modifyDateStart=${encodeURIComponent(start)}` +
+      `&sortBy=ModifyDate&sortDir=DESC`;
+    const ordRes    = await fetchAllPages(ordersUrl, auth, MAX_PAGES_ORDERS);
+    const allOrders = ordRes.items;
     const cf1Lower  = cf1.toLowerCase();
 
     const matchedOrders = allOrders.filter(o =>
       (o.advancedOptions?.customField1 || '').toLowerCase() === cf1Lower
     );
+
+    const cf1Window = {
+      modifyDateStart: start,
+      ordersFetched:   allOrders.length,
+      ordersPages:     ordRes.pages,
+      ordersTruncated: ordRes.truncated,
+    };
 
     if (matchedOrders.length === 0) {
       return {
@@ -250,7 +284,8 @@ exports.handler = async (event) => {
           ppOversized: 0,
           orderIds:    [],
           billed:      { count: 0, carrierCost: 0 },
-          note:        `No shipped orders found with Custom Field 1 = "${cf1}". Tag orders in ShipStation.`,
+          cf1Window,
+          note:        `No shipped orders modified since ${start} with Custom Field 1 = "${cf1}". Tag orders in ShipStation.`,
         })
       };
     }
@@ -287,6 +322,7 @@ exports.handler = async (event) => {
           count:       billedShipments.length,
           carrierCost: round(billedShipments.reduce((s, x) => s + (x.shipmentCost || 0), 0)),
         },
+        cf1Window,
       })
     };
 
