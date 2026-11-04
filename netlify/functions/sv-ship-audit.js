@@ -103,6 +103,25 @@ async function svSales(start, end) {
 }
 
 let DIAG = {};
+
+// Which SKUs does SkuVault actually track? Some clients (e.g. SalesStart)
+// don't pay for the platform, so their SKUs never exist in SkuVault and a
+// "gap" on them is not a missed pick — it's expected. We resolve this from
+// the Supabase mirror (inventory_by_location, rebuilt from SkuVault every
+// 2 h) plus wh_sku_clients (SKU ownership). A SKU in neither is untracked.
+async function trackedSkuSet() {
+  const { SUPABASE_URL, SUPABASE_SERVICE_KEY } = process.env;
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
+  const h = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` };
+  const [a, b] = await Promise.all([
+    fetch(`${SUPABASE_URL}/rest/v1/inventory_by_location?select=sku&limit=20000`, { headers: h }).then((r) => r.json()),
+    fetch(`${SUPABASE_URL}/rest/v1/wh_sku_clients?select=sku&limit=20000`, { headers: h }).then((r) => r.json()),
+  ]);
+  const set = new Set();
+  for (const r of [...(Array.isArray(a) ? a : []), ...(Array.isArray(b) ? b : [])]) if (r && r.sku) set.add(norm(r.sku));
+  return set;
+}
+
 const norm = (s) => String(s || "").trim().toLowerCase();
 
 exports.handler = async (event) => {
@@ -120,10 +139,11 @@ exports.handler = async (event) => {
   DIAG = {};
   const safe = (name, pr) => pr.catch((e) => { errors[name] = String(e.message || e); return []; });
 
-  const [shipments, sales, tx] = await Promise.all([
+  const [shipments, sales, tx, tracked] = await Promise.all([
     safe("shipstation", ssGetAll(`${SS}/shipments?shipDateStart=${start}&shipDateEnd=${end}&includeShipmentItems=true`, auth)),
     safe("skuvault_sales", svSales(start, end)),
     safe("skuvault_transactions", svTransactions(start, end)),
+    trackedSkuSet().catch((e) => { errors.tracked_skus = String(e.message || e); return null; }),
   ]);
 
   const storeFilter = norm(p.store);
@@ -158,19 +178,25 @@ exports.handler = async (event) => {
     };
   });
 
-  const bySku = Object.keys(shippedBySku).sort().map((sku) => ({
+  const isTracked = (sku) => (tracked instanceof Set ? tracked.has(norm(sku)) : true);
+  const bySkuAll = Object.keys(shippedBySku).sort().map((sku) => ({
     sku,
+    tracked_in_skuvault: isTracked(sku),
     shipped_qty: shippedBySku[sku],
     removed_in_skuvault: removedBySku[sku] || 0,
-    gap: shippedBySku[sku] - (removedBySku[sku] || 0),
+    gap: isTracked(sku) ? shippedBySku[sku] - (removedBySku[sku] || 0) : 0,
   }));
+  const bySku = bySkuAll.filter((r) => r.tracked_in_skuvault);
+  const notInSkuvault = bySkuAll.filter((r) => !r.tracked_in_skuvault).map((r) => ({ sku: r.sku, shipped_qty: r.shipped_qty }));
 
   const summary = {
     window: { start, end },
     shipments: ships.length,
     orders_known_to_skuvault: orders.filter((o) => o.skuvault.known).length,
     orders_unknown_to_skuvault: orders.filter((o) => !o.skuvault.known).map((o) => o.order_number),
-    units_shipped: bySku.reduce((a, b) => a + b.shipped_qty, 0),
+    units_shipped: bySkuAll.reduce((a, b) => a + b.shipped_qty, 0),
+    units_shipped_tracked: bySku.reduce((a, b) => a + b.shipped_qty, 0),
+    units_shipped_not_in_skuvault: notInSkuvault.reduce((a, b) => a + b.shipped_qty, 0),
     units_removed_in_skuvault: bySku.reduce((a, b) => a + b.removed_in_skuvault, 0),
     units_gap: bySku.reduce((a, b) => a + b.gap, 0),
     remove_transactions_in_window: removes.length,
@@ -179,7 +205,7 @@ exports.handler = async (event) => {
     diag: DIAG,
   };
 
-  const body = { summary, by_sku: bySku, orders };
+  const body = { summary, by_sku: bySku, not_in_skuvault: notInSkuvault, orders };
   if (p.raw === "1") body.raw = { sales, transactions: tx };
   return { statusCode: 200, headers: H, body: JSON.stringify(body) };
 };
