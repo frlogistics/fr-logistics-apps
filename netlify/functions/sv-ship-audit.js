@@ -70,6 +70,7 @@ async function svTransactions(start, end) {
         FromDate: from.toISOString(), ToDate: chunkEnd.toISOString(),
         PageNumber: page, PageSize: 10000,
       });
+      if (page === 0 && !DIAG.tx_keys) DIAG.tx_keys = Object.keys(j);
       const tx = j.Transactions || [];
       all.push(...tx);
       if (tx.length < 10000) break;
@@ -84,10 +85,15 @@ async function svSales(start, end) {
   const all = [];
   let page = 0;
   for (;;) {
+    // SkuVault filters sales by MODIFIED time (UTC); FromDate/ToDate are
+    // silently ignored. Pad the window a day each side so timezone edges
+    // don't drop orders.
     const j = await svPost("/sales/getSales", {
-      FromDate: start + "T00:00:00Z", ToDate: end + "T23:59:59Z",
+      ModifiedAfterDateTimeUtc: new Date(new Date(start + "T00:00:00Z").getTime() - 86400000).toISOString(),
+      ModifiedBeforeDateTimeUtc: new Date(new Date(end + "T23:59:59Z").getTime() + 86400000).toISOString(),
       PageNumber: page, PageSize: 10000,
     });
+    if (page === 0) DIAG.sales_keys = Object.keys(j);
     const s = j.Sales || [];
     all.push(...s);
     if (s.length < 10000) break;
@@ -96,6 +102,7 @@ async function svSales(start, end) {
   return all;
 }
 
+let DIAG = {};
 const norm = (s) => String(s || "").trim().toLowerCase();
 
 exports.handler = async (event) => {
@@ -110,6 +117,7 @@ exports.handler = async (event) => {
   const auth = { Authorization: `Basic ${Buffer.from(`${key}:${sec}`).toString("base64")}` };
 
   const errors = {};
+  DIAG = {};
   const safe = (name, pr) => pr.catch((e) => { errors[name] = String(e.message || e); return []; });
 
   const [shipments, sales, tx] = await Promise.all([
@@ -168,6 +176,7 @@ exports.handler = async (event) => {
     remove_transactions_in_window: removes.length,
     all_transactions_in_window: tx.length,
     errors,
+    diag: DIAG,
   };
 
   const body = { summary, by_sku: bySku, orders };
