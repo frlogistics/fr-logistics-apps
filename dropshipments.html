@@ -1803,8 +1803,16 @@
       const sibs = state.rows.filter(x =>
         x.tracking_number === r.tracking_number && x.client_id === r.client_id
       );
-      const accounted = sibs.filter(x => selIds.has(x.id) || x.status === "shipped").length;
-      return accounted >= r.group_total;
+      // 2026-11-04 fix: compare against the rows that EXIST, not group_total.
+      // The server guard only looks at sibling rows in the table; if one block
+      // of a "x de 5" box was never ingested (4 rows, group_total 5), measuring
+      // against group_total could never be satisfied and the batch deadlocked:
+      // confirm_group went out false, every row saw its 3 un-shipped siblings
+      // and all 4 were rejected. Mirroring the server — every KNOWN sibling is
+      // selected or already shipped — is exactly the condition under which the
+      // operator has seen everything the system has for this box.
+      const unaccounted = sibs.filter(x => !selIds.has(x.id) && x.status !== "shipped");
+      return unaccounted.length === 0;
     };
 
     // Parallel POST action=ship for each row. If any fail we report counts.
