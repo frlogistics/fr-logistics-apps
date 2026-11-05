@@ -490,6 +490,7 @@ function normalizeClient(c) {
     ssStore:         c.ssStore         || c.store_name            || '',
     shippingMarkup:  c.shippingMarkup  ?? c.shipping_markup       ?? 10,
     mmb:             c.mmb             ?? c.min_monthly_billing   ?? 0,
+    palletPositions: parseFloat(c.palletPositions ?? c.pallet_positions ?? 0) || 0,
     wmsIntegration,
     ssCustomField1,
     billingSource,
@@ -1101,6 +1102,13 @@ async function loadBilling() {
     if (l.id === 'ds_intake')          l.qty = inboundDropshipCount;
     if (l.id === 'outbound_carton')    { l.qty = outboundCount; l.auto = outboundCount > 0; }
     if (l.id === 'wms')                l.qty = (_client.wmsIntegration || _client.wms_integration) && l.rate > 0 ? 1 : 0;
+    // 2026-11-05: fixed pallet positions from the client profile (fr_clients.pallet_positions).
+    // Storage is billed as a flat monthly position count, not per pallet record — editable.
+    if (l.id === 'storage_rack' && _client.palletPositions > 0) {
+      l.qty  = _client.palletPositions;
+      l.auto = true;
+      l.tip  = `${_client.palletPositions} fixed pallet position(s) from client profile — edit in Clients if changed`;
+    }
 
     // Phase 3.2 + Hybrid auto-fill (2026-07-13): Auto-populate from Services Log.
     // Match by the line's canonical sku FIRST (covers pallet/inbound/outbound and

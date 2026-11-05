@@ -445,6 +445,10 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
             <label>Min. Monthly Billing ($)</label>
             <input id="cm_mmb" type="number" min="0" step="50" placeholder="0"/>
           </div>
+          <div class="formField" style="margin:0">
+            <label>Pallet Positions (fixed, billed monthly)</label>
+            <input id="cm_palletPositions" type="number" min="0" step="0.5" placeholder="0"/>
+          </div>
         </div>
         <div style="margin-top:10px">
           <label class="checkLabel"><input type="checkbox" id="cm_wmsIntegration"/> WMS Integration Active (direct ShipStation store)</label>
@@ -769,6 +773,7 @@ function openClientModal(mode,id){
       setClientCode(c.client_code||'', !!c.client_code);
       document.getElementById('cm_shippingMarkup').value=c.shipping_markup??10;
       document.getElementById('cm_mmb').value=c.mmb||0;
+      document.getElementById('cm_palletPositions').value=c.pallet_positions||0;
       document.getElementById('cm_wmsIntegration').checked=c.wms_integration||false;
       const svcs=Array.isArray(c.services)?c.services.map(s=>s.replace(/"/g,'').trim()):(c.services?String(c.services).split(',').map(s=>s.trim()):[]);
       document.querySelectorAll('[name=svc]').forEach(cb=>{cb.checked=svcs.includes(cb.value);});
@@ -816,6 +821,7 @@ function saveClientModal(){
       client_code:(document.getElementById('cm_clientCode').value||'').trim().toUpperCase()||null,
       shipping_markup:parseFloat(document.getElementById('cm_shippingMarkup').value)||10,
       mmb:parseFloat(document.getElementById('cm_mmb').value)||0,
+      pallet_positions:parseFloat(document.getElementById('cm_palletPositions').value)||0,
       wms_integration:document.getElementById('cm_wmsIntegration').checked,
     };
   if(editId)payload.id=editId;
