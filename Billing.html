@@ -956,12 +956,22 @@ async function loadBilling() {
             // post Phase 1.5 migration. Keep keys uppercase to match.
             const key = (e.service_code || '').toUpperCase();
             if (!key) return;
-            if (!svcLogEntries[key]) svcLogEntries[key] = { qty: 0, rate: 0, amount: 0, count: 0, ids: [], refs: [] };
+            if (!svcLogEntries[key]) svcLogEntries[key] = { qty: 0, rate: 0, amount: 0, count: 0, ids: [], refs: [], items: [] };
             const eQty  = parseFloat(e.total_quantity || e.quantity || 0);
             const eRate = parseFloat(e.unit_rate || 0);
             svcLogEntries[key].qty    += eQty;
             svcLogEntries[key].amount += eQty * eRate;
             svcLogEntries[key].count  += parseInt(e.entry_count || 1);
+            // 2026-11-05: keep each raw entry so TEC_CUSTOM can be itemized
+            // (one invoice line per logged charge instead of one collapsed total).
+            svcLogEntries[key].items.push({
+              id:   e.id,
+              qty:  eQty,
+              rate: eRate,
+              name: (e.service_name || '').trim(),
+              notes:(e.notes || '').trim(),
+              ref:  e.reference_id ? String(e.reference_id) : '',
+            });
             // 2026-09-21: keep the row ids (closed on Mark as Invoiced) and the
             // reference_id (used to match B2B orders against ShipStation).
             if (e.id != null)   svcLogEntries[key].ids.push(e.id);
@@ -1101,10 +1111,19 @@ async function loadBilling() {
     const canonicalCode = (l.sku || '').toUpperCase() || SVC_LOG_MAP[l.id];
     if (canonicalCode && svcLogEntries[canonicalCode]) {
       const e = svcLogEntries[canonicalCode];
-      l.qty  = e.qty;
-      if (e.rate > 0) l.rate = e.rate;
+      // 2026-11-05: Pick & Pack tiers are ADDITIVE — ShipStation counts the
+      // orders it shipped, and the Services Log carries units handled outside
+      // ShipStation (FBA replenishments, manual B2B prep, etc.). Before this
+      // change the log qty REPLACED the ShipStation count and the operator had
+      // to log month totals by hand (see MXS Overseas, Oct-2026).
+      const isPP = l.id === 'pick_pack_sm' || l.id === 'pick_pack_st' || l.id === 'pick_pack_ov';
+      const ssQty = isPP ? (l.qty || 0) : 0;
+      l.qty  = isPP ? ssQty + e.qty : e.qty;
+      if (e.rate > 0 && !isPP) l.rate = e.rate;      // P&P keeps the client's tier rate
       l.auto = true;
-      l.tip  = `From Services Log: ${e.count} ${e.count === 1 ? 'entry' : 'entries'}`;
+      l.tip  = isPP
+        ? `ShipStation ${ssQty} + Services Log ${e.qty} (${e.count} ${e.count === 1 ? 'entry' : 'entries'})`
+        : `From Services Log: ${e.count} ${e.count === 1 ? 'entry' : 'entries'}`;
       l.fromServicesLog = true;
       l.svcLogCode = canonicalCode;        // 2026-09-21: which log code fed this line
       l.svcLogIds  = (e.ids || []).slice(); //             and which rows to close on Mark as Invoiced
@@ -1141,6 +1160,30 @@ async function loadBilling() {
         : 'No return labels this period';
     }
   });
+
+  // ── TEC_CUSTOM itemization (2026-11-05) ──────────────────────────────────
+  // Every logged custom charge becomes its own invoice line (carrying the
+  // service_name / notes / reference typed in the Services Log) instead of a
+  // single "Custom / Other Charges" total the client cannot read. The blank
+  // manual Custom line is kept at the end for ad-hoc charges.
+  {
+    const ci = _lines.findIndex(l => l.id === 'custom');
+    const ce = svcLogEntries['TEC_CUSTOM'];
+    if (ci >= 0 && ce && Array.isArray(ce.items) && ce.items.length) {
+      const base = _lines[ci];
+      const itemLines = ce.items.map((it, i) => ({
+        cat: base.cat, sku: 'TEC_CUSTOM', unit: base.unit,
+        id:   `custom_${it.id != null ? it.id : i}`,
+        name: it.name || 'Custom / Other Charges',
+        tip:  [it.notes, it.ref ? `Ref: ${it.ref}` : ''].filter(Boolean).join(' · ') || 'From Services Log',
+        qty:  it.qty, rate: it.rate,
+        auto: true, fromServicesLog: true,
+        svcLogCode: 'TEC_CUSTOM', svcLogIds: it.id != null ? [it.id] : [],
+      }));
+      const manual = Object.assign({}, base, { qty: 0, rate: 0, auto: false, fromServicesLog: false, svcLogCode: undefined, svcLogIds: [], tip: 'Enter rate × qty for any custom charge', optional: true });
+      _lines.splice(ci, 1, ...itemLines, manual);
+    }
+  }
 
   // ── Step 4: Show results ──────────────────────────────────────────────────
   const wmsLbl = (_client.wmsIntegration || _client.wms_integration) ? ` · WMS: <b>${fc(_rates.wms || 99.99)}</b>` : ' · WMS: N/A';

@@ -1449,12 +1449,27 @@
     rtnStatus("Generating label…", "");
     document.getElementById("rtnSubmitBtn").disabled = true;
     try {
-      const res = await fetch(RTN_FN, {
+      let res = await fetch(RTN_FN, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      const data = await res.json();
+      let data = await res.json();
+      // 2026-11-05: server-side dims/weight sanity check (409 dims_check).
+      // Operator must confirm before an oversize/dim-weight label is bought.
+      if(res.status === 409 && data.error === "dims_check"){
+        const ok = window.confirm(
+          "⚠️ DIMENSIONES SOSPECHOSAS\n\n" + (data.message || "") +
+          "\n\n¿Crear el label de todas formas?"
+        );
+        if(!ok){ rtnStatus("Label cancelado — corrige las dimensiones y vuelve a intentar.", "bad"); return; }
+        res = await fetch(RTN_FN, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...payload, confirm_oversize: true })
+        });
+        data = await res.json();
+      }
       if(!res.ok || !data.ok){
         rtnStatus("Error: " + (data.detail || data.error || "label failed"), "bad");
         return;

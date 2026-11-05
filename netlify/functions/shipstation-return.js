@@ -426,6 +426,33 @@ async function actionCreateReturn(body) {
     return jRes({ error: "ship_from.company required (UPS rule)" }, 400);
   if (!weight_oz)           return jRes({ error: "weight required" }, 400);
 
+  // --- dims / weight sanity guard (2026-11-05) ---------------------------
+  // A return label created with 60x31x14 instead of 25x17x8 cost $519.44
+  // (RMA_4BLANC_101926_01). Oversize/dim-weight mistakes are caught here and
+  // must be explicitly confirmed by the operator (confirm_oversize: true).
+  if (dims) {
+    const L = +dims.length || 0, W = +dims.width || 0, H = +dims.height || 0;
+    if (L > 0 && W > 0 && H > 0) {
+      const actualLb = (+weight_oz || 0) / 16;
+      const dimLb    = (L * W * H) / 139;                 // UPS/FedEx divisor
+      const girth    = L + 2 * (W + H);                   // length + girth
+      const longest  = Math.max(L, W, H);
+      const flags = [];
+      if (girth > 130)                flags.push(`length+girth ${girth.toFixed(0)}" > 130" (UPS Large Package surcharge)`);
+      if (longest > 48)               flags.push(`longest side ${longest}" > 48"`);
+      if (actualLb > 0 && dimLb > 3 * actualLb && dimLb - actualLb > 10)
+        flags.push(`dim weight ${dimLb.toFixed(1)} lb is ${(dimLb / actualLb).toFixed(1)}x the actual ${actualLb.toFixed(1)} lb`);
+      if (flags.length && !body.confirm_oversize) {
+        return jRes({
+          error: "dims_check",
+          message: `Revisa las dimensiones ${L}x${W}x${H} in / ${weight_oz} oz antes de crear el label: ${flags.join("; ")}. Si son correctas, reenvía con confirm_oversize: true.`,
+          flags, dims: { length: L, width: W, height: H }, weight_oz,
+          dim_weight_lb: Math.round(dimLb * 10) / 10,
+        }, 409);
+      }
+    }
+  }
+
   // --- pickup guard: only UPS may schedule a pickup ---------------------
   // Even if a stale UI sends schedule_pickup:true for USPS, we ignore it.
   const wantsPickup = !!schedule_pickup && carrierCfg.pickup;
