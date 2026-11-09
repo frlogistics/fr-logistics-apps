@@ -17,7 +17,8 @@
 //   · every batch is logged before the call and updated after it, so an
 //     interrupted run can be resumed from the log instead of from memory.
 //   · SKUs that are not real SKUs, and locations nobody walked, are dropped
-//     by the same rules the reconciliation workbook used.
+//     by rules that belong to ONE count each (see COUNT_RULES). A rule written
+//     for MBL-AUG-2026 must never leak into the next count.
 //
 // Env: SKUVAULT_TENANT_TOKEN (accepts "tenant|user" or tenant alone, in which
 //      case SKUVAULT_USER_TOKEN is read too), SUPABASE_URL,
@@ -25,8 +26,8 @@
 //      /inventory/getWarehouses when absent).
 //
 // Actions:
-//   GET  ?action=plan&reference=MBL-AUG-2026[&location_code=RA0201]
-//   GET  ?action=status&reference=MBL-AUG-2026
+//   GET  ?action=plan&reference=MBL-NOV-2026[&location_code=RA0301]
+//   GET  ?action=status&reference=MBL-NOV-2026
 //   GET  ?action=warehouses
 //   POST { action:'push', reference, confirm, location_code | all_locations, pushed_by }
 
@@ -40,17 +41,45 @@ const SV = 'https://app.skuvault.com/api';
 const MAX_ITEMS = 100;          // hard API limit on the Items array
 const BATCH_PAUSE_MS = 1200;    // "moderate throttling" — do not hammer it
 
-// Codes that are not merchant SKUs in Linnworks. Pushing them would create
-// junk SKUs in SkuVault that cannot be sold or picked, and would bury real
-// physical units under a dead code.
-const BLOCKED_SKUS = new Set(['X004LIIFLJ', 'X004LIIVPJ', 'BOBCGZWKBJ']);
+// ── PER-COUNT RULES ────────────────────────────────────────────────────────
+// Each count gets its own exceptions, keyed by its reference. A count with no
+// entry here runs with EMPTY sets, which means:
+//   · every counted SKU is pushed as counted,
+//   · every walked location is pushed as counted,
+//   · every location NOT walked is dropped (reported, never zeroed).
+// That is the safe default. The only way to zero a location nobody walked,
+// or to hold back a code, is to write it down here under THAT count's
+// reference — so the decision is visible in the diff and dies with the count.
+//
+//   blocked    — codes that are not merchant SKUs. Pushing them would create
+//                junk SKUs in SkuVault that cannot be sold or picked.
+//   skip       — locations the walk never reached. "The count is the truth"
+//                cannot apply to a shelf nobody looked at.
+//   forceEmpty — locations confirmed EMPTY by the operator even though they
+//                were not walked (e.g. a phantom location). Zeroes them.
+const COUNT_RULES = {
+  // Historical. Milano Brands, Aug 2026 — kept so ?action=plan on the old
+  // reference still reproduces what was actually pushed on 17-Aug-2026.
+  'MBL-AUG-2026': {
+    blocked:    ['X004LIIFLJ', 'X004LIIVPJ', 'BOBCGZWKBJ'],
+    skip:       ['F0701'],
+    forceEmpty: ['GENERAL'],
+  },
+  // Add the next count here ONLY if it needs an exception, e.g.
+  // 'MBL-NOV-2026': { blocked: [], skip: [], forceEmpty: [] },
+};
 
-// Locations the walk never reached. "The count is the truth" cannot apply to
-// a shelf nobody looked at — zeroing it would be inventing a fact.
-const NEVER_WALKED = new Set(['F0701']);
+const EMPTY_RULES = Object.freeze({ blocked: [], skip: [], forceEmpty: [] });
 
-// Locations confirmed empty by the operator even though they were not walked.
-const FORCE_EMPTY = new Set(['GENERAL']);
+function rulesFor(reference) {
+  const r = COUNT_RULES[reference] || EMPTY_RULES;
+  return {
+    blocked:    new Set(r.blocked    || []),
+    skip:       new Set(r.skip       || []),
+    forceEmpty: new Set(r.forceEmpty || []),
+    explicit:   Object.prototype.hasOwnProperty.call(COUNT_RULES, reference),
+  };
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -69,7 +98,13 @@ function svTokens() {
 }
 
 // Pure: turns variance rows into the exact payload. Exported for tests.
-function buildPlan(rows, { forceEmpty = FORCE_EMPTY, blocked = BLOCKED_SKUS, skip = NEVER_WALKED } = {}) {
+// `rules` MUST be passed by the caller (rulesFor(reference)); there is no
+// global default any more, on purpose.
+function buildPlan(rows, rules) {
+  const blocked    = (rules && rules.blocked)    || new Set();
+  const skip       = (rules && rules.skip)       || new Set();
+  const forceEmpty = (rules && rules.forceEmpty) || new Set();
+
   const items = [];
   const dropped = [];
 
@@ -80,13 +115,13 @@ function buildPlan(rows, { forceEmpty = FORCE_EMPTY, blocked = BLOCKED_SKUS, ski
     const cnt = Number(r.qty_counted) || 0;
     const walked = ['counted', 'recount'].includes(r.location_status);
 
-    if (blocked.has(sku)) { dropped.push({ loc, sku, cnt, why: 'code is not a SKU in Linnworks' }); continue; }
-    if (skip.has(loc))    { dropped.push({ loc, sku, exp, why: 'location never walked' }); continue; }
+    if (blocked.has(sku)) { dropped.push({ loc, sku, cnt, why: 'code is not a SKU in Linnworks (blocked for this count)' }); continue; }
+    if (skip.has(loc))    { dropped.push({ loc, sku, exp, why: 'location never walked (skipped for this count)' }); continue; }
 
     let target;
     if (walked) target = cnt;
     else if (forceEmpty.has(loc)) target = 0;
-    else { dropped.push({ loc, sku, exp, why: 'location not counted' }); continue; }
+    else { dropped.push({ loc, sku, exp, why: 'location not counted — left untouched' }); continue; }
 
     // A line already at its target is not sent. Fewer writes, fewer chances
     // to break something that was already right.
@@ -117,6 +152,22 @@ function summarise(items) {
     if (it.Quantity === 0) b.zeroing += 1;
   }
   return byLoc;
+}
+
+// Locations the snapshot expected but the walk never reached. These are NOT
+// pushed (no forceEmpty rule) — but the operator must see them, because
+// SkuVault will keep showing stock there that the count did not confirm.
+function notCountedLocations(rows) {
+  const out = {};
+  for (const r of rows) {
+    if (['counted', 'recount'].includes(r.location_status)) continue;
+    const exp = Number(r.qty_expected) || 0;
+    if (!exp) continue;
+    const b = out[r.location_code] || (out[r.location_code] = { skus: 0, units_in_wms: 0 });
+    b.skus += 1;
+    b.units_in_wms += exp;
+  }
+  return out;
 }
 
 exports.handler = async (event) => {
@@ -182,6 +233,19 @@ exports.handler = async (event) => {
     );
   };
 
+  // Counted SKUs that no client owns in wh_sku_clients. Not blocked — a SKU
+  // received this week may simply not have synced yet — but surfaced loudly,
+  // because this is exactly how 36 orphan units slipped through in Aug 2026.
+  const unresolvedSkus = async (rows) => {
+    const skus = [...new Set(rows.filter((r) => Number(r.qty_counted) > 0).map((r) => r.sku))];
+    if (!skus.length) return [];
+    const known = await sb(
+      `wh_sku_clients?sku=in.(${skus.map((s) => `"${s.replace(/"/g, '\\"')}"`).join(',')})&select=sku&limit=5000`
+    );
+    const set = new Set((known || []).map((k) => k.sku));
+    return skus.filter((s) => !set.has(s));
+  };
+
   try {
     const qs = event.queryStringParameters || {};
     let body = {};
@@ -205,17 +269,28 @@ exports.handler = async (event) => {
       return res(r.ok ? 200 : 502, { ok: r.ok, status: r.status, warehouses: r.body });
     }
 
-    if (!reference) return res(400, { error: 'reference is required (e.g. MBL-AUG-2026)' });
+    if (!reference) return res(400, { error: 'reference is required (e.g. MBL-NOV-2026)' });
     const count = await getCount(reference);
     if (!count) return res(404, { error: `No count found with reference ${reference}` });
 
+    const rules = rulesFor(reference);
+    const rulesOut = {
+      source: rules.explicit ? `COUNT_RULES['${reference}']` : 'none (safe defaults — nothing blocked, nothing skipped, nothing force-emptied)',
+      blocked: [...rules.blocked],
+      skip: [...rules.skip],
+      forceEmpty: [...rules.forceEmpty],
+    };
+
     if (action === 'plan') {
       const rows = await getRows(count.id, qs.location_code);
-      const { items, dropped } = buildPlan(rows || []);
+      const { items, dropped } = buildPlan(rows || [], rules);
       const byLoc = summarise(items);
+      const notCounted = notCountedLocations(rows || []);
+      const unresolved = await unresolvedSkus(rows || []).catch(() => []);
       return res(200, {
         count: { reference: count.reference, client: count.client, status: count.status },
         scope: qs.location_code || 'ALL LOCATIONS',
+        rules: rulesOut,
         totals: {
           lines_to_send: items.length,
           batches: Math.ceil(items.length / MAX_ITEMS),
@@ -225,6 +300,14 @@ exports.handler = async (event) => {
           net_delta: items.reduce((n, i) => n + i._delta, 0),
         },
         by_location: byLoc,
+        // Locations SkuVault expects stock in that nobody walked. They stay as
+        // they are. If one of them is physically empty, add it to forceEmpty
+        // for THIS reference in COUNT_RULES and redeploy — do not guess here.
+        not_counted_locations: notCounted,
+        // SKUs counted with units that no client owns. Map them in
+        // wh_fnsku_map / wh_sku_clients before pushing, or add them to
+        // `blocked` for this reference.
+        unresolved_skus: unresolved,
         items,
         dropped,
         note: 'Nothing was sent. This is the plan only.',
@@ -243,6 +326,7 @@ exports.handler = async (event) => {
       }
       return res(200, {
         count: { reference: count.reference, status: count.status },
+        rules: rulesOut,
         pushed_ok: done,
         needs_attention: failed,
         batches: (log || []).map((l) => ({
@@ -280,6 +364,15 @@ exports.handler = async (event) => {
       });
     }
 
+    // A count that was already applied is done. Pushing it again would
+    // re-SET quantities that may have moved legitimately since.
+    if (count.applied_at && !body.force_reapply) {
+      return res(409, {
+        error: 'COUNT_ALREADY_APPLIED',
+        message: `This count was applied on ${count.applied_at}. Send force_reapply:true only if you really mean to push it again.`,
+      });
+    }
+
     const location = (body.location_code || '').trim().toUpperCase();
     if (!location && !body.all_locations) {
       return res(400, {
@@ -290,7 +383,21 @@ exports.handler = async (event) => {
     }
 
     const rows = await getRows(count.id, location || undefined);
-    const { items, dropped } = buildPlan(rows || []);
+
+    // Unresolved codes are a hard stop on push (not on plan): a SET with a
+    // junk SKU creates a junk SKU. Map them or block them first.
+    const unresolved = await unresolvedSkus(rows || []).catch(() => []);
+    const unresolvedToSend = unresolved.filter((s) => !rules.blocked.has(s));
+    if (unresolvedToSend.length && !body.allow_unresolved) {
+      return res(409, {
+        error: 'UNRESOLVED_SKUS',
+        message: 'These counted codes are not owned by any client in wh_sku_clients. Map them in wh_fnsku_map, ' +
+                 `or add them to COUNT_RULES['${reference}'].blocked, or send allow_unresolved:true to push them anyway.`,
+        unresolved_skus: unresolvedToSend,
+      });
+    }
+
+    const { items, dropped } = buildPlan(rows || [], rules);
     if (!items.length) {
       return res(200, { pushed: 0, message: 'Nothing to change — everything already matches.', dropped });
     }
@@ -372,6 +479,7 @@ exports.handler = async (event) => {
     return res(200, {
       pushed: items.length,
       scope: location || 'ALL LOCATIONS',
+      rules: rulesOut,
       batches: results,
       zeroed: items.filter((i) => i.Quantity === 0).length,
       dropped,
@@ -383,4 +491,4 @@ exports.handler = async (event) => {
   }
 };
 
-exports._helpers = { buildPlan, chunk, summarise, MAX_ITEMS };
+exports._helpers = { buildPlan, chunk, summarise, rulesFor, notCountedLocations, COUNT_RULES, MAX_ITEMS };
