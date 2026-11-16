@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0c2a3e">
+<title>FR Slot — Milano Brands</title>
+<style>
+  :root{
+    --navy:#0c2a3e; --navy-2:#123a54; --teal:#0aa3a3; --teal-d:#087f7f;
+    --red:#e0483d; --amber:#f2a900; --green:#22a06b; --green-d:#1a8657;
+    --ink:#0d1b26; --paper:#f4f6f7; --line:#d5dde2; --muted:#5f7280;
+    --white:#fff; --shadow:0 2px 10px rgba(12,42,62,.10); --tap:56px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--paper);color:var(--ink);font-size:17px;line-height:1.35;overscroll-behavior:none;user-select:none}
+  #app{display:flex;flex-direction:column;height:100dvh;max-width:640px;margin:0 auto}
+  header.bar{background:var(--navy);color:#fff;display:flex;align-items:center;gap:10px;padding:10px 12px;min-height:52px;flex:0 0 auto}
+  header.bar h1{font-size:17px;margin:0;font-weight:650;flex:1}
+  header.bar .op{font-size:13px;background:rgba(255,255,255,.14);padding:5px 10px;border-radius:20px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #main{flex:1 1 auto;overflow:auto;padding:12px;-webkit-overflow-scrolling:touch}
+  .prog{background:var(--navy-2);color:#fff;border-radius:12px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;font-size:13px;gap:8px}
+  .prog b{font-size:20px;display:block}
+  .scanpad{margin-top:12px;border:2px dashed var(--line);border-radius:14px;padding:14px;text-align:center;background:#fff;min-height:110px}
+  .scanpad .big{font-size:20px;font-weight:700;margin-top:2px}
+  .scanpad .code{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--muted);margin-top:4px;word-break:break-all}
+  .scanpad .hint{font-size:14px;color:var(--muted);margin-top:6px}
+  .scanpad.ok{border-color:var(--green);background:#eefaf3}
+  .scanpad.split{border-color:var(--amber);background:#fff8e5}
+  .scanpad.box{border-color:var(--red);background:#fdeeed}
+  .scanpad.err{border-color:var(--red);background:#fdeeed}
+  .result{margin-top:12px;background:#fff;border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+  .result .loc{padding:18px 14px 8px;text-align:center}
+  .result .loc .bin{font-size:58px;font-weight:800;letter-spacing:1px;line-height:1;color:var(--navy)}
+  .result .loc .bin.red{color:var(--red)}
+  .result .loc .style{font-size:16px;margin-top:8px;font-weight:600}
+  .result .loc .sku{font-size:12px;color:var(--muted);font-family:ui-monospace,Menlo,monospace;word-break:break-all}
+  .result .split{display:flex;border-top:1px solid var(--line)}
+  .result .split > div{flex:1;padding:12px 10px;text-align:center}
+  .result .split > div + div{border-left:1px solid var(--line)}
+  .result .split .n{font-size:30px;font-weight:800}
+  .result .split .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .result .split .tobin .n{color:var(--green-d)} .result .split .tobox .n{color:var(--red)}
+  .result .fill{padding:8px 14px 12px;font-size:13px;color:var(--muted);text-align:center;border-top:1px solid var(--line)}
+  .qtyrow{display:flex;gap:8px;margin-top:12px;align-items:center}
+  .qtyrow label{font-size:13px;color:var(--muted);flex:1}
+  .qtyrow input{width:92px;height:48px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font-size:20px;text-align:center;font-weight:700}
+  .qtyrow button{height:48px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:#fff;font-weight:600;font-size:14px}
+  .manual{display:flex;gap:8px;margin-top:12px}
+  .manual input{flex:1;height:48px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font-size:16px;font-family:ui-monospace,Menlo,monospace}
+  .manual button{height:48px;padding:0 14px;border-radius:10px;border:0;background:var(--navy);color:#fff;font-weight:600}
+  h3{font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:18px 0 8px}
+  .list{background:#fff;border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
+  .row{display:flex;align-items:center;gap:10px;padding:11px 12px;border-bottom:1px solid var(--line);font-size:14px}
+  .row:last-child{border-bottom:0}
+  .row .k{font-weight:700;font-family:ui-monospace,Menlo,monospace;min-width:64px}
+  .row .t{flex:1;min-width:0} .row .t small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .v{font-weight:700;white-space:nowrap}
+  .row .v.full{color:var(--red)} .row .v.done{color:var(--green-d)}
+  .row button{height:36px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:#fff;font-size:12px;font-weight:600}
+  .row.closed{opacity:.55}
+  .warn{background:#fff8e5;border:1px solid #f2d27a;border-radius:10px;padding:10px 12px;font-size:14px;margin-top:10px}
+  .warn.red{background:#fdeeed;border-color:#f2b1ac}
+  footer{display:flex;gap:8px;padding:10px 12px;background:#fff;border-top:1px solid var(--line);flex:0 0 auto}
+  .btn{flex:1;height:var(--tap);border-radius:12px;border:0;background:var(--teal);color:#fff;font-weight:700;font-size:15px}
+  .btn.ghost{background:#fff;color:var(--navy);border:1px solid var(--line)}
+  .btn.wide{width:100%}
+  .btn:disabled{opacity:.5}
+  #toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%;text-align:center}
+  #toast.show{opacity:.95}
+  #capture{position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0}
+  #gate{position:fixed;inset:0;background:var(--navy);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
+  #gate .box{background:#fff;border-radius:16px;padding:22px;width:100%;max-width:360px}
+  #gate h2{margin:0 0 6px;color:var(--navy);font-size:20px} #gate p{margin:0 0 14px;color:var(--muted);font-size:14px}
+  #gate input{width:100%;height:50px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font-size:17px;margin-bottom:10px}
+  #gate .err{color:var(--red);font-size:14px;min-height:20px}
+  .view{display:none} .view.active{display:block}
+</style>
+</head>
+<body>
+<div id="gate">
+  <div class="box">
+    <h2>FR Slot</h2>
+    <p>Scan a product — it tells you which bin, how many go in the bin and how many go to a box, and records it in the count.</p>
+    <input id="opname" type="text" placeholder="Your name (operator)" autocomplete="off">
+    <input id="pin" type="password" placeholder="PIN" autocomplete="off">
+    <div class="err" id="loginErr"></div>
+    <button class="btn wide" id="loginBtn">Start</button>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header class="bar">
+    <h1 id="title">Slot · Milano Brands</h1>
+    <div class="op" id="opBadge"></div>
+  </header>
+  <div id="main">
+    <div id="v-scan" class="view active">
+      <div class="prog">
+        <div>Placed in bins<b id="pBin">0</b></div>
+        <div>To boxes<b id="pBox">0</b></div>
+        <div>Bins closed<b><span id="pDone">0</span>/<span id="pTot">0</span></b></div>
+        <div>Count<b id="pRef" style="font-size:13px">—</b></div>
+      </div>
+
+      <div id="countWarn"></div>
+
+      <div class="scanpad" id="scanpad">
+        <div class="big" id="sBig">Ready</div>
+        <div class="code" id="sCode"></div>
+        <div class="hint" id="sHint">Pull the trigger on the product label.</div>
+      </div>
+
+      <div class="result" id="result" hidden>
+        <div class="loc">
+          <div class="bin" id="rBin">—</div>
+          <div class="style" id="rStyle"></div>
+          <div class="sku" id="rSku"></div>
+        </div>
+        <div class="split">
+          <div class="tobin"><div class="n" id="rToBin">0</div><div class="l">to bin</div></div>
+          <div class="tobox"><div class="n" id="rToBox">0</div><div class="l">to box · <span id="rRes"></span></div></div>
+        </div>
+        <div class="fill" id="rFill"></div>
+      </div>
+
+      <div class="qtyrow">
+        <label>Units per scan (type a number before scanning identical sealed bags)</label>
+        <input id="qty" type="number" inputmode="numeric" min="1" step="1" value="1">
+        <button id="undoBtn" disabled>Undo last</button>
+      </div>
+
+      <div class="manual">
+        <input id="manual" placeholder="Type code if label won't scan" autocomplete="off">
+        <button id="manualBtn">Go</button>
+      </div>
+
+      <h3>Last placements</h3>
+      <div class="list" id="recent"></div>
+    </div>
+
+    <div id="v-bins" class="view">
+      <div class="warn">Close a bin when its style is finished. Closed bins reject new units — reopen in Stock Count if needed.</div>
+      <div class="list" id="bins"></div>
+    </div>
+
+    <div id="v-boxes" class="view">
+      <div class="warn">Units sent to boxes are counted at <b id="bRes"></b>. Build the FRC boxes in the <b>Boxes</b> module — one style per box.</div>
+      <div class="list" id="boxes"></div>
+    </div>
+  </div>
+  <footer>
+    <button class="btn ghost" id="fScan">Scan</button>
+    <button class="btn ghost" id="fBins">Bins</button>
+    <button class="btn ghost" id="fBoxes">Boxes</button>
+  </footer>
+</div>
+<input id="capture" inputmode="none" autocomplete="off" aria-hidden="true">
+<div id="toast"></div>
+
+<script>
+/* ============================================================
+   PROJECT CONFIG — one block per slotting job.
+   Milano Brands LLC · MBL-NOV-2026 · 2026-11-15
+   ------------------------------------------------------------
+   COUNT_REF    the Stock Count this page writes into. Jose opens it
+                in count.html FIRST; this page only finds it.
+   RESERVE_LOC  where overflow (units that do not fit the bin) is
+                counted. Physically they go into FRC boxes on that rack.
+   CAP          planning capacity per bin type. Not a hard limit on
+                the shelf — it is the number at which this page starts
+                sending units to boxes instead of the bin.
+   SLOTS        bin -> style -> SKUs. Several sizes of one style share
+                the bin; cap applies to the bin as a whole.
+   ============================================================ */
+const API_BASE='https://apps.fr-logistics.net/.netlify/functions';
+const APP_PIN='frlogistics2024';
+const COUNT_REF='MBL-NOV-2026';
+const RESERVE_LOC='RA0301';
+const CAP={ big:35, small:12 };            // F01–F07 = 23x12x8 in · F08 = 12x10x6 in
+const capOf=(bin)=>bin.startsWith('F08')?CAP.small:CAP.big;
+
+const SLOTS=[
+  // F06 — HRSET large styles
+  ['F0601','HRSET Floralatte SM',            ['HRSET-FLORALATTE-SM']],
+  ['F0602','HRSET Furever Love SM',          ['HRSET-FUREVER LOVE- SM']],
+  ['F0604','HRSET Furever Love M',           ['HRSET-FUREVER LOVE- M']],
+  ['F0605','HRSET Furever Love L',           ['HRSET-FUREVER LOVE- L']],
+  ['F0606','HRSET Pupwishes SM / MD',        ['HRSET-PUPWISHES-SM','HRSET-PUPWISHES-MD']],
+  // F05 — walking bags
+  ['F0501','WKBG Furever Love',              ['WKBG-FUREVER LOVE']],
+  ['F0502','WKBG Pupwishes',                 ['WKBG-PUPWISHES']],
+  ['F0503','WKBG Teddybear',                 ['WKBG-TEDDYBEAR']],
+  ['F0504','WKBAG Divinepetals',             ['WKBAG-DIVINEPETALS']],
+  // F04 — Daizzy G sets
+  ['F0401','Daisy Dream XS / S',             ['DAIZZY G-PURPLE-DAISY DREAM-SET-XS','DAIZZY G-PURPLE-DAISY DREAM-SET-S']],
+  ['F0402','Daisy Dream M',                  ['DAIZZY G-PURPLE-DAISY DREAM-SET-M']],
+  ['F0403','Rainbow Bliss XS / S',           ['DAIZZY G-BLUE-RAINBOW BLISS-SET-XS','DAIZZY G-BLUE-RAINBOW BLISS-SET-S']],
+  ['F0404','Blushing Hearts XS / SM',        ['DAIZZY G-PINK-BLUSHING HEARTS--SET-XSMALL','DAIZZY G-PINK-BLUSHING HEARTS--SET-SM']],
+  ['F0405','Blushing Hearts M / L',          ['DAIZZY G-PINK-BLUSHING HEARTS--SET-M','DAIZZY G-PINK-BLUSHING HEARTS--SET-L']],
+  ['F0406','Pink Bess XS / SM',              ['DAIZZY G-PINK BESS-HARNESS SET-XS','DAIZZY G-PINK BESS-HARNESS SET-SM']],
+  // F03 — petite amour + harnesses
+  ['F0301','Petite Amour Pink S',            ['daizzy g -petite amour-pink-small']],
+  ['F0302','Petite Amour Pink L',            ['daizzy g -petite amour-pink-large']],
+  ['F0303','Petite Amour White S',           ['daizzy g-petite amour-white-small']],
+  ['F0304','Soft-Mesh Pink M / L',           ['Soft-Mesh-Medium-Pink','Soft-Mesh-Large-Pink']],
+  ['F0305','Harness Gray M / L',             ['HARNESS-GRAY-M','HARNESS-GRAY-L']],
+  ['F0306','HRSET Teddybear SM / MD / LG',   ['HRSET-TEDDYBEAR-SM','HRSET-TEDDYBEAR-MD','HRSET-TEDDYBEAR-LG']],
+  // F02 — leash & collar black / blue
+  ['F0201','L&C Black SM / M',               ['Daizzy Gear-Black-Leash & Collar Set- SM','Daizzy Gear-Black-Leash & Collar Set- M']],
+  ['F0202','L&C Black L / XL',               ['Daizzy Gear-Black-Leash & Collar Set-L','Daizzy Gear-Black-Leash & Collar Set-XL']],
+  ['F0203','L&C Blue SM / L / XL',           ['Daizzy Gear-Blue-Leash & Collar Set- SM','Daizzy Gear-Blue-Leash & Collar Set-L','Daizzy Gear-Blue-Leash & Collar Set-XL']],
+  // F01
+  ['F0101','L&C Pink SM / M / L',            ['Daizzy Gear-Pink-Leash & Collar Set- SM','Daizzy Gear-Pink-Leash & Collar Set- M','Daizzy Gear-Pink-Leash & Collar Set-L']],
+  ['F0102','Dog Walking Set Large Blue / Pink',  ['Dog Walking Set Premium Large - Blue','Dog Walking Set Premium Large - Pink']],
+  ['F0103','Dog Walking Set Medium Blue / Pink', ['Dog Walking Set Premium Medium - Blue','Dog Walking Set Premium Medium - Pink']],
+  ['F0104','Retractables Green 16 / Green 26 / White', ['Daizzy G-Green-Retractable-16 ft-44 lbs','Daizzy G-Green-Retractable-26 ft-110 lbs','Daizzy G-White-Retractable Leash-w/holder']],
+  ['F0105','Treat bag Cream Rainbows',       ['daizzyg-treatbag-cream-rainbows']],
+  ['F0106','Blue Hands-Free Rope Leash',     ['DAIZZY G-BLUE-HANDS FREE-ROPE LEASH']],
+  // F08 — small bins, small styles
+  ['F0801','Rainbow Bliss bundle-M',         ['daizzy g-blue-rainbow bliss-bundle-M']],
+  ['F0802','Rainbow Bliss L',                ['daizzyg-blue-rainbow bliss-L']],
+  ['F0803','Daisy Dream L',                  ['DAIZZY G-PURPLE-DAISY DREAM-SET-L']],
+  ['F0804','Petite Amour Pink M',            ['daizzy g -petite amour-pink-medium']],
+  ['F0805','Petite Amour White M',           ['daizzy g-petite amour-white-medium']],
+  ['F0806','Petite Amour White L',           ['daizzy g-petite amour-white-large']],
+  ['F0807','L&C Pink XL',                    ['Daizzy Gear-Pink-Leash & Collar Set-XL']],
+  ['F0808','Rope Leash Purple',              ['daizzy g- rope leash- purple']],
+  ['F0809','Pink Hands-Free Rope Leash',     ['DAIZZY G-PINK-HANDS FREE-ROPE LEASH']],
+  ['F0810','HRSET Bluepetalse SM / MD / LG', ['HRSET-BLUEPETALSE-SM','HRSET-BLUEPETALSE-MD','HRSET-BLUEPETALSE-LG']],
+  ['F0811','HRSET Floralatte MD / LG',       ['HRSET-FLORALATTE-MD','HRSET-FLORALATTE-LG']],
+  ['F0812','HRSET Pupwishes L',              ['HRSET-PUPWISHES-L']],
+  ['F0813','Treat bags Black Daisies / Apricot / Blushing / Pink Hearts', ['daizzyg-treatbag-black- daisies','daizzyg-treatbag-black-apricot hearts','daizzyg-treatbag-black-blushing love','daizzyg-treatbag-black-pink hearts']],
+  ['F0814','Poop Bag Holder Blue / Red',     ['Dog Poop Bag Holder for Leash - BLUE','Dog Poop Bag Holder for Leash - RED']],
+  ['F0815','Large Dog Harness & Leash Set',  ['B0CQMKHM9K']],
+];
+/* ============================================================ */
+
+const $=(id)=>document.getElementById(id);
+const norm=(s)=>String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
+const BIN_OF=new Map();            // normSku -> {bin,label}
+const BINS=new Map();              // bin -> {bin,label,skus,cap}
+for(const [bin,label,skus] of SLOTS){ BINS.set(bin,{bin,label,skus,cap:capOf(bin)}); for(const s of skus) BIN_OF.set(norm(s),{bin,label}); }
+
+const S={operator:null, view:'scan', countId:null, countStatus:null, started:new Set(), closed:new Set(),
+         placed:new Map(),         // loc -> Map(sku -> qty)
+         recent:[], lastWrite:null, busy:false};
+
+/* ---------- feedback ---------- */
+function buzz(p){ if(navigator.vibrate) navigator.vibrate(p); }
+let AC=null;
+function beep(type){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+  const seq=type==='ok'?[[880,0,.09]]:type==='split'?[[660,0,.07],[880,.12,.07]]:type==='box'?[[520,0,.12],[520,.16,.12]]:[[200,0,.22]];
+  seq.forEach(([f,t,d])=>{const o=AC.createOscillator(),g=AC.createGain();o.frequency.value=f;o.connect(g);g.connect(AC.destination);
+    const s=AC.currentTime+t;g.gain.setValueAtTime(.001,s);g.gain.exponentialRampToValueAtTime(.25,s+.01);g.gain.exponentialRampToValueAtTime(.001,s+d);o.start(s);o.stop(s+d+.02);});}catch(e){} }
+function feedback(k){ if(k==='ok'){buzz(40);beep('ok');} else if(k==='split'){buzz([40,60,40]);beep('split');} else if(k==='box'){buzz([80,60,80]);beep('box');} else {buzz(200);beep('err');} }
+let toastT=null; function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2400); }
+function setPad(state,big,hint,code){ const p=$('scanpad'); p.className='scanpad'+(state?' '+state:''); $('sBig').textContent=big; $('sCode').textContent=code||''; $('sHint').textContent=hint||'Pull the trigger on the product label.'; }
+
+/* ---------- API ---------- */
+async function api(method,params,body){
+  const url=API_BASE+'/frm-count'+(method==='GET'?('?'+new URLSearchParams(params).toString()):'');
+  const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:method==='POST'?JSON.stringify(body):undefined});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){ const e=new Error(j.message||j.error||('HTTP '+r.status)); e.code=j.error; e.body=j; throw e; }
+  return j;
+}
+
+/* ---------- tallies ---------- */
+function placedAt(loc){ return S.placed.get(loc)||new Map(); }
+function binFill(bin){ let n=0; for(const q of placedAt(bin).values()) n+=q; return n; }
+function addPlaced(loc,sku,q){ const m=placedAt(loc); m.set(sku,(m.get(sku)||0)+q); S.placed.set(loc,m); }
+function totals(){ let b=0,x=0; for(const [loc,m] of S.placed){ for(const q of m.values()){ if(loc===RESERVE_LOC) x+=q; else if(BINS.has(loc)) b+=q; } } return {b,x}; }
+function renderProg(){ const t=totals(); $('pBin').textContent=t.b; $('pBox').textContent=t.x; $('pDone').textContent=S.closed.size; $('pTot').textContent=BINS.size; $('pRef').textContent=COUNT_REF; }
+
+/* ---------- bootstrap: find the count, load what is already placed ---------- */
+async function loadCount(){
+  const j=await api('GET',{action:'counts',status:'live'});
+  const c=(j.counts||[]).find(x=>x.reference===COUNT_REF);
+  if(!c){ $('countWarn').innerHTML='<div class="warn red"><b>'+COUNT_REF+' is not open.</b> Jose has to create it in count.html before anything can be placed. Scanning is disabled.</div>'; S.countId=null; return; }
+  S.countId=c.id||c.count_id; S.countStatus=c.status;
+  if(c.status!=='open'){ $('countWarn').innerHTML='<div class="warn red">'+COUNT_REF+' is in <b>'+c.status+'</b>. Capture is closed — nothing can be placed from here.</div>'; }
+  else $('countWarn').innerHTML='';
+  // locations + what has been counted so far in each bin and the reserve
+  const info=await api('GET',{action:'count',count_id:S.countId});
+  for(const l of info.locations||[]){ if(l.status==='counted'||l.status==='recount') S.closed.add(l.location_code); if(l.status==='counting') S.started.add(l.location_code); }
+  const locs=[...BINS.keys(),RESERVE_LOC];
+  const results=await Promise.allSettled(locs.map(loc=>api('GET',{action:'lines',count_id:S.countId,location_code:loc})));
+  S.placed=new Map();
+  results.forEach((r,i)=>{ if(r.status!=='fulfilled') return; for(const ln of r.value.lines||[]) addPlaced(locs[i],ln.sku,Number(ln.qty)||0); });
+  renderProg(); renderBins(); renderBoxes();
+}
+async function ensureStarted(loc){
+  if(S.started.has(loc)) return;
+  const j=await api('POST',{},{action:'start_location',count_id:S.countId,location_code:loc,operator:S.operator});
+  S.started.add(loc);
+  if(j.added && !j.known_location) toast(loc+' is not a known location — check the label');
+}
+
+/* ---------- capture engine (keyboard wedge) ---------- */
+let capBuf='', capTimer=null;
+function focusCap(){ if(S.view!=='scan') return; const c=$('capture'); if(document.activeElement!==c) c.focus({preventScroll:true}); }
+function isFormField(el){ return el && (el.tagName==='SELECT'||(el.tagName==='INPUT'&&el.id!=='capture')); }
+document.addEventListener('keydown',e=>{
+  if(!S.operator) return;
+  if(isFormField(document.activeElement)){
+    // scanner fired while the qty box is focused: finish the number and treat the rest as a scan
+    if(document.activeElement.id==='qty' && e.key==='Enter'){ e.preventDefault(); focusCap(); }
+    return;
+  }
+  if(e.key==='Enter'){ const code=capBuf.trim(); if(code) onScan(code); capBuf=''; e.preventDefault(); return; }
+  if(e.key.length===1){ capBuf+=e.key; clearTimeout(capTimer); capTimer=setTimeout(()=>{capBuf='';},150); }
+},true);
+document.addEventListener('click',e=>{ if(!isFormField(e.target)&&e.target.tagName!=='BUTTON') focusCap(); });
+
+/* ---------- the decision ---------- */
+// Given a SKU and a quantity, say where it goes. Pure, so it is easy to reason about:
+//   bin      = the bin the map assigns to this SKU (null if unmapped)
+//   toBin    = what still fits under the bin's cap (0 if the bin is closed or full)
+//   toBox    = the rest, counted at RESERVE_LOC and physically boxed later
+function decide(sku,q){
+  const slot=BIN_OF.get(norm(sku));
+  if(!slot) return {bin:null,label:null,toBin:0,toBox:q,fill:0,cap:0,reason:'unmapped'};
+  const b=BINS.get(slot.bin);
+  if(S.closed.has(b.bin)) return {bin:b.bin,label:b.label,toBin:0,toBox:q,fill:binFill(b.bin),cap:b.cap,reason:'closed'};
+  const room=Math.max(0,b.cap-binFill(b.bin));
+  const toBin=Math.min(q,room);
+  return {bin:b.bin,label:b.label,toBin,toBox:q-toBin,fill:binFill(b.bin),cap:b.cap,reason:toBin===q?'fits':(toBin?'split':'full')};
+}
+
+/* ---------- scan flow ---------- */
+function looksLikeLocation(c){ return /^(F\d{3,4}|RA\d{4}|RB\d{4}|GENERAL|PICKUP)$/i.test(c); }
+async function onScan(raw){
+  if(S.view!=='scan') go('scan');
+  if(S.busy){ toast('Still saving the previous scan'); feedback('err'); return; }
+  if(!S.countId||S.countStatus!=='open'){ setPad('err','Count not open','Ask Jose to open '+COUNT_REF+' in count.html.',raw); feedback('err'); return; }
+  const code=String(raw).trim();
+  if(looksLikeLocation(code)){ setPad('err','That is a shelf label','This page picks the bin for you — scan the PRODUCT, not the shelf.',code); feedback('err'); return; }
+  let q=parseInt($('qty').value,10); if(!Number.isFinite(q)||q<1) q=1; if(q>500){ toast('Quantity too large'); q=1; }
+
+  S.busy=true; setPad('','Looking up…','',code);
+  try{
+    const r=await api('GET',{action:'resolve_code',code,count_id:S.countId});
+    if(!r.mapped||!r.sku){
+      setPad('err','Not recognised','RED BASKET. Do not type it in — put it aside with a note of where it came from.',code);
+      $('result').hidden=true; feedback('err'); return;
+    }
+    const d=decide(r.sku,q);
+    if(d.reason==='unmapped'){
+      // A real SKU with no bin in the map. Counted at the reserve so it is not lost; Jose assigns a bin later.
+      await ensureStarted(RESERVE_LOC);
+      const w=await write(RESERVE_LOC,code,r.sku,q,r.source);
+      S.lastWrite={lines:[w],sku:r.sku};
+      showResult({bin:RESERVE_LOC,red:true,label:'NO BIN IN THE MAP — tell Jose',sku:r.sku,toBin:0,toBox:q,fill:null});
+      setPad('box','No bin assigned','Goes to the reserve rack. Tell Jose this SKU needs a bin.',code); feedback('box'); push(r.sku,RESERVE_LOC,0,q); return;
+    }
+    const lines=[];
+    if(d.toBin>0){ await ensureStarted(d.bin); lines.push(await write(d.bin,code,r.sku,d.toBin,r.source)); }
+    if(d.toBox>0){ await ensureStarted(RESERVE_LOC); lines.push(await write(RESERVE_LOC,code,r.sku,d.toBox,r.source)); }
+    S.lastWrite={lines,sku:r.sku};
+    const fillNow=binFill(d.bin);
+    showResult({bin:d.bin,red:d.toBin===0,label:d.label,sku:r.sku,toBin:d.toBin,toBox:d.toBox,fill:fillNow,cap:d.cap});
+    if(d.reason==='fits'){ setPad('ok','→ '+d.bin,'All '+q+' go in the bin.',code); feedback('ok'); }
+    else if(d.reason==='split'){ setPad('split','→ '+d.bin+' + BOX','Bin takes '+d.toBin+', the other '+d.toBox+' go to a box.',code); feedback('split'); }
+    else if(d.reason==='closed'){ setPad('box','→ BOX (bin closed)',d.bin+' is already closed. All '+q+' go to a box.',code); feedback('box'); }
+    else { setPad('box','→ BOX ('+d.bin+' full)','Bin is at capacity. All '+q+' go to a box.',code); feedback('box'); }
+    push(r.sku,d.bin,d.toBin,d.toBox);
+  }catch(e){
+    setPad('err','Not saved',(e.message||'Error')+' — scan it again.',code); feedback('err');
+  }finally{ S.busy=false; $('qty').value='1'; renderProg(); renderBins(); renderBoxes(); focusCap(); }
+}
+async function write(loc,code,sku,qty,source){
+  const uid='slot-'+S.countId.slice(0,8)+'-'+loc+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
+  const j=await api('POST',{},{action:'add_line',count_id:S.countId,location_code:loc,code,sku,qty,sku_source:source||'map',counted_by:S.operator,line_uid:uid});
+  addPlaced(loc,sku,qty);
+  return {id:j.line&&j.line.id,loc,sku,qty};
+}
+function showResult(o){
+  $('result').hidden=false;
+  $('rBin').textContent=o.bin; $('rBin').className='bin'+(o.red?' red':'');
+  $('rStyle').textContent=o.label; $('rSku').textContent=o.sku;
+  $('rToBin').textContent=o.toBin; $('rToBox').textContent=o.toBox; $('rRes').textContent=RESERVE_LOC;
+  $('rFill').textContent=o.fill==null?'':('Bin now holds '+o.fill+' of ~'+o.cap+' · '+Math.max(0,o.cap-o.fill)+' more fit');
+  $('undoBtn').disabled=false;
+}
+function push(sku,bin,toBin,toBox){
+  if(sku){ S.recent.unshift({t:new Date(),sku,bin,toBin,toBox}); S.recent=S.recent.slice(0,12); }
+  renderRecent();
+}
+function renderRecent(){
+  $('recent').innerHTML=S.recent.map(r=>'<div class="row"><div class="k">'+r.bin+'</div><div class="t">'+esc(r.sku)+'<small>'+r.t.toLocaleTimeString()+'</small></div><div class="v">'+(r.toBin?('+'+r.toBin):'')+(r.toBox?(' <span style="color:var(--red)">box '+r.toBox+'</span>'):'')+'</div></div>').join('')||'<div class="row"><div class="t" style="color:var(--muted)">Nothing placed yet.</div></div>';
+}
+async function undoLast(){
+  const w=S.lastWrite; if(!w||S.busy) return;
+  if(!confirm('Undo the last placement of '+w.sku+'?')) return;
+  S.busy=true;
+  try{
+    for(const ln of w.lines){ if(ln.id){ await api('POST',{},{action:'void_line',line_id:ln.id,voided_by:S.operator}); addPlaced(ln.loc,ln.sku,-ln.qty); } }
+    S.lastWrite=null; $('undoBtn').disabled=true; $('result').hidden=true; setPad('','Undone','Last placement removed from the count.',''); toast('Undone');
+    S.recent.shift(); renderRecent();
+  }catch(e){ toast('Undo failed: '+(e.message||e)); }
+  finally{ S.busy=false; renderProg(); renderBins(); renderBoxes(); focusCap(); }
+}
+
+/* ---------- views ---------- */
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function renderBins(){
+  const rows=[...BINS.values()].map(b=>{
+    const f=binFill(b.bin), closed=S.closed.has(b.bin);
+    const cls=closed?'done':(f>=b.cap?'full':'');
+    return '<div class="row'+(closed?' closed':'')+'"><div class="k">'+b.bin+'</div><div class="t">'+esc(b.label)+'<small>'+b.skus.length+' SKU'+(b.skus.length>1?'s':'')+'</small></div>'+
+      '<div class="v '+cls+'">'+f+'/'+b.cap+(closed?' ✓':'')+'</div>'+
+      (closed?'':'<button data-close="'+b.bin+'">Close</button>')+'</div>';
+  });
+  $('bins').innerHTML=rows.join('');
+  $('bins').querySelectorAll('button[data-close]').forEach(btn=>btn.onclick=()=>closeBin(btn.dataset.close));
+}
+async function closeBin(bin){
+  if(S.busy) return;
+  const f=binFill(bin);
+  if(!confirm('Close '+bin+' with '+f+' units? New units for this style will go to boxes.')) return;
+  S.busy=true;
+  try{ await ensureStarted(bin); await api('POST',{},{action:'close_location',count_id:S.countId,location_code:bin,operator:S.operator}); S.closed.add(bin); toast(bin+' closed'); }
+  catch(e){ toast('Could not close: '+(e.message||e)); }
+  finally{ S.busy=false; renderProg(); renderBins(); }
+}
+function renderBoxes(){
+  $('bRes').textContent=RESERVE_LOC;
+  const m=placedAt(RESERVE_LOC);
+  const byStyle=new Map();
+  for(const [sku,q] of m){ const s=BIN_OF.get(norm(sku)); const k=s?s.label:('(no bin) '+sku); const e=byStyle.get(k)||{units:0,skus:[]}; e.units+=q; e.skus.push(sku+' ×'+q); byStyle.set(k,e); }
+  const rows=[...byStyle.entries()].sort((a,b)=>b[1].units-a[1].units).map(([k,e])=>'<div class="row"><div class="t">'+esc(k)+'<small>'+esc(e.skus.join(' · '))+'</small></div><div class="v">'+e.units+'</div></div>');
+  $('boxes').innerHTML=rows.join('')||'<div class="row"><div class="t" style="color:var(--muted)">Nothing sent to boxes yet.</div></div>';
+}
+function go(v){ S.view=v; document.querySelectorAll('.view').forEach(x=>x.classList.remove('active')); $('v-'+v).classList.add('active');
+  ['Scan','Bins','Boxes'].forEach(n=>$('f'+n).classList.toggle('ghost',n.toLowerCase()!==v));
+  if(v==='bins') renderBins(); if(v==='boxes') renderBoxes(); if(v==='scan') focusCap(); $('main').scrollTop=0; }
+
+/* ---------- gate ---------- */
+function doLogin(){ const op=$('opname').value.trim(), pin=$('pin').value;
+  if(!op){ $('loginErr').textContent='Enter your name'; return; }
+  if(pin!==APP_PIN){ $('loginErr').textContent='Wrong PIN'; $('pin').value=''; return; }
+  S.operator=op; localStorage.setItem('frm_op',op); localStorage.setItem('frm_ok','1'); enterApp(); }
+function enterApp(){ $('gate').style.display='none'; $('app').hidden=false; $('opBadge').textContent=S.operator; renderRecent(); loadCount().catch(e=>{ $('countWarn').innerHTML='<div class="warn red">Could not load the count: '+esc(e.message||e)+'</div>'; }); setTimeout(focusCap,100); }
+$('loginBtn').onclick=doLogin; $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+(function(){ const saved=localStorage.getItem('frm_op'); if(saved) $('opname').value=saved; if(saved&&localStorage.getItem('frm_ok')==='1'){ S.operator=saved; enterApp(); } })();
+
+/* ---------- wiring ---------- */
+$('undoBtn').onclick=undoLast;
+$('manualBtn').onclick=()=>{ const v=$('manual').value.trim(); if(v){ $('manual').value=''; onScan(v); } };
+$('manual').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('manualBtn').click(); } });
+// A scan while the qty box is focused types the code into it. A real quantity never has more than 3 digits.
+$('qty').addEventListener('input',()=>{ const q=$('qty'); if(q.value.length>3){ const code=q.value; q.value='1'; focusCap(); onScan(code); } });
+$('fScan').onclick=()=>go('scan'); $('fBins').onclick=()=>go('bins'); $('fBoxes').onclick=()=>go('boxes');
+// Re-sync tallies when the page comes back to the foreground (another device may have placed units)
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&S.operator&&S.countId) loadCount().catch(()=>{}); });
+</script>
+</body>
+</html>
