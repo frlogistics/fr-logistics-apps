@@ -146,7 +146,7 @@
     </div>
 
     <div id="v-boxes" class="view">
-      <div class="warn">Units sent to boxes are counted at <b id="bRes"></b>. Build the FRC boxes in the <b>Boxes</b> module — one style per box.</div>
+      <div class="warn">Every unit sent to a box is scanned into the open FRC box of its style (one style per box, at <b id="bRes"></b>). When the carton is full or the style is finished, press <b>Seal + print</b>: the 4x6 label comes out on the MUNBYN, stick it, put the box on the rack. The next unit of that style opens a new box.</div>
       <div class="list" id="boxes"></div>
     </div>
   </div>
@@ -178,6 +178,7 @@ const API_BASE='https://apps.fr-logistics.net/.netlify/functions';
 const APP_PIN='frlogistics2024';
 const COUNT_REF='MBL-NOV-2026';
 const RESERVE_LOC='RA0301';
+const CLIENT_ID='d8650436-ba5c-4ad1-ba6d-b50a7bfa9113';   // Milano Brands LLC — owner of the FRC boxes this page creates
 const CAP={ big:25, small:10 };            // F01–F07 = 23x12x8 in · F08 = 12x10x6 in — defaults for soft goods
 // Measured on the floor 2026-11-16: a harness set (HRSET) fills a big bin at 16 and a small bin at 5.
 // A 4th element on a SLOTS row overrides the default cap for that bin.
@@ -247,6 +248,7 @@ for(const [bin,label,skus,cap] of SLOTS){ BINS.set(bin,{bin,label,skus,cap:capOf
 
 const S={operator:null, view:'scan', countId:null, countStatus:null, started:new Set(), closed:new Set(),
          placed:new Map(),         // loc -> Map(sku -> qty)
+         boxes:new Map(),          // bin (style key) -> {code, lines:Map(sku->qty)}  open FRC boxes, one per style
          recent:[], lastWrite:null, busy:false};
 
 /* ---------- feedback ---------- */
@@ -267,6 +269,63 @@ async function api(method,params,body){
   const j=await r.json().catch(()=>({}));
   if(!r.ok){ const e=new Error(j.message||j.error||('HTTP '+r.status)); e.code=j.error; e.body=j; throw e; }
   return j;
+}
+
+async function capi(method,params,body){
+  const url=API_BASE+'/frm-containers'+(method==='GET'?('?'+new URLSearchParams(params).toString()):'');
+  const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:method==='POST'?JSON.stringify(body):undefined});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){ const e=new Error(j.message||j.error||('HTTP '+r.status)); e.code=j.error; e.body=j; throw e; }
+  return j;
+}
+
+/* ---------- FRC boxes: one open box per style, filled scan by scan ---------- */
+// The style key is the bin code from the map. The box's `notes` carries it
+// ("slot:F0606") so an open box survives a page reload or a second device.
+function styleKeyOf(sku){ const s=BIN_OF.get(norm(sku)); return s?s.bin:'NOBIN'; }
+function styleLabel(key){ const b=BINS.get(key); return b?b.label:'No bin in the map'; }
+async function loadBoxes(){
+  const j=await capi('GET',{action:'at_location',location_code:RESERVE_LOC});
+  S.boxes=new Map();
+  for(const c of j.containers||[]){
+    if(c.status!=='building'&&c.status!=='open') continue;
+    // the summary view carries no notes; the full header does
+    const d=await capi('GET',{action:'container',code:c.code});
+    const m=/slot:([A-Z0-9]+)/.exec((d.container&&d.container.notes)||''); if(!m) continue;
+    const lines=new Map(); for(const l of d.lines||[]) if(Number(l.qty)>0) lines.set(l.sku,Number(l.qty));
+    S.boxes.set(m[1],{code:c.code,lines});
+  }
+}
+async function boxFor(key){
+  let b=S.boxes.get(key); if(b) return b;
+  const j=await capi('POST',{},{action:'create',client_id:CLIENT_ID,location_code:RESERVE_LOC,kind:'storage',actor:S.operator,
+    notes:'slot:'+key+' · '+styleLabel(key)+' · MBL-NOV-2026'});
+  b={code:j.container.code,lines:new Map()}; S.boxes.set(key,b); toast('New box '+b.code+' for '+styleLabel(key)); return b;
+}
+// set_line REPLACES the quantity, so we send the running total for that SKU in this box.
+async function boxAdd(sku,q,code){
+  const key=styleKeyOf(sku); const b=await boxFor(key);
+  const total=(b.lines.get(sku)||0)+q;
+  await capi('POST',{},{action:'set_line',code:b.code,sku,qty:total,code_scanned:code,actor:S.operator,confirm_unknown_sku:true});
+  b.lines.set(sku,total); return {code:b.code,sku,qty:q};
+}
+async function boxRemove(sku,q){
+  const key=styleKeyOf(sku); const b=S.boxes.get(key); if(!b) return;
+  const total=Math.max(0,(b.lines.get(sku)||0)-q);
+  await capi('POST',{},{action:'set_line',code:b.code,sku,qty:total,actor:S.operator,confirm_unknown_sku:true});
+  if(total) b.lines.set(sku,total); else b.lines.delete(sku);
+}
+async function sealBox(key){
+  const b=S.boxes.get(key); if(!b||S.busy) return;
+  let u=0; for(const q of b.lines.values()) u+=q;
+  if(!confirm('Seal '+b.code+' ('+styleLabel(key)+', '+u+' units) and print its label?')) return;
+  S.busy=true;
+  try{
+    await capi('POST',{},{action:'seal',code:b.code,actor:S.operator});
+    await capi('POST',{},{action:'queue_print',code:b.code,actor:S.operator});
+    S.boxes.delete(key); toast(b.code+' sealed — label is printing');
+  }catch(e){ toast('Seal failed: '+(e.message||e)); }
+  finally{ S.busy=false; renderBoxes(); focusCap(); }
 }
 
 /* ---------- tallies ---------- */
@@ -291,6 +350,7 @@ async function loadCount(){
   const results=await Promise.allSettled(locs.map(loc=>api('GET',{action:'lines',count_id:S.countId,location_code:loc})));
   S.placed=new Map();
   results.forEach((r,i)=>{ if(r.status!=='fulfilled') return; for(const ln of r.value.lines||[]) addPlaced(locs[i],ln.sku,Number(ln.qty)||0); });
+  await loadBoxes().catch(()=>{});
   renderProg(); renderBins(); renderBoxes();
 }
 async function ensureStarted(loc){
@@ -353,16 +413,19 @@ async function onScan(raw){
       // A real SKU with no bin in the map. Counted at the reserve so it is not lost; Jose assigns a bin later.
       await ensureStarted(RESERVE_LOC);
       const w=await write(RESERVE_LOC,code,r.sku,q,r.source);
-      S.lastWrite={lines:[w],sku:r.sku};
-      showResult({bin:RESERVE_LOC,red:true,label:'NO BIN IN THE MAP — tell Jose',sku:r.sku,toBin:0,toBox:q,fill:null});
+      const bx=await boxAdd(r.sku,q,code).catch(e=>{ toast('Counted but NOT boxed: '+(e.message||e)); return null; });
+      S.lastWrite={lines:[w],sku:r.sku,boxed:bx};
+      showResult({bin:RESERVE_LOC,red:true,label:'NO BIN IN THE MAP — tell Jose',sku:r.sku,toBin:0,toBox:q,fill:null,box:bx&&bx.code});
       setPad('box','No bin assigned','Goes to the reserve rack. Tell Jose this SKU needs a bin.',code); feedback('box'); push(r.sku,RESERVE_LOC,0,q); return;
     }
     const lines=[];
     if(d.toBin>0){ await ensureStarted(d.bin); lines.push(await write(d.bin,code,r.sku,d.toBin,r.source)); }
-    if(d.toBox>0){ await ensureStarted(RESERVE_LOC); lines.push(await write(RESERVE_LOC,code,r.sku,d.toBox,r.source)); }
-    S.lastWrite={lines,sku:r.sku};
+    let bx=null;
+    if(d.toBox>0){ await ensureStarted(RESERVE_LOC); lines.push(await write(RESERVE_LOC,code,r.sku,d.toBox,r.source));
+      bx=await boxAdd(r.sku,d.toBox,code).catch(e=>{ toast('Counted but NOT boxed: '+(e.message||e)); return null; }); }
+    S.lastWrite={lines,sku:r.sku,boxed:bx};
     const fillNow=binFill(d.bin);
-    showResult({bin:d.bin,red:d.toBin===0,label:d.label,sku:r.sku,toBin:d.toBin,toBox:d.toBox,fill:fillNow,cap:d.cap});
+    showResult({bin:d.bin,red:d.toBin===0,label:d.label,sku:r.sku,toBin:d.toBin,toBox:d.toBox,fill:fillNow,cap:d.cap,box:bx&&bx.code});
     if(d.reason==='fits'){ setPad('ok','→ '+d.bin,'All '+q+' go in the bin.',code); feedback('ok'); }
     else if(d.reason==='split'){ setPad('split','→ '+d.bin+' + BOX','Bin takes '+d.toBin+', the other '+d.toBox+' go to a box.',code); feedback('split'); }
     else if(d.reason==='closed'){ setPad('box','→ BOX (bin closed)',d.bin+' is already closed. All '+q+' go to a box.',code); feedback('box'); }
@@ -382,7 +445,7 @@ function showResult(o){
   $('result').hidden=false;
   $('rBin').textContent=o.bin; $('rBin').className='bin'+(o.red?' red':'');
   $('rStyle').textContent=o.label; $('rSku').textContent=o.sku;
-  $('rToBin').textContent=o.toBin; $('rToBox').textContent=o.toBox; $('rRes').textContent=RESERVE_LOC;
+  $('rToBin').textContent=o.toBin; $('rToBox').textContent=o.toBox; $('rRes').textContent=o.box||RESERVE_LOC;
   $('rFill').textContent=o.fill==null?'':('Bin now holds '+o.fill+' of ~'+o.cap+' · '+Math.max(0,o.cap-o.fill)+' more fit');
   $('undoBtn').disabled=false;
 }
@@ -399,6 +462,7 @@ async function undoLast(){
   S.busy=true;
   try{
     for(const ln of w.lines){ if(ln.id){ await api('POST',{},{action:'void_line',line_id:ln.id,voided_by:S.operator}); addPlaced(ln.loc,ln.sku,-ln.qty); } }
+    if(w.boxed){ await boxRemove(w.boxed.sku,w.boxed.qty).catch(e=>toast('Count undone but box not updated: '+(e.message||e))); }
     S.lastWrite=null; $('undoBtn').disabled=true; $('result').hidden=true; setPad('','Undone','Last placement removed from the count.',''); toast('Undone');
     S.recent.shift(); renderRecent();
   }catch(e){ toast('Undo failed: '+(e.message||e)); }
@@ -429,11 +493,15 @@ async function closeBin(bin){
 }
 function renderBoxes(){
   $('bRes').textContent=RESERVE_LOC;
+  const open=[...S.boxes.entries()].map(([key,b])=>{ let u=0; for(const q of b.lines.values()) u+=q;
+    return '<div class="row"><div class="k">'+b.code.replace('FRC-','')+'</div><div class="t">'+esc(styleLabel(key))+'<small>'+esc([...b.lines].map(([s,q])=>s+' ×'+q).join(' · ')||'empty')+'</small></div><div class="v">'+u+'</div><button data-seal="'+key+'">Seal + print</button></div>'; });
+  $('boxes').innerHTML='<div class="row" style="background:#eefaf3"><div class="t"><b>Open boxes</b></div></div>'+(open.join('')||'<div class="row"><div class="t" style="color:var(--muted)">No open box. The next unit sent to a box opens one.</div></div>')+'<div class="row" style="background:#f4f6f7"><div class="t"><b>Counted at '+RESERVE_LOC+' (all boxes, open + sealed)</b></div></div>';
+  $('boxes').querySelectorAll('button[data-seal]').forEach(btn=>btn.onclick=()=>sealBox(btn.dataset.seal));
   const m=placedAt(RESERVE_LOC);
   const byStyle=new Map();
   for(const [sku,q] of m){ const s=BIN_OF.get(norm(sku)); const k=s?s.label:('(no bin) '+sku); const e=byStyle.get(k)||{units:0,skus:[]}; e.units+=q; e.skus.push(sku+' ×'+q); byStyle.set(k,e); }
   const rows=[...byStyle.entries()].sort((a,b)=>b[1].units-a[1].units).map(([k,e])=>'<div class="row"><div class="t">'+esc(k)+'<small>'+esc(e.skus.join(' · '))+'</small></div><div class="v">'+e.units+'</div></div>');
-  $('boxes').innerHTML=rows.join('')||'<div class="row"><div class="t" style="color:var(--muted)">Nothing sent to boxes yet.</div></div>';
+  $('boxes').insertAdjacentHTML('beforeend',rows.join('')||'<div class="row"><div class="t" style="color:var(--muted)">Nothing sent to boxes yet.</div></div>');
 }
 function go(v){ S.view=v; document.querySelectorAll('.view').forEach(x=>x.classList.remove('active')); $('v-'+v).classList.add('active');
   ['Scan','Bins','Boxes'].forEach(n=>$('f'+n).classList.toggle('ghost',n.toLowerCase()!==v));
