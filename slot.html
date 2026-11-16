@@ -141,7 +141,7 @@
     </div>
 
     <div id="v-bins" class="view">
-      <div class="warn">Close a bin when its style is finished. Closed bins reject new units — reopen in Stock Count if needed.</div>
+      <div class="warn">Close a bin when its style is finished <b>or when it is physically full before the counter says so</b>. After Close, the rest of that style goes to boxes. Reopen in Stock Count if needed.</div>
       <div class="list" id="bins"></div>
     </div>
 
@@ -178,16 +178,18 @@ const API_BASE='https://apps.fr-logistics.net/.netlify/functions';
 const APP_PIN='frlogistics2024';
 const COUNT_REF='MBL-NOV-2026';
 const RESERVE_LOC='RA0301';
-const CAP={ big:35, small:12 };            // F01–F07 = 23x12x8 in · F08 = 12x10x6 in
-const capOf=(bin)=>bin.startsWith('F08')?CAP.small:CAP.big;
+const CAP={ big:25, small:10 };            // F01–F07 = 23x12x8 in · F08 = 12x10x6 in — defaults for soft goods
+// Measured on the floor 2026-11-16: a harness set (HRSET) fills a big bin at 16 and a small bin at 5.
+// A 4th element on a SLOTS row overrides the default cap for that bin.
+const capOf=(bin,override)=>override||(bin.startsWith('F08')?CAP.small:CAP.big);
 
 const SLOTS=[
   // F06 — HRSET large styles
-  ['F0601','HRSET Floralatte SM',            ['HRSET-FLORALATTE-SM']],
-  ['F0602','HRSET Furever Love SM',          ['HRSET-FUREVER LOVE- SM']],
-  ['F0604','HRSET Furever Love M',           ['HRSET-FUREVER LOVE- M']],
-  ['F0605','HRSET Furever Love L',           ['HRSET-FUREVER LOVE- L']],
-  ['F0606','HRSET Pupwishes SM / MD',        ['HRSET-PUPWISHES-SM','HRSET-PUPWISHES-MD']],
+  ['F0601','HRSET Floralatte SM',            ['HRSET-FLORALATTE-SM'],16],
+  ['F0602','HRSET Furever Love SM',          ['HRSET-FUREVER LOVE- SM'],16],
+  ['F0604','HRSET Furever Love M',           ['HRSET-FUREVER LOVE- M'],16],
+  ['F0605','HRSET Furever Love L',           ['HRSET-FUREVER LOVE- L'],16],
+  ['F0606','HRSET Pupwishes SM / MD',        ['HRSET-PUPWISHES-SM','HRSET-PUPWISHES-MD'],16],
   // F05 — walking bags
   ['F0501','WKBG Furever Love',              ['WKBG-FUREVER LOVE']],
   ['F0502','WKBG Pupwishes',                 ['WKBG-PUPWISHES']],
@@ -206,7 +208,7 @@ const SLOTS=[
   ['F0303','Petite Amour White S',           ['daizzy g-petite amour-white-small']],
   ['F0304','Soft-Mesh Pink M / L',           ['Soft-Mesh-Medium-Pink','Soft-Mesh-Large-Pink']],
   ['F0305','Harness Gray M / L',             ['HARNESS-GRAY-M','HARNESS-GRAY-L']],
-  ['F0306','HRSET Teddybear SM / MD / LG',   ['HRSET-TEDDYBEAR-SM','HRSET-TEDDYBEAR-MD','HRSET-TEDDYBEAR-LG']],
+  ['F0306','HRSET Teddybear SM / MD / LG',   ['HRSET-TEDDYBEAR-SM','HRSET-TEDDYBEAR-MD','HRSET-TEDDYBEAR-LG'],16],
   // F02 — leash & collar black / blue
   ['F0201','L&C Black SM / M',               ['Daizzy Gear-Black-Leash & Collar Set- SM','Daizzy Gear-Black-Leash & Collar Set- M']],
   ['F0202','L&C Black L / XL',               ['Daizzy Gear-Black-Leash & Collar Set-L','Daizzy Gear-Black-Leash & Collar Set-XL']],
@@ -228,12 +230,12 @@ const SLOTS=[
   ['F0807','L&C Pink XL',                    ['Daizzy Gear-Pink-Leash & Collar Set-XL']],
   ['F0808','Rope Leash Purple',              ['daizzy g- rope leash- purple']],
   ['F0809','Pink Hands-Free Rope Leash',     ['DAIZZY G-PINK-HANDS FREE-ROPE LEASH']],
-  ['F0810','HRSET Bluepetalse SM / MD / LG', ['HRSET-BLUEPETALSE-SM','HRSET-BLUEPETALSE-MD','HRSET-BLUEPETALSE-LG']],
-  ['F0811','HRSET Floralatte MD / LG',       ['HRSET-FLORALATTE-MD','HRSET-FLORALATTE-LG']],
-  ['F0812','HRSET Pupwishes L',              ['HRSET-PUPWISHES-L']],
+  ['F0810','HRSET Bluepetalse SM / MD / LG', ['HRSET-BLUEPETALSE-SM','HRSET-BLUEPETALSE-MD','HRSET-BLUEPETALSE-LG'],5],
+  ['F0811','HRSET Floralatte MD / LG',       ['HRSET-FLORALATTE-MD','HRSET-FLORALATTE-LG'],5],
+  ['F0812','HRSET Pupwishes L',              ['HRSET-PUPWISHES-L'],5],
   ['F0813','Treat bags Black Daisies / Apricot / Blushing / Pink Hearts', ['daizzyg-treatbag-black- daisies','daizzyg-treatbag-black-apricot hearts','daizzyg-treatbag-black-blushing love','daizzyg-treatbag-black-pink hearts']],
   ['F0814','Poop Bag Holder Blue / Red',     ['Dog Poop Bag Holder for Leash - BLUE','Dog Poop Bag Holder for Leash - RED']],
-  ['F0815','Large Dog Harness & Leash Set',  ['B0CQMKHM9K']],
+  ['F0815','Large Dog Harness & Leash Set',  ['B0CQMKHM9K'],5],
 ];
 /* ============================================================ */
 
@@ -241,7 +243,7 @@ const $=(id)=>document.getElementById(id);
 const norm=(s)=>String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
 const BIN_OF=new Map();            // normSku -> {bin,label}
 const BINS=new Map();              // bin -> {bin,label,skus,cap}
-for(const [bin,label,skus] of SLOTS){ BINS.set(bin,{bin,label,skus,cap:capOf(bin)}); for(const s of skus) BIN_OF.set(norm(s),{bin,label}); }
+for(const [bin,label,skus,cap] of SLOTS){ BINS.set(bin,{bin,label,skus,cap:capOf(bin,cap)}); for(const s of skus) BIN_OF.set(norm(s),{bin,label}); }
 
 const S={operator:null, view:'scan', countId:null, countStatus:null, started:new Set(), closed:new Set(),
          placed:new Map(),         // loc -> Map(sku -> qty)
