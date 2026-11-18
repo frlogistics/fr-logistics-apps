@@ -129,6 +129,11 @@ function shapeDropship(r) {
     outbound_platform: r.outbound_platform,
     outbound_tracking: r.outbound_tracking,
     has_label: !!r.label_url,
+    pack_suggested: r.pack_suggested || null,
+    pack_used: r.pack_used || null,
+    pack_status: r.pack_status || null,
+    cancel_reason: r.cancel_reason || null,
+    cancelled_at: r.cancelled_at || null,
     physical_received_at: r.physical_received_at,
     labeled_at: r.labeled_at,
     shipped_at: r.shipped_at,
@@ -181,6 +186,8 @@ const DS_COLS = [
   'qty_boxes', 'label_url', 'outbound_carrier', 'outbound_platform', 'outbound_tracking',
   'status', 'physical_received_at', 'labeled_at', 'shipped_at', 'received_by', 'shipped_by',
   'exception_reason', 'group_seq', 'group_total', 'manifest_id',
+  // 2026-11-18: packaging suggestion / confirmation and void (see dropshipments.js)
+  'pack_suggested', 'pack_used', 'pack_status', 'cancel_reason', 'cancelled_at',
 ].join(',');
 const SLIP_COLS = [
   'id', 'tracking', 'photo_url', 'status', 'doc_type', 'ra_number', 'lpn', 'origin_fc',

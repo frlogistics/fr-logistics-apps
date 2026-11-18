@@ -435,6 +435,46 @@ function buildGmailQuery(cfg, opts = {}) {
   ].filter(Boolean).join(" ");
 }
 
+// ─── Day 8: order id from the label's filename ───────────────────────────────
+// 24-ago-2026: an email said "Order : MLA-81724-2026" and the rule of the day
+// did not match, so the row landed with NO order id — while the attached label
+// was literally named "MLA-81724-2026.pdf". When the body gives no order id,
+// take it from the filename, but only when the name LOOKS like a sale order
+// (letters-digits[-year]). A filename that is the inbound tracking, or that
+// carries the outbound number ("shipping_label_46886078645.pdf", LN Store), is
+// never an order id.
+const ORDER_FROM_FILENAME_RE = /^[A-Za-z]{2,5}-\d{3,}(?:-\d{2,4})?$/;
+
+function orderIdFromFilename(filename, trackingNumber, outboundFilenamePattern) {
+  if (!filename) return null;
+  const base = String(filename).replace(/\.pdf$/i, "").trim();
+  if (!base) return null;
+  if (trackingNumber && base.toLowerCase() === String(trackingNumber).toLowerCase()) return null;
+  if (extractOutboundFromFilename(filename, outboundFilenamePattern)) return null;
+  return ORDER_FROM_FILENAME_RE.test(base) ? base : null;
+}
+
+// ─── Day 8: kick the packaging suggestion ────────────────────────────────────
+// Background function: answers 202 immediately, so this costs the sync nothing.
+// It is safe to call on every run — with nothing to do it exits at once.
+// Internal call → the auth gate lets it through with the service key.
+async function kickPackSuggest() {
+  const base = Netlify.env.get("URL") || Netlify.env.get("DEPLOY_PRIME_URL");
+  if (!base) { console.warn("[pack-suggest] no site URL in env — not kicked"); return false; }
+  try {
+    const r = await fetch(`${base}/.netlify/functions/dropship-pack-suggest-background`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_KEY}` },
+      body: "{}"
+    });
+    if (!r.ok && r.status !== 202) console.warn(`[pack-suggest] kick answered ${r.status}`);
+    return r.ok || r.status === 202;
+  } catch (e) {
+    console.warn(`[pack-suggest] kick failed (non-fatal): ${e.message}`);
+    return false;
+  }
+}
+
 // ─── Core: process one message for one client ────────────────────────────────
 async function processMessage(msgSummary, cfg, labelIdProcessed) {
   const msg = await gmailGetMessage(msgSummary.id);
@@ -453,6 +493,19 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
   if (detectedCarrier && detectedCarrier !== parsed.carrier) {
     console.log(`[${cfg.client_code}] msg ${msg.id}: carrier override ${parsed.carrier || "(empty)"} → ${detectedCarrier} (from tracking ${parsed.tracking_number})`);
     parsed.carrier = detectedCarrier;
+  }
+
+  // Day 8: the attachment is located BEFORE the identity lookup, because its
+  // filename may be the only place the order id appears.
+  const att = findPdfAttachment(msg.payload, cfg.attachment_pattern || ".*\\.pdf$");
+  let orderFromFilename = false;
+  if (!parsed.order_id && att?.filename) {
+    const fromFile = orderIdFromFilename(att.filename, parsed.tracking_number, cfg.outbound_filename_pattern);
+    if (fromFile) {
+      parsed.order_id = fromFile;
+      orderFromFilename = true;
+      console.log(`[${cfg.client_code}] msg ${msg.id}: no order id in the body → taken from the label filename (${fromFile})`);
+    }
   }
 
   // ── Day 6: row identity is (client, inbound tracking, outbound order) ──────
@@ -483,8 +536,9 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
   const groupTotal = Number.isInteger(parsed.group_total) && parsed.group_total > 1
     ? parsed.group_total
     : null;
+  // Day 8: voided orders no longer count as part of the box.
   const groupSeq = groupTotal
-    ? siblings.filter(r => r.id !== existingRow?.id).length + 1
+    ? siblings.filter(r => r.id !== existingRow?.id && r.status !== "cancelled").length + 1
     : null;
 
   // Upload PDF attachment (if present).
@@ -493,7 +547,6 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
   let outboundTracking = null;
   let pdfHint = null;
   let outboundCarrierFromLabel = null;
-  const att = findPdfAttachment(msg.payload, cfg.attachment_pattern || ".*\\.pdf$");
   if (att) {
     const bytes = await gmailGetAttachment(msg.id, att.attachmentId);
     const safeTracking = parsed.tracking_number.replace(/[^A-Za-z0-9._-]/g, "_");
@@ -580,6 +633,7 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
       id: existingRow.id,
       order_id: parsed.order_id || null,
       group: groupTotal ? `${groupSeq}/${groupTotal}` : null,
+      ...(orderFromFilename ? { order_id_source: "label_filename" } : {}),
       ...(conflict ? { outbound_conflict: conflict } : {}),
       ...(pdfHint ? { pdf_hint: pdfHint } : {})
     };
@@ -587,8 +641,14 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
 
   if (existingRow) {
     // Already ingested (not orphan) → just label the email and move on.
+    // Day 8: a voided order stays in the table precisely so that its email is
+    // not ingested again. Reported apart so a re-sent order is not invisible.
     await gmailAddLabel(msg.id, labelIdProcessed);
-    return { status: "already_ingested", id: existingRow.id, order_id: existingRow.order_id || null };
+    return {
+      status: existingRow.status === "cancelled" ? "already_ingested_voided" : "already_ingested",
+      id: existingRow.id,
+      order_id: existingRow.order_id || null
+    };
   }
 
   // Fresh insert.
@@ -640,6 +700,7 @@ async function processMessage(msgSummary, cfg, labelIdProcessed) {
     order_id: parsed.order_id || null,
     group: groupTotal ? `${groupSeq}/${groupTotal}` : null,
     outbound_tracking: conflict ? null : outboundTracking,
+    ...(orderFromFilename ? { order_id_source: "label_filename" } : {}),
     ...(conflict ? { outbound_conflict: conflict } : {}),
     ...(pdfHint ? { pdf_hint: pdfHint } : {})
   };
@@ -684,6 +745,10 @@ async function runSync({ dryRun = false, since = null, ignoreProcessed = false, 
     }
     summary.clients.push(clientSummary);
   }
+
+  // Day 8: let the packaging suggestion pick up whatever is waiting (new rows
+  // from this run, or older ones a previous run could not finish).
+  if (!dryRun) summary.pack_suggest_kicked = await kickPackSuggest();
 
   summary.finished_at = new Date().toISOString();
   return summary;

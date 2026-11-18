@@ -33,6 +33,8 @@
 //                                            received_today, orphans_aging,
 //                                            oldest_pending_hours)
 //   ?action=clients                      → active dropshipment clients
+//   ?action=packaging                    → packaging catalog (CAJA 1..6, POLY 1..3, XL, OTRO)
+//   ?action=list&status=cancelled        → voided orders (hidden from every other list)
 //
 // POST endpoints (JSON body: { action, id, operator, ... }):
 //   action=receive          → pending/exception → received   (sets physical_received_at, received_by)
@@ -51,6 +53,20 @@
 //                              label_filename, pdf_base64, operator)
 //   action=delete_orphan    → permanently delete an orphan row (status='orphan' only)
 //                             (body: id, operator) — for cleaning up bad scans
+//   action=void_order       → pending/received/labeled/exception → cancelled
+//                             (body: id, reason, operator, keep_inbound?) — the row is KEPT
+//                             so the Gmail sync never re-creates it; see ds_void_order() in
+//                             db/migrations/20261118_ds_packaging_and_void.sql
+//   action=confirm_pack     → record the packaging actually used (body: id, pack_code, operator)
+//   action=requeue_pack     → clear the suggestion so the lookup runs again (body: id)
+//
+// Day 8 (2026-11-18): packaging + void.
+//   * Every order carries a packaging suggestion (pack_suggested) produced by
+//     dropship-pack-suggest-background.js. `ship` asks for the packaging used
+//     (409 PACK_REQUIRED) unless the body brings pack_code or confirm_no_pack.
+//   * Voided orders (status='cancelled') never appear in list / lookup / stats.
+//     The lookup returns them separately in `voided` so a scan can say "this
+//     order was voided" instead of offering to create an orphan.
 
 const SUPABASE_URL  = Netlify.env.get("SUPABASE_URL");
 const SUPABASE_KEY  = Netlify.env.get("SUPABASE_SERVICE_KEY");
@@ -96,7 +112,7 @@ const CORS = { "Content-Type": "application/json", "Access-Control-Allow-Origin"
 const jRes = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: CORS });
 
 // ─── Query builders ──────────────────────────────────────────────────────────
-const SELECT_CORE = "id,client_id,tracking_number,order_id,carrier,content,qty_boxes,notes,label_url,label_filename,outbound_carrier,outbound_platform,outbound_tracking,status,group_seq,group_total,email_received_at,physical_received_at,labeled_at,shipped_at,received_by,shipped_by,exception_reason,manifest_id,created_at,updated_at";
+const SELECT_CORE = "id,client_id,tracking_number,order_id,carrier,content,qty_boxes,notes,label_url,label_filename,outbound_carrier,outbound_platform,outbound_tracking,status,group_seq,group_total,email_received_at,physical_received_at,labeled_at,shipped_at,received_by,shipped_by,exception_reason,manifest_id,created_at,updated_at,pack_suggested,pack_status,pack_confidence,pack_info,pack_used,pack_confirmed_at,pack_confirmed_by,cancelled_at,cancelled_by,cancel_reason";
 
 // We only embed fr_clients (the one FK that exists on dropshipments).
 // dropship_client_configs is merged in application code below via client_id.
@@ -104,7 +120,7 @@ const SELECT_WITH_CLIENT = `${SELECT_CORE},client:fr_clients(id,name,company,sto
 
 // Fetch all client configs once, build a map by client_id.
 async function loadConfigMap() {
-  const configs = await sbSelect("dropship_client_configs", "?select=client_id,client_code,display_name,rate_per_package,outbound_carrier,outbound_platform");
+  const configs = await sbSelect("dropship_client_configs", "?select=client_id,client_code,display_name,rate_per_package,outbound_carrier,outbound_platform,packaging_tier");
   const map = {};
   for (const c of configs) map[c.client_id] = c;
   return map;
@@ -193,7 +209,7 @@ export default async function handler(req) {
       const clientFilterParam = clientFilter ? `&client_id=eq.${clientFilter}` : "";
 
       const rows = await sbSelect("dropshipments",
-        `?select=status,physical_received_at,shipped_at${clientFilterParam}`
+        `?select=status,physical_received_at,shipped_at&status=neq.cancelled${clientFilterParam}`
       );
       const counts = { pending: 0, received: 0, labeled: 0, shipped: 0, orphan: 0, exception: 0, total: rows.length };
       for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
@@ -249,9 +265,17 @@ export default async function handler(req) {
     // ── GET: clients (for selector dropdown) ──────────────────────────────
     if (req.method === "GET" && action === "clients") {
       const configs = await sbSelect("dropship_client_configs",
-        "?active=eq.true&select=client_id,client_code,display_name,rate_per_package,outbound_carrier,outbound_platform&order=display_name.asc"
+        "?active=eq.true&select=client_id,client_code,display_name,rate_per_package,outbound_carrier,outbound_platform,packaging_tier&order=display_name.asc"
       );
       return jRes({ clients: configs });
+    }
+
+    // ── GET: packaging catalog (for the pack picker) ──────────────────────
+    if (req.method === "GET" && action === "packaging") {
+      const types = await sbSelect("ds_packaging_types",
+        "?active=eq.true&select=code,kind,label,inner_l,inner_w,inner_h,size_tier,sort_order&order=sort_order.asc"
+      );
+      return jRes({ types });
     }
 
     // ── GET: single record ────────────────────────────────────────────────
@@ -278,7 +302,12 @@ export default async function handler(req) {
       // hold several outbound orders under the SAME tracking; truncating the
       // result would hide orders from the operator at the scanner, which is
       // exactly the failure this feature exists to prevent.
-      const rows = await sbSelect("dropshipments", `?${filter}&select=${SELECT_WITH_CLIENT}&order=group_seq.asc.nullslast,created_at.asc&limit=20`);
+      // Day 8: voided orders are not scan matches. They come back apart, so
+      // the scanner can explain instead of offering to create an orphan.
+      const [rows, voided] = await Promise.all([
+        sbSelect("dropshipments", `?${filter}&status=neq.cancelled&select=${SELECT_WITH_CLIENT}&order=group_seq.asc.nullslast,created_at.asc&limit=20`),
+        sbSelect("dropshipments", `?tracking_number=eq.${enc}&status=eq.cancelled&select=id,order_id,content,cancel_reason,cancelled_at,cancelled_by&order=cancelled_at.desc&limit=10`)
+      ]);
       attachConfigs(rows, configMap);
       const matches = rows.map(r => ({
         ...r,
@@ -304,7 +333,7 @@ export default async function handler(req) {
         };
       }
 
-      return jRes({ rows: matches, count: matches.length, tracking, group });
+      return jRes({ rows: matches, count: matches.length, tracking, group, voided });
     }
 
     // ── GET: signed URL for label PDF ─────────────────────────────────────
@@ -327,8 +356,10 @@ export default async function handler(req) {
       const limit     = parseInt(url.searchParams.get("limit") || "200", 10);
       const order     = url.searchParams.get("order") || "email_received_at.desc.nullslast";
 
-      let q = `?select=${SELECT_WITH_CLIENT}&order=${order}&limit=${limit}`;
+      let q = `?select=${SELECT_WITH_CLIENT}&order=${status === "cancelled" ? "cancelled_at.desc.nullslast" : order}&limit=${limit}`;
+      // Day 8: voided orders only show when asked for by name.
       if (status) q += `&status=eq.${status}`;
+      else q += `&status=neq.cancelled`;
       if (clientId) q += `&client_id=eq.${clientId}`;
 
       const [rows, configMap] = await Promise.all([
@@ -403,6 +434,69 @@ export default async function handler(req) {
 
         console.log(`[dropshipments.delete_orphan] ${operator} deleted orphan ${cur[0].tracking_number} (id=${id})`);
         return jRes({ ok: true, action: "delete_orphan", deleted: cur[0] });
+      }
+
+      // ── void_order: cancel an order that must not be worked ─────────────
+      // All the rules live in the database function ds_void_order() so they
+      // are atomic and testable with plain SQL: status guard, release of the
+      // outbound label, renumbering of a consolidated box, and what happens
+      // to the Inbound billing line. Who did it comes from the signed-in
+      // session (x-fr-user-email, set by the auth gate), not from the body.
+      if (act === "void_order") {
+        const id = body.id;
+        if (!id) return jRes({ error: "id required" }, 400);
+        const reason = (body.reason || "").trim();
+        const userEmail = req.headers.get("x-fr-user-email") || null;
+        const res = await sbRpc("ds_void_order", {
+          p_id: id,
+          p_reason: reason,
+          p_operator: operator,
+          p_user: userEmail,
+          p_keep_inbound: body.keep_inbound === true
+        });
+        if (!res?.ok) {
+          const HINT = {
+            NOT_FOUND:         [404, "Orden no encontrada."],
+            ALREADY_CANCELLED: [409, "Esta orden ya estaba anulada."],
+            ALREADY_SHIPPED:   [409, "La orden ya fue despachada. Primero hay que deshacer el despacho (Undo ship)."],
+            IN_MANIFEST:       [409, "La orden está dentro de un manifiesto. No se puede anular."],
+            IS_ORPHAN:         [409, "Los huérfanos se eliminan con el botón Delete, no se anulan."],
+            REASON_REQUIRED:   [400, "Escribe el motivo de la anulación (mínimo 5 caracteres)."]
+          };
+          const [st, hint] = HINT[res?.code] || [409, "No se pudo anular la orden."];
+          return jRes({ error: hint, code: res?.code || "VOID_FAILED", ...res }, st);
+        }
+        const rows = await sbSelect("dropshipments", `?id=eq.${id}&select=${SELECT_CORE}&limit=1`);
+        console.log(`[dropshipments.void_order] ${operator} (${userEmail || "?"}) voided ${rows[0]?.tracking_number} / ${rows[0]?.order_id || "—"} · ${reason}`);
+        return jRes({ ok: true, action: "void_order", row: rows[0], result: res });
+      }
+
+      // ── confirm_pack: the packaging the operator actually used ──────────
+      if (act === "confirm_pack") {
+        const id = body.id;
+        const code = (body.pack_code || "").trim();
+        if (!id) return jRes({ error: "id required" }, 400);
+        if (!code) return jRes({ error: "pack_code required" }, 400);
+        const res = await sbRpc("ds_confirm_pack", { p_id: id, p_code: code, p_operator: operator });
+        if (!res?.ok) {
+          const msg = res?.code === "VIP_NO_POLY" ? "Este cliente es VIP: siempre va en caja, no en polymailer."
+                    : res?.code === "BAD_PACK"    ? "Ese empaque no existe en el catálogo."
+                    : "No se pudo registrar el empaque.";
+          return jRes({ error: msg, code: res?.code || "PACK_FAILED" }, res?.code === "NOT_FOUND" ? 404 : 409);
+        }
+        const rows = await sbSelect("dropshipments", `?id=eq.${id}&select=${SELECT_CORE}&limit=1`);
+        return jRes({ ok: true, action: "confirm_pack", row: rows[0] });
+      }
+
+      // ── requeue_pack: forget the suggestion so the lookup runs again ─────
+      if (act === "requeue_pack") {
+        const id = body.id;
+        if (!id) return jRes({ error: "id required" }, 400);
+        const updated = await sbPatch("dropshipments", `id=eq.${id}`, {
+          pack_status: null, pack_suggested: null, pack_confidence: null, pack_info: null
+        });
+        if (!updated.length) return jRes({ error: "not found" }, 404);
+        return jRes({ ok: true, action: "requeue_pack", row: updated[0] });
       }
 
       // ── process_orphan: complete an orphan record manually ──────────────
@@ -648,7 +742,7 @@ export default async function handler(req) {
       // Load the current row to validate the transition.
       // manifest_id added (Day 5) so revert can decide whether to clear it.
       // email_message_id + label_url added (Day 6) for the receive guard.
-      const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,label_url,email_message_id,tracking_number,outbound_tracking,client_id,carrier,order_id,content,outbound_carrier,manifest_id,group_seq,group_total&limit=1`);
+      const cur = await sbSelect("dropshipments", `?id=eq.${id}&select=id,status,label_url,email_message_id,tracking_number,outbound_tracking,client_id,carrier,order_id,content,outbound_carrier,manifest_id,group_seq,group_total,exception_reason,pack_used,pack_suggested,pack_status,pack_info&limit=1`);
       if (!cur.length) return jRes({ error: "not found" }, 404);
       const current = cur[0];
 
@@ -663,7 +757,7 @@ export default async function handler(req) {
       };
 
       const rule = LEGAL[act];
-      if (!rule) return jRes({ error: `unknown action '${act}'`, allowed: [...Object.keys(LEGAL), "create_orphan", "link_outbound", "unlink_outbound", "process_orphan", "delete_orphan"] }, 400);
+      if (!rule) return jRes({ error: `unknown action '${act}'`, allowed: [...Object.keys(LEGAL), "create_orphan", "link_outbound", "unlink_outbound", "process_orphan", "delete_orphan", "void_order", "confirm_pack", "requeue_pack"] }, 400);
       if (!rule.from.includes(current.status)) {
         return jRes({ error: `cannot ${act} from status '${current.status}'`, allowed_from: rule.from }, 409);
       }
@@ -709,7 +803,7 @@ export default async function handler(req) {
         const sibs = await sbSelect("dropshipments",
           `?client_id=eq.${current.client_id}&tracking_number=eq.${encodeURIComponent(current.tracking_number)}&id=neq.${id}&select=id,order_id,group_seq,status,content&order=group_seq.asc.nullslast`
         );
-        const notShipped = sibs.filter(s => s.status !== "shipped");
+        const notShipped = sibs.filter(s => s.status !== "shipped" && s.status !== "cancelled");
         if (notShipped.length) {
           return jRes({
             error: "this box holds other orders that haven't shipped yet",
@@ -759,6 +853,40 @@ export default async function handler(req) {
           label_url: current.label_url,
           hint: "Este paquete no tiene número de salida. Escanea el código de barras de la etiqueta impresa (Link Outbound) antes de despachar."
         }, 409);
+      }
+
+      // ── Day 8 (2026-11-18): packaging confirmation ────────────────────────
+      // The operator says which packaging the order actually left in. That
+      // one tap is what (a) bills the right surcharge and (b) teaches the
+      // product memory, so the next order of the same product is suggested
+      // correctly. Same philosophy as the two guards above: CONFIRMATION, not
+      // rejection. The body can bring pack_code (confirm + ship in one call —
+      // this is what the batch flow does), or confirm_no_pack:true to ship
+      // without recording it, so the floor is never deadlocked.
+      if (act === "ship" && !current.pack_used) {
+        const code = (body.pack_code || "").trim();
+        if (code) {
+          const res = await sbRpc("ds_confirm_pack", { p_id: id, p_code: code, p_operator: operator });
+          if (!res?.ok) {
+            return jRes({
+              error: res?.code === "VIP_NO_POLY" ? "Este cliente es VIP: siempre va en caja, no en polymailer."
+                                                 : "Empaque no válido.",
+              code: res?.code || "PACK_FAILED"
+            }, 409);
+          }
+        } else if (body.confirm_no_pack !== true) {
+          return jRes({
+            error: "packaging not confirmed",
+            code: "PACK_REQUIRED",
+            tracking_number: current.tracking_number,
+            order_id: current.order_id,
+            content: current.content,
+            pack_suggested: current.pack_suggested,
+            pack_status: current.pack_status,
+            pack_info: current.pack_info,
+            hint: "Indica en qué empaque sale esta orden antes de despachar."
+          }, 409);
+        }
       }
 
       // Decision (chat 2026-05-08): if a package is in a SEALED manifest, we

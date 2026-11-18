@@ -46,7 +46,7 @@ exports.handler = async (event) => {
     // ── Load all dropshipments (with client info) + client configs ───────────
     const [rows, configs] = await Promise.all([
       sbSelect('dropshipments',
-        '?select=id,client_id,tracking_number,order_id,status,email_received_at,physical_received_at,labeled_at,shipped_at,created_at&order=created_at.desc&limit=2000'
+        '?select=id,client_id,tracking_number,order_id,status,email_received_at,physical_received_at,labeled_at,shipped_at,created_at&status=neq.cancelled&order=created_at.desc&limit=2000'  // voided orders are not part of the pipeline
       ),
       sbSelect('dropship_client_configs',
         '?select=client_id,client_code,display_name,client_name_billing'

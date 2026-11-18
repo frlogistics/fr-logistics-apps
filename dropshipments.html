@@ -35,6 +35,7 @@
     --s-shipped-bg: #dcfce7;      --s-shipped-text: #16a34a;
     --s-orphan-bg: #fce7f3;       --s-orphan-text: #be185d;
     --s-exception-bg: #fee2e2;    --s-exception-text: #dc2626;
+    --s-cancelled-bg: #e5e7eb;    --s-cancelled-text: #4b5563;
 
     /* ── Day 6: consolidated packages (N outbound orders, 1 inbound box) ── */
     --grp-bg: #ede9fe;   --grp-text: #5b21b6;   --grp-line: #8b5cf6;
@@ -412,6 +413,65 @@
   .sb-shipped   { background: var(--s-shipped-bg);   color: var(--s-shipped-text); }
   .sb-orphan    { background: var(--s-orphan-bg);    color: var(--s-orphan-text); }
   .sb-exception { background: var(--s-exception-bg); color: var(--s-exception-text); }
+  .sb-cancelled { background: var(--s-cancelled-bg); color: var(--s-cancelled-text); }
+  .tbl-row.is-voided { opacity: .62; }
+  .tbl-row.is-voided .tracking, .tbl-row.is-voided .content-cell { text-decoration: line-through; text-decoration-color: #9ca3af; }
+
+  /* ─── Day 8 (2026-11-18): packaging suggestion + void ───────────────────
+     The chip in the list and the card in the modals say the same thing in the
+     same words that are written on the shelves: CAJA 1…6 / POLY 1…3. */
+  .pack-chip {
+    display:inline-block; margin-right:7px; padding:1px 8px; border-radius:6px;
+    background:#ccfbf1; color:#0f766e; border:1px solid #99f6e4;
+    font-family:'DM Mono',monospace; font-size:10.5px; font-weight:700; letter-spacing:.03em;
+    vertical-align:middle; white-space:nowrap;
+  }
+  .pack-chip.used    { background:#dcfce7; color:#15803d; border-color:#86efac; }
+  .pack-chip.measure { background:#fef3c7; color:#92400e; border-color:#fde68a; }
+  .pack-chip.wait    { background:#f1f5f9; color:#64748b; border-color:#e2e8f0; }
+  .pack-card {
+    display:flex; align-items:center; gap:14px;
+    background:#f0fdfa; border:1px solid #99f6e4; border-radius:10px; padding:12px 14px; margin:10px 0;
+  }
+  .pack-card.measure { background:#fffbeb; border-color:#fde68a; }
+  .pack-card.wait    { background:#f8fafc; border-color:var(--border); }
+  .pack-card.used    { background:#f0fdf4; border-color:#86efac; }
+  .pack-card .pk-big {
+    font-family:'Syne',sans-serif; font-size:24px; font-weight:800; color:#0f766e; line-height:1; white-space:nowrap;
+  }
+  .pack-card.measure .pk-big { color:#92400e; }
+  .pack-card.wait .pk-big { color:#64748b; font-size:16px; }
+  .pack-card.used .pk-big { color:#15803d; }
+  .pack-card .pk-meta { font-size:12px; color:var(--muted); line-height:1.45; min-width:0; }
+  .pack-card .pk-meta strong { color:var(--text); font-weight:600; }
+  .pk-tag {
+    display:inline-block; padding:0 6px; border-radius:5px; font-size:10px; font-weight:700;
+    letter-spacing:.04em; margin-right:4px; vertical-align:middle;
+  }
+  .pk-tag.vip  { background:#ede9fe; color:#6d28d9; }
+  .pk-tag.frag { background:#fee2e2; color:#b91c1c; }
+  .pk-tag.liq  { background:#dbeafe; color:#1e40af; }
+  .pack-grid { display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; }
+  .pack-btn {
+    border:1px solid var(--border); background:#fff; color:var(--text);
+    border-radius:8px; padding:7px 10px; cursor:pointer; text-align:center; min-width:74px;
+    font-family:inherit; font-size:12px; font-weight:600; line-height:1.25;
+    transition: border-color .12s, background .12s;
+  }
+  .pack-btn small { display:block; font-family:'DM Mono',monospace; font-size:9.5px; font-weight:500; color:var(--muted); }
+  .pack-btn:hover { border-color:var(--fr-teal); background:#f0fdfa; }
+  .pack-btn.sug  { border-color:#14b8a6; background:#ccfbf1; color:#0f766e; box-shadow:0 0 0 2px rgba(20,184,166,.18); }
+  .pack-btn.used { border-color:#22c55e; background:#dcfce7; color:#15803d; }
+  .pack-link { background:none; border:none; padding:0; color:var(--muted); font-size:11.5px; text-decoration:underline; cursor:pointer; font-family:inherit; }
+  .pack-link:hover { color:var(--fr-navy); }
+  .void-box { background:#f3f4f6; border:1px solid #d1d5db; border-radius:10px; padding:12px 14px; font-size:13px; color:#374151; line-height:1.5; }
+  .void-box strong { color:#111827; }
+  .btn-void { background:#dc2626; color:#fff; border-color:#dc2626; }
+  .btn-void:hover { background:#b91c1c; border-color:#b91c1c; color:#fff; }
+  .bs-row { display:grid; grid-template-columns:1fr 172px; gap:10px; align-items:center; padding:6px 0; border-bottom:1px dashed #bbf7d0; }
+  .bs-row:last-child { border-bottom:none; }
+  .bs-row select { margin-top:0; padding:5px 8px; font-size:12px; }
+  .bs-row .bs-cnt { font-family:'DM Sans',sans-serif; color:#64748b; font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
   .age { font-family: 'DM Mono'; font-size: 12px; color: var(--muted); font-weight: 500; }
 
@@ -834,6 +894,7 @@
       <a href="#" class="side-link" data-side-tab="shipped"><span class="icon">✓</span> Shipped</a>
       <a href="#" class="side-link" data-side-tab="orphan"><span class="icon">⚠</span> Orphans</a>
       <a href="#" class="side-link" data-side-tab="exception"><span class="icon">⛔</span> Exceptions</a>
+      <a href="#" class="side-link" data-side-tab="cancelled"><span class="icon">🗑</span> Voided</a>
     </div>
     <div class="side-section">
       <div class="side-label">Tools</div>
@@ -876,6 +937,7 @@
       <option value="shipped">Shipped</option>
       <option value="orphan">Orphan</option>
       <option value="exception">Exception</option>
+      <option value="cancelled">Voided</option>
     </select>
   </div>
   <div class="filter-group">
@@ -922,6 +984,7 @@
   <button class="tab" data-tab="shipped">Shipped <span class="tab-count" data-c="shipped">0</span></button>
   <button class="tab" data-tab="orphan">Orphans <span class="tab-count" data-c="orphan">0</span></button>
   <button class="tab" data-tab="exception">Exceptions <span class="tab-count" data-c="exception">0</span></button>
+  <button class="tab" data-tab="cancelled">Voided <span class="tab-count" data-c="cancelled">0</span></button>
 </nav>
 
 <section class="tbl-wrap">
@@ -954,7 +1017,10 @@
       You are about to mark <strong id="batchShipCount">0</strong> packages as shipped.
       This action cannot be batch-undone — each row would need an individual "Undo ship".
     </p>
-    <div style="background:#f0fdf4; border:1px solid #86efac; padding:12px 14px; border-radius:10px; margin-bottom:14px; max-height:200px; overflow-y:auto;">
+    <p id="batchShipPackNote" style="display:none; margin:0 0 8px 0; font-size:12.5px; color:#0f766e;">
+      Confirma el empaque de cada orden. Ya viene marcado el sugerido; cámbialo si usaste otro.
+    </p>
+    <div style="background:#f0fdf4; border:1px solid #86efac; padding:12px 14px; border-radius:10px; margin-bottom:14px; max-height:300px; overflow-y:auto;">
       <div id="batchShipList" style="font-family:'DM Mono',monospace; font-size:12px; line-height:1.7;"></div>
     </div>
     <div class="modal-actions">
@@ -993,6 +1059,7 @@
       <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">Content</div>
       <div id="scanConfirmContent" style="font-family:'DM Sans',sans-serif; font-size:13px;"></div>
     </div>
+    <div id="scanConfirmPack"></div>
     <div class="modal-actions">
       <button class="btn" onclick="closeScanConfirmModal()">Cancel</button>
       <button class="btn btn-primary" id="scanConfirmBtn" style="min-width:150px;">✓ Mark received</button>
@@ -1229,6 +1296,49 @@
   </div>
 </div>
 
+<!-- Modal: packaging used (asked when shipping an order with no packaging confirmed) -->
+<div class="modal-backdrop" id="packModal">
+  <div class="modal-box" style="max-width: 560px;">
+    <h3>📦 ¿En qué empaque sale?</h3>
+    <div style="background:#f8fafc; padding:12px 14px; border-radius:10px; margin:12px 0 4px 0;">
+      <div id="packModalOrder" style="font-family:'DM Mono',monospace; font-weight:600; font-size:13px;"></div>
+      <div id="packModalContent" style="font-size:13px; margin-top:4px;"></div>
+    </div>
+    <div id="packModalCard"></div>
+    <p style="margin:6px 0 0 0;">Toca el empaque que usaste. Con eso se despacha la orden.</p>
+    <div class="pack-grid" id="packModalGrid"></div>
+    <div class="modal-actions" style="justify-content:space-between; align-items:center;">
+      <button class="pack-link" id="packModalSkip" title="Solo si de verdad no aplica ninguno">Despachar sin registrar empaque</button>
+      <button class="btn" onclick="closePackModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: void order -->
+<div class="modal-backdrop" id="voidModal">
+  <div class="modal-box" style="max-width: 540px;">
+    <h3>🗑 Anular orden</h3>
+    <div class="void-box" style="margin:12px 0;">
+      <div><strong id="voidTracking" style="font-family:'DM Mono',monospace;"></strong></div>
+      <div id="voidOrder" style="font-family:'DM Mono',monospace; font-size:12px; margin-top:2px;"></div>
+      <div id="voidContent" style="margin-top:6px;"></div>
+      <div id="voidClient" style="font-size:12px; color:#6b7280; margin-top:2px;"></div>
+    </div>
+    <div id="voidSiblings" class="grp-note" style="display:none;"></div>
+    <p>La orden sale de todas las listas y ya no se puede recibir ni despachar. Queda guardada en la pestaña <strong>Voided</strong> con el motivo y quién la anuló. Su etiqueta de salida queda libre para otra orden.</p>
+    <label style="display:block; font-size:12px; font-weight:600; color:var(--fr-navy); margin-top:12px;">Motivo (obligatorio)</label>
+    <textarea id="voidReason" maxlength="500" placeholder="Ej.: orden duplicada por el cliente, venta cancelada, correo enviado por error…"></textarea>
+    <label id="voidKeepWrap" style="display:none; margin-top:10px; font-size:12.5px; color:var(--text); cursor:pointer;">
+      <input type="checkbox" id="voidKeepInbound" style="width:auto; margin:0 6px 0 0; vertical-align:middle;">
+      El paquete sí está en el almacén: mantener su línea de recepción (Inbound) en facturación
+    </label>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeVoidModal()">No anular</button>
+      <button class="btn btn-void" id="voidConfirmBtn" style="min-width:150px;">Anular orden</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: operator name -->
 <div class="modal-backdrop" id="operatorModal">
   <div class="modal-box">
@@ -1250,7 +1360,11 @@
   const API = "/.netlify/functions/dropshipments";
   const SYNC_API = "/.netlify/functions/dropship-sync-run";
 
-  const state = { rows: [], clients: [], activeTab: "all", activeClient: "", syncing: false, operator: "", batchSelection: new Set() };
+  // Day 8: `voided` holds status='cancelled' rows. They are kept OUT of
+  // state.rows on purpose: every scan, batch and count below works on
+  // state.rows, so a voided order can never be matched or shipped by accident.
+  const PACK_API = "/.netlify/functions/dropship-pack-suggest-background";
+  const state = { rows: [], voided: [], packTypes: [], packMap: {}, clients: [], activeTab: "all", activeClient: "", syncing: false, operator: "", batchSelection: new Set() };
 
   // ─── Operator (localStorage, prompted on first use) ──────────────────
   function loadOperator() {
@@ -1313,20 +1427,31 @@
   }
 
   let toastTimer;
-  function toast(msg, { error = false } = {}) {
+  function toast(msg, { error = false, ms = 3000 } = {}) {
     const t = $("#toast");
     $("#toastMsg").textContent = msg;
     t.classList.toggle("toast-error", error);
     t.classList.add("show");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove("show"), 3000);
+    toastTimer = setTimeout(() => t.classList.remove("show"), ms);
+  }
+
+  // Day 8: never call r.json() blind. When a function dies, Netlify answers
+  // with plain text ("Internal Error") and r.json() used to throw
+  // "unexpected token I…", hiding what actually happened (29-jul-2026).
+  async function readJson(r) {
+    const text = await r.text();
+    try { return text ? JSON.parse(text) : {}; }
+    catch (e) {
+      throw new Error(`Server answered ${r.status} (not JSON): ${text.replace(/\s+/g, " ").slice(0, 140) || "empty"}`);
+    }
   }
 
   async function apiGet(params) {
     const u = new URL(API, window.location.origin);
     Object.entries(params).forEach(([k, v]) => v != null && u.searchParams.set(k, v));
     const r = await fetch(u);
-    const j = await r.json();
+    const j = await readJson(r);
     if (!r.ok) throw new Error(j.error || "Request failed");
     return j;
   }
@@ -1336,7 +1461,7 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-    const j = await r.json();
+    const j = await readJson(r);
     if (!r.ok) {
       // Day 6: keep the whole server payload on the error. Guards like
       // GROUP_INCOMPLETE return structured data (which sibling orders are
@@ -1390,6 +1515,10 @@
         // Day 6: not a failure — the box holds sibling orders that haven't
         // shipped. Show them, and let the operator ship this one knowingly.
         openShipGroupModal(id, e.payload);
+      } else if (e.payload && e.payload.code === "PACK_REQUIRED") {
+        // Day 8: not a failure — the order has no packaging confirmed yet.
+        // One tap on the packaging used, and the ship goes through.
+        openPackModal(id, extra);
       } else {
         toast("Failed: " + e.message, { error: true });
       }
@@ -1397,6 +1526,260 @@
       btns.forEach(b => b.disabled = false);
     }
   }
+
+  // ─── Day 8: packaging helpers ─────────────────────────────────────────────
+  const fmtIn = (v) => (v == null ? "" : String(Math.round(Number(v) * 10) / 10));
+  function packLabel(code) {
+    const t = state.packMap[code];
+    return t ? t.label : (code || "");
+  }
+  function packDims(code) {
+    const t = state.packMap[code];
+    if (!t || t.inner_l == null) return "";
+    return t.kind === "poly"
+      ? `${fmtIn(t.inner_w)}×${fmtIn(t.inner_l)}"`
+      : `${fmtIn(t.inner_l)}×${fmtIn(t.inner_w)}×${fmtIn(t.inner_h)}"`;
+  }
+  const tierOf = (r) => (r && r.config && r.config.packaging_tier) || "standard";
+  // VIP clients always ship in a box: mailers are not offered for them.
+  const packOptionsFor = (r) => state.packTypes.filter(t => !(tierOf(r) === "vip" && t.kind === "poly"));
+
+  // Small chip for the list.
+  function packChip(r) {
+    if (!r || r.status === "cancelled" || r.status === "orphan") return "";
+    if (r.pack_used) return `<span class="pack-chip used" title="Empaque usado">✓ ${escapeHtml(packLabel(r.pack_used))}</span>`;
+    if (r.status === "shipped") return "";
+    if (r.pack_status === "ready" && r.pack_suggested) return `<span class="pack-chip" title="Empaque sugerido">${escapeHtml(packLabel(r.pack_suggested))}</span>`;
+    if (r.pack_status === "measure") return `<span class="pack-chip measure" title="Sin medidas confiables: medir el producto">MEDIR</span>`;
+    if (r.pack_status === "queued") return `<span class="pack-chip wait" title="Buscando medidas…">⏳</span>`;
+    return "";
+  }
+
+  // Big card for the drawer and the modals.
+  function packCardHtml(r) {
+    if (!r || r.status === "cancelled") return "";
+    const info = r.pack_info || {};
+    const tags =
+      (tierOf(r) === "vip" ? `<span class="pk-tag vip">VIP · SIEMPRE CAJA</span>` : "") +
+      (info.fragile ? `<span class="pk-tag frag">FRÁGIL</span>` : "") +
+      (info.liquid ? `<span class="pk-tag liq">LÍQUIDO</span>` : "");
+    const dimsTxt = (info.l_in && info.w_in && info.h_in)
+      ? `Producto: ${fmtIn(info.l_in)}×${fmtIn(info.w_in)}×${fmtIn(info.h_in)}"${info.units > 1 ? ` × ${info.units} u.` : ""}${info.weight_lb ? ` · ${fmtIn(info.weight_lb)} lb` : ""}`
+      : "";
+    const src = info.source === "memory_confirmed" ? "Ya se empacó así antes"
+              : info.source === "memory_canonical" ? "Mismo producto empacado antes"
+              : info.source === "memory_dims" ? "Medidas guardadas"
+              : info.source === "ai_web" ? "Medidas buscadas en la web" : "";
+
+    if (r.pack_used) {
+      return `<div class="pack-card used">
+        <div class="pk-big">✓ ${escapeHtml(packLabel(r.pack_used))}</div>
+        <div class="pk-meta">${tags}<strong>Empaque usado</strong> ${escapeHtml(packDims(r.pack_used))}<br>
+          ${r.pack_confirmed_by ? `Confirmado por ${escapeHtml(r.pack_confirmed_by)}` : ""}${r.pack_suggested && r.pack_suggested !== r.pack_used ? ` · sugerido: ${escapeHtml(packLabel(r.pack_suggested))}` : ""}</div>
+      </div>`;
+    }
+    if (r.pack_status === "ready" && r.pack_suggested) {
+      return `<div class="pack-card">
+        <div class="pk-big">${escapeHtml(packLabel(r.pack_suggested))}</div>
+        <div class="pk-meta">${tags}<strong>Empaque sugerido</strong> ${escapeHtml(packDims(r.pack_suggested))}<br>
+          ${[dimsTxt, src].filter(Boolean).map(escapeHtml).join(" · ")}${info.why ? `<br><em>${escapeHtml(info.why)}</em>` : ""}</div>
+      </div>`;
+    }
+    if (r.pack_status === "measure") {
+      return `<div class="pack-card measure">
+        <div class="pk-big">MEDIR</div>
+        <div class="pk-meta">${tags}<strong>Sin sugerencia confiable.</strong><br>${escapeHtml(info.why || "Mide el producto y elige el empaque.")}</div>
+      </div>`;
+    }
+    if (r.pack_status === "failed") {
+      return `<div class="pack-card measure">
+        <div class="pk-big">MEDIR</div>
+        <div class="pk-meta">${tags}<strong>No se pudo buscar el producto.</strong><br>${escapeHtml((info.error || "").slice(0, 120))}</div>
+      </div>`;
+    }
+    return `<div class="pack-card wait">
+      <div class="pk-big">⏳ Buscando…</div>
+      <div class="pk-meta">${tags}La sugerencia de empaque todavía no está lista. Puedes elegir el empaque tú mismo.</div>
+    </div>`;
+  }
+
+  // Buttons to pick the packaging. `fn` is the name of a window function
+  // called as fn(id, code).
+  function packGridHtml(r, fn) {
+    return packOptionsFor(r).map(t => {
+      const cls = r.pack_used === t.code ? "used" : (!r.pack_used && r.pack_suggested === t.code ? "sug" : "");
+      const dims = packDims(t.code);
+      return `<button type="button" class="pack-btn ${cls}" data-pack="${t.code}" onclick="${fn}('${r.id}','${t.code}')">${escapeHtml(t.label)}${dims ? `<small>${escapeHtml(dims)}</small>` : ""}</button>`;
+    }).join("");
+  }
+
+  function findRow(id) {
+    return state.rows.find(r => r.id === id) || state.voided.find(r => r.id === id) || null;
+  }
+  function mergeRow(id, updated) {
+    const idx = state.rows.findIndex(r => r.id === id);
+    if (idx >= 0) state.rows[idx] = { ...state.rows[idx], ...updated };
+    return idx >= 0 ? state.rows[idx] : null;
+  }
+  function refreshDrawerIfOpen(id) {
+    const row = findRow(id);
+    if (row && $("#detail").classList.contains("open") && $("#dTracking").textContent === row.tracking_number) {
+      renderDetail(row);
+    }
+  }
+
+  // Operator confirms (or corrects) the packaging from the drawer.
+  window.confirmPack = async function (id, code) {
+    if (!requireOperator()) return;
+    try {
+      const j = await apiPost({ action: "confirm_pack", id, pack_code: code, operator: state.operator });
+      if (j.row) mergeRow(id, j.row);
+      renderRows();
+      refreshDrawerIfOpen(id);
+      toast(`Empaque: ${packLabel(code)}`);
+    } catch (e) {
+      toast(e.message, { error: true });
+    }
+  };
+
+  // Ask the lookup to run again for one order, then watch for the answer.
+  window.requeuePack = async function (id) {
+    try {
+      const j = await apiPost({ action: "requeue_pack", id, operator: state.operator });
+      if (j.row) mergeRow(id, { ...j.row, pack_status: "queued" });
+      renderRows();
+      refreshDrawerIfOpen(id);
+      await fetch(PACK_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [id] }) });
+      toast("Buscando medidas… tarda cerca de medio minuto");
+      watchPack([id]);
+    } catch (e) {
+      toast("No se pudo pedir la sugerencia: " + e.message, { error: true });
+    }
+  };
+
+  // Quietly re-read the packaging fields of some rows (no "Loading" flash, no
+  // lost selection). Stops as soon as none of them is still waiting.
+  let _packWatch = null;
+  function watchPack(ids, tries = 8) {
+    clearTimeout(_packWatch);
+    const tick = async (left) => {
+      try {
+        let waiting = 0;
+        for (const id of ids) {
+          const j = await apiGet({ action: "get", id });
+          if (!j.row) continue;
+          const { pack_suggested, pack_status, pack_confidence, pack_info, pack_used } = j.row;
+          mergeRow(id, { pack_suggested, pack_status, pack_confidence, pack_info, pack_used });
+          if (!pack_used && (pack_status == null || pack_status === "queued")) waiting++;
+        }
+        renderRows();
+        ids.forEach(refreshDrawerIfOpen);
+        if (waiting && left > 1) _packWatch = setTimeout(() => tick(left - 1), 10000);
+      } catch (e) { console.warn("watchPack", e); }
+    };
+    _packWatch = setTimeout(() => tick(tries), 10000);
+  }
+
+  // ─── Day 8: packaging modal (ship without a confirmed packaging) ──────────
+  let _packShip = null;
+  function openPackModal(id, extra = {}) {
+    const row = findRow(id);
+    if (!row) return;
+    _packShip = { id, extra };
+    $("#packModalOrder").textContent = `${row.tracking_number}${row.order_id ? " · " + row.order_id : ""}`;
+    $("#packModalContent").textContent = row.content || "—";
+    $("#packModalCard").innerHTML = packCardHtml(row);
+    $("#packModalGrid").innerHTML = packGridHtml(row, "shipWithPack");
+    $("#packModal").classList.add("open");
+    setTimeout(() => {
+      const sug = document.querySelector("#packModalGrid .pack-btn.sug");
+      if (sug) sug.focus();
+    }, 60);
+  }
+  function closePackModal() { $("#packModal").classList.remove("open"); _packShip = null; }
+  window.closePackModal = closePackModal;
+  window.shipWithPack = function (id, code) {
+    const extra = (_packShip && _packShip.id === id) ? _packShip.extra : {};
+    closePackModal();
+    doAction(id, "ship", { ...extra, pack_code: code });
+  };
+  $("#packModalSkip").addEventListener("click", () => {
+    if (!_packShip) return;
+    const { id, extra } = _packShip;
+    closePackModal();
+    doAction(id, "ship", { ...extra, confirm_no_pack: true });
+  });
+
+  // ─── Day 8: void order ────────────────────────────────────────────────────
+  // For an order that must not be worked: a duplicate, a cancelled sale, an
+  // email sent by mistake. Nothing is deleted — the row moves to the Voided
+  // tab with the reason, so there is a trail and the Gmail sync never brings
+  // it back. All the rules (what happens to a consolidated box, the outbound
+  // label, the billing line) live in the database: ds_void_order().
+  let _voidId = null;
+  function openVoidModal(id) {
+    if (!requireOperator()) return;
+    const row = state.rows.find(r => r.id === id);
+    if (!row) { toast("Row not found", { error: true }); return; }
+    _voidId = id;
+    $("#voidTracking").textContent = row.tracking_number;
+    $("#voidOrder").textContent = row.order_id ? `Orden ${row.order_id}` : "Sin número de orden";
+    $("#voidContent").textContent = row.content || "—";
+    $("#voidClient").textContent = `${row.client?.company || row.client?.name || row.config?.display_name || "—"} · status: ${row.status}`;
+    $("#voidReason").value = "";
+
+    const sibs = state.rows.filter(x => x.id !== id && x.client_id === row.client_id && x.tracking_number === row.tracking_number);
+    const sibNote = $("#voidSiblings");
+    if (sibs.length) {
+      sibNote.style.display = "";
+      sibNote.innerHTML = `<strong>Este paquete trae ${sibs.length === 1 ? "otra orden que sigue activa" : `otras ${sibs.length} órdenes que siguen activas`}:</strong> ` +
+        sibs.map(x => `${escapeHtml(x.order_id || "sin orden")} (${escapeHtml(x.status)})`).join(", ") +
+        `. Solo se anula la que elegiste.`;
+    } else {
+      sibNote.style.display = "none";
+    }
+    // Only meaningful when the box was physically received and no other order
+    // of the same box will keep its Inbound line alive.
+    const keepWrap = $("#voidKeepWrap");
+    $("#voidKeepInbound").checked = false;
+    keepWrap.style.display = (row.physical_received_at && !sibs.length) ? "block" : "none";
+
+    $("#voidModal").classList.add("open");
+    setTimeout(() => $("#voidReason").focus(), 60);
+  }
+  function closeVoidModal() { $("#voidModal").classList.remove("open"); _voidId = null; }
+  window.openVoidModal = openVoidModal;
+  window.closeVoidModal = closeVoidModal;
+  $("#voidConfirmBtn").addEventListener("click", async () => {
+    if (!_voidId) return;
+    const id = _voidId;
+    const reason = $("#voidReason").value.trim();
+    if (reason.length < 5) {
+      toast("Escribe el motivo de la anulación", { error: true });
+      $("#voidReason").focus();
+      return;
+    }
+    const row = state.rows.find(r => r.id === id);
+    const btn = $("#voidConfirmBtn");
+    btn.disabled = true;
+    try {
+      await apiPost({
+        action: "void_order", id, reason,
+        keep_inbound: $("#voidKeepInbound").checked,
+        operator: state.operator
+      });
+      closeVoidModal();
+      state.batchSelection.delete(id);
+      closeDetail();
+      // Reload: sibling orders of the same box were renumbered on the server.
+      await loadRows();
+      toast(`Orden anulada · ${row ? shortTracking(row.tracking_number) : ""}${row && row.order_id ? " · " + row.order_id : ""}`);
+    } catch (e) {
+      toast(e.message || "No se pudo anular", { error: true, ms: 6000 });
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   // ── Day 7: NO_OUTBOUND handler ────────────────────────────────────────────
   // Two paths, in this order of preference:
@@ -1751,12 +2134,23 @@
     }
     const rows = sel.rows;
     $("#batchShipCount").textContent = rows.length;
-    // Show a compact preview list of trackings (caps at ~15 to keep modal tidy).
-    const preview = rows.slice(0, 15).map(r =>
-      `→ ${escapeHtml(r.tracking_number)}${r.outbound_tracking ? ` <span style="color:#64748b;">· ${escapeHtml(r.outbound_tracking)}</span>` : ""}`
-    ).join("<br>");
-    const more = rows.length > 15 ? `<div style="color:#64748b; margin-top:6px; font-style:italic;">…and ${rows.length - 15} more</div>` : "";
-    $("#batchShipList").innerHTML = preview + more;
+    // Day 8: every row is listed (the box scrolls) with its packaging. Rows
+    // that already have one confirmed show it; the rest get a selector with
+    // the suggestion preselected, so confirming the batch is still one click
+    // when the suggestions are right.
+    const needPack = rows.filter(r => !r.pack_used);
+    $("#batchShipPackNote").style.display = needPack.length ? "" : "none";
+    $("#batchShipList").innerHTML = rows.map(r => {
+      const left = `<div style="min-width:0;">→ ${escapeHtml(r.tracking_number)}${r.outbound_tracking ? ` <span style="color:#64748b;">· ${escapeHtml(r.outbound_tracking)}</span>` : ""}
+          <div class="bs-cnt">${escapeHtml(r.content || "—")}</div></div>`;
+      const right = r.pack_used
+        ? `<span class="pack-chip used" style="justify-self:end;">✓ ${escapeHtml(packLabel(r.pack_used))}</span>`
+        : `<select class="bs-pack" data-row-id="${r.id}">
+             <option value="">— empaque —</option>
+             ${packOptionsFor(r).map(t => `<option value="${t.code}" ${r.pack_suggested === t.code ? "selected" : ""}>${escapeHtml(t.label)}${r.pack_suggested === t.code ? " (sugerido)" : ""}</option>`).join("")}
+           </select>`;
+      return `<div class="bs-row">${left}${right}</div>`;
+    }).join("");
     $("#batchShipModal").classList.add("open");
     setTimeout(() => $("#batchShipConfirmBtn").focus(), 60);
   }
@@ -1766,7 +2160,20 @@
   }
   window.closeBatchShipModal = closeBatchShipModal;
 
+  // Packaging chosen in the batch modal, by row id.
+  let _batchPacks = {};
   $("#batchShipConfirmBtn").addEventListener("click", async () => {
+    const picks = {};
+    let missing = 0;
+    $$("#batchShipList select.bs-pack").forEach(sel => {
+      if (sel.value) picks[sel.dataset.rowId] = sel.value;
+      else { missing++; sel.style.borderColor = "#dc2626"; }
+    });
+    if (missing) {
+      toast(`Falta elegir el empaque de ${missing} orden${missing === 1 ? "" : "es"}`, { error: true });
+      return;
+    }
+    _batchPacks = picks;
     closeBatchShipModal();
     await batchMarkShipped();
   });
@@ -1814,10 +2221,12 @@
       const unaccounted = sibs.filter(x => !selIds.has(x.id) && x.status !== "shipped");
       return unaccounted.length === 0;
     };
+    const packs = _batchPacks; _batchPacks = {};
 
     // Parallel POST action=ship for each row. If any fail we report counts.
     const results = await Promise.all(rows.map(r =>
-      apiPost({ action: "ship", id: r.id, operator: state.operator, confirm_group: groupCovered(r) })
+      apiPost({ action: "ship", id: r.id, operator: state.operator, confirm_group: groupCovered(r),
+                ...(packs[r.id] ? { pack_code: packs[r.id] } : {}) })
         .then(j => ({ row: r, ok: true, updated: j.row }))
         .catch(e => ({ row: r, ok: false, err: e.message, payload: e.payload }))
     ));
@@ -1841,11 +2250,14 @@
     } else {
       const grouped = failures.filter(f => f.payload && f.payload.code === "GROUP_INCOMPLETE");
       const noOut   = failures.filter(f => f.payload && f.payload.code === "NO_OUTBOUND");
+      const noPack  = failures.filter(f => f.payload && f.payload.code === "PACK_REQUIRED");
       // Day 7: the batch is exactly where the silent failure happened — five
       // packages went out with no outbound number and the summary said nothing.
       // These are NEVER auto-confirmed in a batch: they have to be handled one
       // by one, so the operator sees each missing number.
-      if (noOut.length === failures.length) {
+      if (noPack.length === failures.length) {
+        toast(`${noPack.length} sin empaque confirmado. Ábrelas una por una y elige el empaque.`, { error: true });
+      } else if (noOut.length === failures.length) {
         toast(`${noOut.length} sin número de salida. Ábrelos uno por uno y escanea la etiqueta antes de despachar.`, { error: true });
       } else if (noOut.length && grouped.length + noOut.length === failures.length) {
         toast(`${noOut.length} sin outbound · ${grouped.length} en cajas incompletas. Despáchalos individualmente.`, { error: true });
@@ -2547,13 +2959,30 @@
     sel.innerHTML = '<option value="">All clients</option>' +
       state.clients.map(c => `<option value="${c.client_id}">${escapeHtml(c.display_name)}</option>`).join("");
   }
+  // Packaging catalog for the chips and pickers. Non-fatal: without it the
+  // app still works, the codes just show raw (C3 instead of CAJA 3).
+  async function loadPackaging() {
+    try {
+      const j = await apiGet({ action: "packaging" });
+      state.packTypes = j.types || [];
+      state.packMap = Object.fromEntries(state.packTypes.map(t => [t.code, t]));
+    } catch (e) {
+      console.warn("packaging catalog not loaded:", e.message);
+    }
+  }
   async function loadRows() {
     $("#rows").innerHTML = '<div class="loading-state">Loading</div>';
     const params = { action: "list", limit: 500 };
     if (state.activeClient) params.client_id = state.activeClient;
     try {
-      const j = await apiGet(params);
+      // The server leaves voided orders out of the main list; they are read
+      // apart for the Voided tab.
+      const [j, v] = await Promise.all([
+        apiGet(params),
+        apiGet({ ...params, status: "cancelled", limit: 200 }).catch(() => ({ rows: [] }))
+      ]);
       state.rows = j.rows || [];
+      state.voided = v.rows || [];
       renderRows();
       renderCounts();
     } catch (e) {
@@ -2565,7 +2994,9 @@
     const tbody = $("#rows");
     const filtered = state.activeTab === "all"
       ? state.rows
-      : state.rows.filter(r => r.status === state.activeTab);
+      : state.activeTab === "cancelled"
+        ? state.voided
+        : state.rows.filter(r => r.status === state.activeTab);
 
     if (filtered.length === 0) {
       tbody.innerHTML = '<div class="empty-state">No packages in this view.</div>';
@@ -2578,7 +3009,7 @@
       const selectable = isBatchEligible(r);
       const selected = state.batchSelection.has(r.id);
       const inGroup = (r.group_total || 0) > 1;
-      const rowClass = (selected ? "tbl-row selected" : "tbl-row") + (inGroup ? " in-group" : "");
+      const rowClass = (selected ? "tbl-row selected" : "tbl-row") + (inGroup ? " in-group" : "") + (r.status === "cancelled" ? " is-voided" : "");
       const grpChip = inGroup
         ? `<span class="grp-chip" title="Esta caja trae ${r.group_total} órdenes de salida">${r.group_seq || "?"} de ${r.group_total}</span>`
         : "";
@@ -2597,10 +3028,10 @@
           <div><span class="carrier-pill ${carrierClass(r.carrier)}">${escapeHtml(r.carrier || "—")}</span></div>
           <div style="font-size: 12px; color: var(--muted);">${escapeHtml(r.outbound_carrier || "—")}${platform}</div>
           <div class="content-cell">
-            ${r.qty_boxes > 1 ? `<span class="content-qty">×${r.qty_boxes}</span>` : ""}
+            ${packChip(r)}${r.qty_boxes > 1 ? `<span class="content-qty">×${r.qty_boxes}</span>` : ""}
             ${r.content ? escapeHtml(r.content) : '<em style="color: #a0aec0;">no content parsed</em>'}
           </div>
-          <div><span class="status-badge sb-${r.status}">${r.status}</span></div>
+          <div><span class="status-badge sb-${r.status}">${r.status === "cancelled" ? "voided" : r.status}</span></div>
           <div class="age">${fmtAge(r.email_received_at || r.physical_received_at)}</div>
         </div>
       `;
@@ -2665,6 +3096,7 @@
     const keys = ["pending", "received", "labeled", "shipped", "orphan", "exception"];
     const counts = { all: state.rows.length };
     for (const k of keys) counts[k] = state.rows.filter(r => r.status === k).length;
+    counts.cancelled = state.voided.length;
     $$(".kpi-val").forEach(el => {
       const k = el.dataset.k;
       el.textContent = String(counts[k] || 0).padStart(2, "0");
@@ -2714,7 +3146,7 @@
   });
 
   async function openDetail(id) {
-    const row = state.rows.find(r => r.id === id);
+    const row = findRow(id);
     if (!row) return;
     $("#dTracking").textContent = row.tracking_number;
     $("#dBody").innerHTML = '<div class="loading-state">Loading details</div>';
@@ -2723,7 +3155,9 @@
 
     try {
       const j = await apiGet({ action: "get", id });
-      const r = j.row || row;
+      // Keep the freshest copy in state too, so the pickers act on it.
+      const r = j.row ? ({ ...row, ...j.row }) : row;
+      if (j.row) mergeRow(id, j.row);
       renderDetail(r);
     } catch (e) {
       $("#dBody").innerHTML = `<div class="empty-state">Failed: ${escapeHtml(e.message)}</div>`;
@@ -2778,13 +3212,36 @@
            </div>
          </div>` : "";
 
+    const ci = r.cancel_info || {};
+    const voidBox = r.status === "cancelled"
+      ? `<div class="detail-row"><span class="k">Voided</span>
+           <div class="void-box">
+             <strong>${escapeHtml(r.cancel_reason || "sin motivo")}</strong><br>
+             ${escapeHtml(r.cancelled_by || "—")} · ${fmtDateTime(r.cancelled_at)}
+           </div>
+         </div>` : "";
+
+    // Packaging: what the system suggests, and the picker to confirm / correct
+    // what was actually used. Not shown for orphans (no product yet) or voided.
+    const showPack = r.status !== "cancelled" && r.status !== "orphan";
+    const canRetry = showPack && !r.pack_used && r.status !== "shipped" && r.pack_status !== "queued" && r.content;
+    const packBlock = showPack
+      ? `<div class="detail-row"><span class="k">Packaging</span>
+           ${packCardHtml(r)}
+           <div style="font-size:11.5px; color:var(--muted);">${r.pack_used ? "¿Usaste otro? Tócalo para corregir:" : "Toca el empaque que usaste:"}</div>
+           <div class="pack-grid">${packGridHtml(r, "confirmPack")}</div>
+           ${canRetry ? `<div style="margin-top:8px;"><button class="pack-link" onclick="requeuePack('${r.id}')">↻ Buscar medidas de nuevo</button></div>` : ""}
+         </div>` : "";
+
     $("#dBody").innerHTML = `
       <div class="detail-row"><span class="k">Client</span><span class="v">${escapeHtml(clientName)}</span></div>
-      <div class="detail-row"><span class="k">Status</span><span class="v"><span class="status-badge sb-${r.status}">${r.status}</span></span></div>
+      <div class="detail-row"><span class="k">Status</span><span class="v"><span class="status-badge sb-${r.status}">${r.status === "cancelled" ? "voided" : r.status}</span></span></div>
+      ${voidBox}
       <div class="detail-row"><span class="k">Order ID</span><span class="v mono">${escapeHtml(r.order_id || "—")}</span></div>
       <div class="detail-row"><span class="k">Inbound carrier</span><span class="v">${escapeHtml(r.carrier || "—")}</span></div>
       <div class="detail-row"><span class="k">Content</span><span class="v">${r.content ? escapeHtml(r.content) : '<em>no content parsed</em>'}</span></div>
       <div class="detail-row"><span class="k">Qty boxes</span><span class="v mono">${r.qty_boxes || 1}</span></div>
+      ${packBlock}
       ${r.notes ? `<div class="detail-row"><span class="k">Notes</span><span class="v"><em>${escapeHtml(r.notes)}</em></span></div>` : ""}
       <div class="detail-row"><span class="k">Outbound</span><span class="v">${escapeHtml(r.outbound_carrier || "—")}${r.outbound_platform ? " · " + escapeHtml(r.outbound_platform) : ""}</span></div>
       ${r.outbound_tracking
@@ -2821,6 +3278,7 @@
         return `<div class="action-bar">
           <button class="btn btn-primary btn-lg" onclick="doAction('${id}','receive')">📦 Mark received</button>
           <button class="btn btn-danger" onclick="openReasonModal('${id}')">Flag exception</button>
+          <button class="btn btn-danger" onclick="openVoidModal('${id}')" title="Anular esta orden (duplicada, venta cancelada…)">🗑 Anular</button>
         </div>`;
 
       case "received":
@@ -2828,6 +3286,7 @@
           <button class="btn btn-primary btn-lg" onclick="printAndLabel('${id}')" ${hasLabel ? "" : "disabled title='No label available'"}>🖨 Print label</button>
           <button class="btn" onclick="doAction('${id}','revert')" title="Back to pending">↶ Revert</button>
           <button class="btn btn-danger" onclick="openReasonModal('${id}')">Flag</button>
+          <button class="btn btn-danger" onclick="openVoidModal('${id}')" title="Anular esta orden (duplicada, venta cancelada…)">🗑 Anular</button>
         </div>`;
 
       case "labeled":
@@ -2835,6 +3294,7 @@
           <button class="btn btn-primary btn-lg" onclick="doAction('${id}','ship')">🚚 Mark shipped</button>
           <button class="btn" onclick="printAndLabel('${id}')" title="Reprint label">🖨 Reprint</button>
           <button class="btn" onclick="doAction('${id}','revert')" title="Back to received">↶ Revert</button>
+          <button class="btn btn-danger" onclick="openVoidModal('${id}')" title="Anular esta orden (duplicada, venta cancelada…)">🗑 Anular</button>
         </div>`;
 
       case "shipped":
@@ -2854,6 +3314,12 @@
         return `<div class="action-bar">
           <button class="btn btn-primary" onclick="doAction('${id}','resolve')">✓ Resolve → pending</button>
           <button class="btn btn-primary" onclick="doAction('${id}','receive')">📦 Receive directly</button>
+          <button class="btn btn-danger" onclick="openVoidModal('${id}')" title="Anular esta orden (duplicada, venta cancelada…)">🗑 Anular</button>
+        </div>`;
+
+      case "cancelled":
+        return `<div class="action-bar">
+          <span style="flex:1; text-align:center; padding:11px; font-size:12px; color:var(--muted);">Voided · no further actions</span>
         </div>`;
 
       default:
@@ -2886,7 +3352,7 @@
       <div class="grp-item ${done ? "done" : ""}">
         <div class="grp-seq">${r.group_seq || "?"}</div>
         <div>
-          <div class="grp-cnt">${escapeHtml(r.content || "sin contenido")}</div>
+          <div class="grp-cnt">${packChip(r)}${escapeHtml(r.content || "sin contenido")}</div>
           <div class="grp-ord">${escapeHtml(r.order_id || "sin orden")}</div>
         </div>
         <div><span class="status-badge sb-${r.status}">${r.status}</span></div>
@@ -3097,6 +3563,12 @@
         } else if (j.rows && j.rows.length > 1) {
           toast(`${j.rows.length} matches found — narrow your search`, { error: true });
           return;
+        } else if (j.voided && j.voided.length) {
+          // Day 8: the only order(s) under this tracking were voided. Say so —
+          // do NOT offer to create an orphan for it.
+          const v = j.voided[0];
+          toast(`Orden ANULADA${v.order_id ? " · " + v.order_id : ""} — no procesar. Motivo: ${v.cancel_reason || "—"}. Aparta el paquete y consulta.`, { error: true, ms: 9000 });
+          return;
         }
       } catch (err) {
         console.error("scan lookup failed", err);
@@ -3186,12 +3658,27 @@
     $("#syncLabel").textContent = "Syncing…";
     try {
       const r = await fetch(SYNC_API, { method: "POST" });
-      const j = await r.json();
+      const j = await readJson(r);
       if (!r.ok || !j.ok) throw new Error(j.error || "Sync failed");
-      const totalProcessed = (j.summary?.clients || []).reduce((acc, c) => acc + (c.processed?.length || 0), 0);
-      const totalErrors    = (j.summary?.clients || []).reduce((acc, c) => acc + (c.errors?.length    || 0), 0);
-      toast(`Sync done · ${totalProcessed} processed` + (totalErrors ? ` · ${totalErrors} errors` : ""));
+      const clients = j.summary?.clients || [];
+      const totalProcessed = clients.reduce((acc, c) => acc + (c.processed?.length || 0), 0);
+      // Day 8: say WHICH error. The detail used to live only in the response
+      // body, so the toast said "1 errors" and nothing else (13-ago-2026).
+      const errList = clients.flatMap(c => [
+        ...(c.errors || []).map(e => `${c.client_code}: ${e.error}`),
+        ...(c.fatal ? [`${c.client_code}: ${c.fatal}`] : [])
+      ]);
+      if (errList.length) {
+        console.error("Sync errors:", errList);
+        toast(`Sync done · ${totalProcessed} processed · ${errList.length} error${errList.length === 1 ? "" : "s"} — ${errList[0].replace(/\s+/g, " ").slice(0, 160)}`, { error: true, ms: 10000 });
+      } else {
+        toast(`Sync done · ${totalProcessed} processed`);
+      }
       await loadRows();
+      // New orders get their packaging suggestion a little later (background).
+      const waiting = state.rows.filter(x => !x.pack_used && (x.pack_status == null || x.pack_status === "queued")
+        && ["pending", "received", "labeled"].includes(x.status)).map(x => x.id).slice(0, 15);
+      if (waiting.length) watchPack(waiting, 9);
     } catch (e) {
       toast("Sync failed: " + e.message, { error: true });
     } finally {
@@ -3220,6 +3707,9 @@
     // Show "matched via outbound" badge when applicable
     const viaBadge = $("#scanConfirmViaOutbound");
     viaBadge.style.display = opts.viaOutbound ? "" : "none";
+
+    // Day 8: the packaging to use, right where the operator is looking.
+    $("#scanConfirmPack").innerHTML = (match.status !== "orphan") ? packCardHtml(match) : "";
 
     // Button label depends on current status
     $("#scanConfirmBtn").textContent = match.status === "exception" ? "✓ Receive (resolve exception)" : "✓ Mark received";
@@ -3302,7 +3792,9 @@
   // Escape key closes all modals or clears batch selection
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    if ($("#processOrphanModal").classList.contains("open")) closeProcessOrphanModal();
+    if ($("#voidModal").classList.contains("open")) closeVoidModal();
+    else if ($("#packModal").classList.contains("open")) closePackModal();
+    else if ($("#processOrphanModal").classList.contains("open")) closeProcessOrphanModal();
     else if ($("#fixMatchModal").classList.contains("open")) closeFixMatchModal();
     else if ($("#linkOutboundModal").classList.contains("open")) closeLinkOutboundModal();
     else if ($("#scanConfirmModal").classList.contains("open")) closeScanConfirmModal();
@@ -3363,7 +3855,7 @@
     try {
       loadOperator();
       wireProcessOrphanDropZone();
-      await loadClients();
+      await Promise.all([loadClients(), loadPackaging()]);
       await loadRows();
       // First-time user — prompt for operator name
       if (!state.operator) {
