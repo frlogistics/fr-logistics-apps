@@ -79,3 +79,10 @@ select t.code, t.kind, t.label, t.inner_l, t.inner_w, t.inner_h, t.unit_cost, t.
   from t;
 revoke all on public.v_ds_packaging_stock from anon, authenticated;
 grant select on public.v_ds_packaging_stock to service_role;
+
+-- ── Alerts (migration `ds_packaging_stock_alerts`, same day) ────────────────
+-- dropship-pack-stock-alert.js: e-mail when on hand <= min_stock; WhatsApp too
+-- when out of stock or 2 days of cover or less. One alert per episode.
+alter table public.ds_packaging_types
+  add column if not exists low_alerted_at    timestamptz,
+  add column if not exists urgent_alerted_at timestamptz;

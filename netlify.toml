@@ -42,6 +42,11 @@
 [functions."client-orders-ss-alert"]
   schedule = "25 12-23 * * 1-6"
 
+# Dropshipments · Empaques: aviso de reposición (correo; WhatsApp si es urgente).
+# Cada hora de 12:40 a 23:40 UTC (7:40 AM–6:40 PM EST), lunes a sábado.
+[functions."dropship-pack-stock-alert"]
+  schedule = "40 12-23 * * 1-6"
+
 # ─── Redirects ──────────────────────────────────────────────────────────────
 
 [[redirects]]
