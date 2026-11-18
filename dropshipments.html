@@ -468,6 +468,25 @@
   .void-box strong { color:#111827; }
   .btn-void { background:#dc2626; color:#fff; border-color:#dc2626; }
   .btn-void:hover { background:#b91c1c; border-color:#b91c1c; color:#fff; }
+  /* Packaging stock (Empaques) */
+  .ps-table { width:100%; border-collapse:collapse; font-size:12.5px; margin-top:10px; }
+  .ps-table th { text-align:right; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:700; padding:6px 8px; border-bottom:1px solid var(--border); }
+  .ps-table th:first-child, .ps-table td:first-child { text-align:left; }
+  .ps-table td { text-align:right; padding:7px 8px; border-bottom:1px solid #f1f5f9; font-family:'DM Mono',monospace; }
+  .ps-table td:first-child { font-family:inherit; font-weight:600; }
+  .ps-table td small { display:block; font-family:'DM Mono',monospace; font-weight:400; font-size:10px; color:var(--muted); }
+  .ps-table tr.low td { background:#fef2f2; }
+  .ps-table tr.low .ps-onhand { color:#dc2626; font-weight:700; }
+  .ps-table tr.untracked td { color:#94a3b8; }
+  .ps-onhand { font-size:15px; font-weight:700; color:var(--fr-navy); }
+  .ps-table input.ps-min { width:58px; margin:0; padding:3px 5px; font-size:12px; text-align:right; font-family:'DM Mono',monospace; }
+  .ps-form { display:grid; grid-template-columns:1.1fr 1.2fr .8fr .8fr 2fr auto; gap:8px; align-items:end; background:#f8fafc; border:1px solid var(--border); border-radius:10px; padding:12px; margin-top:14px; }
+  .ps-form label { font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); display:block; }
+  .ps-form input, .ps-form select { margin-top:3px; padding:7px 8px; font-size:12.5px; }
+  .ps-sub { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--fr-navy); margin:18px 0 4px; }
+  .ps-moves { font-size:12px; color:var(--text); line-height:1.7; max-height:150px; overflow-y:auto; }
+  .ps-moves span { color:var(--muted); font-family:'DM Mono',monospace; font-size:11px; }
+  @media (max-width: 820px) { .ps-form { grid-template-columns:1fr 1fr; } }
   .bs-row { display:grid; grid-template-columns:1fr 172px; gap:10px; align-items:center; padding:6px 0; border-bottom:1px dashed #bbf7d0; }
   .bs-row:last-child { border-bottom:none; }
   .bs-row select { margin-top:0; padding:5px 8px; font-size:12px; }
@@ -899,6 +918,7 @@
     <div class="side-section">
       <div class="side-label">Tools</div>
       <a href="manifests.html" class="side-link"><span class="icon">📋</span> Manifests</a>
+      <a href="#" class="side-link" id="packStockLink"><span class="icon">🗃</span> Empaques <span id="packLowDot" title="Hay empaques por debajo del mínimo" style="display:none; margin-left:6px; width:8px; height:8px; border-radius:50%; background:#dc2626;"></span></a>
       <a href="dashboard.html" class="side-link"><span class="icon">📊</span> Analytics</a>
     </div>
   </aside>
@@ -1314,6 +1334,35 @@
   </div>
 </div>
 
+<!-- Modal: packaging stock -->
+<div class="modal-backdrop" id="packStockModal">
+  <div class="modal-box" style="max-width: 900px; max-height: 92vh; overflow-y: auto;">
+    <h3>🗃 Empaques · existencia y consumo</h3>
+    <p>Existencia = último conteo + compras y ajustes posteriores − cajas usadas en órdenes despachadas. Solo descuenta lo que sale por Dropshipments; si usas cajas para otra cosa, regístralo como ajuste.</p>
+    <div id="psBody"><div class="loading-state">Loading</div></div>
+    <div class="ps-form">
+      <div><label>Empaque</label><select id="psCode"></select></div>
+      <div><label>Movimiento</label>
+        <select id="psKind">
+          <option value="purchase">Compra (entrada)</option>
+          <option value="count">Conteo físico (fija la existencia)</option>
+          <option value="adjust">Ajuste (+ o −)</option>
+        </select></div>
+      <div><label>Cantidad</label><input id="psQty" type="number" step="1" placeholder="0"></div>
+      <div id="psCostWrap"><label>Costo unit. $</label><input id="psCost" type="number" step="0.01" min="0" placeholder="opcional"></div>
+      <div><label>Nota</label><input id="psNote" maxlength="300" placeholder="Ej.: compra TotalPack, cajas dañadas…"></div>
+      <div><button class="btn btn-primary" id="psSave">Guardar</button></div>
+    </div>
+    <div class="ps-sub">Consumo por cliente · últimos 30 días</div>
+    <div id="psClients" class="ps-moves"></div>
+    <div class="ps-sub">Últimos movimientos</div>
+    <div id="psMoves" class="ps-moves"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closePackStockModal()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: void order -->
 <div class="modal-backdrop" id="voidModal">
   <div class="modal-box" style="max-width: 540px;">
@@ -1708,6 +1757,86 @@
     const { id, extra } = _packShip;
     closePackModal();
     doAction(id, "ship", { ...extra, confirm_no_pack: true });
+  });
+
+  // ─── Day 8: packaging stock (Empaques) ────────────────────────────────────
+  // Jose loads the stock himself (it starts at zero): purchases, physical
+  // counts and adjustments. Boxes used are deducted by the server from the
+  // packaging confirmed on each shipped order — nothing to type for those.
+  const money = (v) => "$" + (Number(v) || 0).toFixed(2);
+  function psIsLow(s) { return s.tracked && s.min_stock > 0 && s.on_hand <= s.min_stock; }
+  function renderPackStock(j) {
+    const rows = j.stock || [];
+    $("#psBody").innerHTML = `<table class="ps-table">
+      <thead><tr><th>Empaque</th><th>Existencia</th><th>Mínimo</th><th>Usadas 7 d</th><th>Usadas 30 d</th><th>Alcanza</th><th>Costo material 30 d</th></tr></thead>
+      <tbody>${rows.map(s => {
+        const daily = s.used_30d / 30;
+        const days = !s.tracked ? "—" : daily > 0 ? (s.on_hand <= 0 ? "0 días" : `${Math.floor(s.on_hand / daily)} días`) : "sin consumo";
+        const dims = packDims(s.code);
+        return `<tr class="${psIsLow(s) ? "low" : ""} ${s.tracked ? "" : "untracked"}">
+          <td>${escapeHtml(s.label)}${dims ? `<small>${escapeHtml(dims)}</small>` : ""}</td>
+          <td><span class="ps-onhand">${s.tracked ? s.on_hand : "—"}</span>${s.tracked ? "" : "<small>sin cargar</small>"}${psIsLow(s) ? "<small style='color:#dc2626;'>REPONER</small>" : ""}</td>
+          <td><input class="ps-min" type="number" min="0" step="1" value="${s.min_stock}" data-code="${s.code}" title="Avisar cuando la existencia llegue a este número"></td>
+          <td>${s.used_7d}</td><td>${s.used_30d}</td><td>${days}</td>
+          <td>${s.kit_cost > 0 ? money(s.used_30d * s.kit_cost) : "—"}</td>
+        </tr>`;
+      }).join("")}</tbody></table>`;
+    $$("#psBody input.ps-min").forEach(inp => inp.addEventListener("change", async () => {
+      try {
+        await apiPost({ action: "pack_min", pack_code: inp.dataset.code, min_stock: Number(inp.value), operator: state.operator });
+        toast(`Mínimo de ${packLabel(inp.dataset.code)}: ${inp.value}`);
+        loadPackStock();
+      } catch (e) { toast(e.message, { error: true }); }
+    }));
+    const sel = $("#psCode"); const keep = sel.value;
+    sel.innerHTML = rows.map(s => `<option value="${s.code}">${escapeHtml(s.label)}</option>`).join("");
+    if (keep) sel.value = keep;
+    const bc = j.by_client_30d || {};
+    $("#psClients").innerHTML = Object.keys(bc).length
+      ? Object.entries(bc).map(([name, packs]) => `<strong>${escapeHtml(name)}</strong>: ` +
+          Object.entries(packs).sort().map(([c, n]) => `${escapeHtml(packLabel(c))} × ${n}`).join(" · ")).join("<br>")
+      : "<span>Todavía no hay órdenes despachadas con empaque confirmado.</span>";
+    const KIND = { purchase: "Compra", count: "Conteo", adjust: "Ajuste" };
+    $("#psMoves").innerHTML = (j.moves || []).length
+      ? j.moves.map(m => `<span>${fmtDateTime(m.created_at)}</span> · ${KIND[m.kind] || m.kind} · <strong>${escapeHtml(packLabel(m.pack_code))}</strong> ${m.kind === "count" ? "= " : (m.qty > 0 ? "+" : "")}${m.qty}${m.unit_cost != null ? ` a ${money(m.unit_cost)}` : ""}${m.note ? ` · ${escapeHtml(m.note)}` : ""} <span>· ${escapeHtml(m.created_by || "")}</span>`).join("<br>")
+      : "<span>Sin movimientos. Carga la existencia con un Conteo físico o una Compra.</span>";
+    $("#packLowDot").style.display = rows.some(psIsLow) ? "inline-block" : "none";
+  }
+  async function loadPackStock() {
+    try { renderPackStock(await apiGet({ action: "pack_stock" })); }
+    catch (e) { $("#psBody").innerHTML = `<div class="empty-state">Failed: ${escapeHtml(e.message)}</div>`; }
+  }
+  // Only the red dot, at start-up. Silent on failure.
+  async function checkPackLow() {
+    try { const j = await apiGet({ action: "pack_stock" }); $("#packLowDot").style.display = (j.stock || []).some(psIsLow) ? "inline-block" : "none"; }
+    catch (e) {}
+  }
+  function openPackStockModal() {
+    if (!requireOperator()) return;
+    $("#packStockModal").classList.add("open");
+    loadPackStock();
+  }
+  function closePackStockModal() { $("#packStockModal").classList.remove("open"); }
+  window.closePackStockModal = closePackStockModal;
+  $("#packStockLink").addEventListener("click", (e) => { e.preventDefault(); openPackStockModal(); });
+  $("#psKind").addEventListener("change", () => {
+    $("#psCostWrap").style.visibility = $("#psKind").value === "purchase" ? "visible" : "hidden";
+  });
+  $("#psSave").addEventListener("click", async () => {
+    const qty = Number($("#psQty").value);
+    if ($("#psQty").value === "" || !Number.isInteger(qty)) { toast("Escribe la cantidad (número entero)", { error: true }); return; }
+    const btn = $("#psSave"); btn.disabled = true;
+    try {
+      await apiPost({
+        action: "pack_move", pack_code: $("#psCode").value, kind: $("#psKind").value, qty,
+        unit_cost: $("#psKind").value === "purchase" ? $("#psCost").value : null,
+        note: $("#psNote").value, operator: state.operator
+      });
+      toast("Movimiento guardado");
+      $("#psQty").value = ""; $("#psCost").value = ""; $("#psNote").value = "";
+      await loadPackStock();
+    } catch (e) { toast(e.message, { error: true, ms: 6000 }); }
+    finally { btn.disabled = false; }
   });
 
   // ─── Day 8: void order ────────────────────────────────────────────────────
@@ -3793,6 +3922,7 @@
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     if ($("#voidModal").classList.contains("open")) closeVoidModal();
+    else if ($("#packStockModal").classList.contains("open")) closePackStockModal();
     else if ($("#packModal").classList.contains("open")) closePackModal();
     else if ($("#processOrphanModal").classList.contains("open")) closeProcessOrphanModal();
     else if ($("#fixMatchModal").classList.contains("open")) closeFixMatchModal();
@@ -3857,6 +3987,7 @@
       wireProcessOrphanDropZone();
       await Promise.all([loadClients(), loadPackaging()]);
       await loadRows();
+      checkPackLow();
       // First-time user — prompt for operator name
       if (!state.operator) {
         setTimeout(openOperatorModal, 400);

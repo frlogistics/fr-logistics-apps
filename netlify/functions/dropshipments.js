@@ -35,6 +35,7 @@
 //   ?action=clients                      → active dropshipment clients
 //   ?action=packaging                    → packaging catalog (CAJA 1..6, POLY 1..3, XL, OTRO)
 //   ?action=list&status=cancelled        → voided orders (hidden from every other list)
+//   ?action=pack_stock                   → packaging stock: on hand, used 7d/30d, by client, last moves
 //
 // POST endpoints (JSON body: { action, id, operator, ... }):
 //   action=receive          → pending/exception → received   (sets physical_received_at, received_by)
@@ -59,6 +60,9 @@
 //                             db/migrations/20261118_ds_packaging_and_void.sql
 //   action=confirm_pack     → record the packaging actually used (body: id, pack_code, operator)
 //   action=requeue_pack     → clear the suggestion so the lookup runs again (body: id)
+//   action=pack_move        → stock ledger entry (body: pack_code, kind: purchase|adjust|count,
+//                             qty, unit_cost?, note?, operator)
+//   action=pack_min         → reorder point of a packaging (body: pack_code, min_stock)
 //
 // Day 8 (2026-11-18): packaging + void.
 //   * Every order carries a packaging suggestion (pack_suggested) produced by
@@ -276,6 +280,26 @@ export default async function handler(req) {
         "?active=eq.true&select=code,kind,label,inner_l,inner_w,inner_h,size_tier,sort_order&order=sort_order.asc"
       );
       return jRes({ types });
+    }
+
+    // ── GET: packaging stock (Dropshipments → Empaques) ───────────────────
+    // On hand is computed by the view v_ds_packaging_stock: last physical
+    // count + purchases/adjustments after it − boxes used by shipped orders.
+    if (req.method === "GET" && action === "pack_stock") {
+      const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+      const [stock, moves, used, configMap] = await Promise.all([
+        sbSelect("v_ds_packaging_stock", "?select=*&order=sort_order.asc"),
+        sbSelect("ds_packaging_moves", "?select=id,pack_code,kind,qty,unit_cost,note,created_by,created_at&order=created_at.desc&limit=25"),
+        sbSelect("dropshipments", `?status=eq.shipped&pack_used=not.is.null&shipped_at=gte.${since}&select=client_id,pack_used&limit=5000`),
+        loadConfigMap()
+      ]);
+      const byClient = {};
+      for (const u of used) {
+        const name = configMap[u.client_id]?.display_name || "—";
+        byClient[name] = byClient[name] || {};
+        byClient[name][u.pack_used] = (byClient[name][u.pack_used] || 0) + 1;
+      }
+      return jRes({ stock, moves, by_client_30d: byClient, as_of: new Date().toISOString() });
     }
 
     // ── GET: single record ────────────────────────────────────────────────
@@ -497,6 +521,42 @@ export default async function handler(req) {
         });
         if (!updated.length) return jRes({ error: "not found" }, 404);
         return jRes({ ok: true, action: "requeue_pack", row: updated[0] });
+      }
+
+      // ── pack_move: purchase / adjustment / physical count of a packaging ─
+      if (act === "pack_move") {
+        const code = (body.pack_code || "").trim().toUpperCase();
+        const kind = (body.kind || "").trim();
+        const qty  = Number(body.qty);
+        if (!code) return jRes({ error: "pack_code required" }, 400);
+        if (!["purchase", "adjust", "count"].includes(kind)) return jRes({ error: "kind must be purchase, adjust or count" }, 400);
+        if (!Number.isInteger(qty) || Math.abs(qty) > 100000) return jRes({ error: "La cantidad debe ser un número entero." }, 400);
+        if (kind === "purchase" && qty <= 0) return jRes({ error: "En una compra la cantidad debe ser mayor que cero." }, 400);
+        if (kind === "count" && qty < 0)     return jRes({ error: "El conteo no puede ser negativo." }, 400);
+        if (kind === "adjust" && qty === 0)  return jRes({ error: "El ajuste no puede ser cero (usa + o −)." }, 400);
+        const cost = body.unit_cost === "" || body.unit_cost == null ? null : Number(body.unit_cost);
+        if (cost != null && (!Number.isFinite(cost) || cost < 0)) return jRes({ error: "Costo unitario no válido." }, 400);
+        const types = await sbSelect("ds_packaging_types", `?code=eq.${encodeURIComponent(code)}&kind=in.(box,poly)&select=code&limit=1`);
+        if (!types.length) return jRes({ error: "Ese empaque no existe en el catálogo." }, 400);
+        const inserted = await sbInsert("ds_packaging_moves", [{
+          pack_code: code, kind, qty,
+          unit_cost: kind === "purchase" ? cost : null,
+          note: (body.note || "").trim().slice(0, 300) || null,
+          created_by: operator,
+          user_email: req.headers.get("x-fr-user-email") || null
+        }]);
+        return jRes({ ok: true, action: "pack_move", move: inserted[0] });
+      }
+
+      // ── pack_min: reorder point ─────────────────────────────────────────
+      if (act === "pack_min") {
+        const code = (body.pack_code || "").trim().toUpperCase();
+        const min  = Number(body.min_stock);
+        if (!code) return jRes({ error: "pack_code required" }, 400);
+        if (!Number.isInteger(min) || min < 0 || min > 100000) return jRes({ error: "El mínimo debe ser un entero de 0 en adelante." }, 400);
+        const updated = await sbPatch("ds_packaging_types", `code=eq.${encodeURIComponent(code)}`, { min_stock: min });
+        if (!updated.length) return jRes({ error: "Ese empaque no existe." }, 404);
+        return jRes({ ok: true, action: "pack_min", pack_code: code, min_stock: min });
       }
 
       // ── process_orphan: complete an orphan record manually ──────────────
@@ -757,7 +817,7 @@ export default async function handler(req) {
       };
 
       const rule = LEGAL[act];
-      if (!rule) return jRes({ error: `unknown action '${act}'`, allowed: [...Object.keys(LEGAL), "create_orphan", "link_outbound", "unlink_outbound", "process_orphan", "delete_orphan", "void_order", "confirm_pack", "requeue_pack"] }, 400);
+      if (!rule) return jRes({ error: `unknown action '${act}'`, allowed: [...Object.keys(LEGAL), "create_orphan", "link_outbound", "unlink_outbound", "process_orphan", "delete_orphan", "void_order", "confirm_pack", "requeue_pack", "pack_move", "pack_min"] }, 400);
       if (!rule.from.includes(current.status)) {
         return jRes({ error: `cannot ${act} from status '${current.status}'`, allowed_from: rule.from }, 409);
       }
