@@ -20,6 +20,7 @@
 //          confirm:<location_code> }
 //   POST { action:'create_and_receive', location_code, items:[...same as
 //          create + Quantity], confirm:<location_code> }  — both steps
+//   POST { action:'update', items:[{Sku, Code?, Description?, …}], confirm:'UPDATE' }
 
 const ALLOWED_ORIGINS = [
   'https://apps.fr-logistics.net',
@@ -78,6 +79,18 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod !== 'POST') return res(405, { error: 'POST required' });
+
+    // Update fields on existing products (Code, Description, attributes…).
+    // POST { action:'update', items:[{Sku, Code?, Description?, ...}], confirm:'UPDATE' }
+    if (action === 'update') {
+      if (body.confirm !== 'UPDATE') return res(400, { error: 'CONFIRM_MISMATCH', message: 'Send confirm:"UPDATE".' });
+      const list = Array.isArray(body.items) ? body.items : [];
+      if (!list.length) return res(400, { error: 'items[] is required' });
+      const upd = list.map((it) => { const o = { Sku: String(it.Sku).trim() }; for (const k of ['Code','PartNumber','Description','ShortDescription','LongDescription','Classification','Supplier','Brand','Cost','SalePrice','RetailPrice','ReorderPoint','Attributes']) if (it[k] !== undefined) o[k] = it[k]; return o; });
+      const r = await sv('/products/updateProducts', { Items: upd });
+      const errs = (r.body && (r.body.Errors || r.body.errors)) || [];
+      return res(r.ok && !errs.length ? 200 : 502, { ok: r.ok, status: r.status, updated: upd.length, response: r.body });
+    }
 
     const items = Array.isArray(body.items) ? body.items : [];
     if (!items.length) return res(400, { error: 'items[] is required' });
