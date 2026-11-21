@@ -255,6 +255,11 @@ td:nth-child(4){white-space:nowrap;font-size:12px}
   <div class="topBar">
     <div class="topLogo">FR-Logistics · Apps Portal</div>
     <div style="display:flex;align-items:center;gap:14px">
+      <!-- 2026-11-21: quick lookup. Opens lookup.html in the app viewer with the code typed here
+           (order number or tracking). All the logic lives in lookup.html. -->
+      <form id="topLookup" autocomplete="off" onsubmit="event.preventDefault();var v=this.q.value.trim();if(v){openApp('lookup.html?q='+encodeURIComponent(v),'Order &amp; Tracking Lookup');this.q.value='';this.q.blur();}" style="display:flex;gap:6px;align-items:center">
+        <input name="q" placeholder="🔎 Order # or tracking" spellcheck="false" style="width:210px;max-width:38vw;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:'DM Mono',monospace;outline:none"/>
+      </form>
       <span id="clientCountTop" style="font-size:13px;color:var(--muted)"></span>
       <button class="signOutBtn" onclick="signOut()">Sign out</button>
     </div>
@@ -550,6 +555,7 @@ const APPS=[
   {icon:'📧',name:'Email Ops',desc:'Email operations dashboard',url:'email-ops.html'},
   {icon:'📦',name:'Inbound / Outbound',desc:'Receiving & shipping tracker',url:'Inbound_Outbound.html'},
   {icon:'🚦',name:'Operations Dashboard',desc:'KPIs · SLA · profitability · inventory · ops',url:'dashboard.html'},
+  {icon:'🔎',name:'Order & Tracking Lookup',desc:'Type an order # or tracking · status, items, ShipStation tracking',url:'lookup.html'},
   {icon:'📋',name:'Packing Lists',desc:'Pickups & B2B · boxes vs request · print / Excel',url:'packlist.html'},
   {icon:'🏗️',name:'Pallets',desc:'Pallet management',url:'pallets.html'},
  {icon:'💰',name:'Quote Builder',desc:'Logistics rate quotes',url:'FR_Logistics_Quote_System_v3.html'},

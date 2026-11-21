@@ -264,7 +264,7 @@
         </button>
         <button class="mod" data-go="lookup">
           <span class="ic">🔍</span>
-          <span><span class="nm">Lookup</span><br><span class="sub">Scan a tracking to see its record</span></span>
+          <span><span class="nm">Lookup</span><br><span class="sub">Scan a tracking or type an order #</span></span>
         </button>
       </div>
     </section>
@@ -381,6 +381,13 @@
         <div class="lastcode" id="kCode"></div>
         <div class="hint" id="kHint">Shows who it belongs to, what it is and when it was logged.</div>
       </div>
+      <!-- v3: typed search (order number or tracking). The scanner keeps working
+           through the hidden capture input; this field is for the PC keyboard
+           or the on-screen keyboard when there is nothing to scan. -->
+      <form id="kForm" autocomplete="off" style="display:flex;gap:8px;margin:0 0 14px">
+        <input type="text" id="kInput" placeholder="Order # or tracking" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="search" style="flex:1;min-width:0;margin:0">
+        <button type="submit" class="btn" id="kGoBtn" style="flex:0 0 auto;width:auto;padding:0 18px">Search</button>
+      </form>
       <div id="kResult"></div>
     </section>
 
@@ -3136,17 +3143,21 @@ function openLabelPage(){
 }
 
 /* ============================================================
-   LOOKUP — one tracking -> its record (read-only)
+   LOOKUP — one tracking or order number -> its record (read-only)
    GET /frm-lookup?tracking=<code>
+   v3: the code can also be an order number (typed in kInput or scanned):
+   fulfillment orders come back in j.orders with their ShipStation tracking,
+   DropShipment orders in j.dropship.by_order.
    One trigger pull = one card. The endpoint matches the raw scan, the
    normalized tracking and a verified suffix, so a USPS label scanned as
    GS1 "(420)33172(92)…" still finds the row someone typed clean on the PC.
    ============================================================ */
-const LK={ current:null, busy:false, extras:{} };
+const LK={ current:null, busy:false, extras:{}, typed:false };
 
 function initLookup(){
   LK.current=null;
   setKPad('', 'Scan a tracking', '', '');
+  if($('kInput')) $('kInput').value='';
   $('kResult').innerHTML='';
   $('kFoot').hidden=false;
   syncLookupFoot();
@@ -3159,7 +3170,7 @@ function setKPad(state,big,hint,code){
   $('kIcon').textContent = state==='ok'?'✓' : state==='dup'?'!' : state==='err'?'✕' : '▣';
   $('kBig').textContent=big;
   $('kCode').textContent=code||'';
-  $('kHint').textContent=hint||'Shows who it belongs to, what it is and when it was logged.';
+  $('kHint').textContent=hint||'Scan a label, or type an order number or tracking below.';
 }
 
 // Footer buttons only make sense with a found row; the label never for
@@ -3185,8 +3196,16 @@ async function lookupTracking(code){
     const res=await fetch(`${API_BASE}/frm-lookup?tracking=${encodeURIComponent(code)}`);
     const j=await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(j.error||('HTTP '+res.status));
-    LK.extras={dropship:j.dropship, pallet:j.pallet, slip:j.slip};
-    if(j.found){
+    LK.extras={dropship:j.dropship, pallet:j.pallet, slip:j.slip, orders:j.orders};
+    if(!j.found && j.is_order){
+      // The code is an order (fulfillment or DropShipment), not a package in
+      // the log: show the order, never offer "Receive it now".
+      LK.current=null;
+      const n=(j.orders||[]).length + ((j.dropship&&j.dropship.by_order)||[]).length;
+      setKPad('ok', n>1?(n+' orders found'):'Order found', j.owner||'', code);
+      feedback('ok');
+      renderLookupOrder(j);
+    }else if(j.found){
       LK.current=j.shipment;
       setKPad('ok', j.shipment.direction==='Outbound'?'Outbound record':'Inbound record', j.match==='exact'?'':'Matched after normalizing the barcode', code);
       feedback('ok');
@@ -3200,7 +3219,7 @@ async function lookupTracking(code){
       renderLookupMissing(j);
     }else{
       LK.current=null;
-      setKPad('dup','Not in the log','This tracking has not been received or shipped yet',code);
+      setKPad('dup', j.carrier_guess?'Not in the log':'Nothing found', j.carrier_guess?'This tracking has not been received or shipped yet':'No order or package with this code',code);
       feedback('dup');
       renderLookupMissing(j);
     }
@@ -3208,7 +3227,18 @@ async function lookupTracking(code){
     setKPad('err','Lookup failed', err.message||'Check the connection and try again', code);
     feedback('err');
   }
-  LK.busy=false; syncLookupFoot(); focusCap();
+  LK.busy=false; syncLookupFoot();
+  // A typed search keeps the keyboard field (so the next number can be typed
+  // right away); a scan goes back to the hidden capture input as always.
+  if(LK.typed){ LK.typed=false; const i=$('kInput'); i.focus(); i.select(); } else focusCap();
+}
+
+function lookupTyped(e){
+  if(e) e.preventDefault();
+  const code=$('kInput').value.trim();
+  if(!code || LK.busy) return;
+  LK.typed=true;
+  lookupTracking(code);
 }
 
 function kEsc(v){ return String(v==null?'':v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -3232,7 +3262,8 @@ function kSectionTitle(t){ return `<div class="lc-sub" style="margin:14px 0 4px;
 function kDropshipSection(ds){
   if(!ds) return '';
   const inb=ds.inbound||[], outb=ds.outbound||[];
-  if(!inb.length && !outb.length) return '';
+  const byo=ds.by_order||[];
+  if(!inb.length && !outb.length && !byo.length) return '';
   const row=(o, viaOut)=>{
     const grp = o.group_total>1 ? ` · ${o.group_seq||'?'} of ${o.group_total}` : '';
     const when = o.status==='shipped' ? ('Shipped '+kDate(o.shipped_at)) : o.status==='labeled' ? ('Labeled '+kDate(o.labeled_at)) : o.physical_received_at ? ('Received '+kDate(o.physical_received_at)) : '';
@@ -3260,7 +3291,83 @@ function kDropshipSection(ds){
     html+=kSectionTitle('This is an OUTBOUND label — the order behind it');
     html+=`<ul class="lc-list">${outb.map(o=>row(o,true)).join('')}</ul>`;
   }
+  if(byo.length){
+    // matched by order id: show both legs, inbound tracking first
+    html+=kSectionTitle('DropShipment order');
+    html+=`<ul class="lc-list">${byo.map(o=>`<li style="display:block;padding:0"><ul class="lc-list"><li style="border-top:0"><div class="cli" style="flex:1">Inbound ${kEsc(o.carrier||'')} <span style="font-family:ui-monospace,monospace">${kEsc(o.tracking_number||'—')}</span></div></li>${row(o,false)}</ul></li>`).join('')}</ul>`;
+  }
   return html;
+}
+
+/* ---- v3: fulfillment orders (Client Orders / ShipStation) ---- */
+function kOrderPill(st){
+  const k=String(st||'').toLowerCase();
+  const m={shipped:['#e7f6ef','var(--green-d)'],awaiting_shipment:['#e8f1fb','#1d4f8b'],awaiting_payment:['#fff6e5','#a9760a'],on_hold:['#fff6e5','#a9760a'],cancelled:['#fdecea','var(--red)'],pending:['#fff6e5','#a9760a'],exported:['#eef2f4','var(--muted)']};
+  const c=m[k]||['#eef2f4','var(--muted)'];
+  return `<span class="lc-zone" style="background:${c[0]};color:${c[1]}">${kEsc(k.replace(/_/g,' ')||'—')}</span>`;
+}
+function kOrderBody(o){
+  const items=(o.items||[]);
+  const itemRows = items.length
+    ? items.map(it=>`<li><div style="flex:1;min-width:0"><div class="sku" style="font-size:13px">${kEsc(it.sku||'(no SKU)')}</div>${it.name?`<div class="cli">${kEsc(String(it.name).slice(0,90))}</div>`:''}</div><span class="qty">×${kEsc(it.qty==null?'?':it.qty)}</span></li>`).join('')
+    : `<li><div class="cli">No items on file</div></li>`;
+  const ships=(o.shipments||[]);
+  const live=ships.filter(x=>!x.voided);
+  let shipHtml;
+  if(ships.length){
+    shipHtml=`<ul class="lc-list">${ships.map(x=>`<li><div style="flex:1;min-width:0">
+        <div class="sku" style="font-size:13px;word-break:break-all;${x.voided?'text-decoration:line-through;color:var(--muted)':''}">${kEsc(x.tracking||'(no tracking)')}</div>
+        <div class="cli">${kEsc(x.carrier||'')}${x.service?(' · '+kEsc(x.service)):''}${x.ship_date?(' · '+kDate(x.ship_date)):''}${x.voided?' · VOIDED':''}</div>
+        ${(!x.voided&&x.tracking_url)?`<a href="${kEsc(x.tracking_url)}" target="_blank" rel="noopener" style="${K_LINK};margin-top:4px">Track ↗</a>`:''}
+      </div></li>`).join('')}</ul>`;
+  }else{
+    const st=String(o.status||'').toLowerCase();
+    shipHtml=`<div class="cli">${st==='shipped'?'Marked shipped, but ShipStation returned no label':(o.in_shipstation?'Not shipped yet — no label created':'Not in ShipStation yet')}</div>`;
+  }
+  const src = o.source==='shipstation' ? 'ShipStation only — not in Client Orders' : 'Client Orders'+(o.in_shipstation?' · in ShipStation':' · NOT found in ShipStation');
+  return `
+      <ul class="lc-list">
+        <li><div class="cli" style="flex:0 0 78px">Ship to</div><div class="sku" style="font-family:inherit">${kEsc(o.recipient||'—')}${o.address?`<div class="cli" style="font-weight:400">${kEsc(o.address)}</div>`:''}</div></li>
+        <li><div class="cli" style="flex:0 0 78px">Service</div><div class="sku" style="font-family:inherit;font-weight:500">${kEsc(o.service||'—')}</div></li>
+        <li><div class="cli" style="flex:0 0 78px">Created</div><div class="sku" style="font-family:inherit;font-weight:500">${kWhen(o.created_at)}</div></li>
+        <li><div class="cli" style="flex:0 0 78px">Source</div><div class="sku" style="font-family:inherit;font-weight:500">${kEsc(src)}</div></li>
+      </ul>
+      ${kSectionTitle(`Items · ${items.reduce((n,it)=>n+(Number(it.qty)||0),0)} unit(s)`)}
+      <ul class="lc-list">${itemRows}</ul>
+      ${kSectionTitle(live.length>1?`Tracking · ${live.length} labels`:'Tracking')}
+      ${shipHtml}`;
+}
+function kOrderCard(o){
+  return `<div class="lcard">
+      <div class="lc-head">
+        <div><div class="lc-code" style="font-size:18px;word-break:break-all">${kEsc(o.order_number||'—')}</div>
+        ${o.matched_by==='tracking'?'<div class="lc-sub">Found by its outbound label</div>':''}</div>
+        ${kOrderPill(o.status)}
+      </div>
+      <div style="font-size:22px;font-weight:750;color:var(--navy);line-height:1.15;margin-bottom:12px">${kEsc(o.client||'—')}</div>
+      ${kOrderBody(o)}
+    </div>`;
+}
+// Inside a package card (an Outbound row whose label belongs to an order).
+function kOrdersSection(orders){
+  if(!orders||!orders.length) return '';
+  return orders.map(o=>kSectionTitle('Fulfillment order · '+kEsc(o.order_number||''))+
+    `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px"><div class="sku" style="font-family:inherit">${kEsc(o.client||'')}</div>${kOrderPill(o.status)}</div>`+kOrderBody(o)).join('');
+}
+function renderLookupOrder(j){
+  const orders=j.orders||[];
+  const ds=(j.dropship&&j.dropship.by_order)||[];
+  let html=orders.map(kOrderCard).join('');
+  if(ds.length){
+    html+=`<div class="lcard">
+      <div class="lc-head"><div><div class="lc-code" style="font-size:18px;word-break:break-all">${kEsc(ds[0].order_id||j.scanned)}</div></div>${kDsPill(ds[0].status)}</div>
+      ${j.owner?`<div style="font-size:22px;font-weight:750;color:var(--navy);line-height:1.15;margin-bottom:6px">${kEsc(j.owner)}</div>`:''}
+      ${kDropshipSection({inbound:[],outbound:[],by_order:ds})}
+    </div>`;
+  }
+  const warn=(j.errors||[]).filter(e=>/^shipstation/i.test(e));
+  if(warn.length) html+=`<div class="cli" style="color:#a9760a;margin-top:8px">⚠ ${kEsc(warn[0])}</div>`;
+  $('kResult').innerHTML=html;
 }
 
 function kPalletSection(p){
@@ -3293,7 +3400,7 @@ function kSlipSection(sl){
     <ul class="lc-list">${rows}</ul>${conf}`;
 }
 
-function kExtras(j){ return kDropshipSection(j.dropship)+kPalletSection(j.pallet)+kSlipSection(j.slip); }
+function kExtras(j){ return kOrdersSection(j.orders)+kDropshipSection(j.dropship)+kPalletSection(j.pallet)+kSlipSection(j.slip); }
 
 function renderLookupCard(j){
   const r=j.shipment;
@@ -3340,7 +3447,8 @@ function renderLookupMissing(j){
         <div class="lc-sub">${j.carrier_guess?kEsc(j.carrier_guess)+' · ':''}not in the log</div></div>
       </div>
       ${j.owner?`<div style="font-size:20px;font-weight:750;color:var(--navy);line-height:1.15;margin-bottom:6px">${kEsc(j.owner)}</div>`:''}
-      <div class="lc-empty" style="padding-top:4px">${j.found_any?'Known to the system, but never scanned into the receiving log.':'No inbound or outbound record for this tracking.'}</div>
+      <div class="lc-empty" style="padding-top:4px">${j.found_any?'Known to the system, but never scanned into the receiving log.':'No order, inbound or outbound record for this code.'}</div>
+      ${(j.errors||[]).some(e=>/^shipstation/i.test(e))?`<div class="cli" style="color:#a9760a;margin-bottom:10px">⚠ ShipStation could not be checked — ${kEsc((j.errors.find(e=>/^shipstation/i.test(e))||'').replace(/^shipstation:\s*/i,''))}</div>`:''}
       <button class="btn" id="kReceiveBtn" style="width:100%">Receive it now →</button>
       ${kExtras(j)}${near}${link}
     </div>`;
@@ -3376,7 +3484,7 @@ function lookupPhoto(){
       const j=await res.json();
       r.photo_urls=(r.photo_urls||[]).concat(j.photo_urls||[]);
       feedback('ok'); toast('Photo added to '+String(r.tracking).slice(-8));
-      renderLookupCard({shipment:r, others:[], match:'exact', dropship:LK.extras.dropship, pallet:LK.extras.pallet, slip:LK.extras.slip});
+      renderLookupCard({shipment:r, others:[], match:'exact', orders:LK.extras.orders, dropship:LK.extras.dropship, pallet:LK.extras.pallet, slip:LK.extras.slip});
       askSlipExtract(r.tracking, (j.photo_urls||[])[0], r.type);
     }catch(err){ feedback('err'); toast('Photo failed: '+(err.message||'try again')); }
     focusCap();
@@ -3469,6 +3577,7 @@ $('backBtn').onclick=()=>go('home');
 $('finishBtn').onclick=()=>{ if(confirm('Finish this session?')) go('home'); };
 $('camBtn').onclick=takePhoto;
 $('kPhotoBtn').onclick=lookupPhoto;
+$('kForm').addEventListener('submit',lookupTyped);
 $('kPrintBtn').onclick=lookupPrint;
 $('syncBtn').onclick=refreshFromSkuVault;
 $('invSyncBtn').onclick=()=>refreshFromSkuVault().then(fillClientDropdown);

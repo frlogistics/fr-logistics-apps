@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Order &amp; Tracking Lookup</title>
+<meta name="robots" content="noindex,nofollow">
+<!--
+  lookup.html — Order & Tracking Lookup (desktop)
+  ---------------------------------------------------------------------------
+  Type (or scan) an order number or a tracking and see everything the system
+  knows about it. Read-only. Same endpoint as the handheld Lookup module:
+
+      GET /.netlify/functions/frm-lookup?tracking=<code>
+
+  What comes back and is shown here:
+    orders    fulfillment orders (Client Orders and/or ShipStation) with
+              recipient, items and the outbound tracking from ShipStation
+    shipment  the row in the receiving / outbound log (shipments_general)
+    dropship  DropShipments orders under that tracking or with that order id
+    pallet    returns pallet the package was scanned into
+    slip      Amazon packing slip read from the photo
+  No billing data: the endpoint never returns costs or invoice fields.
+
+  Deep link: lookup.html?q=WS4B235650 runs the search on load (the portal's
+  top-bar search box uses this).
+  Login: /fr-auth.js is injected by the page-gate edge function.
+-->
+<style>
+:root{--navy:#0B2545;--teal:#1C7293;--orange:#F4A261;--line:#E2E8F0;--muted:#64748B;--bg:#F8FAFC;--card:#fff;--ok:#166534;--okbg:#DCFCE7;--bad:#991B1B;--badbg:#FEE2E2;--amb:#92400E;--ambbg:#FEF3C7;--blue:#1D4F8B;--bluebg:#E8F1FB}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#0f172a;background:var(--bg)}
+header{background:var(--navy);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header h1{margin:0;font-size:18px}header span{color:#CBD5E1;font-size:13px}
+header a{margin-left:auto;color:#CBD5E1;font-size:13px;text-decoration:none}header a:hover{color:#fff}
+main{max-width:1100px;margin:0 auto;padding:18px 16px;display:grid;grid-template-columns:1fr 250px;gap:16px;align-items:start}
+@media (max-width:860px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:16px}
+.card h2{margin:0 0 10px;font-size:15px;color:var(--navy);border-left:4px solid var(--orange);padding-left:8px}
+form.search{display:flex;gap:8px}
+form.search input{flex:1;min-width:0;padding:11px 12px;border:1px solid #CBD5E1;border-radius:6px;font:inherit;font-size:16px;font-family:Consolas,Menlo,monospace;background:#fff}
+form.search input:focus{outline:2px solid var(--teal);outline-offset:1px}
+button{background:var(--navy);color:#fff;border:0;padding:10px 18px;border-radius:6px;cursor:pointer;font:inherit;font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+.hint{color:var(--muted);font-size:12px;margin-top:8px}
+.msg{padding:10px 12px;border-radius:6px;font-size:13px;margin-bottom:16px}
+.msg.err{background:var(--badbg);color:var(--bad)}.msg.info{background:#F1F5F9;color:#334155}.msg.amb{background:var(--ambbg);color:var(--amb)}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:4px}
+.code{font-family:Consolas,Menlo,monospace;font-size:19px;font-weight:700;color:var(--navy);word-break:break-all}
+.who{font-size:20px;font-weight:700;color:var(--navy);margin:2px 0 12px}
+.sub{color:var(--muted);font-size:12px}
+.pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;text-transform:uppercase;letter-spacing:.3px;background:#EEF2F4;color:var(--muted)}
+.pill.ok{background:var(--okbg);color:var(--ok)}.pill.bad{background:var(--badbg);color:var(--bad)}.pill.amb{background:var(--ambbg);color:var(--amb)}.pill.blue{background:var(--bluebg);color:var(--blue)}
+dl{display:grid;grid-template-columns:110px 1fr;gap:6px 12px;margin:0}
+dt{color:var(--muted);font-size:12px;padding-top:1px}dd{margin:0}
+h3{margin:16px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--teal)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:var(--navy);color:#fff;text-align:left;padding:5px 8px;font-weight:600;font-size:12px}
+td{border-bottom:1px solid var(--line);padding:5px 8px;vertical-align:top}
+.mono{font-family:Consolas,Menlo,monospace;font-size:12.5px;word-break:break-all}.num{text-align:right;white-space:nowrap}
+.void{text-decoration:line-through;color:var(--muted)}
+a.lnk{color:var(--teal)}
+.copy{background:#fff;color:var(--navy);border:1px solid #CBD5E1;padding:1px 7px;font-size:11px;border-radius:5px;margin-left:6px;font-weight:600}
+.photos{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.photos img{width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in}
+ul.recent{list-style:none;margin:0;padding:0}ul.recent li{padding:7px 8px;border-radius:6px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:center}
+ul.recent li:hover{background:#F1F5F9}ul.recent .r{font-family:Consolas,Menlo,monospace;font-size:12px;word-break:break-all}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+<header><h1>🔎 Order &amp; Tracking Lookup</h1><span>Orders · packages · DropShipments · returns</span><a href="/portal.html" id="back">← Portal</a></header>
+<main>
+  <section>
+    <div class="card">
+      <form class="search" id="form" autocomplete="off">
+        <input id="q" placeholder="Order number or tracking — e.g. WS4B235650" autofocus spellcheck="false" autocapitalize="characters">
+        <button id="go" type="submit">Search</button>
+      </form>
+      <div class="hint">Fulfillment orders, DropShipment order ids, inbound and outbound trackings. A scanner works too: scan with the cursor in the box.</div>
+    </div>
+    <div id="out"></div>
+  </section>
+  <aside>
+    <div class="card">
+      <h2>This session</h2>
+      <ul class="recent" id="recent"><li class="muted" style="cursor:default">No searches yet</li></ul>
+    </div>
+  </aside>
+</main>
+<script>
+const API='/.netlify/functions/frm-lookup';
+const $=id=>document.getElementById(id);
+const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const recent=[];   // in memory only: [{code, label, cls}]
+let busy=false;
+
+function when(iso){
+  if(!iso) return '—';
+  const d=new Date(iso); if(isNaN(d)) return esc(iso);
+  return d.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'})+' · '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+function day(iso){ if(!iso) return ''; const d=new Date(iso); return isNaN(d)?esc(iso):d.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}); }
+function pill(text, cls){ return `<span class="pill ${cls||''}">${esc(String(text||'—').replace(/_/g,' '))}</span>`; }
+function orderCls(st){ const k=String(st||'').toLowerCase(); return k==='shipped'?'ok':k==='cancelled'?'bad':(k==='awaiting_shipment')?'blue':(k==='on_hold'||k==='awaiting_payment'||k==='pending')?'amb':''; }
+function dsCls(st){ return st==='received'?'ok':st==='labeled'?'blue':st==='exception'?'bad':st==='orphan'?'amb':st==='cancelled'?'bad':''; }
+function copyBtn(v){ return v?`<button type="button" class="copy" data-copy="${esc(v)}">Copy</button>`:''; }
+const PACK={C1:'CAJA 1',C2:'CAJA 2',C3:'CAJA 3',C4:'CAJA 4',C5:'CAJA 5',C6:'CAJA 6',P1:'POLY 1',P2:'POLY 2',P3:'POLY 3',XL:'CAJA XL',OTHER:'OTRO'};
+
+/* ---------- sections ---------- */
+function orderCard(o){
+  const items=o.items||[], ships=o.shipments||[];
+  const units=items.reduce((n,it)=>n+(Number(it.qty)||0),0);
+  const src=o.source==='shipstation'
+    ? 'ShipStation only — this order is not in Client Orders'
+    : 'Client Orders'+(o.in_shipstation?' · found in ShipStation':' · NOT found in ShipStation yet');
+  const st=String(o.status||'').toLowerCase();
+  const shipHtml = ships.length
+    ? `<table><tr><th>Tracking</th><th>Carrier</th><th>Service</th><th>Ship date</th></tr>${ships.map(x=>`<tr>
+        <td class="mono ${x.voided?'void':''}">${x.tracking_url&&!x.voided?`<a class="lnk" href="${esc(x.tracking_url)}" target="_blank" rel="noopener">${esc(x.tracking)}</a>`:esc(x.tracking||'(no tracking)')}${x.voided?'':copyBtn(x.tracking)}</td>
+        <td>${esc(x.carrier||'')}</td><td>${esc(x.service||'')}${x.voided?' <b>· VOIDED</b>':''}</td><td>${day(x.ship_date)}</td></tr>`).join('')}</table>`
+    : `<div class="muted">${st==='shipped'?'Marked shipped, but ShipStation returned no label.':(o.in_shipstation?'Not shipped yet — no label created.':'Not in ShipStation yet.')}</div>`;
+  return `<div class="card">
+    <div class="head"><div><div class="sub">Fulfillment order${o.matched_by==='tracking'?' · found by its outbound label':''}</div><div class="code">${esc(o.order_number||'—')}</div></div>${pill(o.status,orderCls(o.status))}</div>
+    <div class="who">${esc(o.client||'—')}${o.client_code?` <span class="sub mono">${esc(o.client_code)}</span>`:''}</div>
+    <dl>
+      <dt>Ship to</dt><dd><b>${esc(o.recipient||'—')}</b>${o.address?`<br><span class="muted">${esc(o.address)}</span>`:''}</dd>
+      <dt>Service</dt><dd>${esc(o.service||'—')}</dd>
+      <dt>Created</dt><dd>${when(o.created_at)}</dd>
+      ${o.exported_at?`<dt>Exported</dt><dd>${when(o.exported_at)}</dd>`:''}
+      <dt>Source</dt><dd>${esc(src)}${o.ss_order_id?` <span class="sub mono">SS #${esc(o.ss_order_id)}</span>`:''}</dd>
+    </dl>
+    <h3>Items · ${units} unit${units===1?'':'s'}</h3>
+    ${items.length?`<table><tr><th>SKU</th><th>Item</th><th class="num">Qty</th></tr>${items.map(it=>`<tr><td class="mono">${esc(it.sku||'(no SKU)')}</td><td>${esc(it.name||'')}</td><td class="num">${esc(it.qty==null?'?':it.qty)}</td></tr>`).join('')}</table>`:'<div class="muted">No items on file.</div>'}
+    <h3>Outbound tracking</h3>
+    ${shipHtml}
+  </div>`;
+}
+
+function shipmentCard(r, j){
+  const out=r.direction==='Outbound';
+  const photos=(r.photo_urls||[]);
+  return `<div class="card">
+    <div class="head"><div><div class="sub">${out?'Outbound':'Inbound'} log${j.match&&j.match!=='exact'?' · matched after normalizing the barcode':''}</div>
+      <div class="code">${esc(r.tracking_clean||r.tracking)}${copyBtn(r.tracking_clean||r.tracking)}</div>
+      ${r.stored_differs?`<div class="sub">Stored as <span class="mono">${esc(r.tracking)}</span></div>`:''}</div>${pill(out?'Outbound':'Inbound',out?'amb':'ok')}</div>
+    <div class="who">${esc(r.client||'—')}</div>
+    <dl>
+      <dt>Type</dt><dd>${esc(String(r.type||'—').replace(/^(Inbound|Outbound) /,'').replace(/[()]/g,''))}</dd>
+      <dt>Carrier</dt><dd>${esc(r.carrier||'—')}${r.tracking_url?` · <a class="lnk" href="${esc(r.tracking_url)}" target="_blank" rel="noopener">Track ↗</a>`:''}</dd>
+      <dt>${out?'Shipped':'Received'}</dt><dd>${when(r.received_at)}</dd>
+      <dt>By</dt><dd>${esc(r.operator||'—')}</dd>
+      ${r.note?`<dt>Note</dt><dd>${esc(r.note)}</dd>`:''}
+    </dl>
+    ${photos.length?`<div class="photos">${photos.map((u,i)=>`<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Photo ${i+1}"></a>`).join('')}</div>`:''}
+    ${(j.others||[]).length?`<div class="sub" style="margin-top:8px">Also logged ${j.others.length} more time(s) under a different spelling.</div>`:''}
+  </div>`;
+}
+
+function dropshipCard(ds, owner){
+  const groups=[['inbound','DropShipment · orders inside this inbound package'],['outbound','DropShipment · this is the OUTBOUND label of'],['by_order','DropShipment order']];
+  let html='';
+  for(const [k,title] of groups){
+    const rows=ds[k]||[]; if(!rows.length) continue;
+    const tot=k==='inbound'?(rows[0].group_total||rows.length):rows.length;
+    html+=`<div class="card">
+      <div class="head"><div><div class="sub">${title}</div></div></div>
+      ${owner?`<div class="who">${esc(owner)}${rows[0].client_code?` <span class="sub mono">${esc(rows[0].client_code)}</span>`:''}</div>`:''}
+      <table><tr><th>Order</th><th>Content</th><th>Inbound</th><th>Outbound</th><th>Pack</th><th>Status</th></tr>
+      ${rows.map(o=>`<tr>
+        <td class="mono">${esc(o.order_id||'(no order id)')}${o.group_total>1?`<div class="sub">${o.group_seq||'?'} of ${o.group_total}</div>`:''}</td>
+        <td>${esc(o.content||'')}${o.qty_boxes>1?` · ${o.qty_boxes} boxes`:''}</td>
+        <td><span class="mono">${esc(o.tracking_number||'—')}</span><div class="sub">${esc(o.carrier||'')}${o.physical_received_at?' · received '+day(o.physical_received_at):''}${o.received_by?' · '+esc(o.received_by):''}</div></td>
+        <td>${o.outbound_tracking?`<span class="mono">${esc(o.outbound_tracking)}</span>`:`<span class="muted">${o.has_label?'Label on file, not yet out':'No outbound label yet'}</span>`}<div class="sub">${esc(o.outbound_carrier||'')}${o.shipped_at?' · shipped '+day(o.shipped_at):''}${o.shipped_by?' · '+esc(o.shipped_by):''}</div></td>
+        <td>${o.pack_used?esc(PACK[o.pack_used]||o.pack_used):o.pack_suggested?('<span class="muted">→ '+esc(PACK[o.pack_suggested]||o.pack_suggested)+'</span>'):''}</td>
+        <td>${pill(o.status==='cancelled'?'voided':o.status,dsCls(o.status))}${o.exception_reason?`<div class="sub" style="color:var(--bad)">${esc(o.exception_reason)}</div>`:''}${o.cancel_reason?`<div class="sub">${esc(o.cancel_reason)}</div>`:''}</td>
+      </tr>`).join('')}</table>
+      ${k==='inbound'&&tot>rows.length?`<div class="sub" style="color:var(--amb);margin-top:8px">⚠ ${tot-rows.length} order(s) of this consolidated package are not in the system yet.</div>`:''}
+    </div>`;
+  }
+  return html;
+}
+
+function palletCard(p){
+  if(!p) return '';
+  return `<div class="card"><div class="head"><div><div class="sub">On a returns pallet</div><div class="code">${esc(p.pallet_id)}</div></div>${pill(p.status||'?','blue')}</div>
+    <dl><dt>Client</dt><dd>${esc(p.client||'—')}</dd><dt>Size</dt><dd>${esc(p.pallet_size||'—')}</dd><dt>Packages</dt><dd>${p.packages==null?'—':p.packages}</dd>
+    <dt>Added</dt><dd>${day(p.added_at)||'—'}${p.wrapped_at?' · wrapped '+day(p.wrapped_at):p.full_at?' · full '+day(p.full_at):''}</dd></dl></div>`;
+}
+
+function slipCard(sl){
+  if(!sl) return '';
+  if(sl.status!=='ok' && sl.status!=='low_confidence')
+    return `<div class="card"><div class="sub">Packing slip</div><div class="muted">${sl.status==='no_slip'?'Photo has no Amazon packing slip.':'The slip could not be read.'}</div></div>`;
+  const items=(sl.items||[]).filter(it=>it.fnsku||it.lpn||it.upc);
+  return `<div class="card"><div class="head"><div><div class="sub">Packing slip (read from photo)${sl.doc_type?' · '+esc(String(sl.doc_type).replace(/_/g,' ')):''}</div>
+      ${sl.ra_number?`<div class="code" style="font-size:15px">RA ${esc(sl.ra_number)}</div>`:''}</div>${sl.status==='low_confidence'?pill('low confidence','amb'):''}</div>
+    <dl>${sl.origin_fc?`<dt>From FC</dt><dd>${esc(sl.origin_fc)}</dd>`:''}${sl.process_date?`<dt>Date</dt><dd>${day(sl.process_date)}</dd>`:''}</dl>
+    ${items.length?`<table style="margin-top:8px"><tr><th>FNSKU / LPN</th><th>Item</th><th class="num">Qty</th></tr>${items.map(it=>`<tr><td class="mono">${esc(it.fnsku||it.lpn||it.upc)}</td><td>${esc(it.title||'')}</td><td class="num">${it.qty==null?'—':it.qty}</td></tr>`).join('')}</table>`:'<div class="muted">No item read from the slip.</div>'}
+    ${sl.photo_url?`<div style="margin-top:8px"><a class="lnk" href="${esc(sl.photo_url)}" target="_blank" rel="noopener">Open photo ↗</a></div>`:''}</div>`;
+}
+
+/* ---------- render ---------- */
+function render(j, code){
+  const ds=j.dropship||{};
+  const ssErr=(j.errors||[]).find(e=>/^shipstation/i.test(e));
+  let html='';
+  if(ssErr) html+=`<div class="msg amb">⚠ ShipStation could not be checked — ${esc(ssErr.replace(/^shipstation:\s*/i,''))}. Results below come from our own database only.</div>`;
+  if(!j.found_any){
+    const cands=j.candidates||[];
+    html+=`<div class="msg info"><b>Nothing found for <span class="mono">${esc(code)}</span>.</b><br>No order, inbound, outbound, DropShipment or return with that code${ssErr?'':' — in our database or in ShipStation'}.${j.carrier_guess?` It looks like a ${esc(j.carrier_guess)} tracking${j.tracking_url?` · <a class="lnk" href="${esc(j.tracking_url)}" target="_blank" rel="noopener">track it ↗</a>`:''}.`:''}</div>`;
+    if(cands.length) html+=`<div class="card"><h2>Same last digits, different tracking</h2><table><tr><th>Tracking</th><th>Client</th><th>Type</th></tr>${cands.map(c=>`<tr><td class="mono">${esc(c.tracking_clean||c.tracking)}</td><td>${esc(c.client||'')}</td><td>${esc(c.direction||'')} · ${esc(c.type||'')}</td></tr>`).join('')}</table></div>`;
+    $('out').innerHTML=html; return {label:'not found', cls:'bad'};
+  }
+  html+=(j.orders||[]).map(orderCard).join('');
+  if(j.shipment) html+=shipmentCard(j.shipment, j);
+  else if(!j.is_order) html+=`<div class="msg info">Known to the system${j.owner?` — belongs to <b>${esc(j.owner)}</b>`:''}, but this tracking was never scanned into the receiving log.</div>`;
+  html+=dropshipCard(ds, j.shipment?null:j.owner);
+  html+=palletCard(j.pallet)+slipCard(j.slip);
+  const other=(j.errors||[]).filter(e=>!/^shipstation/i.test(e));
+  if(other.length) html+=`<div class="msg amb">Part of the answer is missing: ${esc(other.join(' · '))}</div>`;
+  $('out').innerHTML=html;
+  const o=(j.orders||[])[0];
+  if(o) return {label:String(o.status||'order').replace(/_/g,' '), cls:orderCls(o.status)};
+  if(j.shipment) return {label:j.shipment.direction||'logged', cls:j.shipment.direction==='Outbound'?'amb':'ok'};
+  const d=(ds.by_order||[])[0]||(ds.inbound||[])[0]||(ds.outbound||[])[0];
+  if(d) return {label:d.status||'dropship', cls:dsCls(d.status)};
+  return {label:'known', cls:''};
+}
+
+function renderRecent(){
+  $('recent').innerHTML=recent.length
+    ? recent.map((r,i)=>`<li data-i="${i}"><span class="r">${esc(r.code)}</span>${pill(r.label,r.cls)}</li>`).join('')
+    : '<li class="muted" style="cursor:default">No searches yet</li>';
+}
+
+async function search(code){
+  code=String(code||'').trim();
+  if(!code || busy) return;
+  busy=true; $('go').disabled=true; $('go').textContent='Searching…';
+  $('out').innerHTML='<div class="msg info">Looking up <span class="mono">'+esc(code)+'</span>…</div>';
+  let tag={label:'error', cls:'bad'};
+  try{
+    const res=await fetch(API+'?tracking='+encodeURIComponent(code), {cache:'no-store'});
+    const text=await res.text();
+    let j; try{ j=JSON.parse(text); }catch(e){ throw new Error('Unexpected answer from the server (HTTP '+res.status+')'); }
+    if(!res.ok) throw new Error(j.error||('HTTP '+res.status));
+    tag=render(j, code);
+  }catch(err){
+    $('out').innerHTML='<div class="msg err"><b>Lookup failed.</b> '+esc(err.message||'Check the connection and try again.')+'</div>';
+  }
+  const at=recent.findIndex(r=>r.code.toLowerCase()===code.toLowerCase());
+  if(at>=0) recent.splice(at,1);
+  recent.unshift({code, label:tag.label, cls:tag.cls}); if(recent.length>15) recent.pop();
+  renderRecent();
+  busy=false; $('go').disabled=false; $('go').textContent='Search';
+  const q=$('q'); q.focus(); q.select();
+}
+
+$('form').addEventListener('submit', e=>{ e.preventDefault(); search($('q').value); });
+$('recent').addEventListener('click', e=>{ const li=e.target.closest('li[data-i]'); if(!li) return; const r=recent[Number(li.dataset.i)]; if(r){ $('q').value=r.code; search(r.code); } });
+$('out').addEventListener('click', e=>{
+  const b=e.target.closest('[data-copy]'); if(!b) return;
+  const v=b.getAttribute('data-copy');
+  (navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(()=>{ b.textContent='Copied'; setTimeout(()=>{ b.textContent='Copy'; },1200); }).catch(()=>{ b.textContent='Select + Ctrl+C'; });
+});
+
+// Opened inside the portal's app viewer (iframe): the portal is already there.
+if(window.self!==window.top){ const bk=$('back'); if(bk) bk.style.display='none'; }
+
+// Deep link: lookup.html?q=<code>
+(function(){
+  const q=new URLSearchParams(location.search).get('q');
+  if(q){ $('q').value=q; search(q); }
+})();
+</script>
+</body>
+</html>
