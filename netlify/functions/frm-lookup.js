@@ -319,6 +319,18 @@ async function ssShipmentsForOrder(orderId, auth) {
   return ((j && j.shipments) || []).map(shapeSsShipment);
 }
 
+// client_orders.ss_order_status is a cached value (written when the order was
+// first found in ShipStation) and is not refreshed afterwards, so an order can
+// read "awaiting_shipment" there days after its label was printed. A label
+// that is not voided is the fact: the order shipped.
+function applyShipments(shaped, shipments) {
+  shaped.shipments = shipments;
+  if (shipments.some((s) => !s.voided) && String(shaped.status || '').toLowerCase() !== 'cancelled') {
+    shaped.status = 'shipped';
+  }
+  return shaped;
+}
+
 function joinAddr(parts) { return parts.map((p) => String(p || '').trim()).filter(Boolean).join(', '); }
 
 function shapeLocalOrder(o, clientName) {
@@ -399,7 +411,7 @@ async function fetchOrdersByNumber(sb, scanned, looksLikeTracking, errors) {
   for (const o of local) {
     const shaped = shapeLocalOrder(o, await fetchClientName(sb, o.client_id).catch(() => null));
     if (o.ss_order_id && auth) {
-      try { shaped.shipments = await ssShipmentsForOrder(o.ss_order_id, auth); }
+      try { applyShipments(shaped, await ssShipmentsForOrder(o.ss_order_id, auth)); }
       catch (e) { errors.push(`shipstation: ${String(e.message || e)}`); }
     }
     out.push(shaped);
@@ -420,7 +432,7 @@ async function fetchOrdersByNumber(sb, scanned, looksLikeTracking, errors) {
     for (const o of hits.slice(0, 3)) {
       const shaped = shapeSsOrder(o, null);
       if (o.orderStatus === 'shipped') {
-        try { shaped.shipments = await ssShipmentsForOrder(o.orderId, auth); }
+        try { applyShipments(shaped, await ssShipmentsForOrder(o.orderId, auth)); }
         catch (e) { errors.push(`shipstation: ${String(e.message || e)}`); }
       }
       out.push(shaped);
@@ -450,7 +462,7 @@ async function fetchOrdersByTracking(sb, tracking, errors) {
         exported_at: null, recipient: (sh.shipTo && sh.shipTo.name) || null, address: '', service: null, items: [], shipments: [],
       };
     }
-    shaped.shipments = ships.filter((s) => s.orderId === sh.orderId).map(shapeSsShipment);
+    applyShipments(shaped, ships.filter((s) => s.orderId === sh.orderId).map(shapeSsShipment));
     shaped.matched_by = 'tracking';
     return [shaped];
   } catch (e) { errors.push(`shipstation: ${String(e.message || e)}`); return []; }
