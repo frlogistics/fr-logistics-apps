@@ -102,7 +102,10 @@ function when(iso){
   const d=new Date(iso); if(isNaN(d)) return esc(iso);
   return d.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'})+' · '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
 }
-function day(iso){ if(!iso) return ''; const d=new Date(iso); return isNaN(d)?esc(iso):d.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}); }
+// "2026-11-16" is a calendar date: new Date() would read it as UTC midnight
+// and show Nov 15 in Miami. Build it as a local date instead.
+function asDate(v){ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v||'')); return m?new Date(+m[1],+m[2]-1,+m[3]):new Date(v); }
+function day(iso){ if(!iso) return ''; const d=asDate(iso); return isNaN(d)?esc(iso):d.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}); }
 function pill(text, cls){ return `<span class="pill ${cls||''}">${esc(String(text||'—').replace(/_/g,' '))}</span>`; }
 function orderCls(st){ const k=String(st||'').toLowerCase(); return k==='shipped'?'ok':k==='cancelled'?'bad':(k==='awaiting_shipment')?'blue':(k==='on_hold'||k==='awaiting_payment'||k==='pending')?'amb':''; }
 function dsCls(st){ return st==='received'?'ok':st==='labeled'?'blue':st==='exception'?'bad':st==='orphan'?'amb':st==='cancelled'?'bad':''; }

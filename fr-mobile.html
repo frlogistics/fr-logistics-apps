@@ -3256,7 +3256,10 @@ function kDsPill(st){
   const c=m[st]||['#eef2f4','var(--muted)'];
   return `<span class="lc-zone" style="background:${c[0]};color:${c[1]}">${kEsc(st==='cancelled'?'voided':(st||'—'))}</span>`;
 }
-function kDate(iso){ if(!iso) return ''; const d=new Date(iso); return isNaN(d)?kEsc(iso):d.toLocaleDateString([], {month:'short',day:'numeric'}); }
+// "2026-11-16" is a calendar date: new Date() would read it as UTC midnight
+// and show Nov 15 in Miami. Build it as a local date instead.
+function kAsDate(v){ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v||'')); return m?new Date(+m[1],+m[2]-1,+m[3]):new Date(v); }
+function kDate(iso){ if(!iso) return ''; const d=kAsDate(iso); return isNaN(d)?kEsc(iso):d.toLocaleDateString([], {month:'short',day:'numeric'}); }
 function kSectionTitle(t){ return `<div class="lc-sub" style="margin:14px 0 4px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--teal-d)">${t}</div>`; }
 
 function kDropshipSection(ds){
