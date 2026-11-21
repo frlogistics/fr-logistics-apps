@@ -24,7 +24,10 @@
 
   Deep link: lookup.html?q=WS4B235650 runs the search on load (the portal's
   top-bar search box uses this).
-  Login: /fr-auth.js is injected by the page-gate edge function.
+  Login: the staff sign-in script is added by the page-gate edge function as
+  the page is served. Do NOT write its file name anywhere in this file: the
+  edge function skips any page that already contains it, and the page would
+  load with no sign-in screen.
 -->
 <style>
 :root{--navy:#0B2545;--teal:#1C7293;--orange:#F4A261;--line:#E2E8F0;--muted:#64748B;--bg:#F8FAFC;--card:#fff;--ok:#166534;--okbg:#DCFCE7;--bad:#991B1B;--badbg:#FEE2E2;--amb:#92400E;--ambbg:#FEF3C7;--blue:#1D4F8B;--bluebg:#E8F1FB}
