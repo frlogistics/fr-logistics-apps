@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Delivery Exceptions</title>
+<meta name="robots" content="noindex,nofollow">
+<!--
+  exceptions.html — Delivery Exceptions (staff) · Delivery Guard, 23-nov-2026
+  ---------------------------------------------------------------------------
+  The staff side of the Delivery Guard. Clients see and decide their cases in
+  the Client Portal → Exceptions tab; this page is where FR carries the
+  decisions out and closes them.
+
+      GET  /.netlify/functions/delivery-exceptions?state=open|all|…
+      POST /.netlify/functions/delivery-exceptions  {action:…}
+
+  Case lifecycle:
+    awaiting_client → (client decides in the portal) → decided
+                    → (staff starts) in_progress → resolved / closed
+    Pre-ship address cases resolve themselves when the client confirms or
+    corrects the address (the ShipStation hold is released automatically).
+    No decision in 2 business days: post-ship → decided as default_return;
+    pre-ship → reminder to the client + email to staff.
+
+  Login: the staff sign-in script is added by the page-gate edge function as
+  the page is served. Do NOT write its file name anywhere in this file.
+-->
+<style>
+:root{--navy:#0B2545;--teal:#1C7293;--orange:#F4A261;--line:#E2E8F0;--muted:#64748B;--bg:#F8FAFC;--card:#fff;--ok:#166534;--okbg:#DCFCE7;--bad:#991B1B;--badbg:#FEE2E2;--amb:#92400E;--ambbg:#FEF3C7;--blue:#1D4F8B;--bluebg:#E8F1FB}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#0f172a;background:var(--bg)}
+header{background:var(--navy);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header h1{margin:0;font-size:18px}header span{color:#CBD5E1;font-size:13px}
+main{max-width:1200px;margin:0 auto;padding:18px 16px}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+select,input,textarea{padding:8px 10px;border:1px solid #CBD5E1;border-radius:6px;font:inherit;background:#fff}
+button{background:var(--navy);color:#fff;border:0;padding:9px 14px;border-radius:6px;cursor:pointer;font:inherit;font-weight:600}
+button.sec{background:#fff;color:var(--navy);border:1px solid var(--line)}
+button.ok{background:var(--ok)}
+button:disabled{opacity:.5;cursor:default}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+@media (max-width:860px){.kpis{grid-template-columns:repeat(2,1fr)}}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px}
+.kpi b{display:block;font-size:24px;color:var(--navy)}.kpi span{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+.msg{padding:10px 12px;border-radius:6px;font-size:13px;margin-bottom:14px}
+.msg.err{background:var(--badbg);color:var(--bad)}.msg.info{background:#F1F5F9;color:#334155}.msg.ok{background:var(--okbg);color:var(--ok)}
+table{width:100%;border-collapse:collapse;font-size:13px;background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:9px 10px;border-bottom:1px solid var(--line);background:#F1F5F9}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr.row{cursor:pointer}tr.row:hover td{background:#F8FAFC}
+.pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;text-transform:uppercase;letter-spacing:.3px;background:#EEF2F4;color:var(--muted)}
+.pill.awaiting_client{background:var(--ambbg);color:var(--amb)}.pill.decided{background:var(--bluebg);color:var(--blue)}
+.pill.in_progress{background:#EDE9FE;color:#5B21B6}.pill.resolved,.pill.closed{background:var(--okbg);color:var(--ok)}
+.pill.late{background:var(--badbg);color:var(--bad)}
+.mono{font-family:Consolas,Menlo,monospace}
+.sub{color:var(--muted);font-size:12px}
+.detail td{background:#FBFDFF}
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:860px){.dgrid{grid-template-columns:1fr}}
+.box{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px}
+.box h4{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--teal)}
+.box pre{white-space:pre-wrap;font-size:12px;margin:0;font-family:Consolas,Menlo,monospace}
+.acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+textarea{width:100%;min-height:54px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Delivery Exceptions</h1>
+  <span>Delivery Guard · address holds and carrier problems of guarded clients</span>
+  <span id="guarded" style="margin-left:auto"></span>
+</header>
+<main>
+  <div class="kpis">
+    <div class="kpi"><b id="k-wait">—</b><span>Waiting for client</span></div>
+    <div class="kpi"><b id="k-dec">—</b><span>Decided · to do</span></div>
+    <div class="kpi"><b id="k-prog">—</b><span>In progress</span></div>
+    <div class="kpi"><b id="k-late">—</b><span>Past due</span></div>
+    <div class="kpi"><b id="k-trk">—</b><span>Labels followed</span></div>
+  </div>
+  <div class="bar">
+    <select id="f-state">
+      <option value="open">Open cases</option>
+      <option value="all">All (60 days)</option>
+      <option value="decided">Decided — to carry out</option>
+      <option value="awaiting_client">Waiting for client</option>
+      <option value="in_progress">In progress</option>
+      <option value="resolved">Resolved</option>
+      <option value="closed">Closed</option>
+    </select>
+    <input id="f-q" placeholder="Search order, tracking, client…" style="min-width:240px">
+    <button class="sec" id="b-refresh">Refresh</button>
+    <button id="b-run" title="Runs one Delivery Guard pass now (order status, address check, tracking)">Run check now</button>
+    <span class="sub" id="trk-line" style="margin-left:auto"></span>
+  </div>
+  <div id="msg"></div>
+  <table>
+    <thead><tr><th>Order</th><th>Client</th><th>Case</th><th>Tracking</th><th>Carrier status</th><th>State</th><th>Due</th><th>Decision</th></tr></thead>
+    <tbody id="tb"><tr><td colspan="8" class="sub">Loading…</td></tr></tbody>
+  </table>
+  <p class="sub" style="margin-top:12px;line-height:1.6">
+    <b>Carrying out a decision.</b> <i>Reship</i>: create a new order/label in ShipStation (same order number + "-R") and note the tracking here. <i>Reroute</i>: request the change with the carrier (UPS Delivery Intercept / call); if refused, reship to the new address.
+    <i>Return to stock</i> / <i>default return</i>: receive the package against the order when it arrives. Carrier charges (return, intercept, new label) are billed at cost + the client's markup through the Services Log.
+  </p>
+</main>
+<script>
+(function(){
+  'use strict';
+  const API = '/.netlify/functions/delivery-exceptions';
+  const KIND = { address_pre_ship:'Address check (pre-ship)', address:'Address problem', access_point:'At UPS Access Point', attempt:'Failed attempt', return_to_sender:'Returning to sender', exception:'Exception' };
+  const STATE = { awaiting_client:'Waiting for client', decided:'Decided', in_progress:'In progress', resolved:'Resolved', closed:'Closed' };
+  let rows = [];
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const fmt = (iso, t) => !iso ? '—' : new Date(iso).toLocaleString('en-US', t ? { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' } : { month:'short', day:'numeric' });
+  const msg = (text, kind) => { $('msg').innerHTML = text ? `<div class="msg ${kind || 'info'}">${text}</div>` : ''; };
+
+  async function api(method, body, qs) {
+    const r = await fetch(API + (qs || ''), { method, cache:'no-store', headers: body ? { 'Content-Type':'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, credentials:'same-origin' });
+    let j = {}; try { j = await r.json(); } catch (e) {}
+    if (!r.ok || j.ok === false) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  }
+
+  async function load() {
+    $('tb').innerHTML = '<tr><td colspan="8" class="sub">Loading…</td></tr>';
+    try {
+      const j = await api('GET', null, '?state=' + encodeURIComponent($('f-state').value));
+      rows = j.exceptions || [];
+      const t = j.tracking_summary || {};
+      $('k-trk').textContent = t.followed ?? '—';
+      $('trk-line').textContent = `Last tracking check: ${fmt(t.last_check, true)}${t.with_errors ? ` · ${t.with_errors} with errors` : ''}${t.never_checked ? ` · ${t.never_checked} not checked yet` : ''}`;
+      $('guarded').textContent = (j.guarded_clients || []).length ? 'Guarded: ' + j.guarded_clients.join(', ') : 'No client has delivery_guard on';
+      render();
+    } catch (e) { $('tb').innerHTML = `<tr><td colspan="8" class="sub">${esc(e.message)}</td></tr>`; }
+  }
+
+  function render() {
+    const q = $('f-q').value.trim().toLowerCase();
+    const now = Date.now();
+    const list = rows.filter((r) => !q || [r.order_number, r.tracking_number, r.client, r.carrier_status].join(' ').toLowerCase().includes(q));
+    $('k-wait').textContent = rows.filter((r) => r.state === 'awaiting_client').length;
+    $('k-dec').textContent = rows.filter((r) => r.state === 'decided').length;
+    $('k-prog').textContent = rows.filter((r) => r.state === 'in_progress').length;
+    $('k-late').textContent = rows.filter((r) => r.state === 'awaiting_client' && r.due_at && new Date(r.due_at).getTime() < now).length;
+    if (!list.length) { $('tb').innerHTML = '<tr><td colspan="8" class="sub">No cases.</td></tr>'; return; }
+    $('tb').innerHTML = list.map((r) => {
+      const late = r.state === 'awaiting_client' && r.due_at && new Date(r.due_at).getTime() < now;
+      return `<tr class="row" data-id="${esc(r.id)}">
+        <td class="mono"><b>${esc(r.order_number)}</b></td>
+        <td>${esc(r.client)}</td>
+        <td>${esc(KIND[r.kind] || r.kind)}</td>
+        <td class="mono">${r.tracking_url ? `<a href="${esc(r.tracking_url)}" target="_blank" rel="noopener">${esc(r.tracking_number)}</a>` : esc(r.tracking_number || '—')}</td>
+        <td>${esc(r.carrier_status || '—')}</td>
+        <td><span class="pill ${esc(r.state)}">${esc(STATE[r.state] || r.state)}</span></td>
+        <td>${late ? '<span class="pill late">Late</span> ' : ''}${fmt(r.due_at)}</td>
+        <td>${esc(r.decision_label || '—')}</td>
+      </tr>
+      <tr class="detail" id="d-${esc(r.id)}" style="display:none"><td colspan="8">${detailHtml(r)}</td></tr>`;
+    }).join('');
+    document.querySelectorAll('tr.row').forEach((tr) => tr.addEventListener('click', (ev) => {
+      if (ev.target.closest('a')) return;
+      const d = $('d-' + tr.dataset.id); d.style.display = d.style.display === 'none' ? '' : 'none';
+    }));
+    document.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', onAct));
+  }
+
+  function detailHtml(r) {
+    const st = r.ship_to;
+    const dd = r.decision_data;
+    const open = ['awaiting_client', 'decided', 'in_progress'].includes(r.state);
+    return `<div class="dgrid">
+      <div class="box"><h4>Case</h4>
+        <div><b>${esc(KIND[r.kind] || r.kind)}</b> · detected ${fmt(r.detected_at, true)} · client emailed ${fmt(r.notified_at, true)}${r.reminded_at ? ' · reminded ' + fmt(r.reminded_at, true) : ''}</div>
+        <div class="sub" style="margin-top:6px">${esc(r.carrier_detail || '')}</div>
+        ${st ? `<h4 style="margin-top:10px">Ship to (ShipStation)</h4><pre>${esc([st.name, st.street1, st.street2, [st.city, st.state, st.postalCode].filter(Boolean).join(' '), st.phone, st.addressVerified].filter(Boolean).join('\n'))}</pre>` : ''}
+        ${r.ss_order_id ? `<div class="sub" style="margin-top:6px">ShipStation order id ${esc(r.ss_order_id)}</div>` : ''}
+      </div>
+      <div class="box"><h4>Decision</h4>
+        <div>${esc(r.decision_label || 'None yet')}${r.decided_by ? ` · ${esc(r.decided_by)} · ${fmt(r.decided_at, true)}` : ''}${r.cost_approved ? ' · <b>cost approved</b>' : ''}</div>
+        ${dd ? `<pre style="margin-top:6px">${esc(JSON.stringify(dd, null, 2))}</pre>` : ''}
+        ${r.resolution_note ? `<div class="sub" style="margin-top:6px">Resolution: ${esc(r.resolution_note)}${r.resolved_by ? ' · ' + esc(r.resolved_by) : ''}</div>` : ''}
+        <h4 style="margin-top:10px">Internal note</h4>
+        <textarea id="n-${esc(r.id)}">${esc(r.internal_note || '')}</textarea>
+        <div class="acts">
+          <button class="sec" data-act="note" data-id="${esc(r.id)}">Save note</button>
+          ${open && r.state !== 'in_progress' ? `<button class="sec" data-act="in_progress" data-id="${esc(r.id)}">Mark in progress</button>` : ''}
+          ${open ? `<button class="ok" data-act="resolved" data-id="${esc(r.id)}">Resolve</button><button class="sec" data-act="closed" data-id="${esc(r.id)}">Close (no action)</button>` : ''}
+          ${r.state === 'awaiting_client' ? `<button class="sec" data-act="extend" data-id="${esc(r.id)}">+1 business day</button>` : ''}
+          ${r.state === 'awaiting_client' && r.kind !== 'address_pre_ship' ? `<button class="sec" data-act="decide" data-id="${esc(r.id)}">Decide for client (phone)…</button>` : ''}
+          ${r.state === 'awaiting_client' && r.kind === 'address_pre_ship' ? `<button class="sec" data-act="confirm" data-id="${esc(r.id)}">Client confirmed by phone — release</button>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  async function onAct(ev) {
+    ev.stopPropagation();
+    const b = ev.currentTarget; const id = b.dataset.id; const act = b.dataset.act;
+    const r = rows.find((x) => x.id === id);
+    let body;
+    if (act === 'note') body = { action: 'note', id, internal_note: $('n-' + id).value };
+    else if (act === 'in_progress') body = { action: 'set_state', id, state: 'in_progress' };
+    else if (act === 'resolved' || act === 'closed') {
+      const note = prompt(act === 'resolved' ? 'How was it resolved? (e.g. "Reshipped, tracking 1Z…")' : 'Why is it closed without action?', '');
+      if (note === null) return;
+      body = { action: 'set_state', id, state: act, note };
+    }
+    else if (act === 'extend') body = { action: 'extend', id, days: 1 };
+    else if (act === 'confirm') {
+      if (!confirm(`Release order ${r.order_number} to ship with the current address?`)) return;
+      body = { action: 'decide', id, decision: 'confirm_address' };
+    }
+    else if (act === 'decide') {
+      const d = prompt('Decision agreed by phone: reship, return_to_stock or reroute', 'return_to_stock');
+      if (d === null) return;
+      if (!['reship', 'return_to_stock', 'reroute'].includes(d.trim())) { msg('Unknown decision.', 'err'); return; }
+      if (d.trim() === 'reroute') { msg('Reroute needs the full new address: ask the client to choose it in the portal, or note it and use Resolve.', 'err'); return; }
+      if (!confirm('The client approved the carrier charges by phone?')) return;
+      body = { action: 'decide', id, decision: d.trim(), cost_approved: true, data: { note: 'Agreed by phone' } };
+    }
+    b.disabled = true;
+    try { await api('POST', body); msg('Saved.', 'ok'); await load(); }
+    catch (e) { msg(esc(e.message), 'err'); b.disabled = false; }
+  }
+
+  $('f-state').addEventListener('change', load);
+  $('f-q').addEventListener('input', render);
+  $('b-refresh').addEventListener('click', load);
+  $('b-run').addEventListener('click', async () => {
+    const b = $('b-run'); b.disabled = true; b.textContent = 'Running…';
+    try {
+      const j = await api('POST', { action: 'run' });
+      const r = j.report || {};
+      msg(`Check done: ${r.orders_checked || 0} orders, ${r.held || 0} address holds, ${r.shipments_linked || 0} new labels, ${r.tracked || 0} tracked, ${r.exceptions_opened || 0} new cases${(r.errors || []).length ? ` · ${r.errors.length} errors: ${esc(r.errors.slice(0, 3).join(' | '))}` : ''}.`, (r.errors || []).length ? 'err' : 'ok');
+      await load();
+    } catch (e) { msg(esc(e.message), 'err'); }
+    finally { b.disabled = false; b.textContent = 'Run check now'; }
+  });
+  load();
+})();
+</script>
+</body>
+</html>

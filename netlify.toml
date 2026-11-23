@@ -47,6 +47,14 @@
 [functions."dropship-pack-stock-alert"]
   schedule = "40 12-23 * * 1-6"
 
+# Delivery Guard (23-nov-2026): address holds, tracking of shipped labels and
+# client-facing delivery exceptions for clients with fr_clients.delivery_guard.
+# Every hour at :05 from 11:05 to 23:05 UTC (6:05 AM–6:05 PM EST), every day —
+# carriers deliver on Saturdays and UPS returns don't wait for Monday.
+# Each label is polled at most every 2 h (RECHECK_HOURS in the engine).
+[functions."delivery-guard-monitor"]
+  schedule = "5 11-23 * * *"
+
 # ─── Redirects ──────────────────────────────────────────────────────────────
 
 [[redirects]]
