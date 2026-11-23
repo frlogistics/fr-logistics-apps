@@ -88,6 +88,7 @@ exports.handler = async (event) => {
         `&select=id,order_number,status,recipient_name,recipient_phone,` +
         `address_line1,address_line2,city,state,postal_code,country_code,` +
         `shipping_service,notes_to_buyer,created_at,exported_at,` +
+        `recipient_email,address_check,ss_order_status,ss_shipped_at,ss_tracking_number,` +
         `client_order_items(id,item_sku,item_name,item_quantity,item_unit_price,sku_validated)` +
         `&order=created_at.desc`,
       {

@@ -438,7 +438,15 @@ async function fetchOrdersByTracking(sb, tracking, errors) {
     const ships = ((j && j.shipments) || []).filter((s) => s.orderId);
     if (!ships.length) return [];
     const sh = ships.find((s) => !s.voided) || ships[0];
-    const local = await localOrderBySsId(sb, sh.orderId);
+    // A reship is a NEW ShipStation order with the same order number
+    // (WS4B235559, 18-nov-2026: original 336017228, reship 340649939), so the
+    // ss_order_id match misses it. Fall back to the order number before
+    // declaring the order "ShipStation only".
+    let local = await localOrderBySsId(sb, sh.orderId);
+    if (!local && sh.orderNumber) {
+      const byNum = await localOrdersByNumber(sb, String(sh.orderNumber).trim()).catch(() => []);
+      if (byNum.length) local = byNum[0];
+    }
     let shaped;
     if (local) {
       shaped = shapeLocalOrder(local, await fetchClientName(sb, local.client_id).catch(() => null));

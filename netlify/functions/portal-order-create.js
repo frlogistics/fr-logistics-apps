@@ -119,7 +119,14 @@ const ALLOWED_ORDER_FIELDS = [
   'address_line2',
   'shipping_service',
   'notes_to_buyer',
+  'recipient_email',
 ];
+
+// Delivery Guard (23-nov-2026): end-customer email (feeds ShipStation's
+// customer notifications at export) and Address Line 2 cleanup — carriers
+// read "N/A", "House", "-"… as a unit number and flag the address.
+const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[a-z]{2,}$/i;
+const LINE2_PLACEHOLDER_RE = /^\s*(n\/?a|none|null|house|home|no|nil|-+|\.+|0|#)\s*$/i;
 
 exports.handler = async (event) => {
   const origin = event.headers.origin || event.headers.Origin || '';
@@ -149,6 +156,16 @@ exports.handler = async (event) => {
   for (const f of REQUIRED_ORDER_FIELDS) {
     if (!order[f] || String(order[f]).trim() === '') {
       return { statusCode: 400, headers, body: JSON.stringify({ error: `Missing required field: ${f}` }) };
+    }
+  }
+
+  if (order.address_line2 !== undefined && order.address_line2 !== null && LINE2_PLACEHOLDER_RE.test(String(order.address_line2))) {
+    order.address_line2 = '';
+  }
+  if (order.recipient_email !== undefined && order.recipient_email !== null && String(order.recipient_email).trim() !== '') {
+    order.recipient_email = String(order.recipient_email).trim().toLowerCase();
+    if (!EMAIL_RE.test(order.recipient_email)) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'Recipient email is not a valid email address' }) };
     }
   }
 

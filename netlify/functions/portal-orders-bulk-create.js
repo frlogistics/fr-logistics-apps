@@ -27,6 +27,17 @@
 //   the validation summary the client sees stays consistent with the
 //   template.
 //
+// Delivery Guard (23-nov-2026):
+//   * "Buyer Email" (or "Recipient Email") is now stored as
+//     client_orders.recipient_email — the END CUSTOMER's email. At export it
+//     replaces the csv_defaults Buyer Email, so ShipStation's customer
+//     notifications (shipped / out for delivery / delivered, with the tracking
+//     link where the customer can sign digitally or change the delivery) reach
+//     the person who bought, not the client's logistics inbox. A value equal to
+//     the client's csv_defaults Buyer Email is treated as "not given".
+//   * Address Line 2 placeholders ("N/A", "House", "-", "None"…) are removed:
+//     carriers read them as a unit number and flag the address.
+//
 // Body: { portal_user: "email", rows: [ { "Order #": "...", "Recipient Full Name": "...", ... } ] }
 //
 // Rows with the same "Order #" are merged into a single order with
@@ -123,6 +134,8 @@ const HEADER_MAP = {
   'Country Code': 'country_code',
   'Shipping Service': 'shipping_service',
   'Notes to the Buyer': 'notes_to_buyer',
+  'Buyer Email': 'recipient_email',
+  'Recipient Email': 'recipient_email',
   'Item SKU': 'item_sku',
   'Item Name / Title': 'item_name',
   'Item Quantity': 'item_quantity',
@@ -167,7 +180,12 @@ const ORDER_FIELDS = [
   'country_code',
   'shipping_service',
   'notes_to_buyer',
+  'recipient_email',
 ];
+
+const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[a-z]{2,}$/i;
+// Address Line 2 values that are not a real unit (see Delivery Guard note).
+const LINE2_PLACEHOLDER_RE = /^\s*(n\/?a|none|null|house|home|no|nil|-+|\.+|0|#)\s*$/i;
 
 // USA-only country normalisation per project decision (May 2026). When other
 // countries become relevant, extend this map. Anything not recognised that's
@@ -201,10 +219,19 @@ function mapRow(rawRow) {
     // Only keep keys that match either a header we know about or an
     // internal field name (legacy). Avoid bringing in irrelevant junk.
     if (HEADER_MAP[key] || REQUIRED_INTERNAL_FIELDS.includes(key) || ORDER_FIELDS.includes(key) || key === 'item_sku' || key === 'item_name' || key === 'item_quantity' || key === 'item_unit_price' || key === 'order_number') {
+      // Buyer Email and Recipient Email both feed recipient_email: an empty
+      // one must not wipe the other.
+      if (internalKey === 'recipient_email' && String(rawRow[key] == null ? '' : rawRow[key]).trim() === '' && out.recipient_email) continue;
       out[internalKey] = rawRow[key];
     }
   }
   if (out.country_code !== undefined) out.country_code = normaliseCountry(out.country_code);
+  if (out.address_line2 !== undefined && out.address_line2 !== null && LINE2_PLACEHOLDER_RE.test(String(out.address_line2))) {
+    out.address_line2 = '';
+  }
+  if (out.recipient_email !== undefined && out.recipient_email !== null) {
+    out.recipient_email = String(out.recipient_email).trim().toLowerCase();
+  }
   return out;
 }
 
@@ -221,6 +248,10 @@ function mapRow(rawRow) {
 // them at export time, but they never land in client_orders.
 function applyDefaults(mappedRow, csvDefaults) {
   if (!csvDefaults || typeof csvDefaults !== 'object') return mappedRow;
+  // The template pre-fills the client's own Buyer Email; that is not the end
+  // customer, so it is not stored (the export falls back to it anyway).
+  const defBuyer = String(csvDefaults['Buyer Email'] || '').trim().toLowerCase();
+  if (defBuyer && mappedRow.recipient_email === defBuyer) mappedRow.recipient_email = '';
   for (const header of PERSISTED_DEFAULT_HEADERS) {
     const value = csvDefaults[header];
     if (value === undefined || value === null || String(value).trim() === '') continue;
@@ -270,6 +301,10 @@ function validateRow(row, rowIndex) {
     if (Number.isNaN(price) || price < 0) {
       errors.push('Item Unit Price must be a non-negative number');
     }
+  }
+
+  if (row.recipient_email && !EMAIL_RE.test(String(row.recipient_email))) {
+    errors.push('Buyer Email is not a valid email address (leave it blank if you do not have it)');
   }
 
   if (row.order_number && String(row.order_number).length > 100) {

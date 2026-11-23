@@ -123,7 +123,11 @@ function orderToRows(order, clientName, csvDefaults) {
   //     better to leave it blank than to leak someone else's email.
   const customField1 = defaultFor(csvDefaults, 'Custom Field 1', clientName || '');
   const orderSource = defaultFor(csvDefaults, 'Order Source', 'FR-Logistics');
-  const buyerEmail = defaultFor(csvDefaults, 'Buyer Email', '');
+  // Delivery Guard (23-nov-2026): the END CUSTOMER's email, when the client
+  // sent it (client_orders.recipient_email), wins over the client-level
+  // default — that is who has to receive "out for delivery / sign digitally".
+  const buyerEmail = (order.recipient_email && String(order.recipient_email).trim()) ||
+    defaultFor(csvDefaults, 'Buyer Email', '');
 
   // Order-level values keyed by header name. Anything not set -> '' .
   const base = {
@@ -234,7 +238,7 @@ exports.handler = async (event) => {
         'address_line1,address_line2,city,state,postal_code,country_code,shipping_service,' +
         'notes_to_buyer,internal_notes,created_at,exported_at,exported_by,' +
         'ss_state,ss_order_id,ss_order_status,ss_checked_at,ss_alerted_at,requeue_count,' +
-        'ss_dismissed_at,ss_dismissed_note,' +
+        'ss_dismissed_at,ss_dismissed_note,recipient_email,address_check,address_check_note,ss_shipped_at,ss_tracking_number,' +
         'client_order_items(id,item_sku,item_name,item_quantity,item_unit_price,sku_validated)' +
         '&order=created_at.desc';
       if (status === 'not_in_ss') {
@@ -295,7 +299,7 @@ exports.handler = async (event) => {
       const ordersRes = await sbFetch(
         'client_orders?select=id,client_id,order_number,status,recipient_name,recipient_phone,' +
         'address_line1,address_line2,city,state,postal_code,country_code,shipping_service,' +
-        'notes_to_buyer,internal_notes,created_at,' +
+        'notes_to_buyer,internal_notes,created_at,recipient_email,' +
         'client_order_items(id,item_sku,item_name,item_quantity,item_unit_price)' +
         `&id=in.(${idList})`
       );

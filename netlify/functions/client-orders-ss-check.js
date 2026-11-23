@@ -30,6 +30,13 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const SS = 'https://ssapi.shipstation.com';
 
+// Delivery Guard (23-nov-2026): when an order of a client with
+// fr_clients.delivery_guard = true is FOUND in ShipStation, its address
+// validation result is read right away. A warning/failure puts the order on
+// hold in ShipStation and opens an 'address_pre_ship' case in the client
+// portal (Exceptions tab). Failures here never break the check itself.
+const guard = require('./_delivery-guard/core.js');
+
 // Solo se verifican órdenes exportadas en esta ventana. Lo más viejo que siga
 // sin ss_order_id no se consulta (evita quemar el rate limit con el histórico).
 const LOOKBACK_DAYS = 30;
@@ -135,12 +142,20 @@ async function runCheck(options = {}) {
   const clientName = {};
   (await cr.json()).forEach((c) => { clientName[c.id] = (c.company && c.company.trim()) || c.name; });
 
+  // Delivery Guard clients (address check on discovery). Non-fatal.
+  const guarded = {};
+  if (!dryRun) {
+    try { (await guard.guardedClients()).forEach((c) => { guarded[c.id] = c; }); }
+    catch (e) { console.warn('[ss-check] delivery guard clients unavailable:', e.message); }
+  }
+  let held = 0;
+
   // Pendientes de verificar: exportadas, sin ss_order_id, dentro de la ventana.
   // Primero las nunca revisadas y, dentro de eso, las exportadas MÁS RECIENTES
   // (son las urgentes: las viejas casi siempre ya se despacharon).
   const q =
     'client_orders?select=id,client_id,order_number,recipient_name,exported_at,exported_by,' +
-    'ss_state,ss_checked_at,ss_alerted_at' +
+    'ss_state,ss_checked_at,ss_alerted_at,address_check' +
     `&status=eq.exported&ss_order_id=is.null&exported_at=gte.${encodeURIComponent(sinceIso)}` +
     NOT_DISMISSED +
     '&order=ss_checked_at.asc.nullsfirst,exported_at.desc&limit=200';
@@ -184,6 +199,14 @@ async function runCheck(options = {}) {
             ss_checked_at: nowIso,
             ss_found_at: nowIso,
           });
+          if (guarded[o.client_id]) {
+            try {
+              const verdict = await guard.evaluateAddress(res.order, o, guarded[o.client_id]);
+              if (verdict === 'held') held++;
+            } catch (e) {
+              errors.push({ order_number: o.order_number, error: `delivery guard: ${String(e.message || e)}` });
+            }
+          }
         }
       } else if (!dryRun) {
         await sbPatchOrder(o.id, { ss_state: 'missing', ss_checked_at: nowIso });
@@ -252,6 +275,7 @@ async function runCheck(options = {}) {
     found,
     missing,
     alert_count: missing.filter((m) => m.severity === 'alert' && m.verified).length,
+    address_holds: held,
     errors,
   };
 }
