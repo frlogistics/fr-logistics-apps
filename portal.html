@@ -560,6 +560,7 @@ const APPS=[
   {icon:'📋',name:'Packing Lists',desc:'Pickups & B2B · boxes vs request · print / Excel',url:'packlist.html'},
   {icon:'🏗️',name:'Pallets',desc:'Pallet management',url:'pallets.html'},
  {icon:'💰',name:'Quote Builder',desc:'Logistics rate quotes',url:'FR_Logistics_Quote_System_v3.html'},
+  {icon:'↩️',name:'Return Pickups',desc:'Client return requests · UPS labels & pickups · results on arrival',url:'Inbound_Outbound.html#returns',badge:'returnRequests'},
   {icon:'📝',name:'Services Log',desc:'Capture warehouse services per client',url:'services-log.html'},
   {icon:'🔗',name:'Shopify Runbook',desc:'Shopify + ShipStation + SKUVault',url:'shopify_integration_runbook.html'},
   {icon:'🔢',name:'Stock Count',desc:'Blind physical counts · variance vs SkuVault',url:'count.html'},
@@ -586,7 +587,7 @@ function doLogin(){
   else{e.style.display='block';document.getElementById('pwInput').value='';document.getElementById('pwInput').focus();}
 }
 function signOut(){document.getElementById('loginOverlay').style.display='flex';document.getElementById('app').style.display='none';document.getElementById('pwInput').value='';}
-function init(){renderApps();loadClients();loadMessages();loadPendingBadge();setInterval(loadPendingBadge,60000);}
+function init(){renderApps();loadClients();loadMessages();loadPendingBadge();setInterval(loadPendingBadge,60000);loadReturnBadge();setInterval(loadReturnBadge,120000);}
 
 function switchTab(name,btn){
   document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));
@@ -654,6 +655,37 @@ function loadPendingBadge(){
     })
     .catch(()=>{el.style.display='none';});
 }
+
+// ── Return pickup requests badge ────────────────────────────────────────────
+// Same endpoint as the "Client requests" box in Inbound / Outbound → Create
+// Return Label. Red: a pickup failed, or a request has waited 4+ business
+// hours. Yellow: requests waiting for the warehouse. Green: only returns that
+// arrived and need their result recorded. Hidden when there is nothing.
+function loadReturnBadge(){
+  const el=document.getElementById('badge-returnRequests');
+  if(!el)return;
+  fetch('/.netlify/functions/shipstation-return?action=requests')
+    .then(r=>r.ok?r.json():Promise.reject(new Error('HTTP '+r.status)))
+    .then(d=>{
+      const open=(d&&d.open)||[],arrived=(d&&d.arrived)||[];
+      const n=open.length+arrived.length;
+      if(!n){el.style.display='none';return;}
+      const failed=open.filter(r=>r.status==='pickup_failed').length;
+      const oldest=open.reduce((a,r)=>{
+        const t=new Date(r.created_at).getTime();
+        return (!a||t<a)?t:a;
+      },null);
+      const age=oldest?bizHoursSince(new Date(oldest).toISOString()):0;
+      el.className='appBadge '+((failed||age>=4)?'late':open.length?'warn':'ok');
+      el.textContent=n>99?'99+':String(n);
+      const parts=[];
+      if(open.length)parts.push(open.length+' waiting for the warehouse'+(failed?' ('+failed+' pickup failed)':'')+' · oldest: '+fmtAge(age)+' of business time');
+      if(arrived.length)parts.push(arrived.length+' arrived · record the result');
+      el.title=parts.join(' — ');
+      el.style.display='block';
+    })
+    .catch(()=>{el.style.display='none';});
+}
 function openApp(url,name){
   const v=document.getElementById('appViewer');
   document.getElementById('appViewerTitle').textContent=name;
@@ -666,6 +698,7 @@ function closeApp(){
   document.getElementById('appViewer').style.display='none';
   document.getElementById('appViewerFrame').src='about:blank';
   loadPendingBadge();
+  loadReturnBadge();
   if(location.hash.includes('app='))history.back();
 }
 window.addEventListener('popstate',function(){

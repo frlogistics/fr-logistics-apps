@@ -1913,6 +1913,15 @@
     $("rtnRefreshBtn").addEventListener("click", () => { rtnLoadList(); rtnLoadRequests(); });
     $("rtnCarrier").addEventListener("change", rtnApplyCarrier);
     dlg.addEventListener("click", rtnOnClick);
+
+    // Deep link: the "Return Pickups" tile on the Apps Portal opens
+    // Inbound_Outbound.html#returns straight into this dialog. Closing it
+    // drops the hash (replaceState, no new history entry) so a reload
+    // lands on Inbound / Outbound as usual.
+    dlg.addEventListener("close", () => {
+      if(/^#returns?$/i.test(location.hash)) history.replaceState(null, "", location.pathname + location.search);
+    });
+    if(/^#returns?$/i.test(location.hash)) openBtn.click();
   }
 
   if(document.readyState === "loading"){
