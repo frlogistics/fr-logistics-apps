@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Return Pickups — Manual del almacén · FR-Logistics Miami</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Fraunces:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --green: #1a7a4a; --green-light: #e6f4ec; --green-dark: #0f5a35;
+    --amber: #b07010; --amber-light: #fef3dc;
+    --navy: #0f1d35; --paper: #faf9f6; --surface: #ffffff; --surface2: #f3f2ee;
+    --border: rgba(15, 29, 53, 0.12); --text: #1a1a18; --text2: #5a5a55; --text3: #9a9a95;
+    --radius: 10px; --radius-lg: 16px;
+    /* Status colors exactly as the app shows them */
+    --st-green: #16a34a; --st-yellow: #facc15; --st-red: #dc2626;
+    --badge-amber: #f59e0b; --badge-green: #1fa463;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body { font-family: 'DM Sans', -apple-system, Arial, sans-serif; line-height: 1.55; background: var(--paper); color: var(--text); }
+  a { color: var(--green); font-weight: 600; }
+
+  .topnav { background: var(--navy); color: #fff; padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
+  .topnav a { color: #fff; text-decoration: none; font-size: 13px; opacity: .85; }
+  .topnav .t { font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: .04em; color: rgba(255,255,255,.7); margin-left: auto; }
+
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 20px 60px; }
+  .hero { padding: 36px 0 18px; }
+  .kicker { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--green); letter-spacing: .06em; text-transform: uppercase; }
+  h1 { font-family: 'Fraunces', serif; font-weight: 700; font-size: 2.3rem; line-height: 1.1; color: var(--navy); margin: 8px 0 10px; }
+  h1 em { color: var(--green); font-style: italic; }
+  .sub { font-size: 1.05rem; color: var(--text2); max-width: 640px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .chip { background: var(--green-light); color: var(--green-dark); border: 1px solid rgba(26,122,74,.25); border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 600; }
+  .chip.gray { background: var(--surface2); color: var(--text2); border-color: var(--border); }
+
+  .toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 18px 0 6px; }
+  .toc a { font-size: 13px; text-decoration: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; color: var(--navy); }
+
+  section { margin-top: 34px; }
+  h2 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.5rem; color: var(--navy); margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
+  h2 .n { font-family: 'DM Mono', monospace; font-size: 13px; background: var(--green); color: #fff; border-radius: 999px; padding: 2px 10px; }
+  h3 { font-size: 1.1rem; color: var(--navy); margin-bottom: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  p { margin-bottom: 10px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 20px; margin-bottom: 14px; }
+  .lead { background: var(--green-light); border: 1px solid rgba(26,122,74,.25); border-radius: var(--radius-lg); padding: 18px 20px; font-size: 1.05rem; }
+  .note { background: var(--amber-light); border: 1px solid rgba(176,112,16,.3); color: #6b4507; border-radius: var(--radius); padding: 10px 14px; font-size: 14px; margin-top: 10px; }
+  ol, ul { padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  .lbl { font-weight: 700; color: var(--navy); }
+  .ui { font-weight: 700; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 0 6px; white-space: nowrap; }
+  .meta { font-size: 13px; color: var(--text2); margin-top: 8px; }
+
+  .pill { display: inline-block; border-radius: 999px; padding: 2px 12px; font-size: 12px; font-weight: 800; white-space: nowrap; }
+  .pill.green { background: var(--st-green); color: #fff; }
+  .pill.yellow { background: var(--st-yellow); color: #1f2937; }
+  .pill.red { background: var(--st-red); color: #fff; }
+  .badge { display: inline-block; min-width: 24px; height: 24px; line-height: 24px; padding: 0 7px; border-radius: 12px; color: #fff; font-weight: 700; font-size: 13px; text-align: center; }
+  .badge.amber { background: var(--badge-amber); } .badge.red { background: var(--st-red); } .badge.green { background: var(--badge-green); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { background: var(--navy); color: #fff; text-align: left; padding: 9px 10px; font-weight: 600; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:nth-child(even) td { background: #fbfaf7; }
+  .who { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 6px; padding: 1px 8px; }
+  .who.c { background: #e6f0fb; color: #1878c8; } .who.s { background: var(--surface2); color: var(--navy); }
+  .who.u { background: #fde4dc; color: #a23a14; } .who.t { background: var(--green-light); color: var(--green-dark); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } h1 { font-size: 1.9rem; } }
+  footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text3); }
+  @media print { .topnav, .toc { display: none; } body { background: #fff; } .card { break-inside: avoid; } }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <a href="/docs.html">← Docs Library</a>
+  <span class="t">FR-Logistics Miami · Manual interno</span>
+</div>
+
+<div class="wrap">
+
+<div class="hero">
+  <div class="kicker">Manual del almacén · v1.0 · 25-nov-2026</div>
+  <h1>Return Pickups<br/><em>Manual del almacén</em></h1>
+  <p class="sub">Qué hacer con las solicitudes de pickup de devoluciones que los clientes piden desde su portal.</p>
+  <div class="chips">
+    <span class="chip">Activo para: MXS Overseas Ltd (4BLANC)</span>
+    <span class="chip gray">Los demás clientes siguen pidiendo por correo</span>
+  </div>
+  <div class="toc">
+    <a href="#resumen">En pocas palabras</a>
+    <a href="#donde">Dónde está</a>
+    <a href="#recorrido">El recorrido</a>
+    <a href="#tareas">Qué te toca hacer</a>
+    <a href="#llega">Cuando llega la caja</a>
+    <a href="#avisos">Cómo te enteras</a>
+    <a href="#correo">Clientes por correo</a>
+  </div>
+</div>
+
+<!-- 1 -->
+<section id="resumen">
+  <h2><span class="n">1</span> En pocas palabras</h2>
+  <div class="lead">
+    <p>El cliente pide el pickup en su portal. Si la solicitud pasa todas las revisiones, el sistema compra el label de UPS y agenda el pickup <b>solo</b>, sin que tengas que hacer nada.</p>
+    <p style="margin-bottom:6px">Tú intervienes en tres momentos:</p>
+    <ol style="margin-bottom:0">
+      <li>Cuando una solicitud <b>necesita revisión</b>.</li>
+      <li>Cuando <b>UPS no acepta el pickup</b>.</li>
+      <li>Cuando <b>la caja llega</b> al almacén.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- 2 -->
+<section id="donde">
+  <h2><span class="n">2</span> Dónde está</h2>
+  <div class="card">
+    <ol>
+      <li>En el Apps Portal, entra al tile <span class="ui">Return Pickups</span>. Te lleva directo a la pantalla <span class="ui">Create Return Label</span>. También llegas por Inbound / Outbound → <span class="ui">↩︎ Create Return Label</span>.</li>
+      <li>A la derecha está el cuadro <span class="ui">Client requests</span>: ahí sale todo lo que te necesita. Si dice <span class="ui">Nothing pending</span>, no hay nada que hacer.</li>
+      <li>Más abajo está <span class="ui">Open returns</span>: la lista de todos los labels de devolución, con los botones <span class="ui">Retry pickup</span> y <span class="ui">Void</span>.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- 3 -->
+<section id="recorrido">
+  <h2><span class="n">3</span> El recorrido de una devolución</h2>
+  <div class="card" style="padding:0;overflow:hidden">
+    <table>
+      <tr><th style="width:40px">#</th><th style="width:110px">Quién</th><th>Qué pasa</th></tr>
+      <tr><td>1</td><td><span class="who c">Cliente</span></td><td>Llena el formulario en su portal (pestaña Returns).</td></tr>
+      <tr><td>2</td><td><span class="who s">Sistema</span></td><td>Revisa la dirección, el teléfono, el peso, las medidas y la fecha.</td></tr>
+      <tr><td>3</td><td><span class="who s">Sistema</span></td><td>Si todo está bien, compra el label, agenda el pickup con UPS y le manda el label al cliente por correo. A warehouse@ le llega copia.</td></tr>
+      <tr><td>4</td><td><span class="who u">UPS</span></td><td>Recoge la caja en casa del cliente final y la trae al almacén.</td></tr>
+      <tr><td>5</td><td><span class="who t">Tú</span></td><td>Recibes la caja como cualquier paquete: registras el tracking y le das <span class="ui">Save Inbound</span>.</td></tr>
+      <tr><td>6</td><td><span class="who t">Tú</span></td><td>Haces lo que pidió el cliente, anotas el resultado y le das <span class="ui">Save result</span>. Al cliente le llega un correo.</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 4 -->
+<section id="tareas">
+  <h2><span class="n">4</span> Qué te toca hacer</h2>
+  <p>Cada solicitud sale en <span class="ui">Client requests</span> como una tarjeta con un estado. Esto es lo que haces en cada caso:</p>
+
+  <div class="card">
+    <h3><span class="pill yellow">Needs review</span> La solicitud espera por ti</h3>
+    <p><span class="lbl">Qué significa:</span> no pasó una revisión. El motivo sale en la tarjeta: posible duplicado (misma dirección en los últimos 14 días), medidas o peso que hay que confirmar, dirección en Alaska o Hawái, o UPS rechazó los datos.</p>
+    <p class="lbl" style="margin-bottom:4px">Qué haces:</p>
+    <ol>
+      <li>Lee el motivo en la tarjeta.</li>
+      <li>Dale <span class="ui">Load into form</span>: el formulario se llena solo con los datos de la solicitud.</li>
+      <li>Corrige lo que haga falta y dale <span class="ui">Generate Return Label</span>.</li>
+      <li>Si sale el aviso <span class="ui">CHECK THE DIMENSIONS</span>, acéptalo solo si las medidas y el peso están bien.</li>
+      <li>Si la solicitud no procede (por ejemplo, es un duplicado de verdad), dale <span class="ui">Cancel request</span> y escribe el motivo. Al cliente le llega un correo.</li>
+    </ol>
+    <div class="note"><b>Plazo: 1 día hábil.</b> Es lo que le prometimos al cliente.</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="pill red">Pickup not booked</span> UPS no aceptó el pickup</h3>
+    <p><span class="lbl">Qué significa:</span> el label ya existe, pero UPS no aceptó la cita del pickup (por ejemplo, porque la ventana ya había pasado).</p>
+    <p class="lbl" style="margin-bottom:4px">Qué haces:</p>
+    <ol>
+      <li>Dale <span class="ui">Retry pickup</span>.</li>
+      <li>Escoge otra fecha y ventana y dale <span class="ui">Book pickup</span>.</li>
+      <li><b>No crees otro label</b>: el que existe sirve. Así no se cobra doble.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h3><span class="pill green">Arrived</span> La caja llegó y falta el resultado</h3>
+    <p><span class="lbl">Qué significa:</span> ya registraste la caja con <span class="ui">Save Inbound</span> y falta anotar qué se hizo con ella. Sale bajo <span class="ui">Arrived — record the result</span>.</p>
+    <p><span class="lbl">Qué haces:</span> lo que dice la sección 5, <a href="#llega">Cuando llega la caja</a>.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="ui" style="font-size:13px">Void</span> Un label de más, o el cliente canceló</h3>
+    <p><span class="lbl">Cuándo:</span> quedó un label duplicado, o el cliente canceló una solicitud que ya tenía label.</p>
+    <p class="lbl" style="margin-bottom:4px">Qué haces:</p>
+    <ol>
+      <li>En <span class="ui">Open returns</span>, busca la fila por el tracking.</li>
+      <li>Dale <span class="ui">Void</span> y confirma. Puedes escribir el motivo (por ejemplo, Duplicate label).</li>
+      <li>El sistema anula el label, cancela el pickup de UPS y no se le cobra al cliente.</li>
+    </ol>
+    <div class="note">No se puede anular un label que ya se facturó ni el de una caja que ya llegó.</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="pill yellow">Processing · stuck</span> Se quedó a mitad de camino</h3>
+    <p>Pasa muy poco. Haz lo mismo que con <b>Needs review</b>: <span class="ui">Load into form</span> y <span class="ui">Generate Return Label</span>. Si ya tiene label, el sistema no deja crear otro.</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section id="llega">
+  <h2><span class="n">5</span> Cuando llega la caja</h2>
+  <div class="card">
+    <ol>
+      <li>Regístrala como siempre en Inbound, con el tracking de UPS del label, y dale <span class="ui">Save Inbound</span>. <b>Si no la registras, no aparece como Arrived.</b></li>
+      <li>En <span class="ui">Client requests</span>, busca la tarjeta bajo <span class="ui">Arrived — record the result</span>. En <span class="ui">On arrival</span> está lo que pidió el cliente.</li>
+      <li>Haz lo que corresponde según la tabla.</li>
+      <li>Escoge el resultado, escribe una nota si hace falta y dale <span class="ui">Save result</span>. Al cliente le llega un correo.</li>
+    </ol>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden">
+    <table>
+      <tr><th style="width:28%">On arrival (lo que pidió)</th><th>Qué haces</th><th style="width:28%">Resultado que escoges</th></tr>
+      <tr><td><b>Restock if sealed</b></td><td>Si está sellada y vendible, va a inventario.</td><td>Restocked — saleable</td></tr>
+      <tr><td><b>Restock if sealed</b><br/><span class="meta">pero llegó abierta</span></td><td>Toma fotos y en la nota pregúntale al cliente qué hacer.</td><td>Held — waiting for client</td></tr>
+      <tr><td><b>Inspect + hold</b></td><td>Inspecciónala, toma fotos y guárdala.</td><td>Held — waiting for client</td></tr>
+      <tr><td><b>Fulfill order</b> WS4B…</td><td>Despáchala para esa orden.</td><td>Used to fulfill an order</td></tr>
+      <tr><td><b>See instructions</b></td><td>Sigue la nota del cliente.</td><td>El que aplique</td></tr>
+      <tr><td><b>Cualquiera</b><br/><span class="meta">si llegó dañada</span></td><td>Toma fotos.</td><td>Damaged — not saleable</td></tr>
+    </table>
+  </div>
+  <div class="note"><b>La nota le llega al cliente:</b> escríbela en inglés. Las fotos guárdalas por si el cliente las pide.</div>
+</section>
+
+<!-- 6 -->
+<section id="avisos">
+  <h2><span class="n">6</span> Cómo te enteras</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3>El número del tile</h3>
+      <p style="margin-bottom:6px">En el tile <span class="ui">Return Pickups</span> del Apps Portal:</p>
+      <ul style="list-style:none;padding-left:0">
+        <li><span class="badge amber">2</span>&nbsp; Solicitudes esperando por ti.</li>
+        <li><span class="badge red">1</span>&nbsp; Un pickup falló, o una solicitud lleva 4 horas hábiles o más esperando.</li>
+        <li><span class="badge green">1</span>&nbsp; Solo falta anotar el resultado de cajas que llegaron.</li>
+        <li>Sin número: no hay nada pendiente.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Los correos</h3>
+      <ul>
+        <li>A warehouse@ le llega un correo con <b>[Returns]</b> en el asunto cuando algo necesita revisión o el cliente cancela.</li>
+        <li>También te llega copia de cada correo que recibe el cliente: el label, la confirmación del pickup y el resultado.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Lo que el sistema ya revisa por ti</h3>
+    <p style="margin-bottom:0">Dirección de EE.UU. sin P.O. Box, ZIP que coincide con el estado, teléfono de 10 dígitos, peso hasta 150 lb, medidas dentro del límite de UPS, fecha desde el próximo día hábil (sin fines de semana ni feriados de UPS) y ventana de mínimo 2 horas que termine a las 12 PM o después. Si algo de eso está mal, el cliente no puede mandar la solicitud.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section id="correo">
+  <h2><span class="n">7</span> Clientes que todavía piden por correo</h2>
+  <div class="card">
+    <p>Por ahora solo <b>MXS Overseas Ltd (4BLANC)</b> pide los pickups por el portal. Los demás siguen igual: creas el label a mano en <span class="ui">Create Return Label</span>. Lo nuevo en esa pantalla:</p>
+    <ul>
+      <li>La fecha del pickup ya viene puesta en el próximo día hábil.</li>
+      <li>Si escoges una ventana que ya pasó, el sistema no compra el label y te propone otra fecha. Así no salen labels duplicados.</li>
+      <li>Hay campo <span class="ui">Address Line 2</span> para apartamento, suite o unidad. En una casa, déjalo vacío.</li>
+      <li>Si UPS no acepta el pickup, usa <span class="ui">Retry pickup</span> en Open returns. No crees otro label.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Lo que ya no hace falta</h3>
+    <ul style="margin-bottom:0">
+      <li>Crear a mano los labels de MXS: salen solos.</li>
+      <li>Contestar correos de "¿llegó?" o "¿lo pusieron en stock?": el cliente lo ve en su portal y le llega el correo con el resultado.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>FR-Logistics Miami · Manual interno del almacén · Return Pickups v1.0 · 25-nov-2026 · Dudas: Jose Fuentes</footer>
+
+</div>
+</body>
+</html>
