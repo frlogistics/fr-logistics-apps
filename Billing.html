@@ -388,6 +388,10 @@ const API_KEY_TO_LINE_KEY = {
   'DS_CONSOL':         'ds_consol',
   'DS_STORAGE':        'ds_storage',
   'DS_ADDITIONAL_PKG': 'ds_additional_pkg',
+  // 2026-11-25 — box surcharges (since 27-oct) and FedEx run surcharge.
+  'DS_BOX_LARGE':      'ds_box_large',
+  'DS_BOX_XL':         'ds_box_xl',
+  'DS_FEDEX_RUN':      'ds_fedex_run',
   'FUL_PICKUP':    'carrier_pickup',
   'FUL_LABEL_APP': 'shipping_label_app',
   'FUL_CONSOL':    'order_consol',
@@ -777,6 +781,18 @@ function getBillingLines(client) {
     {cat:'Casillero', id:'drop_shipment',     name:'Casillero Outbound Order',    sku:'DS_CONSOL',          unit:'orders',    rate:(r.ds_consol||r.drop_shipment||6.00), qty:0, auto:true,  tip:'Auto from Inbound/Outbound portal (Outbound Drop-Shipment records). Includes de-branding + neutral repack.'},
     {cat:'Casillero', id:'ds_additional_pkg', name:'Additional Package in Order', sku:'DS_ADDITIONAL_PKG',  unit:'packages',  rate:r.ds_additional_pkg||0, qty:0, auto:false, tip:'Each package beyond the 1st in the same outbound consolidation', optional:true},
     {cat:'Casillero', id:'ds_storage',        name:'Dropshipment Storage',        sku:'DS_STORAGE',         unit:'pkg-weeks', rate:r.ds_storage||0,        qty:0, auto:false, tip:'Package-weeks counted from date of receipt — no grace period. Enter manually.', optional:true},
+    // 2026-11-25 — these are filled from the Services Log, written by the
+    // Dropshipments triggers (ds_sync_pack_charge / ds_sync_fedex_run). Before
+    // this they had no billing line and showed up as "Services Log sin línea".
+    {cat:'Casillero', id:'ds_box_large',      name:'Large Box Surcharge',         sku:'DS_BOX_LARGE',       unit:'orders',    rate:r.ds_box_large||0,      qty:0, auto:false, tip:'VIP tier: box above standard range (Large). Logged by Dropshipments when the order ships.', optional:true},
+    {cat:'Casillero', id:'ds_box_xl',         name:'Extra Large Box Surcharge',   sku:'DS_BOX_XL',          unit:'orders',    rate:r.ds_box_xl||0,         qty:0, auto:false, tip:'VIP tier: Extra Large box. Logged by Dropshipments when the order ships.', optional:true},
+    {cat:'Casillero', id:'ds_fedex_run',      name:'FedEx Drop-off Run',          sku:'DS_FEDEX_RUN',       unit:'runs',      rate:r.ds_fedex_run||0,      qty:0, auto:false, tip:'One per day with FedEx dispatches and no MailAmericas run that day. Logged automatically by Dropshipments.', optional:true},
+    {cat:'Casillero', id:'ds_pack_c1', name:'Packaging Kit — Box C1', sku:'DS_PACK_C1', unit:'orders', rate:0, qty:0, auto:false, tip:'Standard tier: 120% of packaging material cost. Logged by Dropshipments when the order ships.', optional:true},
+    {cat:'Casillero', id:'ds_pack_c2', name:'Packaging Kit — Box C2', sku:'DS_PACK_C2', unit:'orders', rate:0, qty:0, auto:false, tip:'Standard tier: 120% of packaging material cost. Logged by Dropshipments when the order ships.', optional:true},
+    {cat:'Casillero', id:'ds_pack_c3', name:'Packaging Kit — Box C3', sku:'DS_PACK_C3', unit:'orders', rate:0, qty:0, auto:false, tip:'Standard tier: 120% of packaging material cost. Logged by Dropshipments when the order ships.', optional:true},
+    {cat:'Casillero', id:'ds_pack_c4', name:'Packaging Kit — Box C4', sku:'DS_PACK_C4', unit:'orders', rate:0, qty:0, auto:false, tip:'Standard tier: 120% of packaging material cost. Logged by Dropshipments when the order ships.', optional:true},
+    {cat:'Casillero', id:'ds_pack_c5', name:'Packaging Kit — Box C5', sku:'DS_PACK_C5', unit:'orders', rate:0, qty:0, auto:false, tip:'Standard tier: 120% of packaging material cost. Logged by Dropshipments when the order ships.', optional:true},
+    {cat:'Casillero', id:'ds_pack_c6', name:'Packaging Kit — Box C6', sku:'DS_PACK_C6', unit:'orders', rate:0, qty:0, auto:false, tip:'Standard tier: 120% of packaging material cost. Logged by Dropshipments when the order ships.', optional:true},
     {cat:'Outbound', id:'outbound_carton',  name:'Outbound — Cartons',    sku:'FUL_OUT_CART', unit:'cartons',  rate:r.outbound_carton||0,  qty:0, auto:false, tip:'Enter outbound cartons shipped'},
     {cat:'Outbound', id:'outbound_pallet',  name:'Outbound — Pallets',    sku:'FUL_OUT_PAL',  unit:'pallets',  rate:r.outbound_pallet||0,  qty:0, auto:false, tip:'Enter outbound pallets shipped'},
     {cat:'Outbound', id:'oversized_pallet', name:'Oversized Pallet',      sku:'FUL_OUT_OVS',  unit:'pallets',  rate:r.oversized_pallet||0, qty:0, auto:false, tip:'Exceeds 40x48", >70" ht, or >1500 lbs', optional:true},
@@ -1205,7 +1221,9 @@ async function loadBilling() {
   // A warning, not a block — a client can legitimately run both lines on
   // different merchandise. See fr_clients.receiving_mode / services.
   const _q = id => (_lines.find(l => l.id === id)?.qty || 0);
-  const _casillero = _q('ds_intake') + _q('drop_shipment') + _q('ds_storage') + _q('ds_additional_pkg');
+  const _casillero = _q('ds_intake') + _q('drop_shipment') + _q('ds_storage') + _q('ds_additional_pkg')
+                   + _q('ds_box_large') + _q('ds_box_xl') + _q('ds_fedex_run')
+                   + [1,2,3,4,5,6].reduce((a, n) => a + _q('ds_pack_c' + n), 0);
   const _fulfil    = _q('pick_pack_sm') + _q('pick_pack_st') + _q('pick_pack_ov');
   const _services  = _client.services || [];
   const _isCasilleroClient = Array.isArray(_services) && _services.includes('Dropship');
@@ -1584,6 +1602,16 @@ function genCSV() {
     'FUL_OUT_DROP':     'Cross-Docking:Inbound-Dropshipment',  // retired — kept for old runs
     'DS_CONSOL':        'Cross-Docking:Inbound-Dropshipment',  // same QBO item as before: export unchanged
     'DS_INTAKE':        'Cross-Docking:Inbound-Dropshipment',  // TODO Jose: dedicated QBO item for intake
+    // 2026-11-25 — create these three items in QBO before the first import.
+    'DS_FEDEX_RUN':     'Cross-Docking:FedEx Drop-off Run',
+    'DS_BOX_LARGE':     'Cross-Docking:Box Size Surcharge',
+    'DS_BOX_XL':        'Cross-Docking:Box Size Surcharge',
+    'DS_PACK_C1':      'Cross-Docking:Packaging Kit',
+    'DS_PACK_C2':      'Cross-Docking:Packaging Kit',
+    'DS_PACK_C3':      'Cross-Docking:Packaging Kit',
+    'DS_PACK_C4':      'Cross-Docking:Packaging Kit',
+    'DS_PACK_C5':      'Cross-Docking:Packaging Kit',
+    'DS_PACK_C6':      'Cross-Docking:Packaging Kit',
     'FUL_LABEL_MARKUP': 'Fulfillment Service:Shipping Label Fee',
     'FUL_LABEL_APP':    'Cross-Docking:Shipping Label Application',
     'FUL_PICKUP':       'Cross-Docking:Carrier Facility Pickup',

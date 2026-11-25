@@ -293,12 +293,44 @@ function extractOutboundFromFilename(filename, pattern) {
 // USXFL1 first is what keeps this correct; swapping the two lines would stamp
 // every Chilexpress parcel as MailAmericas.
 // Returns null when nothing matches, so the caller falls back to the config.
+//
+// Day 9 (2026-11-25): FedEx. Shop World started selling on Walmart Marketplace
+// inside the US; Walmart issues FedEx Ground / Ground Economy labels. Verified
+// against the real label of Walmart order 129132799751630: the text carries
+// "FedEx Tracking ID# 3853 1677 2584" and "FedEx Ground". Checked AFTER the two
+// Mercado Libre carriers so their load-bearing order above is untouched.
 function detectOutboundCarrierFromLabel(cleanedText) {
   if (!cleanedText) return null;
   const t = cleanedText.toUpperCase();
   if (t.includes("USXFL1")) return "Chilexpress";
   if (t.includes("FBA02") || /MAIL\d{9,10}TX/.test(t) || t.includes("MAILAMERICAS")) return "MailAmericas";
+  if (t.includes("FEDEXTRACKINGID") || t.includes("FEDEXGROUND")) return "FedEx";
   return null;
+}
+
+// ─── Day 9: FedEx tracking from the label text ───────────────────────────────
+// Reads the HUMAN-READABLE line "FedEx Tracking ID# 3853 1677 2584" from the RAW
+// text (spaces intact), so the number ends where the line ends. 12 digits is
+// FedEx Ground/Express; 15 digits also exists for older Ground labels.
+//
+// Why this runs BEFORE the client pattern: Shop World's outbound_pdf_pattern is
+// "(?<!\d)(?!2000)(\d{11})" (built for Mercado Envíos labels). On a FedEx label
+// the first 11-digit run it finds is the start of "CUST REF: 129132799751630",
+// i.e. the Walmart ORDER number — tested: it returns 12913279975. A wrong
+// tracking that looks valid is worse than none, so on a FedEx label the generic
+// patterns are never tried: either this finds the FedEx number or the row is
+// left for Link Outbound.
+function extractFedexTracking(rawText) {
+  if (!rawText) return null;
+  // pdf-parse emits every token on its own line ("Tracking\n \nID#\n \n3853\n…"),
+  // so whitespace is collapsed to single spaces first. A 3-digit tail only counts
+  // when it is its own group: the next line of the label starts with the 34-digit
+  // barcode ("9631 09135 …"), and (?!\d) stops "963" from being glued on.
+  const flat = rawText.replace(/\s+/g, " ");
+  const m = flat.match(/Tracking\s*ID\s*#?\s*(\d{4} ?\d{4} ?\d{4}(?: ?\d{3})?)(?!\d)/i);
+  if (!m) return null;
+  const digits = m[1].replace(/\D/g, "");
+  return (digits.length === 12 || digits.length === 15) ? digits : null;
 }
 
 async function extractBarcodeFromPDF(pdfBuffer, filenameId, cfgPattern = null) {
@@ -320,6 +352,14 @@ async function extractBarcodeFromPDF(pdfBuffer, filenameId, cfgPattern = null) {
   // Day 7: carrier detected from the label itself, returned on every path so
   // the caller can stamp the row regardless of which barcode pattern matched.
   const carrier = detectOutboundCarrierFromLabel(cleaned);
+
+  // Day 9: FedEx labels are resolved here and ONLY here (see extractFedexTracking).
+  if (carrier === "FedEx") {
+    const fx = extractFedexTracking(text);
+    if (fx) return { barcode: fx, source: "pdf_fedex_tracking_id", carrier };
+    const fxCandidates = [...new Set((text.match(/[A-Z0-9]{8,}/gi) || []))].slice(0, 12);
+    return { barcode: null, source: "fedex_no_match", hint: fxCandidates, carrier };
+  }
 
   // Pattern 0 — per-client pattern from config. Highest priority.
   if (cfgPattern) {

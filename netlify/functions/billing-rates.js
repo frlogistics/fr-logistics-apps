@@ -186,6 +186,9 @@ const RATE_COLUMN_MAP = {
   "DS_REPACK_XL":  "ds_repack_xl",
   "DS_RTS":        "ds_rts",
   "DS_DISPOSAL":   "ds_disposal",
+  "DS_BOX_LARGE":  "ds_box_large",   // 2026-10-27 box surcharges
+  "DS_BOX_XL":     "ds_box_xl",
+  "DS_FEDEX_RUN":  "ds_fedex_run",   // 2026-11-25 FedEx drop-off run
   // Special
   "SPC_SKU_SUR":   "sku_surcharge"
   // SPC_SHOE, SPC_GARMENT, SPC_HAZMAT live in fr_clients.rate_overrides JSONB

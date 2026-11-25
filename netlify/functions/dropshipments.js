@@ -111,6 +111,20 @@ async function sbStorageUpload(path, bytes, contentType = "application/pdf") {
   return r.json().catch(() => ({ ok: true }));
 }
 
+// ─── Day 9 (2026-11-25): FedEx barcode → tracking ───────────────────────────
+// The big barcode on a FedEx Ground / Ground Economy label is 34 digits:
+//   9631 09135 (000 000 0000) 8 00 3853 1677 2584
+// and its LAST 12 digits are the tracking (385316772584). Scanning it stored the
+// whole 34-digit string on 24-nov-2026 (Walmart order of Shop World), which no
+// FedEx page can track. Normalize at the entry points: link_outbound,
+// process_orphan and the scanner lookup. Anything else is returned unchanged.
+function normalizeOutboundScan(value) {
+  const v = String(value || "").trim();
+  const digits = v.replace(/\s+/g, "");
+  if (/^96\d{32}$/.test(digits)) return digits.slice(-12);
+  return v;
+}
+
 // Response helpers
 const CORS = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type,Authorization" };
 const jRes = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: CORS });
@@ -321,7 +335,12 @@ export default async function handler(req) {
       if (!tracking) return jRes({ error: "tracking required" }, 400);
       const enc = encodeURIComponent(tracking);
       const configMap = await loadConfigMap();
-      const filter = `or=(tracking_number.eq.${enc},outbound_tracking.eq.${enc})`;
+      // Day 9: a scanned FedEx 34-digit barcode also matches its 12-digit tracking.
+      const outNorm = normalizeOutboundScan(tracking);
+      const encNorm = encodeURIComponent(outNorm);
+      const filter = outNorm !== tracking
+        ? `or=(tracking_number.eq.${enc},outbound_tracking.eq.${enc},outbound_tracking.eq.${encNorm})`
+        : `or=(tracking_number.eq.${enc},outbound_tracking.eq.${enc})`;
       // Day 6: limit raised from 5 to 20. A consolidated inbound package can
       // hold several outbound orders under the SAME tracking; truncating the
       // result would hide orders from the operator at the scanner, which is
@@ -336,7 +355,7 @@ export default async function handler(req) {
       const matches = rows.map(r => ({
         ...r,
         match_field: r.tracking_number === tracking ? "tracking_number"
-                    : r.outbound_tracking === tracking ? "outbound_tracking"
+                    : (r.outbound_tracking === tracking || r.outbound_tracking === outNorm) ? "outbound_tracking"
                     : "unknown"
       }));
 
@@ -562,7 +581,7 @@ export default async function handler(req) {
       // ── process_orphan: complete an orphan record manually ──────────────
       if (act === "process_orphan") {
         const id              = body.id;
-        const outbound        = (body.outbound_tracking || "").trim();
+        const outbound        = normalizeOutboundScan(body.outbound_tracking);
         const outboundCarrier = (body.outbound_carrier || "").trim();
         const outboundPlatform= (body.outbound_platform || "").trim() || null;
         const orderId         = (body.order_id || "").trim() || null;
@@ -709,7 +728,7 @@ export default async function handler(req) {
       // ── link_outbound: assign an outbound_tracking + transition to labeled ──
       if (act === "link_outbound") {
         const id          = body.id;
-        const outbound    = (body.outbound_tracking || "").trim();
+        const outbound    = normalizeOutboundScan(body.outbound_tracking);
         const force       = body.force === true;
         if (!id) return jRes({ error: "id required" }, 400);
         if (!outbound) return jRes({ error: "outbound_tracking required" }, 400);
