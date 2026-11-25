@@ -10,50 +10,77 @@
 
 # ─── Scheduled Functions ────────────────────────────────────────────────────
 # Cron format (UTC): "minute hour day-of-month month day-of-week"
+#
+# HORA DE MIAMI CON CAMBIO DE HORARIO (25-nov-2026)
+# Netlify solo entiende UTC y no sabe del horario de verano. Miami es UTC-4 en
+# verano (EDT, 2º domingo de marzo → 1er domingo de noviembre) y UTC-5 en
+# invierno (EST). Por eso cada función con hora fija se dispara en LAS DOS horas
+# UTC posibles, y una compuerta dentro del código (miamiClock) deja pasar solo
+# la corrida que cae en la hora de Miami deseada; la otra sale sin hacer nada.
+# Este archivo es la ÚNICA fuente de horarios: ninguna función lleva
+# `export const config = { schedule }` en el código.
+#
+# Hora de Miami deseada               → horas UTC que se disparan
+#   7:00 PM  = 23 UTC (verano) / 00 UTC día siguiente (invierno)
+#   5:00 PM  = 21 UTC (verano) / 22 UTC (invierno)
+#   10:00 AM = 14 UTC (verano) / 15 UTC (invierno)
 
+# Daily Summary a clientes (email + WhatsApp) — diario 7:00 PM Miami.
 [functions."daily-summary"]
-  schedule = "0 23 * * *"
+  schedule = "0 0,23 * * *"
 
+# Daily Ops Report interno (josefuentes@ + warehouse@) — diario 7:00 PM Miami.
+[functions."daily-ops-report"]
+  schedule = "0 0,23 * * *"
+
+# Inventory Alert por WhatsApp — diario 5:00 PM Miami.
 [functions."inventory-alert"]
-  schedule = "0 21 * * *"
+  schedule = "0 21,22 * * *"
 
+# Renovación del token de Instagram — día 1 de cada mes (el token dura 60 días).
+# Antes decía "0 12 1 */45 *", que solo corría el 1 de enero.
 [functions."refresh-ig-token"]
-  schedule = "0 12 1 */45 *"
+  schedule = "0 12 1 * *"
 
+# Lectura del buzón warehouse@ — cada 2 h, las 24 h (no depende de la hora local).
 [functions."dropship-gmail-sync"]
   schedule = "0 */2 * * *"
 
+# Paquetes recibidos sin correo — cada 2 h, las 24 h (no depende de la hora local).
 [functions."dropship-orphan-alert"]
   schedule = "15 */2 * * *"
 
-[functions."dropship-manifest"]
-  schedule = "0 23 * * *"
+# dropship-manifest: SIN horario. Es una función HTTP (list/get/seal); el envío
+# programado de las 23:00 UTC respondía 400 todos los días. El correo del
+# manifiesto sale al sellarlo, vía dropship-manifest-email.
 
+# Reporte semanal de leads de LIAM — lunes 7:00 PM Miami.
+# Lunes 23 UTC (verano) o martes 00 UTC (invierno); la compuerta exige lunes en Miami.
 [functions."wa-leads-weekly-report"]
-  schedule = "0 23 * * 1"
+  schedule = "0 0,23 * * 1,2"
 
-# Follow-ups: quote reminders + lead nudges. 14:00 UTC = 10:00 AM Miami (EDT).
+# Follow-ups: quote reminders + lead nudges — diario 10:00 AM Miami.
 [functions."wa-followups"]
-  schedule = "0 14 * * *"
+  schedule = "0 14,15 * * *"
 
 # Client Orders: alerta si una orden exportada a CSV no aparece en ShipStation.
-# Cada hora de 12:25 a 23:25 UTC (8:25 AM–7:25 PM EDT), lunes a sábado.
+# Cada hora a los :25, de 8:25 AM a 7:25 PM Miami, lunes a sábado (día de Miami).
 # La versión HTTP para el navegador es client-orders-ss-check (sin schedule).
 [functions."client-orders-ss-alert"]
-  schedule = "25 12-23 * * 1-6"
+  schedule = "25 0,12-23 * * *"
 
 # Dropshipments · Empaques: aviso de reposición (correo; WhatsApp si es urgente).
-# Cada hora de 12:40 a 23:40 UTC (7:40 AM–6:40 PM EST), lunes a sábado.
+# Cada hora a los :40, de 7:40 AM a 6:40 PM Miami, lunes a sábado (día de Miami).
 [functions."dropship-pack-stock-alert"]
-  schedule = "40 12-23 * * 1-6"
+  schedule = "40 11-23 * * *"
 
 # Delivery Guard (23-nov-2026): address holds, tracking of shipped labels and
 # client-facing delivery exceptions for clients with fr_clients.delivery_guard.
-# Every hour at :05 from 11:05 to 23:05 UTC (6:05 AM–6:05 PM EST), every day —
+# Cada hora a los :05, de 6:05 AM a 6:05 PM Miami, todos los días —
 # carriers deliver on Saturdays and UPS returns don't wait for Monday.
 # Each label is polled at most every 2 h (RECHECK_HOURS in the engine).
 [functions."delivery-guard-monitor"]
-  schedule = "5 11-23 * * *"
+  schedule = "5 10-23 * * *"
 
 # ─── Redirects ──────────────────────────────────────────────────────────────
 

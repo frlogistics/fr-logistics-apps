@@ -51,12 +51,36 @@ const PREVIEW = {
 
 const JSON_HEADERS = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" };
 
+// ── Reloj de Miami (cambio de horario automático) — 25-nov-2026 ────
+// Netlify programa en UTC y no sabe del horario de verano. netlify.toml
+// dispara esta función en las DOS horas UTC posibles (EDT y EST) y esta
+// compuerta deja pasar solo la corrida que cae en la hora de Miami deseada.
+// Una corrida manual (sin next_run en el body) no pasa por la compuerta.
+const MIAMI_TZ = "America/New_York";
+const MIAMI_DOW = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+function miamiClock(d = new Date()) {
+  const p = {};
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: MIAMI_TZ, hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit"
+  });
+  for (const x of fmt.formatToParts(d)) p[x.type] = x.value;
+  return { hour: Number(p.hour) % 24, minute: Number(p.minute), weekday: MIAMI_DOW[p.weekday] };
+}
+
 export default async function handler(req) {
   const url = new URL(req.url);
   const isScheduled = req.method === "POST";
   const dry = url.searchParams.get("dry") === "1";
   const manualRun = url.searchParams.get("run") === "1" && RUN_KEY && url.searchParams.get("key") === RUN_KEY;
 
+  // Compuerta de hora de Miami: solo la corrida programada de las 10 AM pasa.
+  if (isScheduled && !dry && !manualRun) {
+    const t = miamiClock();
+    if (t.hour !== 10) {
+      console.log(`[wa-followups] ${t.hour}:00 Miami — fuera de las 10 AM, se omite`);
+      return new Response(JSON.stringify({ skipped: true, reason: "outside_miami_window", miami_hour: t.hour }), { status: 200, headers: JSON_HEADERS });
+    }
+  }
   if (!isScheduled && !dry && !manualRun) {
     return new Response(JSON.stringify({ error: "Use ?dry=1 to preview, or ?run=1&key=… to run now." }), { status: 400, headers: JSON_HEADERS });
   }

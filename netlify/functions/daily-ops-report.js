@@ -1,6 +1,6 @@
 // netlify/functions/daily-ops-report.js
 // FR-Logistics Daily Ops Report — for Jose Fuentes
-// Scheduled: 7PM EST daily (23:00 UTC during EDT, adjust +1hr Nov-Mar)
+// Scheduled: diario 7:00 PM hora de Miami todo el año (netlify.toml + compuerta miamiClock).
 // Sends HTML email to josefuentes@fr-logistics.net via Resend with:
 //   1. Inbound/Outbound summary from shipments_general (Supabase)
 //   2. ShipStation shipped orders today (total + by store)
@@ -343,7 +343,35 @@ async function sendEmail(html, text, label) {
 }
 
 // ── Handler ──────────────────────────────────────────────────────
+// ── Reloj de Miami (cambio de horario automático) — 25-nov-2026 ────
+// Netlify programa en UTC y no sabe del horario de verano. netlify.toml
+// dispara esta función en las DOS horas UTC posibles (EDT y EST) y esta
+// compuerta deja pasar solo la corrida que cae en la hora de Miami deseada.
+// Una corrida manual (sin next_run en el body) no pasa por la compuerta.
+const MIAMI_TZ = "America/New_York";
+const MIAMI_DOW = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+function miamiClock(d = new Date()) {
+  const p = {};
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: MIAMI_TZ, hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit"
+  });
+  for (const x of fmt.formatToParts(d)) p[x.type] = x.value;
+  return { hour: Number(p.hour) % 24, minute: Number(p.minute), weekday: MIAMI_DOW[p.weekday] };
+}
+async function isScheduledCall(req) {
+  try { const b = await req.clone().json(); return !!(b && b.next_run); } catch { return false; }
+}
+
 export default async (req) => {
+  if (await isScheduledCall(req)) {
+    const t = miamiClock();
+    if (!(t.hour === 19)) {
+      console.log(`[daily-ops-report] ${t.hour}:${String(t.minute).padStart(2, "0")} Miami (día ${t.weekday}) — fuera de las 7 PM, se omite`);
+      return new Response(JSON.stringify({ skipped: true, reason: "outside_miami_window", miami_hour: t.hour, miami_weekday: t.weekday }), {
+        status: 200, headers: { "Content-Type": "application/json" }
+      });
+    }
+  }
   console.log("[daily-ops-report] Starting at", new Date().toISOString());
   try {
     const { start, end, label, dateStr } = getTodayRange();
@@ -370,6 +398,3 @@ export default async (req) => {
   }
 };
 
-export const config = {
-  schedule: "0 23 * * *"  // 7:00 PM EDT (UTC-4) / 6:00 PM EST (UTC-5) Nov-Mar
-};
