@@ -82,8 +82,10 @@ export default async function handler(req) {
     const periodFilter =
       `created_at=gte.${start}T00:00:00&created_at=lte.${end}T23:59:59`;
 
-    // Exclude cancelled/failed labels from billing
-    const statusFilter = `status=neq.label_failed`;
+    // Exclude failed and voided labels from billing. 'voided' is set by
+    // shipstation-return.js → void_label (24-nov-2026), e.g. the duplicate
+    // label created when a pickup had to be retried.
+    const statusFilter = `status=not.in.(label_failed,voided)`;
 
     // 1) Unbilled rows (billed_at IS NULL)
     const unbilledRows = await sbSelect(
