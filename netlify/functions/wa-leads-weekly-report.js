@@ -1,6 +1,6 @@
 // netlify/functions/wa-leads-weekly-report.js
 //
-// Scheduled function — runs every Monday at 11 PM UTC (= Sunday 7 PM Miami / EST).
+// Scheduled function — todos los lunes 7:00 PM hora de Miami (netlify.toml + compuerta miamiClock).
 // Aggregates the past 7 days of wa_leads activity and sends a branded report
 // to josefuentes@fr-logistics.net + info@fr-logistics.net via Resend.
 //
@@ -231,7 +231,7 @@ ${stale.length > 0 ? `
 <!-- Footer -->
 <tr><td style="padding:20px 32px;text-align:center;background:#0F172A;color:#94A3B8;font-size:12px;">
   <div style="font-weight:600;color:#FFFFFF;margin-bottom:4px;">FR-Logistics Miami · Amazon SPN-Certified 3PL</div>
-  <div>Auto-generated weekly · Mondays 11 PM UTC (Sundays 7 PM Miami)</div>
+  <div>Auto-generated weekly · Mondays 7 PM Miami time</div>
   <div style="margin-top:8px;font-size:11px;opacity:.7;">apps.fr-logistics.net · LIAM Reports</div>
 </td></tr>
 
@@ -243,7 +243,33 @@ ${stale.length > 0 ? `
 }
 
 // ─── Main handler ───────────────────────────────────────────────────
+// ── Reloj de Miami (cambio de horario automático) — 25-nov-2026 ────
+// Netlify programa en UTC y no sabe del horario de verano. netlify.toml
+// dispara esta función en las DOS horas UTC posibles (EDT y EST) y esta
+// compuerta deja pasar solo la corrida que cae en la hora de Miami deseada.
+// Una corrida manual (sin next_run en el body) no pasa por la compuerta.
+const MIAMI_TZ = "America/New_York";
+const MIAMI_DOW = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+function miamiClock(d = new Date()) {
+  const p = {};
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: MIAMI_TZ, hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit"
+  });
+  for (const x of fmt.formatToParts(d)) p[x.type] = x.value;
+  return { hour: Number(p.hour) % 24, minute: Number(p.minute), weekday: MIAMI_DOW[p.weekday] };
+}
+function isScheduledEvent(event) {
+  try { const b = JSON.parse((event && event.body) || "{}"); return !!(b && b.next_run); } catch { return false; }
+}
+
 exports.handler = async function(event) {
+  if (isScheduledEvent(event)) {
+    const t = miamiClock();
+    if (!(t.hour === 19 && [1].includes(t.weekday))) {
+      console.log(`[wa-leads-weekly-report] ${t.hour}:${String(t.minute).padStart(2, "0")} Miami (día ${t.weekday}) — fuera de lunes 7 PM, se omite`);
+      return { statusCode: 200, body: JSON.stringify({ skipped: true, reason: "outside_miami_window", miami_hour: t.hour, miami_weekday: t.weekday }) };
+    }
+  }
   // Allow manual trigger via HTTP for testing (GET /.netlify/functions/wa-leads-weekly-report)
   // and scheduled invocation (no event.httpMethod set).
   console.log('[wa-leads-weekly-report] Starting report generation');

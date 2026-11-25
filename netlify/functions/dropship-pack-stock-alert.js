@@ -220,7 +220,35 @@ async function run() {
   return result;
 }
 
-export default async function handler() {
+// ── Reloj de Miami (cambio de horario automático) — 25-nov-2026 ────
+// Netlify programa en UTC y no sabe del horario de verano. netlify.toml
+// dispara esta función en las DOS horas UTC posibles (EDT y EST) y esta
+// compuerta deja pasar solo la corrida que cae en la hora de Miami deseada.
+// Una corrida manual (sin next_run en el body) no pasa por la compuerta.
+const MIAMI_TZ = "America/New_York";
+const MIAMI_DOW = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+function miamiClock(d = new Date()) {
+  const p = {};
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: MIAMI_TZ, hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit"
+  });
+  for (const x of fmt.formatToParts(d)) p[x.type] = x.value;
+  return { hour: Number(p.hour) % 24, minute: Number(p.minute), weekday: MIAMI_DOW[p.weekday] };
+}
+async function isScheduledCall(req) {
+  try { const b = await req.clone().json(); return !!(b && b.next_run); } catch { return false; }
+}
+
+export default async function handler(req) {
+  if (await isScheduledCall(req)) {
+    const t = miamiClock();
+    if (!([7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].includes(t.hour) && [1, 2, 3, 4, 5, 6].includes(t.weekday))) {
+      console.log(`[dropship-pack-stock-alert] ${t.hour}:${String(t.minute).padStart(2, "0")} Miami (día ${t.weekday}) — fuera de 7:40 AM–6:40 PM lun–sáb, se omite`);
+      return new Response(JSON.stringify({ skipped: true, reason: "outside_miami_window", miami_hour: t.hour, miami_weekday: t.weekday }), {
+        status: 200, headers: { "Content-Type": "application/json" }
+      });
+    }
+  }
   try {
     const r = await run();
     console.log(`[pack-stock-alert] tracked=${r.counts.total} low=${r.counts.low} urgent=${r.counts.urgent} · emailed=[${r.emailed.join(",")}] · whatsapp=${r.whatsapp ? r.whatsapp.template : "no"}${r.errors.length ? " · ERRORS: " + r.errors.join(" | ") : ""}`);
