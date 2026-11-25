@@ -198,6 +198,22 @@
 /* ── RETURN LABEL MODULE ── */
 #rtnPickupFields .row{margin-top:0}
 #returnDlg .modalBody h3:first-child{margin-top:0}
+/* ── CLIENT PICKUP REQUESTS (24-nov-2026) ── */
+#rtnReqBox{border:1px solid rgba(22,163,181,.45);background:rgba(22,163,181,.05);border-radius:12px;padding:10px 12px;margin-bottom:14px}
+#rtnReqBox h3{margin:0 0 4px;display:flex;align-items:center;gap:8px}
+#rtnReqBanner{display:none;margin:0 0 10px;padding:9px 10px;border-radius:12px;border:2px solid #0891b2;background:rgba(8,145,178,.08);font-size:12px;font-weight:900}
+.rq{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 10px;margin-top:8px;font-size:12px;line-height:1.45}
+.rq .rqTop{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+.rq .rqWhy{margin-top:4px;color:#7a4b00;font-weight:800}
+.rq .rqAct{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.rq .rqAct button,.rtnAct button,.rqEdit button{padding:5px 9px;font-size:11px;border-radius:8px}
+.rqEdit{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.rqEdit input,.rqEdit select{width:auto;padding:5px 7px;border-radius:8px;font-size:12px}
+/* traffic-light pills: strong colors */
+.pill.ok{background:#16a34a;color:#fff;border:1px solid #15803d}
+.pill.warn{background:#facc15;color:#1f2937;border:1px solid #ca8a04}
+.pill.bad{background:#dc2626;color:#fff;border:1px solid #b91c1c}
+.pill.info{background:#0891b2;color:#fff;border:1px solid #0e7490}
 </style>
 </head>
 <body>
@@ -408,6 +424,7 @@
         <!-- LEFT: form -->
         <div>
           <h3 style="margin-top:0">Return details</h3>
+          <div id="rtnReqBanner"></div>
 
           <label>Client</label>
           <select id="rtnClient"></select>
@@ -425,6 +442,8 @@
           </div>
           <label>Address Line 1</label>
           <input id="rtnLine1" placeholder="Street address" autocomplete="off" />
+          <label>Address Line 2 <span style="color:var(--muted)">(apt, suite, unit — optional)</span></label>
+          <input id="rtnLine2" placeholder="Apt / Suite" autocomplete="off" />
           <div class="row">
             <div>
               <label>City</label>
@@ -515,6 +534,12 @@
 
         <!-- RIGHT: result + open returns list -->
         <div>
+          <div id="rtnReqBox">
+            <h3>Client requests <span id="rtnReqCount" class="pill info">—</span></h3>
+            <div class="hint" style="margin-top:0">Return pickups filed by clients in the Client Portal that need the warehouse: a check before the label, a pickup to re-book, or a return that arrived and needs its result.</div>
+            <div id="rtnReqList"><div class="hint">Loading…</div></div>
+          </div>
+
           <h3 style="margin-top:0">Result</h3>
           <div id="rtnResult" class="qBox" style="display:none"></div>
           <div id="rtnResultEmpty" class="hint">Generated label details will appear here.</div>
@@ -522,7 +547,7 @@
           <h3 style="margin-top:16px">Open returns</h3>
           <div class="tableWrap" style="max-height:340px">
             <table id="rtnTbl">
-              <thead><tr><th>Date</th><th>Client</th><th>Tracking</th><th>Cost</th><th>Status</th><th>Pickup</th><th>Label</th></tr></thead>
+              <thead><tr><th>Date</th><th>Client</th><th>Tracking</th><th>Cost</th><th>Status</th><th>Pickup</th><th>Label</th><th></th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -1308,22 +1333,39 @@
     ],
   };
 
+  const $ = (id) => document.getElementById(id);
+  function rtnEsc(s){
+    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => (
+      {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  // Next Mon–Fri after today, on the warehouse (ET) calendar. The server
+  // also blocks UPS holidays and windows that already passed.
+  function rtnNextBusinessDay(){
+    const p = new Intl.DateTimeFormat("en-CA", { timeZone:"America/New_York", year:"numeric", month:"2-digit", day:"2-digit" })
+      .format(new Date());                         // "YYYY-MM-DD"
+    const [y,m,d] = p.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m-1, d));
+    do { dt.setUTCDate(dt.getUTCDate() + 1); } while (dt.getUTCDay() === 0 || dt.getUTCDay() === 6);
+    return dt.toISOString().slice(0,10);
+  }
+
   // React to carrier change: repopulate services, toggle pickup, update title.
   function rtnApplyCarrier(){
-    const carrier = document.getElementById("rtnCarrier").value || "ups";
-    const svc = document.getElementById("rtnService");
+    const carrier = $("rtnCarrier").value || "ups";
+    const svc = $("rtnService");
     svc.innerHTML = (RTN_SERVICES[carrier] || RTN_SERVICES.ups)
       .map(([v,l]) => `<option value="${v}">${l}</option>`).join("");
 
     const isUPS = carrier === "ups";
-    const title = document.getElementById("rtnCarrierTitle");
+    const title = $("rtnCarrierTitle");
     if(title) title.textContent = isUPS ? "UPS" : "USPS";
 
     // Pickup is UPS-only
-    const chk    = document.getElementById("rtnSchedulePickup");
-    const lbl    = document.getElementById("rtnPickupLabel");
-    const note   = document.getElementById("rtnPickupDisabledNote");
-    const fields = document.getElementById("rtnPickupFields");
+    const chk    = $("rtnSchedulePickup");
+    const lbl    = $("rtnPickupLabel");
+    const note   = $("rtnPickupDisabledNote");
+    const fields = $("rtnPickupFields");
     if(isUPS){
       chk.disabled = false;
       lbl.style.opacity = "1";
@@ -1342,11 +1384,13 @@
 
   // Self-contained client list (does not depend on the main app's scope).
   // Same source of truth: clients-list (fr_clients).
-  let rtnClients = [];     // [{id, value, display}] · value = lo que se guarda, display = lo que se ve
+  let rtnClients = [];     // [{id, value, display}] · value = stored, display = shown
   let rtnClientsLoaded = false;
+  let rtnReq = null;       // client request loaded into the form (pickup_requests row)
+  let rtnReqCache = { open: [], arrived: [] };
 
   function rtnStatus(msg, kind){
-    const el = document.getElementById("rtnStatus");
+    const el = $("rtnStatus");
     el.textContent = msg;
     el.className = "status" + (kind ? " " + kind : "");
   }
@@ -1372,10 +1416,10 @@
 
   // Populate client dropdown from self-loaded list
   function rtnFillClients(){
-    const sel = document.getElementById("rtnClient");
+    const sel = $("rtnClient");
     if(!sel) return;
     sel.innerHTML = `<option value="">— Select client —</option>` +
-      rtnClients.map(c => `<option value="${c.value}">${c.display}</option>`).join("");
+      rtnClients.map(c => `<option value="${rtnEsc(c.value)}">${rtnEsc(c.display)}</option>`).join("");
   }
 
   function rtnClientId(value){
@@ -1385,69 +1429,133 @@
 
   // Toggle pickup fields
   function rtnTogglePickup(){
-    const on = document.getElementById("rtnSchedulePickup").checked;
-    document.getElementById("rtnPickupFields").style.display = on ? "block" : "none";
+    const on = $("rtnSchedulePickup").checked;
+    $("rtnPickupFields").style.display = on ? "block" : "none";
   }
 
-  // Build ISO 8601 pickup window from date + times
+  // Build the pickup window (naive local wall time at the pickup address;
+  // the server stamps that address's UTC offset).
   function rtnPickupWindow(){
-    const d = document.getElementById("rtnPickupDate").value;
+    const d = $("rtnPickupDate").value;
     if(!d) return null;
-    const s = document.getElementById("rtnPickupStart").value || "09:00";
-    const e = document.getElementById("rtnPickupEnd").value || "17:00";
-    // Miami ET offset handled by carrier; send local wall time as ISO date-time
+    const s = $("rtnPickupStart").value || "09:00";
+    const e = $("rtnPickupEnd").value || "17:00";
     return { start_at: `${d}T${s}:00`, end_at: `${d}T${e}:00` };
   }
 
+  // ── Client request loaded into the form ─────────────────────────────
+  function rtnSetBanner(){
+    const b = $("rtnReqBanner");
+    if(!b) return;
+    if(!rtnReq){ b.style.display = "none"; b.innerHTML = ""; return; }
+    b.style.display = "block";
+    b.innerHTML = `Creating the label for client request <span class="mono">${rtnEsc(rtnReq.request_code)}</span> · ${rtnEsc(rtnReq.client)} · ${rtnEsc(rtnReq.reference)}
+      <button type="button" id="rtnReqClear" style="margin-left:8px;padding:4px 9px;font-size:11px;border-radius:8px">Clear</button>`;
+    $("rtnReqClear").addEventListener("click", rtnClearForm);
+  }
+
+  function rtnClearForm(){
+    rtnReq = null;
+    ["rtnName","rtnCompany","rtnLine1","rtnLine2","rtnCity","rtnState","rtnZip","rtnPhone","rtnEmail","rtnWeight","rtnL","rtnW","rtnH","rtnNotes"]
+      .forEach(id => { const el = $(id); if(el) el.value = ""; });
+    $("rtnClient").value = "";
+    $("rtnPickupDate").value = rtnNextBusinessDay();
+    $("rtnPickupStart").value = "09:00";
+    $("rtnPickupEnd").value = "17:00";
+    rtnSetBanner();
+    rtnStatus("Ready.", "");
+  }
+
+  function rtnLoadIntoForm(req){
+    const sf = req.ship_from || {};
+    // client: match the stored value; add it if the roster does not have it
+    const sel = $("rtnClient");
+    if(![...sel.options].some(o => o.value === req.client)){
+      sel.insertAdjacentHTML("beforeend", `<option value="${rtnEsc(req.client)}">${rtnEsc(req.client)}</option>`);
+      rtnClients.push({ id: req.client_id, value: req.client, display: req.client });
+    }
+    sel.value = req.client;
+    $("rtnName").value    = sf.name || "";
+    $("rtnCompany").value = sf.company || sf.name || "";
+    $("rtnLine1").value   = sf.line1 || "";
+    $("rtnLine2").value   = sf.line2 || "";
+    $("rtnCity").value    = sf.city || "";
+    $("rtnState").value   = sf.state || "";
+    $("rtnZip").value     = sf.zip || "";
+    $("rtnPhone").value   = sf.phone || "";
+    $("rtnEmail").value   = req.email_customer === false ? "" : (sf.email || "");
+    $("rtnCarrier").value = "ups";
+    rtnApplyCarrier();
+    $("rtnService").value = "ups_ground";
+    $("rtnWeight").value  = req.weight_lb ? Math.round(Number(req.weight_lb) * 16 * 10) / 10 : "";
+    $("rtnL").value = req.length_in || ""; $("rtnW").value = req.width_in || ""; $("rtnH").value = req.height_in || "";
+    const notes = [req.reference, req.order_ref ? "Order " + req.order_ref : "", req.request_code].filter(Boolean).join(" · ");
+    $("rtnNotes").value = notes;
+    const pickup = req.method !== "dropoff";
+    $("rtnSchedulePickup").checked = pickup;
+    rtnTogglePickup();
+    const nbd = rtnNextBusinessDay();
+    $("rtnPickupDate").value  = req.pickup_date && req.pickup_date >= nbd ? req.pickup_date : nbd;
+    $("rtnPickupStart").value = req.window_start ? String(req.window_start).slice(0,5) : "09:00";
+    $("rtnPickupEnd").value   = req.window_end ? String(req.window_end).slice(0,5) : "17:00";
+    rtnReq = req;
+    rtnSetBanner();
+    rtnStatus(`Loaded ${req.request_code}. Check the data, then Generate Return Label.`, "");
+    const body = document.querySelector("#returnDlg .modalBody");
+    if(body) body.scrollTop = 0;
+  }
+
   async function rtnSubmit(){
-    const clientDisplay = document.getElementById("rtnClient").value;
-    const company = document.getElementById("rtnCompany").value.trim();
-    const line1   = document.getElementById("rtnLine1").value.trim();
-    const weight  = parseFloat(document.getElementById("rtnWeight").value);
+    const clientDisplay = $("rtnClient").value;
+    const company = $("rtnCompany").value.trim();
+    const line1   = $("rtnLine1").value.trim();
+    const weight  = parseFloat($("rtnWeight").value);
 
     if(!clientDisplay){ rtnStatus("Select a client.", "bad"); return; }
-    const carrierSel = document.getElementById("rtnCarrier").value || "ups";
+    const carrierSel = $("rtnCarrier").value || "ups";
     if(carrierSel === "ups" && !company){ rtnStatus("Company is required (UPS rule).", "bad"); return; }
     if(!line1){ rtnStatus("Address Line 1 is required.", "bad"); return; }
     if(!weight || weight < 1){ rtnStatus("Enter a valid weight in ounces.", "bad"); return; }
 
     // Resolve client_id from self-loaded list
-    const cid = rtnClientId(clientDisplay);
+    const cid = rtnClientId(clientDisplay) || (rtnReq && rtnReq.client === clientDisplay ? rtnReq.client_id : null);
 
-    const schedulePickup = document.getElementById("rtnSchedulePickup").checked;
+    const schedulePickup = $("rtnSchedulePickup").checked;
     const pickupWindow = schedulePickup ? rtnPickupWindow() : null;
     if(schedulePickup && !pickupWindow){ rtnStatus("Pick a pickup date.", "bad"); return; }
 
-    const L = parseFloat(document.getElementById("rtnL").value);
-    const W = parseFloat(document.getElementById("rtnW").value);
-    const H = parseFloat(document.getElementById("rtnH").value);
+    const L = parseFloat($("rtnL").value);
+    const W = parseFloat($("rtnW").value);
+    const H = parseFloat($("rtnH").value);
     const dims = (L && W && H) ? { length:L, width:W, height:H } : null;
 
     const payload = {
       action: "create_return",
       client: clientDisplay,
       client_id: cid,
-      carrier: document.getElementById("rtnCarrier").value || "ups",
+      carrier: carrierSel,
       ship_from: {
-        name:    document.getElementById("rtnName").value.trim() || company,
+        name:    $("rtnName").value.trim() || company,
         company: company,
         line1:   line1,
-        city:    document.getElementById("rtnCity").value.trim(),
-        state:   document.getElementById("rtnState").value.trim().toUpperCase(),
-        zip:     document.getElementById("rtnZip").value.trim(),
-        phone:   document.getElementById("rtnPhone").value.trim() || "0000000000",
-        email:   document.getElementById("rtnEmail").value.trim()
+        line2:   $("rtnLine2").value.trim(),
+        city:    $("rtnCity").value.trim(),
+        state:   $("rtnState").value.trim().toUpperCase(),
+        zip:     $("rtnZip").value.trim(),
+        phone:   $("rtnPhone").value.trim() || "0000000000",
+        email:   $("rtnEmail").value.trim()
       },
       weight_oz: weight,
       dims: dims,
-      service_code: document.getElementById("rtnService").value,
+      service_code: $("rtnService").value,
       schedule_pickup: schedulePickup,
       pickup_window: pickupWindow,
-      notes: document.getElementById("rtnNotes").value.trim()
+      notes: $("rtnNotes").value.trim(),
+      pickup_request_id: rtnReq ? rtnReq.id : null
     };
 
     rtnStatus("Generating label…", "");
-    document.getElementById("rtnSubmitBtn").disabled = true;
+    $("rtnSubmitBtn").disabled = true;
     try {
       let res = await fetch(RTN_FN, {
         method: "POST",
@@ -1459,10 +1567,10 @@
       // Operator must confirm before an oversize/dim-weight label is bought.
       if(res.status === 409 && data.error === "dims_check"){
         const ok = window.confirm(
-          "⚠️ DIMENSIONES SOSPECHOSAS\n\n" + (data.message || "") +
-          "\n\n¿Crear el label de todas formas?"
+          "⚠️ CHECK THE DIMENSIONS\n\n" + (data.message || "") +
+          "\n\nCreate the label anyway?"
         );
-        if(!ok){ rtnStatus("Label cancelado — corrige las dimensiones y vuelve a intentar.", "bad"); return; }
+        if(!ok){ rtnStatus("Label not created — fix the dimensions and try again.", "bad"); return; }
         res = await fetch(RTN_FN, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1470,23 +1578,32 @@
         });
         data = await res.json();
       }
-      if(!res.ok || !data.ok){
-        rtnStatus("Error: " + (data.detail || data.error || "label failed"), "bad");
+      // 2026-11-24: the window is checked BEFORE a label is bought.
+      if(res.status === 409 && /^pickup_(window_past|day_closed|window_invalid)$/.test(data.error || "")){
+        if(data.suggest_date) $("rtnPickupDate").value = data.suggest_date;
+        rtnStatus("No label was created. " + (data.message || "") + (data.suggest_date ? " The date was moved to " + data.suggest_date + " — press Generate again." : ""), "bad");
         return;
       }
-      rtnStatus("Return label created successfully.", "ok");
+      if(!res.ok || !data.ok){
+        rtnStatus("Error: " + (data.message || data.detail || data.error || "label failed"), "bad");
+        if(rtnReq) rtnLoadRequests();
+        return;
+      }
+      rtnStatus(data.request_code ? `Return label created for ${data.request_code}. The client was emailed.` : "Return label created successfully.", "ok");
       rtnShowResult(data);
       rtnLoadList();
+      if(rtnReq){ rtnReq = null; rtnSetBanner(); }
+      rtnLoadRequests();
     } catch(e){
       rtnStatus("Network error. Check connection.", "bad");
     } finally {
-      document.getElementById("rtnSubmitBtn").disabled = false;
+      $("rtnSubmitBtn").disabled = false;
     }
   }
 
   function rtnShowResult(d){
-    const box = document.getElementById("rtnResult");
-    document.getElementById("rtnResultEmpty").style.display = "none";
+    const box = $("rtnResult");
+    $("rtnResultEmpty").style.display = "none";
     box.style.display = "block";
 
     // Pickup card — three states: success (copyable), failed, not requested
@@ -1501,12 +1618,13 @@
           </div>
           <div style="margin-top:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:950">Confirmation number</div>
           <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
-            <span id="rtnPickupConfirm" class="mono" style="font-size:22px;font-weight:950;color:#0f172a;letter-spacing:.5px">${d.pickup_confirm}</span>
+            <span id="rtnPickupConfirm" class="mono" style="font-size:22px;font-weight:950;color:#0f172a;letter-spacing:.5px">${rtnEsc(d.pickup_confirm)}</span>
             <button id="rtnCopyConfirm" type="button"
                     style="padding:6px 12px;font-size:11px;border-radius:8px;background:rgba(31,164,99,.14);border:1px solid rgba(31,164,99,.40);color:#0f5132;font-weight:950">
               📋 Copy
             </button>
           </div>
+          ${d.pickup_window_adjusted ? `<div style="margin-top:6px;font-size:11px;color:#7a4b00;font-weight:900">The start time had already passed, so the window starts at ${rtnEsc(String((d.pickup_window||{}).start_at||"").slice(11,16))}.</div>` : ""}
           <div style="margin-top:6px;font-size:11px;color:var(--muted)">Give this number to the driver / keep for reference.</div>
         </div>`;
     } else if(d.pickup_error){
@@ -1517,8 +1635,9 @@
           <div style="display:flex;align-items:center;gap:8px;font-weight:950;color:#7a4b00;font-size:13px">
             <span style="font-size:16px">⚠️</span> LABEL CREATED · PICKUP NOT SCHEDULED
           </div>
-          <div style="margin-top:6px;font-size:12px;color:#7a4b00">Reason: ${d.pickup_error}</div>
-          <div style="margin-top:6px;font-size:11px;color:var(--muted)">The label is valid. You can schedule the pickup directly in UPS.com, or fix the issue and try again.</div>
+          <div style="margin-top:6px;font-size:12px;color:#7a4b00">Reason: ${rtnEsc(d.pickup_error)}</div>
+          ${d.pickup_hint ? `<div style="margin-top:6px;font-size:12px;color:#7a4b00">${rtnEsc(d.pickup_hint)}</div>` : ""}
+          <div style="margin-top:6px;font-size:11px;color:var(--muted)">The label is valid. Use <b>Retry pickup</b> on its row in Open returns — do not create another label.</div>
         </div>`;
     } else {
       // NOT REQUESTED
@@ -1531,20 +1650,20 @@
 
     box.innerHTML = `
       <div class="qGrid">
-        <div class="qItem" style="grid-column:1/span 2"><b>Tracking</b><div class="qVal mono">${d.tracking || "—"}</div></div>
-        <div class="qItem"><b>Carrier cost</b><div class="qVal">$${d.carrier_cost != null ? d.carrier_cost : "—"}</div></div>
-        <div class="qItem"><b>Return ID</b><div class="qVal mono" style="font-size:10px">${(d.return_id||"").slice(0,8)}…</div></div>
+        <div class="qItem" style="grid-column:1/span 2"><b>Tracking</b><div class="qVal mono">${rtnEsc(d.tracking || "—")}</div></div>
+        <div class="qItem"><b>Carrier cost</b><div class="qVal">$${d.carrier_cost != null ? rtnEsc(d.carrier_cost) : "—"}</div></div>
+        <div class="qItem"><b>${d.request_code ? "Client request" : "Return ID"}</b><div class="qVal mono" style="font-size:${d.request_code ? "12px" : "10px"}">${d.request_code ? rtnEsc(d.request_code) : rtnEsc((d.return_id||"").slice(0,8)) + "…"}</div></div>
       </div>
       ${pickupCard}
       ${d.email_sent
-        ? `<div style="margin-top:8px;font-size:12px;color:#0f5132;font-weight:900">✉️ Email sent to customer + warehouse (label PDF attached)</div>`
-        : (d.email_error ? `<div style="margin-top:8px;font-size:12px;color:#7a4b00;font-weight:900">✉️ Email not sent: ${d.email_error}</div>` : "")}
+        ? `<div style="margin-top:8px;font-size:12px;color:#0f5132;font-weight:900">✉️ Email sent to customer${d.request_code ? "" : " + warehouse"} (label PDF attached)</div>`
+        : (d.email_error ? `<div style="margin-top:8px;font-size:12px;color:#7a4b00;font-weight:900">✉️ Customer email not sent: ${rtnEsc(d.email_error)}</div>` : "")}
       <div class="btns" style="margin-top:10px">
-        ${d.label_url ? `<a href="${d.label_url}" target="_blank" rel="noopener"><button class="primary">Open label PDF</button></a>` : ""}
+        ${d.label_url ? `<a href="${rtnEsc(d.label_url)}" target="_blank" rel="noopener"><button class="primary">Open label PDF</button></a>` : ""}
       </div>`;
 
     // Wire the copy button (only present on success)
-    const copyBtn = document.getElementById("rtnCopyConfirm");
+    const copyBtn = $("rtnCopyConfirm");
     if(copyBtn){
       copyBtn.addEventListener("click", () => {
         const txt = d.pickup_confirm;
@@ -1563,49 +1682,237 @@
     }
   }
 
+  // ── Open returns (all labels) ───────────────────────────────────────
+  let rtnRows = [];
   async function rtnLoadList(){
     try {
       const res = await fetch(RTN_FN + "?action=list");
       const rows = await res.json();
+      rtnRows = Array.isArray(rows) ? rows : [];
       const tb = document.querySelector("#rtnTbl tbody");
       tb.innerHTML = "";
-      (Array.isArray(rows) ? rows : []).forEach(r => {
+      rtnRows.forEach(r => {
         const tr = document.createElement("tr");
+        tr.dataset.id = r.id;
         const dt = r.created_at ? r.created_at.slice(0,10) : "—";
-        const cost = r.carrier_cost != null ? "$" + r.carrier_cost : "—";
-        const labelCell = r.label_url
-          ? `<a href="${r.label_url}" target="_blank" rel="noopener">PDF</a>` : "—";
+        const cost = r.carrier_cost != null ? "$" + rtnEsc(r.carrier_cost) : "—";
+        const labelCell = r.label_url && r.status !== "voided"
+          ? `<a href="${rtnEsc(r.label_url)}" target="_blank" rel="noopener">PDF</a>` : "—";
         const pickupCell = r.pickup_scheduled && r.pickup_confirm
-          ? `<span class="mono" style="color:#0f5132;font-weight:950" title="UPS pickup confirmation">✓ ${r.pickup_confirm}</span>`
+          ? `<span class="mono" style="color:#0f5132;font-weight:950" title="UPS pickup confirmation">✓ ${rtnEsc(r.pickup_confirm)}</span>`
           : `<span style="color:var(--muted)">—</span>`;
-        tr.innerHTML = `<td>${dt}</td><td>${r.client||"—"}</td><td class="mono">${r.tracking||"—"}</td><td>${cost}</td><td>${r.status||"—"}</td><td>${pickupCell}</td><td>${labelCell}</td>`;
+        const active = r.status === "in_transit" && r.label_id;
+        const canRetry = active && String(r.carrier || "").toUpperCase() === "UPS" && !r.pickup_scheduled;
+        const canVoid = active && !r.billed_at;
+        const acts = [
+          canRetry ? `<button type="button" data-act="retry" data-id="${r.id}">Retry pickup</button>` : "",
+          canVoid ? `<button type="button" class="danger" data-act="void" data-id="${r.id}">Void</button>` : "",
+        ].join("");
+        tr.innerHTML = `<td>${dt}</td><td>${rtnEsc(r.client||"—")}</td><td class="mono">${rtnEsc(r.tracking||"—")}</td><td>${cost}</td><td>${rtnEsc(r.status||"—")}</td><td>${pickupCell}</td><td>${labelCell}</td><td class="rtnAct" style="white-space:nowrap">${acts}</td>`;
         tb.appendChild(tr);
       });
     } catch(e){ /* silent */ }
   }
 
+  // Inline pickup editor (date + window) used by Retry pickup
+  function rtnPickupEditor(returnId){
+    const d = rtnNextBusinessDay();
+    return `<div class="rqEdit" data-editor="${returnId}">
+      <input type="date" data-f="date" value="${d}" min="${d}">
+      <input type="time" data-f="start" value="09:00">
+      <span style="color:var(--muted)">to</span>
+      <input type="time" data-f="end" value="17:00">
+      <button type="button" class="primary" data-act="retry-go" data-id="${returnId}">Book pickup</button>
+      <button type="button" data-act="retry-x">✕</button>
+    </div>`;
+  }
+
+  async function rtnPost(body){
+    const res = await fetch(RTN_FN, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
+    let data = {};
+    try { data = await res.json(); } catch(_){ data = { error: "Unexpected response (" + res.status + ")" }; }
+    return { res, data };
+  }
+
+  async function rtnRetry(returnId, editorEl){
+    const get = (f) => editorEl.querySelector(`[data-f="${f}"]`).value;
+    const btn = editorEl.querySelector('[data-act="retry-go"]');
+    btn.disabled = true; btn.textContent = "Booking…";
+    const { res, data } = await rtnPost({ action:"retry_pickup", return_id: returnId,
+      pickup_date: get("date"), window_start: get("start"), window_end: get("end") });
+    btn.disabled = false; btn.textContent = "Book pickup";
+    if(!res.ok || !data.ok){
+      if(data.suggest_date){ const di = editorEl.querySelector('[data-f="date"]'); if(di) di.value = data.suggest_date; }
+      rtnStatus("Pickup not booked: " + (data.message || data.error || "error") + (data.hint ? " " + data.hint : ""), "bad");
+      return;
+    }
+    rtnStatus(`UPS pickup ${data.pickup_confirm} booked for tracking ${data.tracking}${data.request_code ? " (" + data.request_code + ", client emailed)" : ""}.`, "ok");
+    rtnLoadList();
+    rtnLoadRequests();
+  }
+
+  async function rtnVoid(returnId){
+    const r = rtnRows.find(x => x.id === returnId);
+    const label = r ? `${r.tracking || ""} (${r.client || ""})` : returnId;
+    if(!window.confirm(`Void the label ${label}?\n\nIts UPS pickup is cancelled too. This cannot be undone.`)) return;
+    const reason = window.prompt("Reason (optional):", "Duplicate label") || "";
+    const { res, data } = await rtnPost({ action:"void_label", return_id: returnId, reason });
+    if(!res.ok || !data.ok){ rtnStatus("Not voided: " + (data.message || data.error || "error"), "bad"); return; }
+    rtnStatus("Label voided: " + (data.steps || []).join(" · "), "ok");
+    rtnLoadList();
+    rtnLoadRequests();
+  }
+
+  // ── Client requests queue ───────────────────────────────────────────
+  const RQ_STATUS = {
+    processing:    ["Processing", "warn"],
+    needs_review:  ["Needs review", "warn"],
+    pickup_failed: ["Pickup not booked", "bad"],
+  };
+  const RQ_DISP = {
+    restock: "Restock if sealed", inspect_hold: "Inspect + hold", fulfill_order: "Fulfill order", other: "See instructions",
+  };
+  function rqWhen(r){
+    if(r.method === "dropoff") return "Drop-off";
+    const d = r.pickup_date ? r.pickup_date : "—";
+    return `${d} ${String(r.window_start||"").slice(0,5)}–${String(r.window_end||"").slice(0,5)}`;
+  }
+  function rqCard(r, kind){
+    const sf = r.ship_from || {};
+    const reasons = (Array.isArray(r.review_reasons) ? r.review_reasons : [])
+      .map(x => rtnEsc(x.message) + (x.detail ? ` <span style="color:var(--muted)">(${rtnEsc(x.detail)})</span>` : "")).join("<br>");
+    const [label, tone] = kind === "arrived" ? ["Arrived", "ok"] : (RQ_STATUS[r.status] || [r.status, "warn"]);
+    const stale = r.status === "processing" && (Date.now() - new Date(r.created_at).getTime() > 10 * 60000);
+    const lab = r.label || null;
+    const hasActiveLabel = lab && lab.status === "in_transit";
+    let acts = "";
+    if(kind === "arrived"){
+      acts = `<div class="rqEdit" data-outcome="${r.id}">
+        <select data-f="outcome">
+          <option value="restocked">Restocked — saleable</option>
+          <option value="used_for_order">Used to fulfill an order</option>
+          <option value="held">Held — waiting for client</option>
+          <option value="damaged">Damaged — not saleable</option>
+          <option value="other">Other</option>
+        </select>
+        <input data-f="note" placeholder="Note for the client (optional)" style="min-width:180px">
+        <button type="button" class="primary" data-act="outcome-go" data-id="${r.id}">Save result</button>
+      </div>`;
+    } else {
+      const btns = [];
+      if(!r.return_label_id || (r.status === "processing" && !hasActiveLabel) || (r.status === "needs_review")) {
+        if(r.status !== "pickup_failed") btns.push(`<button type="button" class="primary" data-act="load" data-id="${r.id}">Load into form</button>`);
+      }
+      if(hasActiveLabel && !lab.pickup_scheduled && r.method !== "dropoff") btns.push(`<button type="button" data-act="retry" data-id="${lab.id}">Retry pickup</button>`);
+      if(!hasActiveLabel) btns.push(`<button type="button" class="danger" data-act="cancel" data-id="${r.id}">Cancel request</button>`);
+      acts = `<div class="rqAct">${btns.join("")}</div>`;
+    }
+    return `<div class="rq" data-rq="${r.id}">
+      <div class="rqTop">
+        <div><span class="mono" style="font-weight:950">${rtnEsc(r.request_code)}</span> · <b>${rtnEsc(r.client)}</b> · ${rtnEsc(r.reference)}${r.order_ref ? " · " + rtnEsc(r.order_ref) : ""}</div>
+        <span class="pill ${tone}">${rtnEsc(label)}${stale ? " · stuck" : ""}</span>
+      </div>
+      <div style="margin-top:4px;color:var(--muted)">${rtnEsc(sf.name)} · ${rtnEsc([sf.city, sf.state, sf.zip].filter(Boolean).join(", "))} · ${rtnEsc(rqWhen(r))} · ${rtnEsc(r.weight_lb)} lb ${rtnEsc(r.length_in)}×${rtnEsc(r.width_in)}×${rtnEsc(r.height_in)} in</div>
+      <div style="margin-top:2px">On arrival: <b>${rtnEsc(RQ_DISP[r.disposition] || r.disposition)}${r.disposition_order_ref ? " " + rtnEsc(r.disposition_order_ref) : ""}</b>${r.disposition_notes ? " — " + rtnEsc(r.disposition_notes) : ""}</div>
+      ${kind === "arrived" ? `<div style="margin-top:2px">Tracking <span class="mono">${rtnEsc(r.tracking)}</span> received ${rtnEsc(String(r.received_at||"").slice(0,10))}</div>` : ""}
+      ${reasons && kind !== "arrived" ? `<div class="rqWhy">${reasons}</div>` : ""}
+      ${r.last_error && kind !== "arrived" ? `<div class="rqWhy" style="color:#7f1d1d">Last error: ${rtnEsc(String(r.last_error).slice(0,300))}</div>` : ""}
+      ${acts}
+    </div>`;
+  }
+
+  async function rtnLoadRequests(){
+    const list = $("rtnReqList");
+    if(!list) return;
+    try {
+      const res = await fetch(RTN_FN + "?action=requests");
+      const data = await res.json();
+      if(!res.ok || !data.ok) throw new Error(data.error || "could not load");
+      rtnReqCache = { open: data.open || [], arrived: data.arrived || [] };
+      const n = rtnReqCache.open.length + rtnReqCache.arrived.length;
+      const count = $("rtnReqCount");
+      count.textContent = n ? String(n) : "0";
+      count.className = "pill " + (n ? "warn" : "ok");
+      if(!n){ list.innerHTML = `<div class="hint">Nothing pending. Requests that pass every check get their label and pickup automatically.</div>`; return; }
+      list.innerHTML =
+        (rtnReqCache.open.length ? `<div style="margin-top:6px;font-size:11px;font-weight:950;text-transform:uppercase;color:var(--muted)">To handle</div>` + rtnReqCache.open.map(r => rqCard(r, "open")).join("") : "") +
+        (rtnReqCache.arrived.length ? `<div style="margin-top:10px;font-size:11px;font-weight:950;text-transform:uppercase;color:var(--muted)">Arrived — record the result</div>` + rtnReqCache.arrived.map(r => rqCard(r, "arrived")).join("") : "");
+    } catch(e){
+      list.innerHTML = `<div class="hint" style="color:#7f1d1d">Could not load client requests (${rtnEsc(e.message)}).</div>`;
+    }
+  }
+
+  async function rtnCancelRequest(id){
+    const r = rtnReqCache.open.find(x => x.id === id);
+    const reason = window.prompt(`Cancel ${r ? r.request_code : "this request"}? The client is emailed this reason:`, "");
+    if(reason === null) return;
+    const { res, data } = await rtnPost({ action:"request_cancel", id, reason });
+    if(!res.ok || !data.ok){ rtnStatus("Not cancelled: " + (data.message || data.error || "error"), "bad"); return; }
+    rtnStatus(`${data.request.request_code} cancelled${data.email_sent ? " — client emailed" : ""}.`, "ok");
+    if(rtnReq && rtnReq.id === id){ rtnReq = null; rtnSetBanner(); }
+    rtnLoadRequests();
+  }
+
+  async function rtnSaveOutcome(id, wrap){
+    const outcome = wrap.querySelector('[data-f="outcome"]').value;
+    const note = wrap.querySelector('[data-f="note"]').value.trim();
+    if(outcome === "other" && !note){ rtnStatus("Write a note for the client when the result is 'Other'.", "bad"); return; }
+    const { res, data } = await rtnPost({ action:"request_outcome", id, outcome, note });
+    if(!res.ok || !data.ok){ rtnStatus("Not saved: " + (data.message || data.error || "error"), "bad"); return; }
+    rtnStatus(`Result saved for ${data.request.request_code}${data.email_sent ? " — client emailed" : ""}.`, "ok");
+    rtnLoadRequests();
+  }
+
+  // One listener for every button inside the modal's lists
+  function rtnOnClick(ev){
+    const btn = ev.target.closest("button[data-act]");
+    if(!btn) return;
+    const act = btn.dataset.act, id = btn.dataset.id;
+    if(act === "load"){
+      const r = rtnReqCache.open.find(x => x.id === id);
+      if(r) rtnLoadIntoForm(r);
+    } else if(act === "cancel"){
+      rtnCancelRequest(id);
+    } else if(act === "retry"){
+      const host = btn.closest(".rq") || btn.closest("td");
+      if(host && !host.querySelector(`[data-editor="${id}"]`)) host.insertAdjacentHTML("beforeend", rtnPickupEditor(id));
+    } else if(act === "retry-x"){
+      const ed = btn.closest("[data-editor]"); if(ed) ed.remove();
+    } else if(act === "retry-go"){
+      rtnRetry(id, btn.closest("[data-editor]"));
+    } else if(act === "void"){
+      rtnVoid(id);
+    } else if(act === "outcome-go"){
+      rtnSaveOutcome(id, btn.closest("[data-outcome]"));
+    }
+  }
+
   // Wire up
   function rtnInit(){
-    const openBtn = document.getElementById("openReturnBtn");
-    const dlg     = document.getElementById("returnDlg");
+    const openBtn = $("openReturnBtn");
+    const dlg     = $("returnDlg");
     if(!openBtn || !dlg) return;
 
     openBtn.addEventListener("click", async () => {
       await rtnLoadClients();
       rtnFillClients();
-      // prefill pickup date = today
-      const today = new Date().toISOString().slice(0,10);
-      const dEl = document.getElementById("rtnPickupDate");
-      if(dEl) dEl.value = today;
+      rtnReq = null;
+      rtnSetBanner();
+      // prefill pickup date = next business day (a same-day window often
+      // has already passed at the customer's address)
+      const dEl = $("rtnPickupDate");
+      if(dEl) dEl.value = rtnNextBusinessDay();
       rtnApplyCarrier();   // seed services + pickup state for the default carrier
       dlg.showModal();
       rtnLoadList();
+      rtnLoadRequests();
     });
-    document.getElementById("closeReturnDlg").addEventListener("click", () => dlg.close());
-    document.getElementById("rtnSchedulePickup").addEventListener("change", rtnTogglePickup);
-    document.getElementById("rtnSubmitBtn").addEventListener("click", rtnSubmit);
-    document.getElementById("rtnRefreshBtn").addEventListener("click", rtnLoadList);
-    document.getElementById("rtnCarrier").addEventListener("change", rtnApplyCarrier);
+    $("closeReturnDlg").addEventListener("click", () => dlg.close());
+    $("rtnSchedulePickup").addEventListener("change", rtnTogglePickup);
+    $("rtnSubmitBtn").addEventListener("click", rtnSubmit);
+    $("rtnRefreshBtn").addEventListener("click", () => { rtnLoadList(); rtnLoadRequests(); });
+    $("rtnCarrier").addEventListener("change", rtnApplyCarrier);
+    dlg.addEventListener("click", rtnOnClick);
   }
 
   if(document.readyState === "loading"){
