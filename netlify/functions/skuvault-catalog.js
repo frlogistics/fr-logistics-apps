@@ -86,7 +86,7 @@ exports.handler = async (event) => {
       if (body.confirm !== 'UPDATE') return res(400, { error: 'CONFIRM_MISMATCH', message: 'Send confirm:"UPDATE".' });
       const list = Array.isArray(body.items) ? body.items : [];
       if (!list.length) return res(400, { error: 'items[] is required' });
-      const upd = list.map((it) => { const o = { Sku: String(it.Sku).trim() }; for (const k of ['Code','PartNumber','Description','ShortDescription','LongDescription','Classification','Supplier','Brand','Cost','SalePrice','RetailPrice','ReorderPoint','Attributes']) if (it[k] !== undefined) o[k] = it[k]; return o; });
+      const upd = list.map((it) => { const o = { Sku: String(it.Sku).trim() }; for (const k of ['Code','Client','PartNumber','Description','ShortDescription','LongDescription','Classification','Supplier','Brand','Cost','SalePrice','RetailPrice','ReorderPoint','Attributes']) if (it[k] !== undefined) o[k] = it[k]; return o; });
       const r = await sv('/products/updateProducts', { Items: upd });
       const errs = (r.body && (r.body.Errors || r.body.errors)) || [];
       return res(r.ok && !errs.length ? 200 : 502, { ok: r.ok, status: r.status, updated: upd.length, response: r.body });
